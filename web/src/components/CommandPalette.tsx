@@ -6,6 +6,7 @@ import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { fuzzyFilter } from '../lib/fuzzy';
 import { NAV, NavItem, Page } from '../lib/nav';
 import { iconFor } from './navIcons';
+import type { Machine } from '../types';
 
 export interface PaletteEntry {
   key: string;
@@ -30,6 +31,18 @@ export function pageEntries(go: (p: Page) => void): PaletteEntry[] {
       run: () => go(i.id as Page),
     })),
   );
+}
+
+// Verb entries per machine ("Migrate web01", "Snapshot web01"). They only
+// navigate and prefill the existing forms; nothing mutates from the palette,
+// so a mistyped Enter cannot change the fleet.
+export function machineVerbEntries(machines: Machine[], onMigrate: (name: string) => void, onSnapshot: (name: string) => void): PaletteEntry[] {
+  return machines
+    .filter((m) => m.status?.phase === 'Running')
+    .flatMap<PaletteEntry>((m) => [
+      { key: `verb:migrate:${m.metadata.namespace}/${m.metadata.name}`, group: 'Actions', label: `Migrate ${m.metadata.name}`, hint: 'Pick a target node', tone: 'emerald', run: () => onMigrate(m.metadata.name) },
+      { key: `verb:snapshot:${m.metadata.namespace}/${m.metadata.name}`, group: 'Actions', label: `Snapshot ${m.metadata.name}`, hint: 'Point-in-time copy', tone: 'emerald', run: () => onSnapshot(m.metadata.name) },
+    ]);
 }
 
 export default function CommandPalette({ entries, onClose }: { entries: PaletteEntry[]; onClose: () => void }) {

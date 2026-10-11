@@ -66,6 +66,10 @@ type Server struct {
 	// page's stat band.
 	Version string
 
+	// history backs GET .../metrics; filled by RunMetricsSampler.
+	history     *metricsHistory
+	historyOnce sync.Once
+
 	// apiRoutes is the number of /api/v1 routes registered by Handler.
 	apiRoutes int
 
@@ -232,6 +236,10 @@ func (s *Server) Handler() http.Handler {
 	// Overview filters every namespaced object using the caller's current grants.
 	api.HandleFunc("GET /api/v1/overview", s.handleOverview)
 	api.HandleFunc("GET /api/v1/namespaces", s.handleNamespaces)
+	api.HandleFunc("GET /api/v1/stream", s.handleStream)
+	api.HandleFunc("GET /api/v1/insights", s.handleInsights)
+	api.HandleFunc("GET /api/v1/pods", s.handlePods)
+	api.HandleFunc("GET /api/v1/health", s.handleHealth)
 	api.HandleFunc("GET /api/v1/fleet/{resource}", s.requireNamespace(namespaceParam, s.handleListFleet))
 	api.HandleFunc("POST /api/v1/fleet/{resource}", s.requireNamespace(namespaceParam, s.handleCreateFleet))
 	api.HandleFunc("DELETE /api/v1/fleet/{resource}/{namespace}/{name}", s.requireNamespace(namespaceFromPath, s.handleDeleteFleet))
@@ -248,6 +256,9 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/resume", s.requireNamespace(namespaceFromPath, s.handlePowerMachine("Running")))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/halt", s.requireNamespace(namespaceFromPath, s.handlePowerMachine("Halted")))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/priority", s.requireNamespace(namespaceFromPath, s.handleSetMachinePriority))
+	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/fork", s.requireNamespace(namespaceFromPath, s.handleForkMachine))
+	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/disks", s.requireNamespace(namespaceFromPath, s.handleHotplugDisk))
+	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/nics", s.requireNamespace(namespaceFromPath, s.handleHotplugNIC))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/console/ticket", s.requireNamespace(namespaceFromPath, s.handleConsoleTicket))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/exec", s.requireNamespace(namespaceFromPath, s.handleExec))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/agent-file/put", s.requireNamespace(namespaceFromPath, s.handleAgentPutFile))
@@ -257,6 +268,8 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/qga/firewall/open", s.requireNamespace(namespaceFromPath, s.handleQGAFirewallOpen))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/qga/firewall/close", s.requireNamespace(namespaceFromPath, s.handleQGAFirewallClose))
 	api.HandleFunc("GET /api/v1/machines/{namespace}/{name}/logs", s.requireNamespace(namespaceFromPath, s.handleLogs))
+	api.HandleFunc("GET /api/v1/machines/{namespace}/{name}/timeline", s.requireNamespace(namespaceFromPath, s.handleMachineTimeline))
+	api.HandleFunc("GET /api/v1/machines/{namespace}/{name}/metrics", s.requireNamespace(namespaceFromPath, s.handleMachineMetrics))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/vm-snapshot", s.requireNamespace(namespaceFromPath, s.handleVMSnapshot))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/vm-restore-snapshot", s.requireNamespace(namespaceFromPath, s.handleVMRestoreSnapshot))
 
@@ -278,6 +291,9 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/v1/machinepools", s.requireNamespace(namespaceParam, s.handleListMachinePools))
 	api.HandleFunc("GET /api/v1/machineclaims", s.requireNamespace(namespaceParam, s.handleListMachineClaims))
 	api.HandleFunc("GET /api/v1/machinebackups", s.requireNamespace(namespaceParam, s.handleListMachineBackups))
+	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/backups", s.requireNamespace(namespaceFromPath, s.handleCreateBackup))
+	api.HandleFunc("POST /api/v1/machinebackups/{namespace}/{name}/restore", s.requireNamespace(namespaceFromPath, s.handleRestoreBackup))
+	api.HandleFunc("DELETE /api/v1/machinebackups/{namespace}/{name}", s.requireNamespace(namespaceFromPath, s.handleDeleteBackup))
 	api.HandleFunc("GET /api/v1/machinebackuprestores", s.requireNamespace(namespaceParam, s.handleListMachineBackupRestores))
 	api.HandleFunc("GET /api/v1/disruption-budgets", s.requireNamespace(namespaceParam, s.handleListBudgets))
 	api.HandleFunc("GET /api/v1/machinesets", s.requireNamespace(namespaceParam, s.handleListMachineSets))
@@ -287,6 +303,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/v1/migration-policies", s.requireNamespace(namespaceParam, s.handleListMigrationPolicies))
 	api.HandleFunc("GET /api/v1/snapshot-schedules", s.requireNamespace(namespaceParam, s.handleListMachineSnapshotSchedules))
 	api.HandleFunc("PATCH /api/v1/snapshot-schedules/{namespace}/{name}/suspend", s.requireNamespace(namespaceFromPath, s.handleSuspendMachineSnapshotSchedule))
+	api.HandleFunc("POST /api/v1/snapshot-schedules/{namespace}/{name}/trigger", s.requireNamespace(namespaceFromPath, s.handleTriggerSnapshotSchedule))
 	api.HandleFunc("GET /api/v1/network-policies", s.requireNamespace(namespaceParam, s.handleListNetworkPolicies))
 	api.HandleFunc("GET /api/v1/security-groups", s.requireNamespace(namespaceParam, s.handleListSecurityGroups))
 
@@ -299,6 +316,7 @@ func (s *Server) Handler() http.Handler {
 	// /api/v1/nodes/{node}/... -- it IS namespace-scoped and IS wrapped.
 	api.HandleFunc("GET /api/v1/nodes", s.handleListNodes)
 	api.HandleFunc("GET /api/v1/nodes/usage", s.handleNodeUsage)
+	api.HandleFunc("GET /api/v1/nodes/capacity", s.handleNodeCapacity)
 	api.HandleFunc("GET /api/v1/nodes/{node}/sandboxes", s.handleListNodeSandboxes)
 	api.HandleFunc("GET /api/v1/nodes/{node}/templates", s.handleListTemplates)
 	api.HandleFunc("POST /api/v1/nodes/{node}/templates", s.handleBuildTemplate)

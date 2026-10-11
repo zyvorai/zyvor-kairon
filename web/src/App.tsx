@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import GlobalNav from './components/GlobalNav';
-import CommandPalette, { pageEntries, PaletteEntry } from './components/CommandPalette';
+import CommandPalette, { machineVerbEntries, pageEntries, PaletteEntry } from './components/CommandPalette';
 import { ToastProvider } from './components/Toast';
 import { namespaceView, NAMESPACE_EVENT } from './lib/namespace';
 import { formatHash, parseHash } from './lib/route';
@@ -24,6 +24,9 @@ import SnapshotSchedules from './pages/SnapshotSchedules';
 import NetworkPolicies from './pages/NetworkPolicies';
 import SecurityGroups from './pages/SecurityGroups';
 import Nodes from './pages/Nodes';
+import System from './pages/System';
+import Topology from './pages/Topology';
+import NetworkOverview from './pages/NetworkOverview';
 import Account from './pages/Account';
 import Assistant from './pages/Assistant';
 import Login from './pages/Login';
@@ -155,7 +158,7 @@ export default function App() {
         },
       },
     ];
-    return [...actions, ...pages, ...ms];
+    return [...actions, ...machineVerbEntries(machines, goMigrate, goSnapshot), ...pages, ...ms];
   }, [machines, setPage]);
 
   function goMigrate(machine: string) {
@@ -208,6 +211,9 @@ export default function App() {
     'network-policies': <NetworkPolicies />,
     'security-groups': <SecurityGroups />,
     nodes: <Nodes />,
+    topology: <Topology />,
+    system: <System />,
+    network: <NetworkOverview />,
     storage: <Storage />,
     pools: <Pools />,
     images: <Images />,

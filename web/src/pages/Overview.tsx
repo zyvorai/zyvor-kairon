@@ -7,6 +7,7 @@ import { NodeUsage, Overview as OverviewData } from '../types';
 import { formatBytes } from '../lib/phase';
 import { Kpi, KpiStrip, Meter, Reveal, useSeries } from '../components/ui';
 import { currentNamespace } from '../lib/namespace';
+import InsightsStrip from '../components/InsightsStrip';
 
 function phaseTone(phase: string): string {
   if (phase === 'Running' || phase === 'Succeeded') return 'ok';
@@ -61,6 +62,7 @@ export default function Overview() {
           Download usage CSV
         </button>
       </div>
+      <InsightsStrip />
       <KpiStrip>
         <Kpi label="Machines" value={data.machines.total} sub={`${running} running`} series={machineSeries} />
         <Kpi label="Running" value={running} sub={data.machines.total ? `${Math.round((running / data.machines.total) * 100)}% of fleet` : 'none yet'} series={runningSeries} />

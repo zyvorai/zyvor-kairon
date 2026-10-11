@@ -1,0 +1,40 @@
+// Copyright 2026 Zyvor · https://zyvor.dev
+// SPDX-License-Identifier: Apache-2.0
+
+export interface NodeCapacity {
+  node: string;
+  ready: boolean;
+  unschedulable: boolean;
+  taints: number;
+  machines: number;
+  allocatableCpuMilli: number;
+  allocatableMemoryMiB: number;
+  requestedCpuMilli: number;
+  requestedMemoryMiB: number;
+  knownAllocatable: boolean;
+  whatIf?: { fits: boolean; reason?: string };
+}
+
+// pct is requested/allocatable as a whole percentage clamped to 0..100+;
+// null when allocatable is unknown or zero so the UI shows "-" not NaN.
+export function pct(requested: number, allocatable: number): number | null {
+  if (!allocatable || allocatable <= 0) return null;
+  return Math.max(0, Math.round((requested / allocatable) * 100));
+}
+
+// barTone colours a packing bar: comfortable, getting full, nearly full.
+export function barTone(p: number | null): 'ok' | 'warn' | 'error' | 'idle' {
+  if (p === null) return 'idle';
+  if (p >= 90) return 'error';
+  if (p >= 75) return 'warn';
+  return 'ok';
+}
+
+export function formatCores(milli: number): string {
+  const c = milli / 1000;
+  return Number.isInteger(c) ? `${c}` : c.toFixed(1);
+}
+
+export function formatMiB(mib: number): string {
+  return mib >= 1024 ? `${(mib / 1024).toFixed(mib % 1024 === 0 ? 0 : 1)} GiB` : `${mib} MiB`;
+}

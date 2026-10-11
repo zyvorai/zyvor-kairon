@@ -6,6 +6,7 @@ package uiapi
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -42,6 +43,12 @@ type fakeKube struct {
 	networkPolicies   map[string]model.MachineNetworkPolicy
 	securityGroups    map[string]model.NetworkSecurityGroup
 	nodes             []model.Node
+	events            []model.Event
+	backups           map[string]model.MachineBackup
+	backupRestores    []model.MachineBackupRestore
+	// patches records every raw merge-patch body, keyed by object path.
+	patches  map[string][]string
+	podsJSON []map[string]any
 	// secrets holds only stringData, keyed by "namespace/name" -- enough
 	// to exercise Client.PatchSecretStringData (see
 	// uiapi.Server.persistUsers) without modeling a full core/v1 Secret.
@@ -76,6 +83,34 @@ func (f *fakeKube) handler() http.Handler {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		switch {
+		case r.Method == http.MethodGet && r.URL.Query().Get("watch") == "true":
+			if r.URL.Path == "/apis/kairon.zyvor.dev/v1/machines" {
+				for _, m := range f.machines {
+					raw, _ := json.Marshal(m)
+					_ = json.NewEncoder(w).Encode(map[string]any{"type": "ADDED", "object": json.RawMessage(raw)})
+				}
+			}
+		case r.Method == http.MethodPost && r.URL.Path == "/apis/kairon.zyvor.dev/v1/namespaces/default/machinebackups":
+			var b model.MachineBackup
+			_ = json.NewDecoder(r.Body).Decode(&b)
+			if f.backups == nil {
+				f.backups = map[string]model.MachineBackup{}
+			}
+			f.backups[b.Metadata.Name] = b
+			_ = json.NewEncoder(w).Encode(b)
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/apis/kairon.zyvor.dev/v1/namespaces/default/machinebackups/"):
+			delete(f.backups, strings.TrimPrefix(r.URL.Path, "/apis/kairon.zyvor.dev/v1/namespaces/default/machinebackups/"))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("{}"))
+		case r.Method == http.MethodPost && r.URL.Path == "/apis/kairon.zyvor.dev/v1/namespaces/default/machinebackuprestores":
+			var br model.MachineBackupRestore
+			_ = json.NewDecoder(r.Body).Decode(&br)
+			f.backupRestores = append(f.backupRestores, br)
+			_ = json.NewEncoder(w).Encode(br)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/pods":
+			_ = json.NewEncoder(w).Encode(map[string]any{"items": f.podsJSON})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/namespaces/default/events":
+			_ = json.NewEncoder(w).Encode(map[string]any{"items": f.events})
 		case r.Method == http.MethodGet && r.URL.Path == "/apis/kairon.zyvor.dev/v1/machines":
 			items := make([]model.Machine, 0, len(f.machines))
 			for _, m := range f.machines {
@@ -102,6 +137,13 @@ func (f *fakeKube) handler() http.Handler {
 			f.machines[m.Metadata.Name] = m
 			_ = json.NewEncoder(w).Encode(m)
 		case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/apis/kairon.zyvor.dev/v1/namespaces/default/machines/"):
+			if raw, err := io.ReadAll(r.Body); err == nil {
+				if f.patches == nil {
+					f.patches = map[string][]string{}
+				}
+				f.patches[r.URL.Path] = append(f.patches[r.URL.Path], string(raw))
+				r.Body = io.NopCloser(bytes.NewReader(raw))
+			}
 			name := strings.TrimPrefix(r.URL.Path, "/apis/kairon.zyvor.dev/v1/namespaces/default/machines/")
 			m, ok := f.machines[name]
 			if !ok {
@@ -279,6 +321,13 @@ func (f *fakeKube) handler() http.Handler {
 			}
 			_ = json.NewEncoder(w).Encode(model.MachineSnapshotScheduleList{Items: items})
 		case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/apis/kairon.zyvor.dev/v1/namespaces/default/machinesnapshotschedules/"):
+			if raw, err := io.ReadAll(r.Body); err == nil {
+				if f.patches == nil {
+					f.patches = map[string][]string{}
+				}
+				f.patches[r.URL.Path] = append(f.patches[r.URL.Path], string(raw))
+				r.Body = io.NopCloser(bytes.NewReader(raw))
+			}
 			name := strings.TrimPrefix(r.URL.Path, "/apis/kairon.zyvor.dev/v1/namespaces/default/machinesnapshotschedules/")
 			s, ok := f.snapshotSchedules[name]
 			if !ok {

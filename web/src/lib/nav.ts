@@ -34,6 +34,7 @@ export const NAV = [
       { id: 'machinesets', label: 'Machine sets', blurb: 'Scale groups of identical VMs' },
       { id: 'instancetypes', label: 'Instance types', blurb: 'Reusable CPU and memory shapes' },
       { id: 'nodes', label: 'Nodes', blurb: 'FluxVM hosts, capacity and usage' },
+      { id: 'topology', label: 'Topology', blurb: 'Where every VM and pod runs, live' },
       { id: 'storage', label: 'Storage', blurb: 'Atlas volumes, pools, backups and health' },
       { id: 'pools', label: 'Pools & claims', blurb: 'Warm machine pools and bound claims' },
       { id: 'images', label: 'Images', blurb: 'Upload and serve VM images to nodes' },
@@ -59,12 +60,16 @@ export const NAV = [
       { id: 'disruption-budgets', label: 'Disruption budgets', blurb: 'Limit concurrent voluntary disruptions' },
       { id: 'network-policies', label: 'Network policies', blurb: 'Per-machine ingress and egress rules' },
       { id: 'security-groups', label: 'Security groups', blurb: 'Reusable network rule sets' },
+      { id: 'network', label: 'Network overview', blurb: 'Dataplane, policy sync and edge state per VM' },
     ],
   },
   {
     group: 'Operations',
     tone: 'amber',
-    items: [{ id: 'fleet', label: 'Fleet operations', blurb: 'Bulk actions across many machines' }],
+    items: [
+      { id: 'fleet', label: 'Fleet operations', blurb: 'Bulk actions across many machines' },
+      { id: 'system', label: 'System', blurb: 'Kairon components and pods' },
+    ],
   },
   {
     group: 'AI',

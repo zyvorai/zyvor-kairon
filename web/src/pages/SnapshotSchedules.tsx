@@ -50,6 +50,16 @@ export default function SnapshotSchedules() {
     }
   };
 
+  const runNow = async (s: MachineSnapshotSchedule) => {
+    try {
+      await apiJSON(`/api/v1/snapshot-schedules/${currentNamespace()}/${encodeURIComponent(s.metadata.name)}/trigger`, 'POST', {});
+      setMsg('');
+      refresh();
+    } catch (e) {
+      setMsg(String(e));
+    }
+  };
+
   return (
     <div className="grid">
       <div className="card span4">
@@ -79,7 +89,10 @@ export default function SnapshotSchedules() {
             {
               header: '',
               render: (s) => (
-                <button onClick={() => toggleSuspend(s)}>{s.spec.suspend ? 'Resume' : 'Suspend'}</button>
+                <span className="rowactions">
+                  <button onClick={() => runNow(s)} title="Snapshot every matching Machine now, regardless of suspend or interval">Run now</button>
+                  <button onClick={() => toggleSuspend(s)}>{s.spec.suspend ? 'Resume' : 'Suspend'}</button>
+                </span>
               ),
             },
           ]}

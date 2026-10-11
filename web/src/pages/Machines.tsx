@@ -1,15 +1,21 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
 // SPDX-License-Identifier: Apache-2.0
 
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { api, apiJSON, getConfig, isAdmin } from '../api';
 import { Machine } from '../types';
 import { formatBytes } from '../lib/phase';
 import { parseHash } from '../lib/route';
+import { useLiveChanges } from '../lib/live';
+import { PowerAction, undoFor } from '../lib/undo';
 import { Plus } from 'lucide-react';
 import ResourceTable, { Column } from '../components/ResourceTable';
 import Inspector, { KV } from '../components/Inspector';
 import MachineOps from '../components/MachineOps';
+import MachineTimeline from '../components/MachineTimeline';
+import MachineMetrics from '../components/MachineMetrics';
+import MachineActions from '../components/MachineActions';
+import MachinePlacement from '../components/MachinePlacement';
 import Sheet from '../components/Sheet';
 import { EmptyState, Status } from '../components/ui';
 import { useToast } from '../components/Toast';
@@ -144,13 +150,26 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
   const refresh = () =>
     api<Machine[]>('/api/v1/machines').then((r) => setItems(r ?? [])).catch((e) => setMsg(String(e)));
 
+  // Live stream: a Machine change triggers a (debounced) refetch, so the
+  // table updates in about a second; polling then only backstops it.
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const live = useLiveChanges((c) => {
+    if (c.kind !== 'Machine') return;
+    clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(refresh, 250);
+  });
+  useEffect(() => () => clearTimeout(refreshTimer.current), []);
+
   useEffect(() => {
     refresh();
-    const t = setInterval(refresh, 5000);
+    const t = setInterval(refresh, live ? 30000 : 5000);
+    return () => clearInterval(t);
+  }, [live]);
+
+  useEffect(() => {
     getConfig()
       .then((cfg) => setConsoleEnabled(cfg.consoleEnabled))
       .catch(() => setConsoleEnabled(false));
-    return () => clearInterval(t);
   }, []);
 
   async function create(e: React.FormEvent) {
@@ -210,16 +229,17 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
     await refresh();
   }
 
-  async function power(ref: string, action: 'start' | 'stop' | 'pause' | 'resume' | 'halt') {
+  async function power(ref: string, action: PowerAction, isUndo = false) {
     const { ns, name } = splitRef(ref);
     // Stop and halt interrupt a running guest: ask first, like delete does.
-    if (action === 'stop' && !confirm(`Stop machine "${name}"? The guest is shut down.`)) return;
+    if (!isUndo && action === 'stop' && !confirm(`Stop machine "${name}"? The guest is shut down.`)) return;
     if (action === 'halt' && !confirm(`Halt machine "${name}"? The guest is powered off without a clean shutdown.`)) return;
     setMsg('');
     try {
       await api(`/api/v1/machines/${encodeURIComponent(ns)}/${encodeURIComponent(name)}/${action}`, { method: 'POST' });
       const done = { start: 'Started', stop: 'Stopped', pause: 'Paused', resume: 'Resumed', halt: 'Halted' }[action];
-      toast(`${done} ${name}`);
+      const back = isUndo ? undefined : undoFor(action);
+      toast(`${done} ${name}`, 'ok', back ? () => void power(ref, back, true) : undefined);
       await refresh();
     } catch (err) {
       setMsg(String(err));
@@ -445,6 +465,11 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
               ['Created', m.metadata.creationTimestamp],
             ]}
           />
+          <MachineMetrics namespace={nsOf(m)} name={m.metadata.name} />
+          <MachineTimeline namespace={nsOf(m)} name={m.metadata.name} phase={m.status?.phase} />
+          {(!m.status?.phase || m.status.phase === 'Pending') && m.spec.resources.cpu && m.spec.resources.memory && (
+            <MachinePlacement cpu={m.spec.resources.cpu} memory={m.spec.resources.memory} />
+          )}
           <h4>Scheduling priority</h4>
           <div className="rowactions" style={{ justifyContent: 'flex-start', padding: '8px 0' }}>
             <input
@@ -458,6 +483,7 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
               <button className="sm" onClick={() => setPriority(refOf(m))}>Set</button>
             )}
           </div>
+          <MachineActions namespace={nsOf(m)} name={m.metadata.name} running={m.status?.phase === 'Running'} onChanged={refresh} />
           <h4>Tools</h4>
           <div className="rowactions" style={{ justifyContent: 'flex-start', padding: '8px 0' }}>
             {consoleEnabled && consoleEligible(m) && <button onClick={() => setConsoleFor(refOf(m))}>Console</button>}

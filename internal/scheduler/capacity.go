@@ -140,3 +140,16 @@ func LoadFromCounts(counts map[string]int) map[string]NodeLoad {
 	}
 	return out
 }
+
+// Allocatable reports a Node's allocatable CPU (millicores) and memory
+// (MiB); ok is false when the Node object carries no quantities.
+func Allocatable(n model.Node) (cpuMilli int64, memoryMiB uint64, ok bool) {
+	return nodeAllocatable(n)
+}
+
+// Fits reports whether m's CPU/memory/hugepages requests fit n on top of
+// load, with the human reason when they do not -- the same hard filter
+// Choose applies, exposed for the dashboard's capacity what-if.
+func Fits(n model.Node, m model.Machine, load NodeLoad) (bool, string) {
+	return capacityFits(n, m, load)
+}

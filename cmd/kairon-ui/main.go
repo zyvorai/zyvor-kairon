@@ -252,6 +252,7 @@ func run() int {
 		_ = httpServer.Shutdown(shutdownCtx)
 	}()
 	go srv.RunSharedStateSync(ctx, sharedStateSyncInterval)
+	go srv.RunMetricsSampler(ctx, 15*time.Second)
 
 	log.Info("kairon-ui listening", "address", *listenAddr, "webDir", *webDir, "authenticated", *token != "" || len(users) > 0, "loginUsers", len(users))
 	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {

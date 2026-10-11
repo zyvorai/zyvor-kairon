@@ -220,6 +220,9 @@ rules:
   - apiGroups: [""]
     resources: ["nodes"]
     verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["events", "pods"]
+    verbs: ["get", "list"]
   - apiGroups: ["kairon.zyvor.dev"]
     resources: ["machines"]
     verbs: ["get", "list", "watch", "create", "delete", "patch"]
@@ -252,8 +255,13 @@ rules:
   # suspend/resume toggle, handleSuspendMachineSnapshotSchedule) -- all
   # already-shipped mutations that were equally broken.
   - apiGroups: ["kairon.zyvor.dev"]
-    resources: ["machinequotas", "machinedisruptionbudgets", "machineinstancetypes", "machineimages", "migrationpolicies", "machinepools", "machineclaims", "machinebackups", "machinebackuprestores"]
+    resources: ["machinequotas", "machinedisruptionbudgets", "machineinstancetypes", "machineimages", "migrationpolicies", "machinepools", "machineclaims"]
     verbs: ["get", "list", "watch"]
+  # The dashboard creates and deletes backups and creates restores
+  # (internal/uiapi/backups.go), same as `kaironctl backup`.
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machinebackups", "machinebackuprestores"]
+    verbs: ["get", "list", "watch", "create", "delete"]
   - apiGroups: ["kairon.zyvor.dev"]
     resources: ["machinesets"]
     verbs: ["get", "list", "watch", "delete", "patch"]

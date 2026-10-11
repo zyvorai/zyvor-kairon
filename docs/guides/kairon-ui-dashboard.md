@@ -130,6 +130,57 @@ actions that wrap the per-Machine routes:
 Actions that need the guest agent, an administrator, or a specific phase return
 the server's error text in the panel rather than being hidden.
 
+The inspector also shows:
+
+- **Usage**: CPU, memory and disk sparklines for the last 15 minutes. kairon-ui
+  samples every 15 s into memory (one hour per Machine), so history is per
+  replica and starts empty after a restart. CPU is the lifetime average the
+  Machine status reports, not an instantaneous rate.
+- **Timeline**: the Machine's Kubernetes Events and condition transitions,
+  newest first.
+- **Placement** (Pending Machines): which nodes the requested CPU and memory
+  would fit, with the reason when they would not.
+- **Fork**, **Backup**, **Hot-attach disk** and **Hot-add NIC** forms. They
+  write what `kaironctl fork`, `backup`, `disk` and `nic` write; the server
+  refuses a Machine that is not Running, or a NIC on a non-`tap` network.
+
+Pause, resume and stop show an **Undo** toast for six seconds.
+
+## Live updates
+
+kairon-ui serves `GET /api/v1/stream`, a Server-Sent Events feed of Machine and
+migration changes. The Machines, Migrations, Topology and Network overview
+pages refetch within about a second of a change and fall back to polling when
+the stream is not connected. The stream pauses while the tab is hidden.
+
+## Overview attention strip
+
+The Overview lists what needs an operator, from fixed rules: failed Machines,
+Machines unschedulable for five minutes or more, migrations in `NeedsRecovery`
+or in flight for over 30 minutes, nodes not Ready with Machines on them or at
+least 90% requested, and quotas at 90% or more. Each finding links to the page
+and inspector it concerns. Node findings are hidden from non-administrators
+when namespace scoping is on.
+
+## Topology, System and Network overview
+
+- **Topology** shows nodes as lanes, VMs as dots coloured by phase and pods as
+  squares. Dragging a Running VM onto another Ready node stages a migration
+  that you confirm before anything moves.
+- **System** shows Kairon's component health and pods, with a switch to show
+  every pod you may see. It needs the `pods` and `events` read rules in the
+  `kairon-ui` ClusterRole.
+- **Network overview** shows dataplane attach, policy sync, edge identity,
+  anti-spoof and conntrack restore per Machine.
+- **Nodes** gains requested-versus-allocatable bars and a "Will it fit?"
+  what-if for a given vCPU and memory size.
+
+## Not in the dashboard
+
+Fencing a Machine off a dead node stays in `kaironctl fence`: it records
+operator attestation and cross-checks the node's liveness lease, which kairon-ui
+does not have the configuration for.
+
 ## Node tools
 
 The **Nodes** page opens a per-node panel with these tabs: Capabilities, Image
