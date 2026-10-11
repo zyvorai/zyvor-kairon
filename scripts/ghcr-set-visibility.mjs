@@ -105,13 +105,26 @@ async function ask(question) {
   }
 }
 
+// GitHub serves a 404 (not a login redirect) for org pages to signed-out
+// visitors, so check the page's own user-login meta tag instead of the URL.
+const signedInUser = (page) =>
+  page.locator('meta[name="user-login"]').getAttribute('content').catch(() => '');
+
 async function ensureSignedIn(page, org) {
-  await page.goto(`https://github.com/orgs/${org}/packages`, { waitUntil: 'domcontentloaded' });
-  if (page.url().includes('/login')) {
+  await page.goto('https://github.com/', { waitUntil: 'domcontentloaded' });
+  if (!(await signedInUser(page))) {
+    await page.goto('https://github.com/login', { waitUntil: 'domcontentloaded' });
     console.log('Sign in to GitHub in the browser window; waiting up to 5 minutes...');
-    await page.waitForURL((u) => !u.pathname.startsWith('/login') && !u.pathname.startsWith('/session'), { timeout: 5 * 60_000 });
-    await page.goto(`https://github.com/orgs/${org}/packages`, { waitUntil: 'domcontentloaded' });
+    const deadline = Date.now() + 5 * 60_000;
+    for (;;) {
+      await page.waitForTimeout(2000);
+      if (Date.now() > deadline) throw new Error('timed out waiting for GitHub sign-in');
+      if (!page.url().startsWith('https://github.com/')) continue;
+      if (await signedInUser(page)) break;
+    }
   }
+  console.log(`signed in as ${await signedInUser(page)}`);
+  await page.goto(`https://github.com/orgs/${org}/packages`, { waitUntil: 'domcontentloaded' });
 }
 
 // Returns "changed", "already", or throws with a reason.
