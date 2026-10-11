@@ -19,7 +19,11 @@ import (
 	"testing"
 	"time"
 
+	"crypto/tls"
 	"golang.org/x/crypto/bcrypt"
+	"log/slog"
+	"net"
+	"net/http"
 )
 
 func TestLoadUsersParsesConfiguredAccounts(t *testing.T) {
@@ -245,5 +249,108 @@ func TestWellKnownPasswordOnlyForTheChartDefault(t *testing.T) {
 	t.Setenv("KAIRON_UI_DEFAULT_ADMIN_PASSWORD", "something-else-123")
 	if wellKnownPassword() != "" {
 		t.Fatal("a custom password must not be reported")
+	}
+}
+
+func TestValidateTLSFlagsIsAllOrNothing(t *testing.T) {
+	cases := []struct {
+		cert, key string
+		want      bool
+		wantErr   bool
+	}{
+		{"", "", false, false},
+		{"/c.pem", "/k.pem", true, false},
+		{"/c.pem", "", false, true},
+		{"", "/k.pem", false, true},
+	}
+	for _, c := range cases {
+		got, err := validateTLSFlags(c.cert, c.key)
+		if got != c.want || (err != nil) != c.wantErr {
+			t.Errorf("validateTLSFlags(%q, %q) = %v, %v; want %v, err=%v", c.cert, c.key, got, err, c.want, c.wantErr)
+		}
+	}
+}
+
+// writeServerCert writes a self-signed ECDSA leaf for 127.0.0.1 and returns
+// the cert and key paths plus the parsed certificate for use as a root.
+func writeServerCert(t *testing.T) (certPath, keyPath string, cert *x509.Certificate) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "kairon-ui"},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
+		KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses: []net.IP{net.ParseIP("127.0.0.1")},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	certPath, keyPath = filepath.Join(dir, "cert.pem"), filepath.Join(dir, "key.pem")
+	if err := os.WriteFile(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return certPath, keyPath, parsed
+}
+
+func TestNewServerTLSServesHTTPSAndRefusesOldTLS(t *testing.T) {
+	certPath, keyPath, leaf := writeServerCert(t)
+	cfg, _, err := newServerTLS(slog.New(slog.NewTextHandler(io.Discard, nil)), certPath, keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A real listener: httptest's StartTLS injects its own certificate when
+	// Certificates is empty, which would hide the GetCertificate path.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &http.Server{
+		Handler:           http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, "ok") }),
+		TLSConfig:         cfg,
+		ReadHeaderTimeout: time.Second,
+	}
+	go func() { _ = srv.ServeTLS(ln, "", "") }()
+	defer func() { _ = srv.Close() }()
+	url := "https://" + ln.Addr().String()
+
+	roots := x509.NewCertPool()
+	roots.AddCert(leaf)
+	client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots}}}
+	resp, err := client.Get(url)
+	if err != nil {
+		t.Fatalf("HTTPS request failed: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if string(body) != "ok" || resp.TLS == nil || resp.TLS.Version < tls.VersionTLS12 {
+		t.Errorf("body=%q tls=%+v", body, resp.TLS)
+	}
+
+	old := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, MaxVersion: tls.VersionTLS11}}}
+	if _, err := old.Get(url); err == nil {
+		t.Error("a TLS 1.1 client must be refused")
+	}
+}
+
+func TestNewServerTLSFailsOnABadPair(t *testing.T) {
+	certPath, _, _ := writeServerCert(t)
+	if _, _, err := newServerTLS(slog.New(slog.NewTextHandler(io.Discard, nil)), certPath, "/does/not/exist.pem"); err == nil {
+		t.Error("a missing key must be a startup failure")
 	}
 }

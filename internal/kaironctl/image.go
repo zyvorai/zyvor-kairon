@@ -184,7 +184,7 @@ func uploadImage(ctx context.Context, file, name, format string, replace bool) (
 	if token := uiToken(false); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := uiDo(req)
 	if err != nil {
 		return img, err
 	}
