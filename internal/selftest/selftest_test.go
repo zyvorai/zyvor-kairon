@@ -635,3 +635,25 @@ func TestForkParentIsFluxVMWithTapNetNS(t *testing.T) {
 		t.Errorf("network = %+v; the flux-vm backend needs tap networking in a netns", parent.Spec.Network)
 	}
 }
+
+func TestForkUnsupportedIsRecognised(t *testing.T) {
+	yes := []string{
+		"x-fork-c is Error: fork default/x: fluxvm POST /v1/vms/abc/fork: HTTP 404: ",
+		"fluxvm POST /v1/vms/abc/fork: HTTP 501: not implemented",
+	}
+	no := []string{
+		"fluxvm POST /v1/vms/abc/fork: HTTP 500: snapshot failed",
+		"fluxvm POST /v1/vms: HTTP 404: no such image",
+		"timed out after 4m0s waiting for x to be Running",
+	}
+	for _, m := range yes {
+		if !forkUnsupported(m) {
+			t.Errorf("%q should count as unsupported", m)
+		}
+	}
+	for _, m := range no {
+		if forkUnsupported(m) {
+			t.Errorf("%q must remain a failure", m)
+		}
+	}
+}

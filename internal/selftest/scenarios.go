@@ -582,6 +582,12 @@ func runFork(ctx context.Context, s *session) error {
 		return fmt.Errorf("create fork child: %w", err)
 	}
 	if _, err := s.waitPhase(ctx, child.Metadata.Name, "Running", s.env.BootTimeout); err != nil {
+		if forkUnsupported(err.Error()) {
+			// The runtime on this node has no fork endpoint: a capability
+			// limit of the installed FluxVM, not a fault in Kairon.
+			s.skipReason = "this node's FluxVM does not support fork (its /fork endpoint is missing or not implemented); upgrade FluxVM to test it"
+			return nil
+		}
 		return err
 	}
 	s.logf(LevelOK, "fork child %s is Running", child.Metadata.Name)
@@ -758,4 +764,13 @@ func bootFailureHint(msg string) string {
 		return "the downloaded image did not match its pinned sha256; check the mirror, or pass --image-url with --image-digest"
 	}
 	return ""
+}
+
+// forkUnsupported recognises a runtime that has no fork endpoint (404 or
+// 501 from POST /v1/vms/{id}/fork), as opposed to a fork that failed.
+func forkUnsupported(msg string) bool {
+	if !strings.Contains(msg, "/fork") {
+		return false
+	}
+	return strings.Contains(msg, "HTTP 404") || strings.Contains(msg, "HTTP 501")
 }
