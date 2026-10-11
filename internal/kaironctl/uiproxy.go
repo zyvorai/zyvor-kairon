@@ -31,6 +31,9 @@ type uiOpts struct {
 	SvcPort   int
 	Port      int
 	NoOpen    bool
+	// BackendHTTP reaches a kairon-ui that was installed with ui.insecureHttp
+	// (plain HTTP). The default is HTTPS, which is what the chart serves.
+	BackendHTTP bool
 }
 
 func newUICmd() *cobra.Command {
@@ -41,6 +44,11 @@ func newUICmd() *cobra.Command {
 		Long: `Start a local proxy on 127.0.0.1 that forwards to the kairon-ui Service through the
 API server's service proxy, then open it in a browser. Your kubeconfig credentials
 stay in kaironctl; the dashboard still asks you to sign in.
+
+The hop from kaironctl to the API server and on to the dashboard is HTTPS (the
+dashboard serves HTTPS by default; pass --backend-http only for an install with
+ui.insecureHttp). The proxy itself listens on 127.0.0.1 and is never reachable from
+another machine.
 
 No port-forward, Ingress or cluster-internal address is needed. Stop with Ctrl+C.`,
 		Example: `  $ kaironctl ui
@@ -63,6 +71,8 @@ No port-forward, Ingress or cluster-internal address is needed. Stop with Ctrl+C
 				return err
 			}
 			defer stop()
+			// Loopback only: the browser-to-kaironctl hop never leaves this
+			// machine, the same as kubectl proxy and port-forward.
 			link := "http://" + addr
 			style.Log(style.EmojiOK, "Dashboard proxy ready at %s (Ctrl+C to stop)", link)
 			style.Log(style.EmojiInfo, "Sign in as admin; see docs/getting-started.md for the generated password")
@@ -80,6 +90,7 @@ No port-forward, Ingress or cluster-internal address is needed. Stop with Ctrl+C
 	cmd.Flags().IntVar(&o.SvcPort, "service-port", o.SvcPort, "kairon-ui Service port")
 	cmd.Flags().IntVar(&o.Port, "port", 0, "local port (default: pick a free one)")
 	cmd.Flags().BoolVar(&o.NoOpen, "no-open", false, "do not open a browser")
+	cmd.Flags().BoolVar(&o.BackendHTTP, "backend-http", false, "the dashboard serves plain HTTP (installed with ui.insecureHttp); default is HTTPS")
 	return cmd
 }
 
@@ -95,7 +106,11 @@ func startUIProxy(ctx context.Context, kc *kube.Client, o *uiOpts) (string, func
 	if err != nil {
 		return "", nil, err
 	}
-	prefix := fmt.Sprintf("/api/v1/namespaces/%s/services/http:%s:%d/proxy", url.PathEscape(o.Namespace), url.PathEscape(o.Service), o.SvcPort)
+	scheme := "https"
+	if o.BackendHTTP {
+		scheme = "http"
+	}
+	prefix := fmt.Sprintf("/api/v1/namespaces/%s/services/%s:%s:%d/proxy", url.PathEscape(o.Namespace), scheme, url.PathEscape(o.Service), o.SvcPort)
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", o.Port))
 	if err != nil {
 		return "", nil, fmt.Errorf("listen: %w", err)

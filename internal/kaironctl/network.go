@@ -305,7 +305,7 @@ func printObservability(ctx context.Context, m model.Machine, kind string, limit
 func fetchObservability(ctx context.Context, namespace, name, kind string, limit int) ([]byte, error) {
 	base := uiBaseURL()
 	if base == "" {
-		return nil, fmt.Errorf("set KAIRON_UI_URL (for example http://127.0.0.1:18082, and KAIRON_UI_TOKEN when kairon-ui authenticates) to reach uiapi %s pass-through", kind)
+		return nil, fmt.Errorf("set KAIRON_UI_URL (for example https://127.0.0.1:18082 with KAIRON_UI_CA for a self-signed certificate, and KAIRON_UI_TOKEN when kairon-ui authenticates) to reach uiapi %s pass-through", kind)
 	}
 	token := uiToken(true)
 	path := fmt.Sprintf("%s/api/v1/machines/%s/%s/%s", base, url.PathEscape(namespace), url.PathEscape(name), kind)

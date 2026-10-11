@@ -109,16 +109,19 @@ Flags:
                           FluxVM's own VNC socket has no auth of its own.
   --console-port=N        kairon-node's console relay port (default 8090),
                           same auto-fallback-if-busy behavior as --node-port.
-  --ui-tls                Serve the dashboard over HTTPS. A self-signed
-                          certificate (SAN: this host's names and addresses)
-                          is generated locally with openssl, installed to
-                          /etc/kairon/ui-tls/ and wired into kairon-ui.env
-                          (set even when the file exists). Requires --with-ui.
-                          Browsers will warn about a self-signed certificate;
-                          use --ui-tls-cert/-key for a real one.
-  --ui-tls-cert=PATH      Bring your own dashboard certificate (PEM, local
-                          path); implies --ui-tls. Needs --ui-tls-key.
+  --ui-tls-cert=PATH      Use your own dashboard certificate (PEM, local path)
+                          instead of the self-signed one this script otherwise
+                          generates. Needs --ui-tls-key and --with-ui.
   --ui-tls-key=PATH       Private key for --ui-tls-cert.
+  --ui-insecure-http      Serve the dashboard over plain HTTP. Logins and the
+                          bearer token then cross the network in clear text;
+                          only for a trusted loopback or a throwaway lab.
+                          Without it the dashboard is HTTPS: a self-signed
+                          certificate (SAN: this host's names and addresses)
+                          is generated with openssl, installed to
+                          /etc/kairon/ui-tls/ and wired into kairon-ui.env
+                          (set even when the file exists). Browsers warn once
+                          about a self-signed certificate.
   --console-tls           Enable one-way TLS on the kairon-ui -> kairon-node
                           console relay hop (plaintext by default). Requires
                           --with-console. With no --console-tls-cert/-key/-ca,
@@ -257,6 +260,7 @@ CONSOLE_PORT_EXPLICIT=0
 RESOLVED_CONSOLE_TOKEN=""
 WITH_CONSOLE_TLS=0
 UI_TLS=0
+UI_INSECURE_HTTP=0
 UI_TLS_CERT=""
 UI_TLS_KEY=""
 CONSOLE_TLS_CERT=""
@@ -339,7 +343,8 @@ while [[ $# -gt 0 ]]; do
     --with-console) WITH_CONSOLE=1 ;;
     --console-port=*) CONSOLE_PORT="${1#*=}"; CONSOLE_PORT_EXPLICIT=1 ;;
     --console-tls) WITH_CONSOLE_TLS=1 ;;
-    --ui-tls) UI_TLS=1 ;;
+    --ui-tls) UI_TLS=1 ;;   # HTTPS is already the default with --with-ui; kept for scripts
+    --ui-insecure-http) UI_INSECURE_HTTP=1 ;;
     --ui-tls-cert=*) UI_TLS_CERT="${1#*=}"; UI_TLS=1 ;;
     --ui-tls-key=*) UI_TLS_KEY="${1#*=}"; UI_TLS=1 ;;
     --console-tls-cert=*) CONSOLE_TLS_CERT="${1#*=}" ;;
@@ -437,13 +442,23 @@ fi
 if [[ "$WITH_CONSOLE_TLS" == "1" && "$WITH_CONSOLE" != "1" ]]; then
   die "--console-tls requires --with-console"
 fi
-if [[ "$UI_TLS" == "1" ]]; then
+if [[ "$UI_INSECURE_HTTP" == "1" ]]; then
+  [[ "$WITH_UI" == "1" ]] || die "--ui-insecure-http requires --with-ui"
+  [[ -z "$UI_TLS_CERT$UI_TLS_KEY" ]] || die "--ui-insecure-http contradicts --ui-tls-cert/--ui-tls-key; pick plain HTTP or a certificate"
+fi
+if [[ "$UI_TLS" == "1" || -n "$UI_TLS_CERT$UI_TLS_KEY" ]]; then
   [[ "$WITH_UI" == "1" ]] || die "--ui-tls / --ui-tls-cert / --ui-tls-key require --with-ui"
+  [[ "$UI_INSECURE_HTTP" != "1" ]] || die "--ui-tls contradicts --ui-insecure-http"
   if [[ -n "$UI_TLS_CERT" || -n "$UI_TLS_KEY" ]]; then
     [[ -n "$UI_TLS_CERT" && -n "$UI_TLS_KEY" ]] || die "--ui-tls-cert and --ui-tls-key must be given together"
     [[ -f "$UI_TLS_CERT" ]] || die "dashboard TLS certificate not found: $UI_TLS_CERT"
     [[ -f "$UI_TLS_KEY" ]] || die "dashboard TLS key not found: $UI_TLS_KEY"
   fi
+fi
+# The dashboard is HTTPS by default: with --with-ui a certificate is always
+# installed unless plain HTTP was asked for by name.
+if [[ "$WITH_UI" == "1" && "$UI_INSECURE_HTTP" != "1" ]]; then
+  UI_TLS=1
 fi
 
 # USER@HOST [PASSWORD] is at most 2 bare tokens; USER HOST [PASSWORD] and
@@ -593,7 +608,7 @@ $([[ "$WITH_CONSOLE" == "1" ]] && echo "Console relay token:      will be auto-g
 $([[ "$WITH_CONSOLE_TLS" == "1" ]] && echo "Console relay TLS:        $(if [[ -n "$CONSOLE_TLS_CERT" ]]; then echo "provided via --console-tls-cert/-key/-ca"; else echo "self-signed CA + cert will be auto-generated at deploy time (openssl)"; fi)")
 Start after install:      $([[ "$NO_START" == "1" ]] && echo "no (--no-start)" || echo "yes")
 Image cache dir:          ${IMAGE_CACHE_DIR:-<unchanged>}
-$([[ "$WITH_UI" == "1" ]] && echo "Dashboard TLS:           $(if [[ "$UI_TLS" != "1" ]]; then echo "no (plain HTTP; add --ui-tls)"; elif [[ -n "$UI_TLS_CERT" ]]; then echo "provided via --ui-tls-cert/-key"; else echo "self-signed certificate generated at deploy time (openssl)"; fi)")
+$([[ "$WITH_UI" == "1" ]] && echo "Dashboard scheme:        $(if [[ "$UI_INSECURE_HTTP" == "1" ]]; then echo "http (--ui-insecure-http: clear-text logins)"; elif [[ -n "$UI_TLS_CERT" ]]; then echo "https, certificate provided via --ui-tls-cert/-key"; else echo "https, self-signed certificate generated at deploy time (openssl)"; fi)")
 Build location:           $([[ "$REMOTE_BUILD" == "1" ]] && echo "on the host (--remote-build)" || echo "this machine (cross-compile)")
 Self-test after deploy:   $([[ "$SELF_TEST" == "1" ]] && echo "yes (profile ${SELF_TEST_PROFILE})" || echo "no (add --self-test)")
 
@@ -951,6 +966,7 @@ run_deploy() {
     printf 'RESERVED_CPUS=%q\n' "$RESERVED_CPUS"
     printf 'IMAGE_CACHE_DIR=%q\n' "$IMAGE_CACHE_DIR"
     printf 'UI_TLS=%q\n' "$UI_TLS"
+    printf 'UI_INSECURE_HTTP=%q\n' "$UI_INSECURE_HTTP"
     printf 'CPU_PINNING=%q\n' "$CPU_PINNING"
   } > "$local_stage/params.env"
 
@@ -1322,10 +1338,15 @@ if [[ "$WITH_UI" == "1" ]]; then
   RESOLVED_UI_PORT="$(resolve_port "$UI_PORT" "$UI_PORT_EXPLICIT" "ui" "$(unit_port /etc/systemd/system/kairon-ui.service listen)")" || exit 1
   install -m 0644 -o root -g root ./kairon-ui.service /etc/systemd/system/kairon-ui.service
   sed -i "s#^ExecStart=.*#ExecStart=/usr/bin/kairon-ui --listen=:$RESOLVED_UI_PORT --web-dir=/etc/kairon/ui-web#" /etc/systemd/system/kairon-ui.service
-  if [[ "$UI_TLS" == "1" ]]; then
+  if [[ "$UI_INSECURE_HTTP" == "1" ]]; then
+    set_env_key /etc/kairon/kairon-ui.env KAIRON_UI_INSECURE_HTTP true
+    sed -i -E '/^(KAIRON_UI_TLS_CERT|KAIRON_UI_TLS_KEY)=/d' /etc/kairon/kairon-ui.env
+    warn "dashboard served over plain HTTP (--ui-insecure-http): logins and tokens are clear text on the network"
+  elif [[ "$UI_TLS" == "1" ]]; then
     install -d -m 0750 -o root -g kairon /etc/kairon/ui-tls
     install -m 0644 -o root -g kairon ./ui-tls-cert.pem /etc/kairon/ui-tls/cert.pem
     install -m 0640 -o root -g kairon ./ui-tls-key.pem /etc/kairon/ui-tls/key.pem
+    sed -i -E '/^KAIRON_UI_INSECURE_HTTP=/d' /etc/kairon/kairon-ui.env
     set_env_key /etc/kairon/kairon-ui.env KAIRON_UI_TLS_CERT /etc/kairon/ui-tls/cert.pem
     set_env_key /etc/kairon/kairon-ui.env KAIRON_UI_TLS_KEY /etc/kairon/ui-tls/key.pem
     ok "dashboard TLS: certificate installed to /etc/kairon/ui-tls/ and wired into kairon-ui.env"
@@ -1497,11 +1518,9 @@ INSTALL_EOF
     # kairon-ui's /readyz is an unconditional 200 with no actual Kubernetes
     # reachability check (unlike node/controller), so only healthz is a
     # meaningful signal here -- verify_remote's readyz line is discarded.
-    # https when kairon-ui.env carries a TLS certificate (set by --ui-tls,
-    # now or on an earlier deploy), otherwise plain http.
-    ui_scheme="$(ssh_exec_privileged "$REMOTE" "${SUDO} sh -c 'grep -qE \"^KAIRON_UI_TLS_CERT=.+\" /etc/kairon/kairon-ui.env && echo https || echo http'" 2>/dev/null | tr -d '\r' | tail -1)"
-    ui_scheme="${ui_scheme:-http}"
-    [[ "$ui_scheme" == "https" ]] || ui_scheme="http"
+    # https unless kairon-ui.env opts out of it by name.
+    ui_scheme="$(ssh_exec_privileged "$REMOTE" "${SUDO} sh -c 'grep -qE \"^KAIRON_UI_INSECURE_HTTP=true\" /etc/kairon/kairon-ui.env && echo http || echo https'" 2>/dev/null | tr -d '\r' | tail -1)"
+    [[ "$ui_scheme" == "http" ]] || ui_scheme="https"
     local ui_report ui_active ui_healthz
     ui_report="$(verify_remote kairon-ui.service "${ui_port:-18082}" "$ui_scheme")"
     ui_active="$(sed -n '1p' <<< "$ui_report")"
