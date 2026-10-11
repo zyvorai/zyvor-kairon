@@ -277,6 +277,9 @@ func (c *Controller) validateMachineCreate(r *http.Request, req *admission.Reque
 	if err := model.ValidateCdroms(m.Spec.Cdroms); err != nil {
 		return admission.Deny(err.Error())
 	}
+	if err := model.ValidateTopology(m.Spec); err != nil {
+		return admission.Deny(err.Error())
+	}
 	if err := model.ValidateExtraInterfaces(m.Spec.Network); err != nil {
 		return admission.Deny(err.Error())
 	}
@@ -348,6 +351,9 @@ func (c *Controller) validateMachineResize(r *http.Request, req *admission.Reque
 	// the same validateMachineResize call that handles every Machine
 	// UPDATE, not just a resource resize.
 	if err := validateResourceQuantities(newM.Spec.Resources); err != nil {
+		return admission.Deny(err.Error())
+	}
+	if err := model.ValidateTopologyUpdate(oldM.Spec, newM.Spec); err != nil {
 		return admission.Deny(err.Error())
 	}
 	if err := tenantfence.CheckUpdate(oldM.Spec.Tenant, newM.Spec.Tenant, newM.Metadata.Annotations); err != nil {

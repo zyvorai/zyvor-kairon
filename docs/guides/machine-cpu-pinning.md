@@ -73,7 +73,10 @@ into one FluxVM call, never two competing writes.
 ## Real limits today (first cut)
 
 - **QEMU only**, matching every other NUMA/cpuSet/hugepages field.
-- **Not NUMA-topology-aware.** Core selection is deterministic first-fit
+- **Not NUMA-topology-aware on its own.** Add `spec.topology` (see
+  [topology-aware placement](machine-topology.md)) to have the scheduler
+  pick cores per NUMA node and FluxVM bind guest memory to them. Without
+  it, core selection is deterministic first-fit
   over the `pinnable-cpus` label's own ascending order -- it does not
   cross-validate against `spec.resources.numaNode` even when both are set
   on the same Machine. If you need pinned cores to also fall within a

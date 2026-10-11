@@ -76,8 +76,21 @@ func ParseCPUList(raw string) ([]uint32, error) {
 // value: ranges joined by "_". It errors when the result exceeds the
 // 63-character label limit.
 func FormatCPULabel(cpus []uint32) (string, error) {
+	out := strings.Join(cpuRanges(cpus), "_")
+	if len(out) > 63 {
+		return "", fmt.Errorf("cpu list %q exceeds the 63-character label limit", out)
+	}
+	return out, nil
+}
+
+// FormatCPUList renders an ascending CPU list in kernel form ("0-3,8").
+func FormatCPUList(cpus []uint32) string {
+	return strings.Join(cpuRanges(cpus), ",")
+}
+
+func cpuRanges(cpus []uint32) []string {
 	if len(cpus) == 0 {
-		return "", nil
+		return nil
 	}
 	var parts []string
 	start, prev := cpus[0], cpus[0]
@@ -97,9 +110,5 @@ func FormatCPULabel(cpus []uint32) (string, error) {
 		start, prev = cpu, cpu
 	}
 	flush()
-	out := strings.Join(parts, "_")
-	if len(out) > 63 {
-		return "", fmt.Errorf("cpu list %q exceeds the 63-character label limit", out)
-	}
-	return out, nil
+	return parts
 }

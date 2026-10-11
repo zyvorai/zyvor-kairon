@@ -166,8 +166,9 @@ type Agent struct {
 	guestIPCheckedAt map[string]time.Time
 	// backups tracks MachineBackup/MachineBackupRestore disk copies
 	// running in their own goroutines (see backup.go).
-	backups backupJobs
-	cbt     cbtState
+	backups  backupJobs
+	cbt      cbtState
+	topology topologyState
 }
 
 func (a *Agent) Reconcile(ctx context.Context) error {
@@ -428,7 +429,17 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 		if err != nil {
 			return err
 		}
-		boot := withBootResources(m)
+		topologyDevices, err := a.topologyVFIODevices(ctx, m)
+		if err != nil {
+			return err
+		}
+		vfioDevices = mergeBDFs(vfioDevices, topologyDevices)
+		boot := m
+		if m.Spec.TopologyAllocation == nil || len(m.Spec.TopologyAllocation.NUMANodes) == 0 {
+			// Hotplugged vCPUs and DIMMs are not NUMA-bound, so a bound
+			// Machine always boots at its allocated size.
+			boot = withBootResources(m)
+		}
 		rec, err = a.Flux.CreateWithVFIO(ctx, boot, a.DefaultBackend, vfioDevices, sharedFolders, dataDisks)
 		if err != nil {
 			return err
@@ -515,6 +526,9 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 	if devErr != nil {
 		a.Log.Error("device hotplug reconcile failed", "namespace", m.Namespace(), "machine", m.Metadata.Name, "error", devErr)
 		status.Message = devErr.Error()
+	}
+	if freshlyCreated || restarted || m.Status.AppliedTopology == nil || m.Status.NodeName != a.NodeName {
+		status.AppliedTopology = a.appliedTopology(ctx, m, rec, mergeBDFs(rec.Request.VFIODevices, nil))
 	}
 	appliedLimits, limitsErr := a.reconcileResourceLimits(ctx, m, rec)
 	status.AppliedResourceLimits = appliedLimits
@@ -981,6 +995,9 @@ func (a *Agent) reconcileMigration(ctx context.Context, item model.MachineMigrat
 		session.ConntrackSnapshot = a.exportConntrackSnapshot(ctx, machine, rec.ID())
 		if raw, err := a.Flux.GetRaw(ctx, rec.ID()); err != nil {
 			a.Log.Warn("reading source FluxVM record for the receiver failed; continuing without it", "runtimeID", rec.ID(), "error", err)
+		} else if raw, err = retargetRecordNUMA(raw, item.Status.TargetTopologyAllocation); err != nil {
+			a.resumeSourceNetworkQuiesce(ctx, rec.ID())
+			return a.blockLiveMigration(ctx, item, err.Error()+"; source runtime was left untouched")
 		} else {
 			session.SourceRecord = raw
 		}
@@ -1478,6 +1495,7 @@ func (a *Agent) Run(ctx context.Context, interval time.Duration) error {
 			a.Log.Error("reconcile failed", "error", err)
 		}
 		a.publishCBTCapability(ctx)
+		a.publishNodeTopology(ctx)
 		if a.LivenessLeaseNamespace != "" {
 			if err := nodeliveness.Renew(ctx, a.Kube, a.LivenessLeaseNamespace, a.NodeName, a.LivenessLeaseDuration); err != nil {
 				a.Log.Warn("liveness lease renewal failed", "error", err)

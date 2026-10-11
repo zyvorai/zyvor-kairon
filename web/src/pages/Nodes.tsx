@@ -8,6 +8,7 @@ import { badgeClass, formatBytes, formatCPUPercent, nodeReadyStatus, nodeTaintsS
 import ResourceTable from '../components/ResourceTable';
 import Inspector, { KV } from '../components/Inspector';
 import NodeTools from '../components/NodeTools';
+import NodeTopologyPanel from '../components/NodeTopologyPanel';
 import EmptyHint from '../components/EmptyHint';
 import { barTone, formatCores, formatMiB, NodeCapacity, pct } from '../lib/capacity';
 
@@ -146,6 +147,7 @@ export default function Nodes() {
               ['Memory', usage[selected] ? formatBytes(usage[selected].memoryBytes) : undefined],
             ]}
           />
+          <NodeTopologyPanel node={selected} />
           <NodeTools node={selected} />
         </Inspector>
       )}

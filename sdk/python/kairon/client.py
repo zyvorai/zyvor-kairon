@@ -411,5 +411,9 @@ class UIClient:
     def capabilities(self, node: str) -> dict:
         return self._http.request("GET", "/api/v1/nodes/" + _segment(node) + "/capabilities")
 
+    def topology(self, node: str) -> dict:
+        """The node's NodeTopology status and the Machines' topology allocations on it."""
+        return self._http.request("GET", "/api/v1/nodes/" + _segment(node) + "/topology")
+
     def usage_csv(self) -> str:
         return self._http.request("GET", "/api/v1/usage.csv?" + urlencode({"namespace": self.namespace}), raw=True)

@@ -1,0 +1,141 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: nodetopologies.kairon.zyvor.dev
+spec:
+  group: kairon.zyvor.dev
+  scope: Cluster
+  names:
+    plural: nodetopologies
+    singular: nodetopology
+    kind: NodeTopology
+    shortNames:
+    - knt
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    subresources: &subresources
+      status: {}
+    additionalPrinterColumns: &columns
+    - name: NUMA
+      type: string
+      jsonPath: .status.numaNodes[*].id
+      description: NUMA node ids
+    - name: Binding
+      type: boolean
+      jsonPath: .status.numaBinding
+    - name: Observed
+      type: date
+      jsonPath: .status.observedAt
+    schema: &schema
+      openAPIV3Schema:
+        type: object
+        description: A node's hardware graph from FluxVM, written by
+          kairon-node. The name is the node name. See
+          docs/guides/machine-topology.md.
+        properties:
+          status:
+            type: object
+            properties:
+              numaNodes:
+                type: array
+                items:
+                  type: object
+                  required: [id, cpus, memoryMiB]
+                  properties:
+                    id:
+                      type: integer
+                      minimum: 0
+                    cpus:
+                      type: string
+                    memoryMiB:
+                      type: integer
+                      format: int64
+                    freeMemoryMiB:
+                      type: integer
+                      format: int64
+                    hugepages:
+                      type: array
+                      items:
+                        type: object
+                        required: [size, total, free]
+                        properties:
+                          size:
+                            type: string
+                          total:
+                            type: integer
+                            format: int64
+                          free:
+                            type: integer
+                            format: int64
+                    distances:
+                      type: array
+                      items:
+                        type: integer
+              devices:
+                type: array
+                items:
+                  type: object
+                  required: [bdf, class, pcieRoot, allocatable]
+                  properties:
+                    bdf:
+                      type: string
+                    class:
+                      type: string
+                      enum: [gpu, nic, nvme, accelerator]
+                    vendor:
+                      type: string
+                    device:
+                      type: string
+                    driver:
+                      type: string
+                    numaNode:
+                      type: integer
+                    pcieRoot:
+                      type: string
+                    iommuGroup:
+                      type: integer
+                    physfn:
+                      type: string
+                    totalVFs:
+                      type: integer
+                    netdevs:
+                      type: array
+                      items:
+                        type: string
+                    linkSpeedMbps:
+                      type: integer
+                    sizeBytes:
+                      type: integer
+                      format: int64
+                    vramGiB:
+                      type: integer
+                    allocatable:
+                      type: boolean
+                    allocated:
+                      type: boolean
+              numaBinding:
+                type: boolean
+              observedAt:
+                type: string
+                format: date-time
+  - name: v1beta1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1beta1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema
+  - name: v1alpha1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1alpha1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema

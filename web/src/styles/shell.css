@@ -318,6 +318,9 @@
 .packbar span { position: relative; display: block; padding: 0 8px; font-size: 11px; line-height: 18px; font-variant-numeric: tabular-nums; }
 .whatif { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 12px; }
 .whatif input { width: 150px; }
+.topology { margin: 8px 0 12px; }
+.topologyNuma { margin-top: 6px; }
+.topologyNuma ul { margin: 4px 0 0; padding-left: 18px; font-size: 0.9em; }
 @media (prefers-reduced-motion: reduce) { .packfill { transition: none; } }
 
 /* Overview: needs-attention strip */

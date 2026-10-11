@@ -75,6 +75,7 @@ var coreCRDs = []string{
 	"machinesets", "machinepools", "machineclaims", "machinequotas", "machinedisruptionbudgets",
 	"machineimages", "machineinstancetypes", "machinenetworkpolicies", "networksecuritygroups",
 	"migrationpolicies", "machinebackups", "machinebackuprestores", "machinebackuppolicies",
+	"nodetopologies",
 }
 
 func newDoctorCmd(opts *Options) *cobra.Command {

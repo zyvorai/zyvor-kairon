@@ -73,6 +73,14 @@ selection isn't NUMA-topology-aware in its first cut, a named limit in
 that guide), and combining both doesn't cross-validate that the pinned
 cores actually fall within the requested `numaNode`.
 
+## Scheduler-chosen NUMA placement
+
+`numaNode` and `cpuSet` are fixed by hand. To have the scheduler choose the
+NUMA node(s), host CPUs and local devices, and FluxVM bind each guest NUMA
+node's memory to them, use `spec.topology` instead: see
+[topology-aware placement](machine-topology.md). The two cannot be
+combined on one Machine (FluxVM refuses `numa` with `numa_node`/`cpuset`).
+
 ## Real limits today (first cut)
 
 - QEMU-only, enforced with a clear error (see above) -- not a silent

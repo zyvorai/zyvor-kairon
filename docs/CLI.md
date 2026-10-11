@@ -79,7 +79,7 @@ kaironctl events [-n NS | -A] [--warnings] [-w] [-o json|yaml]
 kaironctl sysdump [-o FILE] [--tail N] [--no-logs] [--no-crs]
 ```
 
-- **`doctor`** is read-only and prints a hint for every problem: API server, capable nodes (`kairon.zyvor.dev/capable=true`), the 17 CRDs (present, `v1` storage), the Helm release, controller / node agent / dashboard workloads with `/readyz` probed on every pod through the API server proxy, the admission webhook (CA bundle, `failurePolicy`) and migrations parked in `NeedsRecovery`. It exits non-zero on any failure (`--strict`: on warnings too). `--pre-install` runs only the checks that apply before Kairon exists.
+- **`doctor`** is read-only and prints a hint for every problem: API server, capable nodes (`kairon.zyvor.dev/capable=true`), the 19 core CRDs (present, `v1` storage), the Helm release, controller / node agent / dashboard workloads with `/readyz` probed on every pod through the API server proxy, the admission webhook (CA bundle, `failurePolicy`) and migrations parked in `NeedsRecovery`. It exits non-zero on any failure (`--strict`: on warnings too). `--pre-install` runs only the checks that apply before Kairon exists.
 - **`connectivity test`** requests `/healthz` and `/readyz` of every Kairon pod (and the dashboard Service) through the API server, so it needs no port-forward. It does not exercise live migration. With `--machine --image PATH` it also runs an opt-in, **disruptive** end-to-end check: create a small Machine labelled `kairon.zyvor.dev/connectivity-test=true`, wait for `Running`, delete it and wait for the deletion. It schedules a real VM and counts against quotas; the Machine is deleted even when the check fails (`--keep` leaves it). `spec.ttlSeconds` is set as a best-effort safety net that FluxVM enforces on the node, so look for leftovers with `kaironctl get machines --selector kairon.zyvor.dev/connectivity-test=true`.
 - **`logs`** streams every pod of a component; with several pods (the node agent runs one per node) lines are prefixed with the pod name.
 - **Binary/systemd installs** (`scripts/deploy-remote.sh`) have no controller Deployment or node DaemonSet in the namespace, so `doctor` reports those components as warnings ("cannot verify from the API", with a `systemctl status` hint) rather than failures, and `connectivity test` skips pod probes. Machine lifecycle Events (`PhaseRunning`, `PhaseStopped`, ...) are recorded in the Machine's own namespace: read them with `kaironctl events -n <namespace>` or `-A`.
@@ -96,7 +96,7 @@ Starts a proxy on `127.0.0.1` that forwards to the `kairon-ui` Service through t
 ## Resources & power
 
 ```text
-kaironctl get [machines|migrations|snapshots|restores|quotas|budgets|machinesets|machinepools|machineclaims|instancetypes|migrationpolicies|snapshotschedules|networkpolicies|securitygroups|backups|backuprestores|nodes] [--selector k=v]
+kaironctl get [machines|migrations|snapshots|restores|quotas|budgets|machinesets|machinepools|machineclaims|instancetypes|migrationpolicies|snapshotschedules|networkpolicies|securitygroups|backups|backuprestores|nodes|nodetopologies] [--selector k=v]
 kaironctl describe [RESOURCE] NAME
 kaironctl create NAME --image PATH [--cpu N] [--memory SIZE] [--backend qemu|…]
                  [--forward hostPort:guestPort[/proto]] [--hostname NAME] [--user NAME]
@@ -169,6 +169,7 @@ kaironctl recover MIGRATION --action ACTION --diagnosis DIAGNOSIS --reason REASO
 kaironctl cancel-migration MIGRATION
 kaironctl fence MACHINE --reason REASON
 kaironctl node fence NODE --reason REASON | --clear   # attestation for --stale-evacuation
+kaironctl node topology NODE                         # NUMA nodes, devices and the Machines holding them
 kaironctl snapshot MACHINE [--name NAME] [--class CLASS] [--volume NAME]...
 kaironctl restore SNAPSHOT --target-claim NAME
 kaironctl volumes MACHINE [-n NS] [-o table|json]

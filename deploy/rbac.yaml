@@ -83,7 +83,7 @@ rules:
     # Read-only: MachineInstanceType is pure reference data
     # kairon-controller looks up to resolve spec.instanceTypeName, never
     # writes -- see internal/controller/instancetype.go.
-    resources: ["machineinstancetypes", "machineimages"]
+    resources: ["machineinstancetypes", "machineimages", "nodetopologies"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["kairon.zyvor.dev"]
     # MachineSet is the only reason kairon-controller itself ever
@@ -217,6 +217,10 @@ rules:
   - apiGroups: ["resource.k8s.io"]
     resources: ["resourceclaims"]
     verbs: ["get"]
+  # The node's own hardware graph (internal/agent/topology.go).
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["nodetopologies", "nodetopologies/status"]
+    verbs: ["get", "create", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -277,7 +281,7 @@ rules:
   # suspend/resume toggle, handleSuspendMachineSnapshotSchedule) -- all
   # already-shipped mutations that were equally broken.
   - apiGroups: ["kairon.zyvor.dev"]
-    resources: ["machinequotas", "machinedisruptionbudgets", "machineinstancetypes", "machineimages", "migrationpolicies", "machinepools", "machineclaims"]
+    resources: ["machinequotas", "machinedisruptionbudgets", "machineinstancetypes", "machineimages", "migrationpolicies", "machinepools", "machineclaims", "nodetopologies"]
     verbs: ["get", "list", "watch"]
   # The dashboard creates and deletes backups and creates restores
   # (internal/uiapi/backups.go), same as `kaironctl backup`.
