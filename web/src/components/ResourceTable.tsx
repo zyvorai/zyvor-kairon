@@ -48,6 +48,8 @@ export default function ResourceTable<T>({
   onRowClick,
   selectedKey,
   csvName,
+  checked,
+  onCheckedChange,
 }: {
   items: T[];
   columns: Column<T>[];
@@ -56,6 +58,10 @@ export default function ResourceTable<T>({
   onRowClick?: (item: T) => void;
   selectedKey?: string;
   csvName?: string;
+  // Optional multi-select: a leading checkbox column. `checked` holds keyFn
+  // values; the header box toggles every row currently shown (after filtering).
+  checked?: Set<string>;
+  onCheckedChange?: (next: Set<string>) => void;
 }) {
   const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null);
   const [query, setQuery] = useState('');
@@ -79,6 +85,26 @@ export default function ResourceTable<T>({
     a.click();
     URL.revokeObjectURL(a.href);
   }
+
+  const selectable = !!checked && !!onCheckedChange;
+  const shownKeys = rows.map(keyFn);
+  const allShown = shownKeys.length > 0 && shownKeys.every((k) => checked?.has(k));
+  const toggleKey = (k: string) => {
+    if (!checked || !onCheckedChange) return;
+    const next = new Set(checked);
+    if (next.has(k)) next.delete(k);
+    else next.add(k);
+    onCheckedChange(next);
+  };
+  const toggleAll = () => {
+    if (!checked || !onCheckedChange) return;
+    const next = new Set(checked);
+    for (const k of shownKeys) {
+      if (allShown) next.delete(k);
+      else next.add(k);
+    }
+    onCheckedChange(next);
+  };
 
   const canExport = !!csvName && items.length > 0;
   // A search box only earns its space once a list is long enough to need one.
@@ -122,6 +148,11 @@ export default function ResourceTable<T>({
       <table className="datatable">
         <thead>
           <tr>
+            {selectable && (
+              <th style={{ width: 32 }}>
+                <input type="checkbox" aria-label="Select all shown rows" checked={allShown} onChange={toggleAll} />
+              </th>
+            )}
             {columns.map((c, i) => (
               <th
                 key={c.header}
@@ -144,6 +175,11 @@ export default function ResourceTable<T>({
                 className={(onRowClick ? 'clickable ' : '') + (selectedKey === k ? 'selected' : '')}
                 onClick={onRowClick ? () => onRowClick(item) : undefined}
               >
+                {selectable && (
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <input type="checkbox" aria-label={`Select ${k}`} checked={checked!.has(k)} onChange={() => toggleKey(k)} />
+                  </td>
+                )}
                 {columns.map((c) => (
                   <td key={c.header}>{c.render(item)}</td>
                 ))}
@@ -152,7 +188,7 @@ export default function ResourceTable<T>({
           })}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={columns.length} className="msg" style={{ textAlign: 'center', padding: 32 }}>
+              <td colSpan={columns.length + (selectable ? 1 : 0)} className="msg" style={{ textAlign: 'center', padding: 32 }}>
                 {query && items.length > 0 ? `No rows match "${query}".` : emptyText}
               </td>
             </tr>
