@@ -72,12 +72,14 @@ capable node). Nothing is booted if the digest does not match.
 
 `snapshot-restore` picks a `VolumeSnapshotClass` and a StorageClass served by the
 same CSI driver (preferring one with `Immediate` binding, then defaults), creates
-a 1Gi claim, boots a CirrOS Machine from it (`spec.volumes[0]` with the image
-seeded into the claim), snapshots it with a `MachineSnapshot`, and restores the
-snapshot into a second claim with a `MachineSnapshotRestore`. It deletes the
-snapshot, restore and both claims afterwards. The snapshot of a claim does not
-need the Machine to be Running, so a Machine that does not boot from the volume is
-reported as a warning rather than failing the check.
+a 1Gi claim and waits for it to bind (a provisioner that does not bind in 90 s is a
+skip), creates a CirrOS Machine on it (`spec.volumes[0]`), snapshots it with a
+`MachineSnapshot`, and restores the snapshot into a second claim with a
+`MachineSnapshotRestore`. It deletes the snapshot, restore and both claims
+afterwards. A snapshot of a claim does not need the Machine to be Running, so a
+Machine that cannot boot from the volume (for example a CSI driver that is not on
+the node's boot-disk allowlist) is reported as a warning rather than failing the
+check.
 
 ## Serial console and usage samples
 

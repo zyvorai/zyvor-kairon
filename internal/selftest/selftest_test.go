@@ -616,7 +616,7 @@ func TestSnapshotRestoreSkipsWhenTheClaimNeverBinds(t *testing.T) {
 	}
 }
 
-func TestForkParentIsFluxVMWithNetworkNone(t *testing.T) {
+func TestForkParentIsFluxVMWithTapNetNS(t *testing.T) {
 	f := newFakeKube()
 	Run(context.Background(), baseEnv(f), &recorder{}, Options{Profile: ProfileFull, Only: []string{"control-plane", "boot", "fork"}})
 	var parent *model.Machine
@@ -631,7 +631,7 @@ func TestForkParentIsFluxVMWithNetworkNone(t *testing.T) {
 	if parent.Spec.Runtime.Backend != "flux-vm" {
 		t.Errorf("backend = %q", parent.Spec.Runtime.Backend)
 	}
-	if parent.Spec.Network.Mode != "none" {
-		t.Errorf("network mode = %q; the flux-vm backend accepts only none or tap", parent.Spec.Network.Mode)
+	if parent.Spec.Network.Mode != "tap" || !parent.Spec.Network.NetNS {
+		t.Errorf("network = %+v; the flux-vm backend needs tap networking in a netns", parent.Spec.Network)
 	}
 }
