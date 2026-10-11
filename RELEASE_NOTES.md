@@ -1,5 +1,6 @@
 # Unreleased
 
+- Release: `SHA256SUMS` now covers every attached asset (CLI binaries, Krew archives and manifest, Helm chart tgz), not only the four Linux CLI binaries; verify with `sha256sum -c --ignore-missing SHA256SUMS`.
 - Dashboard: the all-namespaces view (nav selector **All namespaces**) now also lists Migrations and Snapshots, with a Namespace column; `GET /api/v1/migrations` and `/api/v1/snapshots` accept `?namespace=_all` with the same per-namespace authorization as Machines.
 - Dashboard: list pages treat a `null` list from the API as empty instead of crashing.
 - Docs: dashboard screenshots, interaction clips and animated architecture diagrams in the README and on the GitHub Pages site (gallery); reproducible from `docs/ux`.

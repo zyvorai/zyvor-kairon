@@ -162,6 +162,20 @@ jobs:
           sed -i "s/^appVersion:.*/appVersion: \"${version}\"/" charts/kairon/Chart.yaml
           helm package charts/kairon -d dist
           helm push "dist/kairon-${version}.tgz" oci://ghcr.io/zyvorai/charts
+      - name: Checksum every release asset
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          # Rewrite SHA256SUMS now that the Krew archives, manifest and chart
+          # exist, so one file covers everything attached to the release.
+          # Names are bare file names: `sha256sum -c --ignore-missing SHA256SUMS`
+          # works from a directory holding any subset of the downloads.
+          (
+            cd dist
+            sha256sum kaironctl-* kubectl-kairon-* "kairon-${version}.tgz" > SHA256SUMS
+            (cd krew && sha256sum kairon_*.tar.gz kairon.yaml) >> SHA256SUMS
+            test "$(wc -l < SHA256SUMS | tr -d ' ')" = "10"
+          )
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -173,7 +187,7 @@ jobs:
           ## ${version}
 
           ### Artifacts
-          - \`kaironctl\` / \`kubectl-kairon\` (linux amd64/arm64) + \`SHA256SUMS\`
+          - \`kaironctl\` / \`kubectl-kairon\` (linux amd64/arm64) + \`SHA256SUMS\` covering every asset below (chart, Krew archives and manifest included)
           - Krew: \`kairon_{darwin,linux}_{amd64,arm64}.tar.gz\` + a checksummed \`kairon.yaml\` manifest
           - Container images: \`ghcr.io/zyvorai/kairon-{controller,node,ui,csi-node,csi-controller}:${version}\` (cosign-signed, SBOM attested)
           - Helm chart (OCI): \`oci://ghcr.io/zyvorai/charts/kairon:${chart_version}\`
