@@ -28,6 +28,9 @@ jobs:
           cluster_name: kairon-ci
           wait: 120s
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310  # v5.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version: '1.27.x'
       - name: Apply CRDs
         run: |
           set -euo pipefail
@@ -62,3 +65,26 @@ jobs:
             --set migration.dataplaneTlsSecretName=ci-mig \
             --dry-run=client
           echo "kind production dry-run: OK"
+      - name: Self-test (control plane only)
+        # kind has no FluxVM, so --no-vm: nothing may be created. The
+        # controller and node pods are not expected to be Ready here (the
+        # images are not pulled), so the exit status is not asserted; the
+        # report's shape and "created nothing" are.
+        run: |
+          set -euo pipefail
+          go build -o "$RUNNER_TEMP/kaironctl" ./cmd/kaironctl
+          kubectl label node --all kairon.zyvor.dev/capable=true --overwrite
+          "$RUNNER_TEMP/kaironctl" selftest --list | tee "$RUNNER_TEMP/scenarios.txt"
+          grep -q '^boot ' "$RUNNER_TEMP/scenarios.txt"
+          set +e
+          "$RUNNER_TEMP/kaironctl" selftest --no-vm --profile quick -o json > "$RUNNER_TEMP/selftest.json"
+          rc=$?
+          set -e
+          echo "kaironctl selftest exit status: $rc"
+          jq . "$RUNNER_TEMP/selftest.json"
+          # control-plane ran; every VM scenario was skipped, none failed to start
+          test "$(jq -r '.results[] | select(.id=="control-plane") | .id' "$RUNNER_TEMP/selftest.json")" = "control-plane"
+          test "$(jq '[.results[] | select(.id!="control-plane" and .status!="skip")] | length' "$RUNNER_TEMP/selftest.json")" = "0"
+          # and the run created no Machine
+          test -z "$(kubectl get machines.kairon.zyvor.dev -A --no-headers 2>/dev/null)"
+          echo "kind selftest: OK"
