@@ -34,6 +34,8 @@ const config: Config = {
     locales: ['en'],
   },
 
+  staticDirectories: ['static', '../docs/ux'],
+
   presets: [
     [
       'classic',
@@ -73,6 +75,7 @@ const config: Config = {
           position: 'right',
           label: 'Docs',
         },
+        {to: '/gallery', label: 'Gallery', position: 'right'},
         {
           href: 'https://github.com/zyvorai/zyvor-kairon',
           label: 'GitHub',
