@@ -1,3 +1,29 @@
+# Unreleased
+
+## Breaking: the dashboard serves HTTPS by default
+
+`kairon-ui` no longer serves plain HTTP unless asked to. With no certificate it
+generates a self-signed one at startup; `-tls-cert`/`-tls-key`, Helm
+`ui.tls.secretName` and `deploy-remote.sh --ui-tls-cert/--ui-tls-key` supply a
+real one. What to change:
+
+- **Clients**: use `https://` in `KAIRON_UI_URL` and set `KAIRON_UI_CA` to a
+  self-signed certificate (`kaironctl`, the SDKs' `ca_file`/`fetch`, MCP, `curl
+  --cacert`).
+- **Ingress**: the chart now annotates the backend as HTTPS
+  (`ui.ingress.backendProtocol`); other controllers need their own annotation.
+- **Probes and Services** in the chart and `deploy/ui.yaml` use HTTPS and a port
+  named `https`.
+- **Uploaded images**: `kairon-ui` marks image sources
+  `insecureSkipTLSVerify: true` when its own certificate is self-signed (the
+  digest still guarantees the bytes).
+- **Opt out** with `-insecure-http` / `KAIRON_UI_INSECURE_HTTP=true`,
+  `ui.insecureHttp: true`, or `deploy-remote.sh --ui-insecure-http`; it conflicts
+  with a certificate and logs a warning.
+
+Also new: `kaironctl selftest` and the dashboard Self-test page,
+`deploy-remote.sh --remote-build`, `--image-cache-dir`, `--self-test`.
+
 # Kairon v0.9.1
 
 Released 2026-10-11.

@@ -21,7 +21,9 @@ production or lab cluster. Captions say so.
 (cd web && npm ci && npm run build)
 go build -o /tmp/kairon-ui ./cmd/kairon-ui
 
-# 2. sample API + dashboard (loopback only; the password is only for this stack)
+# 2. sample API + dashboard (loopback only; the password is only for this stack).
+#    sample-api.go is a fake Kubernetes API for this stack, not the dashboard;
+#    the dashboard itself serves HTTPS (a self-signed certificate it generates).
 go run docs/ux/sample-api.go -listen 127.0.0.1:18999 &
 KAIRON_KUBE_URL=http://127.0.0.1:18999 \
 KAIRON_UI_DEFAULT_ADMIN_PASSWORD=sample-stack-2026 \
@@ -30,7 +32,7 @@ KAIRON_UI_SESSION_SECRET=$(head -c 24 /dev/urandom | base64) \
 
 # 3. capture (Playwright's Chromium; or CHROME=/path/to/chrome)
 npm i --no-save playwright-core
-node docs/ux/capture.mjs            # shots + clips; `shots` or `clips` for one
+node docs/ux/capture.mjs            # https://127.0.0.1:18082, certificate errors ignored; `shots` or `clips` for one
 docs/ux/build-hero-gif.sh
 ```
 

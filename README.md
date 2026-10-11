@@ -288,8 +288,9 @@ kaironctl network identity demo
 kaironctl mcp serve                  # add --allow-write for power, snapshot, capture and claims (audited)
 kaironctl agent diagnose machine/demo   # ranked causes; adds a model summary when KAIRON_LLM_URL is set
 
-# Dashboard
-kubectl -n kairon-system port-forward svc/kairon-ui 18082:18082
+# Dashboard (HTTPS; self-signed unless ui.tls.secretName is set)
+kubectl -n kairon-system port-forward svc/kairon-ui 18082:18082   # then https://localhost:18082
+kaironctl ui                         # or through the API server, no port-forward
 ```
 
 ---

@@ -54,7 +54,7 @@ the multi-host matrix above.
 | CRD server-side apply | pass | 2026-09-22 | `deploy/crd.yaml` |
 | Machine create / Running | pass | 2026-09-22 | `v07-smoke` then deleted |
 | Machine stop → start | pass | 2026-09-22 | `deploy-smoke` |
-| UI overview + machines API | pass | 2026-09-22 | http://80.79.5.173:8082 |
+| UI overview + machines API | pass | 2026-09-22 | host `80.79.5.173` port `8082` (recorded before the dashboard served HTTPS by default) |
 | Network `effective` (console relay) | pass | 2026-09-22 | Needs matching `KAIRON_NODE_CONSOLE_TOKEN` in both env files; redeploy leaves existing env untouched |
 | Network flows/stats/drops | n/a | 2026-09-22 | `deploy-smoke` uses `network.mode: user` — FluxVM eBPF flow/drop/stats need tap+`dataplaneMode: ebpf` |
 | VM edge, Kairon-scheduled Machine | pass | 2026-10-04 | Host `175.110.122.71` (k3s, FluxVM `cilium` mode, schema 12). Machine `edge-demo` (tap+netns, `dataplaneMode: ebpf`, `antiSpoof`, `learnIP`, `qos`) Running; FluxVM loaded flags, egress 2000 pps, 3 allow-list names and a 100 Mbit `tbf` from Kairon's edge post; `status.network.edge` projected |
