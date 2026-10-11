@@ -1,7 +1,20 @@
 Kairon is installed in namespace {{ .Release.Namespace }}.
 {{- if .Values.ui.enabled }}
 
-kairon-ui (dashboard): {{ .Values.ui.service.type }} port {{ .Values.ui.service.port }}
+kairon-ui (dashboard): {{ .Values.ui.service.type }} port {{ .Values.ui.service.port }}, {{ if .Values.ui.insecureHttp }}plain HTTP (ui.insecureHttp: logins and tokens are clear text on the pod network){{ else }}HTTPS{{ end }}
+{{- if not .Values.ui.insecureHttp }}
+{{- if not .Values.ui.tls.secretName }}
+
+The dashboard generated a self-signed certificate at startup, so browsers warn
+and it changes on every restart. For a stable one set ui.tls.secretName to a
+kubernetes.io/tls Secret (for example from cert-manager).
+{{- end }}
+
+Reach it without an Ingress:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/kairon-ui {{ .Values.ui.service.port }}:{{ .Values.ui.service.port }}
+  open https://localhost:{{ .Values.ui.service.port }}
+{{- end }}
 {{- if ne (include "kairon.ui.anyAuthConfigured" .) "true" }}
 
 No ui.token / ui.auth.users / ui.allowUnauthenticated was set, so a default

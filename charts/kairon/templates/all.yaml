@@ -975,6 +975,11 @@ allowVolumeExpansion: {{ .Values.csiController.storageClass.allowVolumeExpansion
 {{ end }}
 {{ end }}
 {{ if .Values.ui.enabled }}
+{{- if and .Values.ui.insecureHttp .Values.ui.tls.secretName }}
+{{- fail "ui.insecureHttp and ui.tls.secretName are mutually exclusive: pick plain HTTP or a certificate" }}
+{{- end }}
+{{- $uiPortName := ternary "http" "https" (.Values.ui.insecureHttp | default false) }}
+{{- $uiScheme := ternary "HTTP" "HTTPS" (.Values.ui.insecureHttp | default false) }}
 {{- $usersConfigured := eq (include "kairon.ui.usersConfigured" .) "true" }}
 {{- $anyAuthConfigured := eq (include "kairon.ui.anyAuthConfigured" .) "true" }}
 {{/*
@@ -1321,6 +1326,18 @@ spec:
             - name: KAIRON_UI_RBAC_CONSOLE_CHECK
               value: "true"
 {{ end }}
+{{ if .Values.ui.insecureHttp }}
+            - name: KAIRON_UI_INSECURE_HTTP
+              value: "true"
+{{ else if .Values.ui.tls.secretName }}
+            - name: KAIRON_UI_TLS_CERT
+              value: /etc/kairon/ui-tls/tls.crt
+            - name: KAIRON_UI_TLS_KEY
+              value: /etc/kairon/ui-tls/tls.key
+{{ else if .Values.ui.tls.sans }}
+            - name: KAIRON_UI_TLS_SANS
+              value: {{ .Values.ui.tls.sans | join "," | quote }}
+{{ end }}
 {{ if .Values.ui.rateLimit.trustedProxyHeader }}
             - name: KAIRON_UI_TRUSTED_PROXY_HEADER
               value: {{ .Values.ui.rateLimit.trustedProxyHeader | quote }}
@@ -1343,21 +1360,25 @@ spec:
             - name: KAIRON_UI_IMAGE_STORE_DIR
               value: /var/lib/kairon-ui/images
             - name: KAIRON_UI_IMAGE_STORE_PUBLIC_URL
-              value: {{ .Values.ui.imageStore.publicURL | default (printf "http://kairon-ui.%s.svc:%v" .Release.Namespace .Values.ui.service.port) | quote }}
+              value: {{ .Values.ui.imageStore.publicURL | default (printf "%s://kairon-ui.%s.svc:%v" (lower $uiScheme) .Release.Namespace .Values.ui.service.port) | quote }}
             - name: KAIRON_UI_IMAGE_STORE_MAX_BYTES
               value: {{ .Values.ui.imageStore.maxBytes | int64 | quote }}
 {{ end }}
-          ports: [{name: http, containerPort: {{ .Values.ui.service.port }}}]
-          readinessProbe: {httpGet: {path: /readyz, port: http}}
-          livenessProbe: {httpGet: {path: /healthz, port: http}}
+          ports: [{name: {{ $uiPortName }}, containerPort: {{ .Values.ui.service.port }}}]
+          readinessProbe: {httpGet: {path: /readyz, port: {{ $uiPortName }}, scheme: {{ $uiScheme }}}}
+          livenessProbe: {httpGet: {path: /healthz, port: {{ $uiPortName }}, scheme: {{ $uiScheme }}}}
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, capabilities: {drop: ["ALL"]}}
           resources:
 {{ toYaml .Values.ui.resources | indent 12 }}
 {{- $consoleTLS := and .Values.console.enabled .Values.console.tls.enabled }}
-{{ if or $consoleTLS .Values.ui.imageStore.enabled }}
+{{- $uiTLS := and (not .Values.ui.insecureHttp) .Values.ui.tls.secretName }}
+{{ if or $consoleTLS .Values.ui.imageStore.enabled $uiTLS }}
           volumeMounts:
 {{ if $consoleTLS }}
             - {name: console-tls, mountPath: /etc/kairon/console-tls, readOnly: true}
+{{ end }}
+{{ if $uiTLS }}
+            - {name: ui-tls, mountPath: /etc/kairon/ui-tls, readOnly: true}
 {{ end }}
 {{ if .Values.ui.imageStore.enabled }}
             - {name: image-store, mountPath: /var/lib/kairon-ui/images}
@@ -1367,6 +1388,12 @@ spec:
         - name: console-tls
           secret:
             secretName: {{ .Values.console.tls.secretName }}
+            defaultMode: 0440
+{{ end }}
+{{ if $uiTLS }}
+        - name: ui-tls
+          secret:
+            secretName: {{ .Values.ui.tls.secretName }}
             defaultMode: 0440
 {{ end }}
 {{ if .Values.ui.imageStore.enabled }}
@@ -1399,7 +1426,7 @@ spec:
   type: {{ .Values.ui.service.type }}
   selector: {app.kubernetes.io/name: kairon-ui}
   ports:
-    - {name: http, port: {{ .Values.ui.service.port }}, targetPort: http}
+    - {name: {{ $uiPortName }}, port: {{ .Values.ui.service.port }}, targetPort: {{ $uiPortName }}, appProtocol: {{ lower $uiScheme }}}
 {{ if .Values.ui.ingress.enabled }}
 ---
 apiVersion: networking.k8s.io/v1
@@ -1407,13 +1434,21 @@ kind: Ingress
 metadata:
   name: kairon-ui
   namespace: {{ .Release.Namespace }}
-{{ if .Values.ui.ingress.annotations }}
+{{- $ingAnn := .Values.ui.ingress.annotations | default dict }}
+{{- if and (not .Values.ui.insecureHttp) .Values.ui.ingress.backendProtocol }}
+{{- $ingAnn = merge (dict) $ingAnn (dict "nginx.ingress.kubernetes.io/backend-protocol" .Values.ui.ingress.backendProtocol) }}
+{{- end }}
+{{ if $ingAnn }}
   annotations:
-{{ toYaml .Values.ui.ingress.annotations | indent 4 }}
+{{ toYaml $ingAnn | indent 4 }}
 {{ end }}
 spec:
 {{ if .Values.ui.ingress.className }}
   ingressClassName: {{ .Values.ui.ingress.className }}
+{{ end }}
+{{ if .Values.ui.ingress.tls }}
+  tls:
+{{ toYaml .Values.ui.ingress.tls | indent 4 }}
 {{ end }}
   rules:
     - host: {{ .Values.ui.ingress.host | quote }}
@@ -1422,6 +1457,6 @@ spec:
           - path: /
             pathType: Prefix
             backend:
-              service: {name: kairon-ui, port: {name: http}}
+              service: {name: kairon-ui, port: {name: {{ $uiPortName }}}}
 {{ end }}
 {{ end }}

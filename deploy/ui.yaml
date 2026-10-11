@@ -42,9 +42,14 @@ spec:
             - name: KAIRON_UI_TOKEN
               valueFrom: {secretKeyRef: {name: kairon-ui-token, key: token}}
           ports:
-            - {name: http, containerPort: 18082}
-          readinessProbe: {httpGet: {path: /readyz, port: http}, periodSeconds: 5}
-          livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 10}
+            # HTTPS by default: with no -tls-cert/-tls-key kairon-ui generates
+            # a self-signed certificate at startup. Mount a kubernetes.io/tls
+            # Secret and set KAIRON_UI_TLS_CERT/KAIRON_UI_TLS_KEY for a stable
+            # one, or pass -insecure-http (and switch the probes to HTTP) to
+            # serve plain HTTP behind a TLS-terminating proxy.
+            - {name: https, containerPort: 18082}
+          readinessProbe: {httpGet: {path: /readyz, port: https, scheme: HTTPS}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /healthz, port: https, scheme: HTTPS}, periodSeconds: 10}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -63,4 +68,4 @@ spec:
   type: ClusterIP
   selector: {app.kubernetes.io/name: kairon-ui}
   ports:
-    - {name: http, port: 18082, targetPort: http}
+    - {name: https, port: 18082, targetPort: https, appProtocol: https}
