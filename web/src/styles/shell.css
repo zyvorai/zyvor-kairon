@@ -356,3 +356,12 @@
 .placement { list-style: none; margin: 0; padding: 0; }
 .placement li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--hairline); font-size: 13px; }
 .placement li:last-child { border-bottom: 0; }
+
+/* Fleet operations cards */
+.fleetgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin: 12px 0; }
+.fleetcard header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.fleetmsg { margin: 4px 0; color: var(--text-2); font-size: 13px; word-break: break-word; }
+.fleetfacts { margin: 6px 0 0; display: grid; gap: 4px; font-size: 12px; }
+.fleetfacts div { display: flex; justify-content: space-between; gap: 8px; }
+.fleetfacts dt { color: var(--text-2); }
+.fleetfacts dd { margin: 0; font-variant-numeric: tabular-nums; }
