@@ -55,14 +55,15 @@ func (h *metricsHistory) record(machines []model.Machine, now time.Time) {
 		if u == nil {
 			continue
 		}
-		s := append(h.series[k], usageSample{
+		series := h.series[k]
+		series = append(series, usageSample{
 			Time: now, CPUPercent: u.CPUPercent, MemoryBytes: u.MemoryBytes,
 			DiskReadBytes: u.DiskReadBytes, DiskWriteBytes: u.DiskWriteBytes,
 		})
-		if len(s) > metricsHistoryCap {
-			s = append([]usageSample(nil), s[len(s)-metricsHistoryCap:]...)
+		if len(series) > metricsHistoryCap {
+			series = append([]usageSample(nil), series[len(series)-metricsHistoryCap:]...)
 		}
-		h.series[k] = s
+		h.series[k] = series
 	}
 	for k := range h.series {
 		if !live[k] {

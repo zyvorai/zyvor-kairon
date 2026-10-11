@@ -431,7 +431,8 @@ func TestNewServerTLSServesHTTPSAndRefusesOldTLS(t *testing.T) {
 	}
 
 	old := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, MaxVersion: tls.VersionTLS11}}}
-	if _, err := old.Get(url); err == nil {
+	if oldResp, err := old.Get(url); err == nil {
+		_ = oldResp.Body.Close()
 		t.Error("a TLS 1.1 client must be refused")
 	}
 }

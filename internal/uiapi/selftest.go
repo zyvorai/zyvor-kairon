@@ -158,8 +158,9 @@ func (s *Server) handleSelftestScenarios(w http.ResponseWriter, r *http.Request)
 		Title   string `json:"title"`
 		Profile string `json:"profile"`
 	}
-	var out []row
-	for _, sc := range selftest.List() {
+	catalogue := selftest.List()
+	out := make([]row, 0, len(catalogue))
+	for _, sc := range catalogue {
 		out = append(out, row{ID: sc.ID, Title: sc.Title, Profile: string(sc.Profile)})
 	}
 	writeJSON(w, http.StatusOK, out)
