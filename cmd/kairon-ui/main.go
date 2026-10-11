@@ -27,7 +27,6 @@ import (
 	"github.com/zyvorai/kairon/internal/kube"
 	"github.com/zyvorai/kairon/internal/metrics"
 	"github.com/zyvorai/kairon/internal/ratelimit"
-	"github.com/zyvorai/kairon/internal/tlsreload"
 	"github.com/zyvorai/kairon/internal/uiapi"
 )
 
@@ -53,9 +52,10 @@ func run() int {
 	atlasURL := flag.String("atlas-url", os.Getenv("KAIRON_UI_ATLAS_URL"), "Zyvor Atlas storage gateway base URL (e.g. http://atlas.atlas-system:5110); enables the read-only Storage views. Empty disables them")
 	atlasTokenFile := flag.String("atlas-token-file", os.Getenv("KAIRON_UI_ATLAS_TOKEN_FILE"), "file holding the Atlas bearer token (falls back to KAIRON_UI_ATLAS_TOKEN)")
 	atlasConsoleURL := flag.String("atlas-console-url", os.Getenv("KAIRON_UI_ATLAS_CONSOLE_URL"), "optional browser URL of the Atlas console, shown as an \"Open in Atlas\" link")
-	listenAddr := flag.String("listen", env("KAIRON_UI_LISTEN", ":18082"), "listen address (serves both /api/v1/... and the built web UI); plain HTTP unless -tls-cert and -tls-key are set")
-	tlsCert := flag.String("tls-cert", env("KAIRON_UI_TLS_CERT", ""), "serve HTTPS with this PEM certificate (needs -tls-key); empty keeps plain HTTP, the default for a deployment behind an Ingress that terminates TLS")
+	listenAddr := flag.String("listen", env("KAIRON_UI_LISTEN", ":18082"), "listen address (serves both /api/v1/... and the built web UI); HTTPS unless -insecure-http is set")
+	tlsCert := flag.String("tls-cert", env("KAIRON_UI_TLS_CERT", ""), "serve HTTPS with this PEM certificate (needs -tls-key); empty generates a self-signed certificate at startup, which changes on every restart")
 	tlsKey := flag.String("tls-key", env("KAIRON_UI_TLS_KEY", ""), "PEM private key for -tls-cert; both are reloaded when the files change")
+	insecureHTTP := flag.Bool("insecure-http", os.Getenv("KAIRON_UI_INSECURE_HTTP") == "true", "serve plain HTTP instead of HTTPS. Logins and bearer tokens then cross the network in clear text; only for a trusted loopback or a dev setup. Also KAIRON_UI_INSECURE_HTTP=true")
 	webDir := flag.String("web-dir", env("KAIRON_UI_WEB_DIR", ""), "directory containing the built web/dist SPA; empty serves API-only")
 	token := flag.String("token", os.Getenv("KAIRON_UI_TOKEN"), "static bearer token required on every /api/v1/... request (default: $KAIRON_UI_TOKEN)")
 	allowUnauthenticated := flag.Bool("allow-unauthenticated", env("KAIRON_UI_ALLOW_UNAUTHENTICATED", "false") == "true", "start without a token -- local development only, refused by default")
@@ -242,7 +242,7 @@ func run() int {
 		ImageStorePublicURL:     *imageStorePublicURL,
 		ImageStoreMaxBytes:      *imageStoreMaxBytes,
 	}
-	tlsEnabled, err := validateTLSFlags(*tlsCert, *tlsKey)
+	mode, err := resolveTransport(*tlsCert, *tlsKey, *insecureHTTP)
 	if err != nil {
 		log.Error("invalid flags", "error", err)
 		return 2
@@ -253,7 +253,8 @@ func run() int {
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
-	if tlsEnabled {
+	switch mode {
+	case modeCertFiles:
 		tlsCfg, watcher, err := newServerTLS(log, *tlsCert, *tlsKey)
 		if err != nil {
 			log.Error("tls", "error", err)
@@ -261,6 +262,20 @@ func run() int {
 		}
 		httpServer.TLSConfig = tlsCfg
 		go watcher.Run(ctx, 30*time.Second)
+		if leaf, err := leafFromFile(*tlsCert); err == nil {
+			srv.TLSSelfSigned = isSelfSigned(leaf)
+		}
+	case modeEphemeral:
+		tlsCfg, leaf, err := newEphemeralTLS(os.Getenv("KAIRON_UI_TLS_SANS"))
+		if err != nil {
+			log.Error("generate a self-signed certificate", "error", err)
+			return 1
+		}
+		httpServer.TLSConfig = tlsCfg
+		srv.TLSSelfSigned = isSelfSigned(leaf)
+		log.Warn("serving HTTPS with a self-signed certificate generated at startup: browsers will warn and it changes on every restart; set -tls-cert/-tls-key (or KAIRON_UI_TLS_CERT/KEY, Helm ui.tls.secretName) for a stable one")
+	case modeHTTP:
+		log.Warn("serving plain HTTP (-insecure-http): logins and bearer tokens cross the network in clear text; use only on a trusted loopback or in development")
 	}
 	go func() {
 		<-ctx.Done()
@@ -271,17 +286,13 @@ func run() int {
 	go srv.RunSharedStateSync(ctx, sharedStateSyncInterval)
 	go srv.RunMetricsSampler(ctx, 15*time.Second)
 
-	scheme := "http"
-	if tlsEnabled {
-		scheme = "https"
-	}
-	log.Info("kairon-ui listening", "address", *listenAddr, "scheme", scheme, "webDir", *webDir, "authenticated", *token != "" || len(users) > 0, "loginUsers", len(users))
+	log.Info("kairon-ui listening", "address", *listenAddr, "scheme", mode.scheme(), "webDir", *webDir, "authenticated", *token != "" || len(users) > 0, "loginUsers", len(users))
 	var serveErr error
-	if tlsEnabled {
-		// The certificate comes from httpServer.TLSConfig.GetCertificate.
-		serveErr = httpServer.ListenAndServeTLS("", "")
-	} else {
+	if mode == modeHTTP {
 		serveErr = httpServer.ListenAndServe()
+	} else {
+		// The certificate comes from httpServer.TLSConfig.
+		serveErr = httpServer.ListenAndServeTLS("", "")
 	}
 	if serveErr != nil && serveErr != http.ErrServerClosed {
 		log.Error("http server", "error", serveErr)
@@ -481,27 +492,4 @@ func loginHint() string {
 		return "Lab default login: admin / Admin@321 \u2014 change it before exposing this dashboard."
 	}
 	return ""
-}
-
-// validateTLSFlags is the all-or-nothing rule for -tls-cert/-tls-key, the
-// same fail-closed posture as the OIDC flags: one without the other is a
-// startup error, never a silent fallback to plain HTTP.
-func validateTLSFlags(cert, key string) (bool, error) {
-	switch {
-	case cert == "" && key == "":
-		return false, nil
-	case cert == "" || key == "":
-		return false, fmt.Errorf("-tls-cert and -tls-key must be set together (got cert=%q key=%q)", cert, key)
-	}
-	return true, nil
-}
-
-// newServerTLS loads the certificate once (a bad pair is a startup failure)
-// and returns a TLS 1.2+ config that serves the most recently loaded pair.
-func newServerTLS(log *slog.Logger, certPath, keyPath string) (*tls.Config, *tlsreload.Watcher, error) {
-	w, err := tlsreload.New(log, certPath, keyPath)
-	if err != nil {
-		return nil, nil, fmt.Errorf("load -tls-cert/-tls-key: %w", err)
-	}
-	return &tls.Config{MinVersion: tls.VersionTLS12, GetCertificate: w.GetCertificate}, w, nil
 }

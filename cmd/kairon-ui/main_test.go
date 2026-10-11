@@ -252,22 +252,110 @@ func TestWellKnownPasswordOnlyForTheChartDefault(t *testing.T) {
 	}
 }
 
-func TestValidateTLSFlagsIsAllOrNothing(t *testing.T) {
+func TestResolveTransport(t *testing.T) {
 	cases := []struct {
-		cert, key string
-		want      bool
-		wantErr   bool
+		name         string
+		cert, key    string
+		insecureHTTP bool
+		want         transportMode
+		wantErr      bool
 	}{
-		{"", "", false, false},
-		{"/c.pem", "/k.pem", true, false},
-		{"/c.pem", "", false, true},
-		{"", "/k.pem", false, true},
+		{"default is HTTPS with a generated certificate", "", "", false, modeEphemeral, false},
+		{"certificate files", "/c.pem", "/k.pem", false, modeCertFiles, false},
+		{"explicit opt-out", "", "", true, modeHTTP, false},
+		{"cert without key", "/c.pem", "", false, 0, true},
+		{"key without cert", "", "/k.pem", false, 0, true},
+		{"certificate contradicts opt-out", "/c.pem", "/k.pem", true, 0, true},
 	}
 	for _, c := range cases {
-		got, err := validateTLSFlags(c.cert, c.key)
-		if got != c.want || (err != nil) != c.wantErr {
-			t.Errorf("validateTLSFlags(%q, %q) = %v, %v; want %v, err=%v", c.cert, c.key, got, err, c.want, c.wantErr)
+		t.Run(c.name, func(t *testing.T) {
+			got, err := resolveTransport(c.cert, c.key, c.insecureHTTP)
+			if (err != nil) != c.wantErr || (!c.wantErr && got != c.want) {
+				t.Errorf("resolveTransport(%q,%q,%v) = %v, %v; want %v, err=%v", c.cert, c.key, c.insecureHTTP, got, err, c.want, c.wantErr)
+			}
+		})
+	}
+	if modeEphemeral.scheme() != "https" || modeCertFiles.scheme() != "https" || modeHTTP.scheme() != "http" {
+		t.Error("only -insecure-http may report the http scheme")
+	}
+}
+
+func TestEphemeralTLSServesHTTPSAndIsSelfSigned(t *testing.T) {
+	cfg, leaf, err := newEphemeralTLS("kairon.example.test,10.9.8.7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isSelfSigned(leaf) {
+		t.Error("the generated certificate must report itself as self-signed (images are then marked insecureSkipTLSVerify)")
+	}
+	if cfg.MinVersion < tls.VersionTLS12 {
+		t.Errorf("MinVersion = %x, want TLS 1.2+", cfg.MinVersion)
+	}
+	var hasDNS, hasIP, hasLoopback bool
+	for _, n := range leaf.DNSNames {
+		hasDNS = hasDNS || n == "kairon.example.test"
+	}
+	for _, ip := range leaf.IPAddresses {
+		hasIP = hasIP || ip.String() == "10.9.8.7"
+		hasLoopback = hasLoopback || ip.String() == "127.0.0.1"
+	}
+	if !hasDNS || !hasIP || !hasLoopback {
+		t.Errorf("SANs dns=%v ips=%v; want the extras and loopback", leaf.DNSNames, leaf.IPAddresses)
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &http.Server{
+		Handler:           http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, "ok") }),
+		TLSConfig:         cfg,
+		ReadHeaderTimeout: time.Second,
+	}
+	go func() { _ = srv.ServeTLS(ln, "", "") }()
+	defer func() { _ = srv.Close() }()
+
+	roots := x509.NewCertPool()
+	roots.AddCert(leaf)
+	client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots}}}
+	resp, err := client.Get("https://" + ln.Addr().String())
+	if err != nil {
+		t.Fatalf("a client that trusts the certificate must connect: %v", err)
+	}
+	_ = resp.Body.Close()
+
+	if r, err := http.Get("http://" + ln.Addr().String()); err == nil {
+		_ = r.Body.Close()
+		if r.StatusCode < 400 {
+			t.Errorf("plain HTTP on the TLS port must not succeed, got %d", r.StatusCode)
 		}
+	}
+}
+
+func TestIsSelfSignedDistinguishesAnIssuedCertificate(t *testing.T) {
+	_, leaf, err := newEphemeralTLS("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isSelfSigned(leaf) {
+		t.Fatal("ephemeral certificate should be self-signed")
+	}
+	if isSelfSigned(nil) {
+		t.Error("nil is not self-signed")
+	}
+}
+
+func TestLeafFromFileReadsTheFirstCertificate(t *testing.T) {
+	certPath, _, want := writeServerCert(t)
+	got, err := leafFromFile(certPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Equal(want) {
+		t.Error("leafFromFile returned a different certificate")
+	}
+	if _, err := leafFromFile(filepath.Join(t.TempDir(), "missing.pem")); err == nil {
+		t.Error("a missing file must be an error")
 	}
 }
 
