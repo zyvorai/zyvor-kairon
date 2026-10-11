@@ -21,6 +21,15 @@
   background: none; border: 0; padding: 0; min-height: 0; color: var(--text);
 }
 .gn-brand img { border-radius: 6px; }
+.gn-ns {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 8px 0 10px;
+  border: 1px solid var(--border, rgba(0,0,0,.12)); border-radius: 999px; font-size: 12px; color: var(--text-3);
+}
+.gn-ns select {
+  border: 0; background: transparent; color: var(--text, inherit); font: inherit; font-weight: 600;
+  max-width: 140px; padding: 0 2px; cursor: pointer;
+}
+.gn-ns select:focus-visible { outline: 2px solid var(--blue, #0a6cf0); outline-offset: 2px; border-radius: 6px; }
 .gn-brand small { font-weight: 500; letter-spacing: 0; color: var(--text-3); }
 .gn-links { display: flex; gap: 2px; flex: 1; justify-content: center; }
 .gn-link {
@@ -256,6 +265,7 @@
   .gn-links { display: none; }
   .gn .gn-burger { display: inline-grid; }
   .gn-search { min-width: 0; }
+  .gn-ns span { display: none; }
   .gn-search span { display: none; }
   .gn-search kbd { display: none; }
   .mobile-sheet {

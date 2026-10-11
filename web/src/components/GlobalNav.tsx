@@ -32,9 +32,8 @@ export default function GlobalNav({
   const [namespaces, setNamespaces] = useState<string[]>([]);
   const namespace = currentNamespace();
 
-  // Load the namespaces this operator may use when the account menu opens.
+  // The namespaces this operator may use, for the nav selector.
   useEffect(() => {
-    if (!user) return;
     let alive = true;
     api<string[]>('/api/v1/namespaces')
       .then((list) => alive && setNamespaces(list))
@@ -42,7 +41,7 @@ export default function GlobalNav({
     return () => {
       alive = false;
     };
-  }, [user]);
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && (setOpen(null), setUser(false), setMobile(false));
@@ -109,6 +108,16 @@ export default function GlobalNav({
         </div>
 
         <div className="gn-right">
+          <label className="gn-ns" title="Namespace the dashboard works in">
+            <span>ns</span>
+            <select aria-label="Namespace" value={namespace} onChange={(e) => setNamespace(e.target.value)}>
+              {[...new Set([namespace, ...namespaces])].map((ns) => (
+                <option key={ns} value={ns}>
+                  {ns}
+                </option>
+              ))}
+            </select>
+          </label>
           <button className="gn-search" onClick={onSearch} aria-label="Search (Command K)">
             <Search size={14} />
             <span>Search</span>
@@ -151,24 +160,6 @@ export default function GlobalNav({
               <b>{username || 'Signed in'}</b>
               <span>{window.location.host}</span>
             </div>
-            <label className="menu-item" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <span>Namespace</span>
-              <select
-                aria-label="Namespace"
-                value={namespace}
-                onChange={(e) => {
-                  setNamespace(e.target.value);
-                  setUser(false);
-                }}
-                style={{ flex: 1, minWidth: 0 }}
-              >
-                {[...new Set([namespace, ...namespaces])].map((ns) => (
-                  <option key={ns} value={ns}>
-                    {ns}
-                  </option>
-                ))}
-              </select>
-            </label>
             <button className="menu-item" onClick={() => pick('account')}>
               <UserCog size={16} /> Account
             </button>

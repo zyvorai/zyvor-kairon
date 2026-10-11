@@ -204,7 +204,7 @@ export default function Login({ onSignedIn }: { onSignedIn: () => void }) {
       <div className="loginstep">
         <form onSubmit={signIn} key={shake} className={shake ? 'shake' : undefined}>
           <h3>Sign in.</h3>
-          <div className="siw">
+          <div className="siw stacked">
             <Field label="Username" autoComplete="username" autoFocus={!user} value={user} onChange={setUser} />
             <Field
               label="Password"

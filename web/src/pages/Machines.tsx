@@ -168,12 +168,18 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
   }
 
   async function power(name: string, action: 'start' | 'stop' | 'pause' | 'resume' | 'halt') {
+    // Stop and halt interrupt a running guest: ask first, like delete does.
+    if (action === 'stop' && !confirm(`Stop machine "${name}"? The guest is shut down.`)) return;
+    if (action === 'halt' && !confirm(`Halt machine "${name}"? The guest is powered off without a clean shutdown.`)) return;
     setMsg('');
     try {
       await api(`/api/v1/machines/${currentNamespace()}/${encodeURIComponent(name)}/${action}`, { method: 'POST' });
+      const done = { start: 'Started', stop: 'Stopped', pause: 'Paused', resume: 'Resumed', halt: 'Halted' }[action];
+      toast(`${done} ${name}`);
       await refresh();
     } catch (err) {
       setMsg(String(err));
+      toast(`${action} ${name} failed`, 'err');
     }
   }
 

@@ -13,6 +13,7 @@
 
 ## Added
 
+- Dashboard: the active namespace is a visible selector in the nav bar (instead of hidden in the account menu); Stop and Halt ask for confirmation, and power actions show a result toast; the sign-in fields are stacked.
 - Dashboard sign-in is one username and password form (no separate "API token" screen; the legacy shared token works as the password) and the nav uses the Zyvor Z logomark.
 
 - Global `--kubeconfig` and `--context` for every `kaironctl` command (kubeconfig auth including client certificates and exec plugins); previously only `install`/`upgrade` read a kubeconfig and the other commands needed `KAIRON_KUBE_URL` or an in-cluster service account.
