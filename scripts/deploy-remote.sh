@@ -1632,7 +1632,7 @@ INSTALL_EOF
       if ssh_exec_privileged "$REMOTE" "${SUDO} test -f /etc/kairon/console-tls/cert.pem" >/dev/null 2>&1; then
         ok "console relay TLS: enabled ($RESOLVED_CONSOLE_TLS_SOURCE certificate installed to /etc/kairon/console-tls/)"
         if [[ "$RESOLVED_CONSOLE_TLS_SOURCE" == "generated" ]]; then
-          tip "kairon-ui verifies this cert against whatever address it dials kairon-node at (the Machine's Node's InternalIP) -- if the dashboard's console button fails with a TLS error, regenerate with an explicit --console-tls-cert/-key/-ca covering that address"
+          tip "kairon-ui verifies this certificate against the fixed name kairon-node (KAIRON_NODE_CONSOLE_SERVER_NAME), whatever address it dials; a certificate you supply with --console-tls-cert/-key/-ca is verified against the dialled address instead, so its SANs must cover it"
         fi
       else
         tip "--console-tls was given but /etc/kairon/console-tls/cert.pem is missing on the remote host -- ssh in and check 'sudo journalctl -u kairon-node -n 50'"
