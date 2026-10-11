@@ -44,6 +44,8 @@ type fakeKube struct {
 	securityGroups    map[string]model.NetworkSecurityGroup
 	nodes             []model.Node
 	events            []model.Event
+	backups           map[string]model.MachineBackup
+	backupRestores    []model.MachineBackupRestore
 	// patches records every raw merge-patch body, keyed by object path.
 	patches  map[string][]string
 	podsJSON []map[string]any
@@ -88,6 +90,23 @@ func (f *fakeKube) handler() http.Handler {
 					_ = json.NewEncoder(w).Encode(map[string]any{"type": "ADDED", "object": json.RawMessage(raw)})
 				}
 			}
+		case r.Method == http.MethodPost && r.URL.Path == "/apis/kairon.zyvor.dev/v1/namespaces/default/machinebackups":
+			var b model.MachineBackup
+			_ = json.NewDecoder(r.Body).Decode(&b)
+			if f.backups == nil {
+				f.backups = map[string]model.MachineBackup{}
+			}
+			f.backups[b.Metadata.Name] = b
+			_ = json.NewEncoder(w).Encode(b)
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/apis/kairon.zyvor.dev/v1/namespaces/default/machinebackups/"):
+			delete(f.backups, strings.TrimPrefix(r.URL.Path, "/apis/kairon.zyvor.dev/v1/namespaces/default/machinebackups/"))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("{}"))
+		case r.Method == http.MethodPost && r.URL.Path == "/apis/kairon.zyvor.dev/v1/namespaces/default/machinebackuprestores":
+			var br model.MachineBackupRestore
+			_ = json.NewDecoder(r.Body).Decode(&br)
+			f.backupRestores = append(f.backupRestores, br)
+			_ = json.NewEncoder(w).Encode(br)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/pods":
 			_ = json.NewEncoder(w).Encode(map[string]any{"items": f.podsJSON})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/namespaces/default/events":

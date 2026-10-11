@@ -27,6 +27,7 @@ export default function MachineActions({
   const [forkCount, setForkCount] = useState('1');
   const [disk, setDisk] = useState({ name: '', claim: '' });
   const [nic, setNic] = useState({ name: '', bridge: '' });
+  const [quiesce, setQuiesce] = useState('auto');
 
   async function act(label: string, fn: () => Promise<unknown>) {
     setBusy(true);
@@ -54,6 +55,16 @@ export default function MachineActions({
         >
           Fork
         </button>
+      </div>
+
+      <h4>Backup</h4>
+      <div className="rowactions" style={{ justifyContent: 'flex-start', padding: '8px 0' }}>
+        <select aria-label="Filesystem freeze" value={quiesce} onChange={(e) => setQuiesce(e.target.value)}>
+          <option value="auto">Freeze if possible</option>
+          <option value="required">Freeze required</option>
+          <option value="never">No freeze</option>
+        </select>
+        <button disabled={busy} onClick={() => act(`Backup of ${name} started`, () => apiJSON(`${base}/backups`, 'POST', { quiesce }))}>Back up now</button>
       </div>
 
       <h4>Hot-attach disk</h4>

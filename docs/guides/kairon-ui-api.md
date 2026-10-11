@@ -140,6 +140,7 @@ user exists).
 | GET | `/api/v1/machines/{namespace}/{name}/timeline` | namespace |
 | GET | `/api/v1/machines/{namespace}/{name}/metrics` | namespace |
 | POST | `/api/v1/machines/{namespace}/{name}/fork` | namespace |
+| POST | `/api/v1/machines/{namespace}/{name}/backups` | namespace |
 | POST | `/api/v1/machines/{namespace}/{name}/disks` | namespace |
 | POST | `/api/v1/machines/{namespace}/{name}/nics` | namespace |
 | GET | `/api/v1/machines/{namespace}/{name}/network-drops` | namespace |
@@ -185,6 +186,8 @@ identity gets `403`, and everyone else is filtered per namespace
 | Method | Path | Access |
 |---|---|---|
 | GET | `/api/v1/machinebackups` | namespace |
+| DELETE | `/api/v1/machinebackups/{namespace}/{name}` | namespace |
+| POST | `/api/v1/machinebackups/{namespace}/{name}/restore` | namespace |
 
 ### machineclaims
 
@@ -332,3 +335,4 @@ identity gets `403`, and everyone else is filtered per namespace
 - **`POST .../fork`** with `{"count": 1-32, "prefix": "..."}` forks a Running Machine without volumes, disks or device claims, as `kaironctl fork` does (without waiting).
 - **`POST .../disks`** with `{"action": "attach"|"detach", "name": "...", "claim": "pvc"}` and **`POST .../nics`** with `{"action": "add"|"remove", "name": "...", "bridge": "br0"}` edit `spec.disks` and `spec.network.extraInterfaces`; kairon-node applies them live. NICs need `spec.network.mode: tap`.
 - **`POST .../snapshot-schedules/.../trigger`** requests an immediate run, bypassing `spec.suspend`, as `kaironctl trigger` does.
+- **`POST .../machines/{ns}/{name}/backups`** with `{"quiesce": "auto"|"required"|"never", "name": "..."}` creates a `MachineBackup` (Atlas options stay in `kaironctl backup` and YAML). **`POST .../machinebackups/{ns}/{name}/restore`** with `{"machine": "...", "storageClass": "..."}` creates a `MachineBackupRestore`; its disk half waits until the target Machine is halted. **`DELETE .../machinebackups/{ns}/{name}`** removes a backup. These need the `create`/`delete` rules the chart and `deploy/rbac.yaml` now grant on `machinebackups` and `machinebackuprestores`.
