@@ -240,3 +240,14 @@ func TestUIHTTPClientTrustsAConfiguredCA(t *testing.T) {
 		_ = resp.Body.Close()
 	}
 }
+
+func TestImageSpecSnippetMarksSelfSignedSources(t *testing.T) {
+	plain := imageSpecSnippet(uploadedImage{URL: "https://ui/images/sha256/ab", Digest: "sha256:ab", Format: "qcow2"})
+	if strings.Contains(plain, "insecureSkipTLSVerify") {
+		t.Errorf("a trusted certificate must not disable verification:\n%s", plain)
+	}
+	marked := imageSpecSnippet(uploadedImage{URL: "https://ui/images/sha256/ab", Digest: "sha256:ab", InsecureSkipTLSVerify: true})
+	if !strings.Contains(marked, "insecureSkipTLSVerify: true") || !strings.Contains(marked, "digest: sha256:ab") {
+		t.Errorf("snippet for a self-signed dashboard must carry the flag and keep the digest:\n%s", marked)
+	}
+}

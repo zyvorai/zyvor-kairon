@@ -28,6 +28,9 @@ type uploadedImage struct {
 	SizeBytes int64  `json:"sizeBytes"`
 	Format    string `json:"format,omitempty"`
 	URL       string `json:"url"`
+	// InsecureSkipTLSVerify is true when kairon-ui serves a self-signed
+	// certificate, in which case the spec snippet must say so too.
+	InsecureSkipTLSVerify bool `json:"insecureSkipTLSVerify,omitempty"`
 }
 
 func newImageCmd(_ *Options) *cobra.Command {
@@ -131,6 +134,11 @@ func imageSpecSnippet(img uploadedImage) string {
 	fmt.Fprintf(&b, "    httpURL: %s\n", img.URL)
 	if img.Format != "" {
 		fmt.Fprintf(&b, "    format: %s\n", img.Format)
+	}
+	if img.InsecureSkipTLSVerify {
+		// kairon-ui serves a self-signed certificate; the digest below still
+		// guarantees the bytes, only the transfer's confidentiality is lost.
+		fmt.Fprintf(&b, "    insecureSkipTLSVerify: true\n")
 	}
 	fmt.Fprintf(&b, "  digest: %s\n", img.Digest)
 	return b.String()

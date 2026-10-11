@@ -212,6 +212,11 @@ type Server struct {
 	// ImageStorePublicURL is the base URL nodes download uploaded images
 	// from; empty means the upload request's own scheme and host.
 	ImageStorePublicURL string
+	// TLSSelfSigned records that kairon-ui itself serves a self-signed
+	// certificate. Nodes download uploaded images over that same listener, so
+	// the upload response marks the source insecureSkipTLSVerify (the pinned
+	// sha256 still guarantees the bytes).
+	TLSSelfSigned bool
 	// ImageStoreMaxBytes caps one upload; 0 means no limit.
 	ImageStoreMaxBytes int64
 }
