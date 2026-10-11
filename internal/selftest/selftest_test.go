@@ -40,6 +40,9 @@ type fakeKube struct {
 	pvcNeverBinds bool
 	// createdSpecs records every Machine passed to CreateMachine.
 	createdSpecs []model.Machine
+	// deviceErr, when set, is what kairon-node reports in status.message
+	// instead of attaching a hotplugged disk or NIC.
+	deviceErr string
 }
 
 func newFakeKube() *fakeKube {
@@ -108,6 +111,12 @@ func (f *fakeKube) PatchMachine(_ context.Context, _, name string, patch map[str
 	}
 	if res, ok := spec["resources"].(map[string]any); ok && res["cpu"] == "2" {
 		m.Status.AppliedVCPUs = 2
+	}
+	_, hasDisks := spec["disks"]
+	netSpec, _ := spec["network"].(map[string]any)
+	_, hasNICs := netSpec["extraInterfaces"]
+	if (hasDisks || hasNICs) && f.deviceErr != "" {
+		m.Status.Message = f.deviceErr
 	}
 	return nil
 }
@@ -654,6 +663,69 @@ func TestForkUnsupportedIsRecognised(t *testing.T) {
 	for _, m := range no {
 		if forkUnsupported(m) {
 			t.Errorf("%q must remain a failure", m)
+		}
+	}
+}
+
+func deviceRun(t *testing.T, f *fakeKube, only ...string) (map[string]Result, []string) {
+	t.Helper()
+	env := baseEnv(f)
+	env.Bridge = "br0"
+	env.PVC = "pvc-1"
+	rec := &recorder{}
+	res := Run(context.Background(), env, rec, Options{Profile: ProfileFull, Only: only})
+	out := map[string]Result{}
+	for _, r := range res {
+		out[r.ID] = r
+	}
+	return out, rec.logs
+}
+
+func TestDeviceHotplugMissingEndpointIsASkipNotAFailure(t *testing.T) {
+	f := newFakeKube()
+	f.deviceErr = "list disks: fluxvm GET /v1/vms/58146f3b/disks: HTTP 404: "
+	res, _ := deviceRun(t, f, "control-plane", "boot", "disk-hotplug")
+	r := res["disk-hotplug"]
+	if r.Status != Skip || !strings.Contains(r.Reason, "does not support disk hotplug") {
+		t.Errorf("disk-hotplug = %+v, want a skip naming the missing capability", r)
+	}
+}
+
+func TestDeviceHotplugFailureCarriesTheNodesOwnError(t *testing.T) {
+	f := newFakeKube()
+	f.deviceErr = `hotplug interface "st0": fluxvm POST /v1/vms/b222/hotplug/nic: HTTP 400: {"error":"netdev_add tap: Duplicate ID 'net0'"}`
+	res, _ := deviceRun(t, f, "control-plane", "boot", "nic-hotplug")
+	r := res["nic-hotplug"]
+	if r.Status != Fail {
+		t.Fatalf("nic-hotplug = %+v, want a failure: FluxVM rejected the call", r)
+	}
+	if !strings.Contains(r.Reason, "Duplicate ID 'net0'") || !strings.Contains(r.Reason, "the node reported") {
+		t.Errorf("the failure must quote what the node reported, got %q", r.Reason)
+	}
+	if r.Hint == "" {
+		t.Error("expected a hint pointing at status.message")
+	}
+}
+
+func TestDeviceUnsupportedOnlyMatchesMissingEndpoints(t *testing.T) {
+	yes := []string{
+		"list disks: fluxvm GET /v1/vms/x/disks: HTTP 404: ",
+		"fluxvm POST /v1/vms/x/hotplug/nic: HTTP 501: not implemented",
+	}
+	no := []string{
+		`fluxvm POST /v1/vms/x/hotplug/nic: HTTP 400: {"error":"Duplicate ID"}`,
+		"kubernetes PATCH /apis/kairon.zyvor.dev/v1/namespaces/d/machines/x: HTTP 404",
+		"fluxvm POST /v1/vms: HTTP 404: no such image",
+		"",
+	}
+	for _, m := range yes {
+		if !deviceUnsupported(m) {
+			t.Errorf("%q should be unsupported", m)
+		}
+	}
+	for _, m := range no {
+		if deviceUnsupported(m) {
+			t.Errorf("%q must stay a failure", m)
 		}
 	}
 }

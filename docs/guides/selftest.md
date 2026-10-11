@@ -39,8 +39,8 @@ that enables it**, never dropped silently. `--strict` makes a skip a failure.
 | `pause-resume` | `Paused` then `Running` | after a failed `boot` |
 | `hotplug-cpu` | a running VM gains a vCPU (`appliedVCPUs`) | after a failed `boot` |
 | `observability` | `status.resourceUsage`, the `Ready` condition, events, dashboard samples | after a failed `boot` |
-| `nic-hotplug` | a tap-networked VM gets a live NIC | `--bridge` not given |
-| `disk-hotplug` | a PVC attaches live | `--pvc` not given |
+| `nic-hotplug` | a tap-networked VM gets a live NIC | `--bridge` not given, or the node's FluxVM has no hotplug endpoint |
+| `disk-hotplug` | a PVC attaches live | `--pvc` not given, or the node's FluxVM has no disks endpoint |
 | `snapshot-restore` | a Machine whose boot disk is on a PVC is snapshotted through the controller and restored into a new claim | no `VolumeSnapshotClass`, no StorageClass for its driver, or the StorageClass waits for a consumer |
 | `fork` | a `flux-vm` VM forks into a running child | the backend is not accepted or does not start |
 | `cold-migration` | a VM moves to a second node | fewer than two capable Ready nodes |
@@ -101,6 +101,11 @@ kaironctl selftest --cleanup
 ```
 
 Common results:
+
+- A hotplug check fails with `the node reported: ...`: that is kairon-node's own
+  error from the Machine's `status.message`, usually FluxVM refusing the call.
+  A 404 or 501 from the device endpoint is a skip instead (the installed FluxVM
+  does not implement it).
 
 - `no image cache configured`: kairon-node needs a directory to download the
   image into. Helm: `--set node.imageCacheDir=/var/lib/fluxvm/images/cache`.

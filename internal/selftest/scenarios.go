@@ -383,16 +383,12 @@ func runNICHotplug(ctx context.Context, s *session) error {
 	if err := s.patch(ctx, m.Metadata.Name, patch); err != nil {
 		return fmt.Errorf("add interface: %w", err)
 	}
-	return s.waitFor(ctx, "the interface to attach", s.env.StepTimeout, func() (bool, error) {
-		cur, err := s.get(ctx, m.Metadata.Name)
-		if err != nil {
-			return false, nil
-		}
+	return s.waitDevice(ctx, m.Metadata.Name, "the interface to attach", "NIC hotplug", func(cur model.Machine) bool {
 		if len(cur.Status.AttachedInterfaces) > 0 {
 			s.logf(LevelOK, "interface attached: %s on %s", cur.Status.AttachedInterfaces[0].Name, cur.Status.AttachedInterfaces[0].Bridge)
-			return true, nil
+			return true
 		}
-		return false, nil
+		return false
 	})
 }
 
@@ -401,19 +397,61 @@ func runDiskHotplug(ctx context.Context, s *session) error {
 	if err := s.patch(ctx, s.vm, patch); err != nil {
 		return fmt.Errorf("attach disk: %w", err)
 	}
-	return s.waitFor(ctx, "the disk to attach", s.env.StepTimeout, func() (bool, error) {
-		cur, err := s.get(ctx, s.vm)
-		if err != nil {
-			return false, nil
-		}
+	return s.waitDevice(ctx, s.vm, "the disk to attach", "disk hotplug", func(cur model.Machine) bool {
 		for _, d := range cur.Status.AttachedDisks {
 			if d == "st-data" {
 				s.logf(LevelOK, "disk st-data attached from claim %s", s.env.PVC)
-				return true, nil
+				return true
 			}
+		}
+		return false
+	})
+}
+
+// waitDevice waits for a hotplugged device to show up in the Machine's
+// status. kairon-node reports a failed hotplug in status.message, so a
+// timeout carries what the node actually said instead of just "timed out".
+// A 404/501 from the device endpoint means the installed FluxVM does not
+// implement it: a capability limit, reported as a skip like fork.
+func (s *session) waitDevice(ctx context.Context, name, what, feature string, attached func(model.Machine) bool) error {
+	var lastMsg string
+	skip := false
+	err := s.waitFor(ctx, what, s.env.StepTimeout, func() (bool, error) {
+		cur, err := s.get(ctx, name)
+		if err != nil {
+			return false, nil
+		}
+		if attached(cur) {
+			return true, nil
+		}
+		lastMsg = cur.Status.Message
+		if deviceUnsupported(lastMsg) {
+			skip = true
+			return true, nil
 		}
 		return false, nil
 	})
+	switch {
+	case skip:
+		s.skipReason = fmt.Sprintf("this node's FluxVM does not support %s (its device endpoint is missing or not implemented); upgrade FluxVM to test it", feature)
+		return nil
+	case err != nil && lastMsg != "":
+		s.hint = "the node's own error is above; it is also in kaironctl describe machine " + name + " (status.message) and the kairon-node journal"
+		return fmt.Errorf("%w; the node reported: %s", err, lastMsg)
+	}
+	return err
+}
+
+// deviceUnsupported recognises a device-hotplug call that the runtime has no
+// endpoint for (404 or 501), as opposed to one it rejected.
+func deviceUnsupported(msg string) bool {
+	if !strings.Contains(msg, "fluxvm ") {
+		return false
+	}
+	if !strings.Contains(msg, "/disks") && !strings.Contains(msg, "/hotplug/") {
+		return false
+	}
+	return strings.Contains(msg, "HTTP 404") || strings.Contains(msg, "HTTP 501")
 }
 
 // runSnapshotRestore boots a CirrOS Machine whose boot disk lives on a PVC,
