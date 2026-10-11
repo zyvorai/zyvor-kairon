@@ -540,7 +540,10 @@ ui:
   imageStore:
     enabled: false
     # Base URL kairon-node downloads from; default
-    # http://kairon-ui.<namespace>.svc:<ui.service.port>. kairon-node runs
+    # https://kairon-ui.<namespace>.svc:<ui.service.port> (http:// with
+    # ui.insecureHttp). With a self-signed certificate uploaded images are
+    # marked insecureSkipTLSVerify; the sha256 still guarantees the bytes.
+    # kairon-node runs
     # with hostNetwork, so set a node-reachable address if cluster DNS is
     # not resolvable from the host.
     publicURL: ""
@@ -743,11 +746,36 @@ ui:
     # one value drives both, since a dashboard-with-one-backend has no
     # real reason to decouple them.
     port: 18082
+  # TLS. The dashboard serves HTTPS by default: it carries logins and bearer
+  # tokens, so plain HTTP is something you opt into, not out of.
+  tls:
+    # Name of a pre-created kubernetes.io/tls Secret (keys tls.crt and
+    # tls.key), for example one issued by cert-manager. kairon-ui reloads it
+    # when it changes. Empty makes every pod generate a self-signed
+    # certificate at startup, which browsers warn about and which changes on
+    # every restart -- fine for evaluation, not for production.
+    secretName: ""
+    # Extra DNS names or IPs for that generated certificate (for example the
+    # hostname users reach the dashboard on). Ignored with secretName.
+    sans: []
+  # Serve plain HTTP instead. Only for a mesh or sidecar that terminates TLS
+  # in front of the pod and speaks HTTP to it; logins and tokens are then
+  # clear text on the pod network. Cannot be combined with tls.secretName.
+  insecureHttp: false
   ingress:
     enabled: false
     className: ""
     host: ""
     annotations: {}
+    # The pod speaks HTTPS, so the Ingress controller must too. This sets
+    # nginx.ingress.kubernetes.io/backend-protocol (ignored by other
+    # controllers: set their equivalent in annotations, for example
+    # traefik.ingress.kubernetes.io/service.serversscheme: https). Empty skips
+    # it. Not applied when ui.insecureHttp is true.
+    backendProtocol: HTTPS
+    # Terminate TLS at the Ingress for browsers, in the standard Ingress
+    # shape: [{hosts: [dash.example.com], secretName: dash-tls}]
+    tls: []
   # A single REST backend serving a small SPA -- lighter than controller/node.
   resources:
     requests: {cpu: 25m, memory: 32Mi}
