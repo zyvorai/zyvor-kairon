@@ -130,7 +130,9 @@ func runBoot(ctx context.Context, s *session) error {
 	started := s.env.Now()
 	cur, err := s.waitPhase(ctx, s.vm, "Running", bootWait)
 	if err != nil {
-		if s.hint == "" {
+		if h := bootFailureHint(err.Error()); h != "" {
+			s.hint = h
+		} else if s.hint == "" {
 			s.hint = "kaironctl describe machine " + s.vm + " -n " + s.env.Namespace + "; kaironctl logs node"
 		}
 		s.dumpEvidence(ctx)
@@ -567,4 +569,16 @@ func dashIfEmpty(s string) string {
 		return "-"
 	}
 	return s
+}
+
+// bootFailureHint turns the node's own refusal messages for the prerequisites
+// people most often miss into the command that fixes them.
+func bootFailureHint(msg string) string {
+	switch {
+	case strings.Contains(msg, "no image cache configured"):
+		return "kairon-node needs an image cache to download the test image: deploy with --image-cache-dir=/var/lib/kairon-node/image-cache (deploy-remote.sh) or set node.imageCacheDir (Helm); or pass --image PATH for a file already on the node"
+	case strings.Contains(msg, "digest mismatch") || strings.Contains(msg, "checksum"):
+		return "the downloaded image did not match its pinned sha256; check the mirror, or pass --image-url with --image-digest"
+	}
+	return ""
 }

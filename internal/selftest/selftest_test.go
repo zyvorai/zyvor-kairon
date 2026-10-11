@@ -340,20 +340,6 @@ func TestBootRunsEvenWhenControlPlaneFails(t *testing.T) {
 	}
 }
 
-func TestNoCapableNodeWarnsAndHintsOnBootFailure(t *testing.T) {
-	f := newFakeKube()
-	f.nodes[0].Metadata.Labels = nil
-	f.failBoot = true
-	rec := &recorder{}
-	res := Run(context.Background(), baseEnv(f), rec, Options{Profile: ProfileQuick, Only: []string{"boot"}})
-	if len(res) != 1 || res[0].Status != Fail {
-		t.Fatalf("results = %+v", res)
-	}
-	if !strings.Contains(res[0].Hint, model.CapableLabel) {
-		t.Errorf("hint %q should mention the capable label", res[0].Hint)
-	}
-}
-
 func TestNoCapableNodeFailsFastInsteadOfWaitingFullBootTimeout(t *testing.T) {
 	f := newFakeKube()
 	f.nodes[0].Metadata.Labels = nil
@@ -372,5 +358,17 @@ func TestNoCapableNodeFailsFastInsteadOfWaitingFullBootTimeout(t *testing.T) {
 	}
 	if !strings.Contains(res[0].Hint, model.CapableLabel) {
 		t.Errorf("hint %q should mention the capable label", res[0].Hint)
+	}
+}
+
+func TestBootFailureHintsNameTheFix(t *testing.T) {
+	if h := bootFailureHint("x is Error: this node has no image cache configured (-image-cache-dir) -- spec.image.source cannot be used"); !strings.Contains(h, "--image-cache-dir") {
+		t.Errorf("hint = %q", h)
+	}
+	if h := bootFailureHint("image digest mismatch"); !strings.Contains(h, "--image-digest") {
+		t.Errorf("hint = %q", h)
+	}
+	if h := bootFailureHint("something unrelated"); h != "" {
+		t.Errorf("unrelated message got hint %q", h)
 	}
 }

@@ -80,6 +80,11 @@ kaironctl selftest --cleanup
 
 Common results:
 
+- `no image cache configured`: kairon-node needs a directory to download the
+  image into. Helm: `--set node.imageCacheDir=/var/lib/fluxvm/images/cache`.
+  systemd hosts: `deploy-remote.sh HOST USER --image-cache-dir=/var/lib/kairon-node/image-cache`.
+  Or skip the download with `--image PATH` for a file already on the node.
+
 - `no node carries kairon.zyvor.dev/capable=true`: label a node
   (`kubectl label node NAME kairon.zyvor.dev/capable=true`). The self-test stops
   waiting after 45 seconds in this case.

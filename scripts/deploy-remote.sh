@@ -160,6 +160,12 @@ Flags:
   --reserved-cpus=LIST    Set KAIRON_RESERVED_CPUS (kubelet's reserved CPUs,
                           e.g. 0-1) in kairon-node.env, even when the file
                           already exists. Other keys are left untouched.
+  --image-cache-dir=PATH  Set KAIRON_IMAGE_CACHE_DIR, the directory kairon-node
+                          downloads spec.image.source images into (needed by
+                          --self-test and any Machine that downloads its image).
+                          Created if absent and made writable for the service;
+                          set even when kairon-node.env already exists. A path
+                          under /var/lib/kairon-node/ needs nothing else.
   --cpu-pinning           Turn on pinnable-CPU discovery: install
                           kairon-cpustate.path/.service, which copy kubelet's
                           root-only cpu_manager_state to a file kairon-node
@@ -265,6 +271,7 @@ MIGRATION_PORT_EXPLICIT=0
 MIGRATION_ADAPTER_SOCKET="/run/kairon/migration-adapter.sock"
 WITH_MIGRATION_ADAPTER_STUB=0
 RESERVED_CPUS=""
+IMAGE_CACHE_DIR=""
 CPU_PINNING=""
 VERSION_OVERRIDE="${KAIRON_VERSION:-}"
 SSH_PORT="${SSH_PORT:-22}"
@@ -345,6 +352,7 @@ while [[ $# -gt 0 ]]; do
     --version=*) VERSION_OVERRIDE="${1#*=}" ;;
     --ssh-port=*) SSH_PORT="${1#*=}" ;;
     --reserved-cpus=*) RESERVED_CPUS="${1#*=}" ;;
+    --image-cache-dir=*) IMAGE_CACHE_DIR="${1#*=}" ;;
     --cpu-pinning) CPU_PINNING=1 ;;
     --no-cpu-pinning) CPU_PINNING=0 ;;
     -h|--help) usage; exit 0 ;;
@@ -355,6 +363,9 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+if [[ -n "$IMAGE_CACHE_DIR" && ! "$IMAGE_CACHE_DIR" =~ ^/[A-Za-z0-9._/-]+$ ]]; then
+  die "--image-cache-dir=$IMAGE_CACHE_DIR: want an absolute path of letters, digits, . _ - and /"
+fi
 if [[ -n "$RESERVED_CPUS" && ! "$RESERVED_CPUS" =~ ^[0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*$ ]]; then
   die "--reserved-cpus=$RESERVED_CPUS: want a CPU list like 0-1 or 0,6"
 fi
@@ -546,6 +557,7 @@ $([[ "$WITH_CONSOLE" == "1" ]] && echo "Console relay port:       ${CONSOLE_PORT
 $([[ "$WITH_CONSOLE" == "1" ]] && echo "Console relay token:      will be auto-generated at deploy time (openssl rand -hex 32), shared between kairon-node and kairon-ui only -- never shown to an operator")
 $([[ "$WITH_CONSOLE_TLS" == "1" ]] && echo "Console relay TLS:        $(if [[ -n "$CONSOLE_TLS_CERT" ]]; then echo "provided via --console-tls-cert/-key/-ca"; else echo "self-signed CA + cert will be auto-generated at deploy time (openssl)"; fi)")
 Start after install:      $([[ "$NO_START" == "1" ]] && echo "no (--no-start)" || echo "yes")
+Image cache dir:          ${IMAGE_CACHE_DIR:-<unchanged>}
 Self-test after deploy:   $([[ "$SELF_TEST" == "1" ]] && echo "yes (profile ${SELF_TEST_PROFILE})" || echo "no (add --self-test)")
 
 Remote paths:
@@ -824,6 +836,7 @@ run_deploy() {
     printf 'CONSOLE_PORT_EXPLICIT=%q\n' "$CONSOLE_PORT_EXPLICIT"
     printf 'WITH_CONSOLE_TLS=%q\n' "$WITH_CONSOLE_TLS"
     printf 'RESERVED_CPUS=%q\n' "$RESERVED_CPUS"
+    printf 'IMAGE_CACHE_DIR=%q\n' "$IMAGE_CACHE_DIR"
     printf 'CPU_PINNING=%q\n' "$CPU_PINNING"
   } > "$local_stage/params.env"
 
@@ -1024,6 +1037,22 @@ set_env_key() {
     echo "${key}=${value}" >> "$file"
   fi
 }
+
+# Image cache: kairon-node refuses spec.image.source (and the self-test's
+# downloaded CirrOS) without one. The unit runs with ProtectSystem=strict, so
+# a directory outside its own state directory needs a ReadWritePaths drop-in.
+if [[ -n "$IMAGE_CACHE_DIR" ]]; then
+  install -d -m 0755 -o kairon -g kairon "$IMAGE_CACHE_DIR"
+  set_env_key /etc/kairon/kairon-node.env KAIRON_IMAGE_CACHE_DIR "$IMAGE_CACHE_DIR"
+  case "$IMAGE_CACHE_DIR" in
+    /var/lib/kairon-node|/var/lib/kairon-node/*) rm -f /etc/systemd/system/kairon-node.service.d/image-cache.conf ;;
+    *)
+      install -d -m 0755 /etc/systemd/system/kairon-node.service.d
+      printf '[Service]\nReadWritePaths=%s\n' "$IMAGE_CACHE_DIR" > /etc/systemd/system/kairon-node.service.d/image-cache.conf
+      ;;
+  esac
+  ok "set KAIRON_IMAGE_CACHE_DIR=$IMAGE_CACHE_DIR in /etc/kairon/kairon-node.env"
+fi
 
 CPU_STATE_COPY=/var/lib/kairon-node/cpu_manager_state
 if [[ -n "$RESERVED_CPUS" ]]; then
