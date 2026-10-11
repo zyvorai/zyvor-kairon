@@ -6,6 +6,7 @@ package selftest
 import (
 	"context"
 	"errors"
+	"io"
 	"regexp"
 	"strings"
 	"sync"
@@ -402,5 +403,22 @@ func TestBootMarker(t *testing.T) {
 		if want == "" && got != "" || want != "" && !strings.Contains(got, want) {
 			t.Errorf("bootMarker(%q) = %q, want it to contain %q", in, got, want)
 		}
+	}
+}
+
+func TestNetworkExplainsAcceptedThenClosedConnection(t *testing.T) {
+	f := newFakeKube()
+	env := baseEnv(f)
+	env.Dial = func(context.Context, string) (string, error) { return "", io.EOF }
+	rec := &recorder{}
+	res := Run(context.Background(), env, rec, Options{Profile: ProfileStandard, Only: []string{"control-plane", "boot", "network"}})
+	var net Result
+	for _, r := range res {
+		if r.ID == "network" {
+			net = r
+		}
+	}
+	if net.Status != Skip || !strings.Contains(net.Reason, "accepted the connection") {
+		t.Errorf("network = %+v", net)
 	}
 }

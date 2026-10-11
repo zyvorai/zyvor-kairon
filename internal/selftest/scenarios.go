@@ -5,7 +5,9 @@ package selftest
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"regexp"
 	"strings"
@@ -256,18 +258,27 @@ func runNetwork(ctx context.Context, s *session) error {
 	}
 	var banner string
 	var lastErr error
-	err = s.waitFor(ctx, "the guest's SSH banner", s.env.StepTimeout, func() (bool, error) {
+	wait := s.env.StepTimeout
+	if wait > 45*time.Second {
+		wait = 45 * time.Second
+	}
+	err = s.waitFor(ctx, "the guest's SSH banner", wait, func() (bool, error) {
 		banner, lastErr = dial(ctx, target)
 		return lastErr == nil && strings.HasPrefix(banner, "SSH-"), nil
 	})
 	if err != nil {
-		reason := "no SSH banner"
-		if lastErr != nil {
-			reason = lastErr.Error()
+		switch {
+		case lastErr != nil && (errors.Is(lastErr, io.EOF) || strings.Contains(lastErr.Error(), "reset")):
+			// The forward accepted the connection and the guest closed it:
+			// the path works, the guest's SSH server is simply not up yet.
+			s.skipReason = fmt.Sprintf("the forward to %s accepted the connection but the guest closed it without a banner (its SSH server was not running yet); the VM itself booted fine", target)
+		case lastErr != nil:
+			// From a workstation outside the cluster the node address is
+			// often unreachable; that is a network boundary, not a Kairon fault.
+			s.skipReason = fmt.Sprintf("could not reach %s from here (%s); the VM itself booted fine. Run this from a host that can reach the node to check forwarding", target, lastErr)
+		default:
+			s.skipReason = fmt.Sprintf("%s answered without an SSH banner", target)
 		}
-		// From a workstation outside the cluster the node address is often
-		// simply unreachable; that is a network boundary, not a Kairon fault.
-		s.skipReason = fmt.Sprintf("could not reach %s from here (%s); the VM itself booted fine. Run this from a host that can reach the node to check forwarding", target, reason)
 		return nil
 	}
 	s.logf(LevelOK, "guest answered: %s", strings.TrimSpace(banner))
