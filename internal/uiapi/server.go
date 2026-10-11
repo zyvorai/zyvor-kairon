@@ -66,6 +66,10 @@ type Server struct {
 	// page's stat band.
 	Version string
 
+	// history backs GET .../metrics; filled by RunMetricsSampler.
+	history     *metricsHistory
+	historyOnce sync.Once
+
 	// apiRoutes is the number of /api/v1 routes registered by Handler.
 	apiRoutes int
 
@@ -259,6 +263,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/qga/firewall/close", s.requireNamespace(namespaceFromPath, s.handleQGAFirewallClose))
 	api.HandleFunc("GET /api/v1/machines/{namespace}/{name}/logs", s.requireNamespace(namespaceFromPath, s.handleLogs))
 	api.HandleFunc("GET /api/v1/machines/{namespace}/{name}/timeline", s.requireNamespace(namespaceFromPath, s.handleMachineTimeline))
+	api.HandleFunc("GET /api/v1/machines/{namespace}/{name}/metrics", s.requireNamespace(namespaceFromPath, s.handleMachineMetrics))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/vm-snapshot", s.requireNamespace(namespaceFromPath, s.handleVMSnapshot))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/vm-restore-snapshot", s.requireNamespace(namespaceFromPath, s.handleVMRestoreSnapshot))
 
