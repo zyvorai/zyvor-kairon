@@ -14,30 +14,50 @@ guest agent, Machine phase).
 ## Signing in
 
 The sign-in page shows live fleet stats (CRD and API-route counts, fed by
-`GET /api/v1/auth/config`) and one username-and-password form (the username is
-pre-filled with `admin`, or the account remembered on this device). Servers
-that still use the legacy shared bearer token accept it in the password field,
-so there is no separate token screen. SSO appears as an extra button when
+`GET /api/v1/auth/config`) and one username-and-password form under the Zyvor "Z" logo (the username is
+pre-filled with `admin`, or the account remembered on this device; "Remember
+me" applies to password sign-ins only). The submit handler reads the field
+values from the form itself, so browser autofill and password managers work
+without any typing events. Servers that still use the legacy shared bearer
+token accept it in the password field (it is tried as a token when
+username/password sign-in is off or refuses the pair), so there is no separate
+token screen. A failed sign-in always reads "Wrong username or password.". SSO appears as an extra button when
 configured; see [OIDC](kairon-ui-oidc.md).
 
 - A free-text hint appears under the form when the server provides one
   (`loginHint` in the auth config; it is only sent when at least one named user
   exists). While the seeded admin still has the lab default password it reads
-  "Lab default login: admin / Admin@321".
+  "Lab default login: admin / Admin@321 - change it before exposing this
+  dashboard". An explicit `KAIRON_UI_LOGIN_HINT` replaces that text.
+- A fresh Helm install seeds `admin` / `Admin@321` while
+  `ui.auth.wellKnownDefault` is `true` (the chart default); an existing
+  `kairon-ui-session` password is never replaced, an explicit
+  `ui.auth.defaultAdminPassword` wins, and `values-production.yaml` sets it
+  to `false` so the password is random. Read the actual value with
+  `kubectl -n kairon-system get secret kairon-ui-session -o jsonpath='{.data.defaultAdminPassword}' | base64 -d`.
 - `scripts/deploy-remote.sh --with-ui` seeds a lab `admin` account; see the
   "Well-known default password" paragraph in [SECURITY.md](../../SECURITY.md)
   before exposing the port beyond a lab network.
 - Signed-in operators change their own password from **Account**
   (`POST /api/v1/auth/password`).
 - A session that signed in with the well-known lab password `Admin@321` shows a
-  red banner on every page except Account until the password is changed (the
-  login response carries `defaultPassword: true`; the server only reports it
-  while `KAIRON_UI_DEFAULT_ADMIN_PASSWORD` is that exact value). It is a nudge,
-  not a gate: nothing is blocked.
+  red banner on every page except Account until the password is changed or the
+  session ends (the login response carries `defaultPassword: true`; the server
+  only reports it while `KAIRON_UI_DEFAULT_ADMIN_PASSWORD` is that exact value
+  and the submitted password matches; the flag lives in `sessionStorage`). It is
+  a nudge, not a gate: nothing is blocked.
 
 ## Namespaces
 
-The dashboard works in one namespace at a time, **`default`** unless you change it. Pick another from the **Namespace** selector in the account menu (top right); the list is the namespaces you may use (`GET /api/v1/namespaces`, which honours namespace scoping). The choice is remembered in the browser and applies to every namespaced page, action, console, log and usage-CSV download. Before this selector existed the dashboard only ever showed `default`, because it never sent the `namespace` parameter the API scopes lists by.
+The dashboard works in one namespace at a time, **`default`** unless you change it. Pick another from the **ns** selector at the right of the top navigation bar; the list is the namespaces you may use (`GET /api/v1/namespaces`, which honours namespace scoping). The choice is remembered in the browser and applies to every namespaced page, action, console, log and usage-CSV download. Before this selector existed the dashboard only ever showed `default`, because it never sent the `namespace` parameter the API scopes lists by. Changing the selection remounts the current page and re-fetches. Empty lists say which namespace they are scoped to and suggest a first command (for example `kaironctl create NAME --image PATH`).
+
+## Tables
+
+Every list page uses the same table. Once a list has more than five rows (or a
+filter is active) a **Filter** box appears: it keeps rows whose columns contain
+every whitespace-separated word, case-insensitively, shows "N of M", and says
+`No rows match "..."` when nothing is left. Column headers sort, and **CSV**
+exports the rows currently shown.
 
 ### Bulk power actions (Machines)
 
@@ -47,7 +67,9 @@ Start skips Machines that are already Running or Paused; Stop applies only to
 Running ones and asks once for the whole batch. Each Machine is sent as its
 own `POST /api/v1/machines/{ns}/{name}/{start|stop}`, one at a time, so a
 failure never blocks the rest: the toast names the ones that failed and they
-stay selected. Works in the all-namespaces view too.
+stay selected. Works in the all-namespaces view too. Single-row **Stop** and **Halt** also
+ask for confirmation first (a Machine delete already did), and every power
+action reports its outcome in a toast.
 
 ### All namespaces (Machines)
 
@@ -55,7 +77,8 @@ Choose **All (Machines)** in the nav selector to list Machines from every
 namespace you may use in one table, with a Namespace column; row actions
 (power, delete, priority, console, logs, details) act on the row's own
 namespace. Only the Machines list has this view: every other page, and
-creating a Machine, keeps working in the concrete namespace last selected.
+creating a Machine, keeps working in the concrete namespace last selected
+(Migrate and Snapshot are hidden for rows outside that namespace).
 The API form is `GET /api/v1/machines?namespace=_all` (see the
 [API reference](kairon-ui-api.md)).
 

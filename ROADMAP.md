@@ -1,5 +1,11 @@
 # Roadmap
 
+## v0.9 — Operate it from the CLI, namespace-aware dashboard
+
+v0.9.0 (2026-10-11) is the current release. Shipped: `kaironctl` lifecycle and diagnostics (`doctor`, `connectivity test`, `logs`, `events`, `sysdump`, `config`, `history`, `rollback`, `upgrade --check`, `ui`, global `--kubeconfig`/`--context`, `-o json|yaml`), `kaironctl upgrade` keeping previous Helm values, dashboard namespace selector and all-namespaces Machines view (`GET /api/v1/machines?namespace=_all`), bulk Start/Stop, table filters, and the well-known lab sign-in default on fresh Helm installs (`ui.auth.wellKnownDefault`, off in `values-production.yaml`). See [RELEASE_NOTES.md](RELEASE_NOTES.md).
+
+The two open multi-host items carried over from v0.7 and v0.8 are listed under "Prove live migration, beyond one Mac" below.
+
 ## v0.8 — Beat KubeVirt
 
 Close every gap in the [README comparison](README.md#kairon-vs-kubevirt) and publish numbers, not claims. Kairon and FluxVM ship together; each item lands on `main` with CI and docs.
@@ -39,7 +45,7 @@ Close every gap in the [README comparison](README.md#kairon-vs-kubevirt) and pub
 
 ## v0.7 — Prove maturity, eBPF UX, STATUS gaps
 
-v0.7.0 was tagged on 2026-10-09 but never published: its image scan failed on Go standard-library CVEs (CVE-2026-78667, CVE-2026-97031), so no v0.7.0 images or release assets exist. v0.7.1 (rebuilt on Go 1.27.2) was the first published v0.7 release, and v0.7.2 (2026-10-09, `golang.org/x/net` v0.60.0) is the current one. The v0.7 scope below shipped across them. Shipped: eBPF CLI/UX, Network panel, multi-volume virtiofs, lease→`NodeUnreachable`, CSI node CHAP, OTel spans. Product landing: [README.md](README.md).
+v0.7.0 was tagged on 2026-10-09 but never published: its image scan failed on Go standard-library CVEs (CVE-2026-78667, CVE-2026-97031), so no v0.7.0 images or release assets exist. v0.7.1 (rebuilt on Go 1.27.2) was the first published v0.7 release, and v0.7.2 (2026-10-09, `golang.org/x/net` v0.60.0) was the last v0.7 release. The v0.7 scope below shipped across them. Shipped: eBPF CLI/UX, Network panel, multi-volume virtiofs, lease→`NodeUnreachable`, CSI node CHAP, OTel spans. Product landing: [README.md](README.md).
 
 **v0.7 contents (the multi-host matrix carried over to v0.8):**
 
@@ -55,7 +61,7 @@ v0.7.0 was tagged on 2026-10-09 but never published: its image scan failed on Go
 - [x] VM edge enforced by FluxVM, MCP server with human approval, tenant fence, preemption, MachineImage/ISO media, stale evacuation, snapshot schedules at a time of day
 - [x] Cut v0.7.0 + README refresh (tag never published; superseded by v0.7.1, then v0.7.2)
 
-## v0.8 — Prove live migration, beyond one Mac
+## Next — Prove live migration, beyond one Mac
 
 - [ ] Green multi-host migration matrix (cold + live + live-eBPF) on the Zyvor lab
 - [ ] Multi-Mac cluster verification (Thunderbolt RDMA, macOS guests)

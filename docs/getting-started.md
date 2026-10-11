@@ -27,9 +27,11 @@ kaironctl doctor     # health checks with a hint for every problem
 
 ### Evaluation vs production
 
-Default chart values are an **evaluation** profile (webhook and namespace isolation off; image tags default to `.Chart.AppVersion`). For a hardened install, use the production overlay:
+Default chart values are an **evaluation** profile (webhook and namespace isolation off; image tags default to `.Chart.AppVersion`). For a hardened install, use the production overlay (`kaironctl install --profile production`, or with Helm directly):
 
 ```bash
+kaironctl install --profile production
+# or
 helm install kairon charts/kairon -n kairon-system --create-namespace \
   -f charts/kairon/values-production.yaml
 ```
@@ -48,8 +50,11 @@ helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \
 
 - Images are `ghcr.io/zyvorai/kairon-{controller,node,ui,csi-node,csi-controller}:<version>`; the chart's image tags default to its `appVersion`, so the chart version selects the images.
 - Drop the `-f` overlay for the evaluation profile.
+- `kaironctl` installs the same published chart without Helm: `kaironctl install --chart oci://ghcr.io/zyvorai/charts/kairon --version 0.9.0 --profile production`.
 - Helm applies `crds/` only on first install. When upgrading, apply the CRDs from the same tag first (`kubectl apply --server-side -f https://raw.githubusercontent.com/zyvorai/kairon/v0.9.0/deploy/crd.yaml`); see [CRD versioning](guides/crd-versioning.md#upgrading-an-existing-cluster).
 - Fetch the matching `kaironctl` from the release: `https://github.com/zyvorai/kairon/releases/download/v0.9.0/kaironctl-linux-amd64`, or `kubectl krew install kairon`.
+
+Later, `kaironctl upgrade` keeps the values you installed with (`--reset-values` returns to chart defaults), `kaironctl upgrade --check` compares your release with the latest one without changing anything, `kaironctl config set KEY=VALUE` changes a single value, and `kaironctl history` / `kaironctl rollback` list and restore revisions. Add `--context NAME` or `--kubeconfig PATH` to target a specific cluster. See [CLI](CLI.md).
 
 Raw manifests still work:
 
@@ -121,7 +126,7 @@ Open `http://127.0.0.1:18082` and sign in as `admin` with that password. Or skip
 | Page | What it shows |
 |---|---|
 | **Overview** | Fleet tiles by phase, a prominent warning whenever anything is parked in `NeedsRecovery` |
-| **Machines** | Table + create form (mirrors `kaironctl create`) + Start / Stop / Console / Migrate / Snapshot / Delete |
+| **Machines** | Table with filter box and row selection (bulk Start/Stop) + create form (mirrors `kaironctl create`) + Start / Stop / Console / Migrate / Snapshot / Delete; the nav namespace selector switches namespace or lists every namespace |
 | **Migrations** | List with phase badges, a "New Migration" form, an "Evacuate Node" action, `status.dataPlaneEncrypted` badge, a "Cancel migration" action while `Starting`/`Running`, and the recovery workflow |
 | **Snapshots** | List + create form |
 | **Nodes** | Real Kubernetes `Node` list — `Ready`, `spec.unschedulable`, taints, addresses, plus per-node Machines/CPU/Memory usage rollup; read-only |

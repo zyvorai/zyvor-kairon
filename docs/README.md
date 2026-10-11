@@ -20,7 +20,7 @@ The root [README](https://github.com/zyvorai/zyvor-kairon/blob/main/README.md) i
 | Dependency policy | [DEPENDENCIES.md](DEPENDENCIES.md) |
 | Release status & production gaps | [STATUS.md](STATUS.md) |
 | Hardware / lab matrix | [COMPATIBILITY.md](COMPATIBILITY.md) |
-| Roadmap (v0.7 gates) | [../ROADMAP.md](https://github.com/zyvorai/zyvor-kairon/blob/main/ROADMAP.md) |
+| Roadmap | [../ROADMAP.md](https://github.com/zyvorai/zyvor-kairon/blob/main/ROADMAP.md) |
 | Migration failures / NeedsRecovery | [runbook-migration-failures.md](runbook-migration-failures.md) |
 | Security / threat model | [../SECURITY.md](https://github.com/zyvorai/zyvor-kairon/blob/main/SECURITY.md) |
 | Contributing | [../CONTRIBUTING.md](https://github.com/zyvorai/zyvor-kairon/blob/main/CONTRIBUTING.md) |
@@ -44,7 +44,7 @@ The root [README](https://github.com/zyvorai/zyvor-kairon/blob/main/README.md) i
 | [`guides/machine-fencing.md`](guides/machine-fencing.md) | `NodeUnreachable`/`Fenced` conditions, `kaironctl fence`'s safety model, storage/network migration preflight labels |
 | [`ai-agents.md`](ai-agents.md) · [`guides/hermes-mcp.md`](guides/hermes-mcp.md) | AI agent integration over MCP (Hermes Agent, Claude Code, Cursor): Kairon and FluxVM servers, scoped credentials, workflows; `kaironctl mcp serve` reference |
 | [`guides/agent-plane.md`](guides/agent-plane.md) | Agent plane: sealed claims, strict egress compiler, edge Warning events and per-Machine traffic baselines, cosign image verification, SEV-SNP/TDX attestation, the audited MCP write path, and the proposal-only AI assistant (`ask`) and `diagnose` |
-| [`guides/kairon-ui-dashboard.md`](guides/kairon-ui-dashboard.md) | The web console: sign-in, navigation and command palette, per-resource pages, machine inspector operations, node tools |
+| [`guides/kairon-ui-dashboard.md`](guides/kairon-ui-dashboard.md) | The web console: sign-in and default-password banner, namespace selector and all-namespaces Machines view, table filter, bulk power actions, navigation and command palette, per-resource pages, machine inspector operations, node tools |
 | [`guides/kairon-ui-api.md`](guides/kairon-ui-api.md) | Every `kairon-ui` route with its access model (roles, namespace scoping, console tickets, unauthenticated image blobs) |
 | [`guides/kairon-ui-ha.md`](guides/kairon-ui-ha.md) | Running `ui.replicaCount > 1`: what's shared, how, and its real limits |
 | [`guides/kairon-controller-ha.md`](guides/kairon-controller-ha.md) | Running `controller.replicaCount > 1`: Lease-based leader election, RBAC, bare-metal setup |

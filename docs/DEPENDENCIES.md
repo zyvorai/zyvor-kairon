@@ -57,7 +57,7 @@ Checked against `go.mod` and `go list -deps` for `cmd/kairon-controller` and `cm
 
 ## What “embedded Helm” means for the CLI
 
-`kaironctl install` defaults to the chart baked into the binary (`charts` package via `go:embed`) and drives install/upgrade/uninstall through the Helm v3 Go SDK. Operators can still pass `--chart ./charts/kairon` or `--helm-cli` to shell out to a system Helm 3 binary. Dry-run renders manifests offline (no cluster required).
+`kaironctl install` defaults to the chart baked into the binary (`charts` package via `go:embed`) and drives install/upgrade/uninstall through the Helm v3 Go SDK. Operators can still pass `--chart ./charts/kairon`, `--chart oci://REF` (pulled through the Helm SDK) or `--helm-cli` to shell out to a system Helm 3 binary. Dry-run renders manifests offline (no cluster required).
 
 Helm’s SDK imports `github.com/containerd/containerd` and `oras.land/oras-go` for OCI chart pulls, plus a slice of `golang.org/x/crypto` that the UI’s bcrypt path does not use. `govulncheck` in CI covers every other package. It does not fail the build on those Helm-only call graphs: several of the advisories have no upstream fix, and none of them are linked into `kairon-controller`, `kairon-node`, `kairon-ui`, or the CSI images.
 

@@ -72,6 +72,14 @@ reaches the browser. See [Atlas storage](machine-storage-atlas.md#dashboard-stor
 | GET | `/api/v1/auth/oidc/login` | none |
 | POST | `/api/v1/auth/password` | session |
 
+`POST /api/v1/auth/login` returns `{token, username, isAdmin, expiresAt}`, plus
+`"defaultPassword": true` when the submitted password is the well-known lab
+password `Admin@321` and the server was started with
+`KAIRON_UI_DEFAULT_ADMIN_PASSWORD` set to exactly that value; the dashboard
+uses it to show a change-your-password banner. It never blocks the login.
+`GET /api/v1/auth/config` may include `loginHint` (only when at least one named
+user exists).
+
 ### config
 
 | Method | Path | Access |
