@@ -1,5 +1,14 @@
-# Unreleased
+# Kairon v0.9.1
 
+Released 2026-10-11.
+
+A patch release: dashboard all-namespaces coverage, `kaironctl` fixes for binary/systemd installs, Machine lifecycle Events, and complete release checksums.
+
+## Fixes and changes
+
+- **`kaironctl doctor`** no longer reports hard failures for a controller or node agent that is not a Kubernetes Deployment/DaemonSet in the install namespace (binary/systemd installs from `scripts/deploy-remote.sh`); it warns, says the API cannot verify them, and points to `systemctl status`. `connectivity test` explains why pods were not probed.
+- **Machine lifecycle Events**: `kairon-node` records a core/v1 Event on every Machine phase change (`PhaseRunning`, `PhaseStopped`, ... ; `Warning` for `Failed`), so `kaironctl events -n <namespace>` and `kubectl get events` show them. `kaironctl events` now says where Machine events live when the default namespace is empty.
+- `kaironctl network observe`/`drops` error names an example `KAIRON_UI_URL` and `KAIRON_UI_TOKEN`.
 - Release: `SHA256SUMS` now covers every attached asset (CLI binaries, Krew archives and manifest, Helm chart tgz), not only the four Linux CLI binaries; verify with `sha256sum -c --ignore-missing SHA256SUMS`.
 - Dashboard: the all-namespaces view (nav selector **All namespaces**) now also lists Migrations and Snapshots, with a Namespace column; `GET /api/v1/migrations` and `/api/v1/snapshots` accept `?namespace=_all` with the same per-namespace authorization as Machines.
 - Dashboard: list pages treat a `null` list from the API as empty instead of crashing.

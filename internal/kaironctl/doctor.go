@@ -281,6 +281,15 @@ func checkWorkload(ctx context.Context, kc *kube.Client, rep *doctorReport, ns, 
 			rep.add(doctorCheck{Name: label, Status: checkSkip, Detail: "not deployed"})
 			return
 		}
+		if strings.Contains(ws.Err, "404") {
+			// Not a Kubernetes workload in this namespace. That is how a
+			// binary/systemd install (scripts/deploy-remote.sh) looks, so it
+			// cannot be told apart from "not installed" through the API:
+			// warn instead of failing, and say how to check.
+			rep.add(doctorCheck{Name: label, Status: checkWarn, Detail: fmt.Sprintf("no %s %s in namespace %s; cannot verify from the API", strings.ToLower(ws.Kind), name, ns),
+				Hint: "installed as systemd services (scripts/deploy-remote.sh)? run: systemctl status " + name + "; otherwise kaironctl install, or check -n/--namespace"})
+			return
+		}
 		rep.add(doctorCheck{Name: label, Status: checkFail, Detail: ws.Err,
 			Hint: "kaironctl install, or check -n/--namespace"})
 		return

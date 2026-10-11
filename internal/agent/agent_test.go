@@ -35,6 +35,7 @@ func TestReconcileCreatesFluxVMAndUpdatesStatus(t *testing.T) {
 	}
 	var finalizerPatched, statusPatched bool
 	var status model.MachineStatus
+	var phaseEvent model.Event
 	ks := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/apis/kairon.zyvor.dev/v1/machines":
@@ -50,6 +51,9 @@ func TestReconcileCreatesFluxVMAndUpdatesStatus(t *testing.T) {
 			status = p.Status
 			statusPatched = true
 			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/namespaces/prod/events":
+			_ = json.NewDecoder(r.Body).Decode(&phaseEvent)
+			w.WriteHeader(http.StatusCreated)
 		default:
 			http.Error(w, "unexpected", http.StatusNotFound)
 		}
@@ -83,6 +87,9 @@ func TestReconcileCreatesFluxVMAndUpdatesStatus(t *testing.T) {
 	}
 	if status.RuntimeID != "vm-123" || status.Phase != "Running" || status.GuestIP != "10.44.0.8" {
 		t.Fatalf("unexpected status: %+v", status)
+	}
+	if phaseEvent.Reason != "PhaseRunning" || phaseEvent.Type != "Normal" || phaseEvent.InvolvedObject.Name != "db" {
+		t.Fatalf("expected a Normal PhaseRunning Event for db, got %+v", phaseEvent)
 	}
 }
 

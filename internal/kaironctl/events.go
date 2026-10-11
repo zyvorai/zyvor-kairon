@@ -95,6 +95,9 @@ func runEvents(ctx context.Context, kc *kube.Client, out io.Writer, o *eventsOpt
 			}
 		} else {
 			writeEvents(out, fresh, o.All || o.Namespace == "", first)
+			if first && len(fresh) == 0 && !o.All {
+				_, _ = fmt.Fprintf(out, "No events in namespace %q. Machine events are recorded in the Machine's namespace: try -n <namespace> or -A.\n", ns)
+			}
 		}
 		first = false
 		if !o.Watch {

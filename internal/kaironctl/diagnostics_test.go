@@ -31,6 +31,7 @@ type fakeCluster struct {
 	crds         bool   // CRDs installed (storage v1)
 	crdStorage   string // storage version when crds
 	webhookNoCA  bool
+	noWorkloads  bool // controller/node Deployment and DaemonSet absent (systemd install)
 	logTail      string
 	requests     []string
 }
@@ -73,6 +74,8 @@ func (c *fakeCluster) start(t *testing.T) {
 				return
 			}
 			write(`{"spec":{"versions":[{"name":"v1","served":true,"storage":` + fmt.Sprint(c.crdStorage == "v1") + `},{"name":"v1beta1","served":true,"storage":` + fmt.Sprint(c.crdStorage == "v1beta1") + `}]}}`)
+		case c.noWorkloads && strings.HasPrefix(p, "/apis/apps/v1/namespaces/kairon-system/"):
+			http.NotFound(w, r)
 		case p == "/apis/apps/v1/namespaces/kairon-system/deployments/kairon-controller":
 			ready := 1
 			if !c.controllerOK {
@@ -549,5 +552,23 @@ func TestConnectivityMachineCreateRejectedAndKeep(t *testing.T) {
 	}
 	if _, err := runRoot(t, "connectivity", "test", "--machine"); err == nil || !strings.Contains(err.Error(), "--image") {
 		t.Fatalf("--machine without --image must be rejected, got %v", err)
+	}
+}
+
+func TestDoctorSystemdInstallWarnsInsteadOfFailing(t *testing.T) {
+	c := newFakeCluster()
+	c.noWorkloads = true
+	c.start(t)
+	out, err := runRoot(t, "doctor")
+	if err != nil {
+		t.Fatalf("absent workloads must warn, not fail: %v\n%s", err, out)
+	}
+	for _, want := range []string{"cannot verify from the API", "systemctl status kairon-controller", "systemctl status kairon-node"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+	if _, err := runRoot(t, "doctor", "--strict"); err == nil {
+		t.Fatal("--strict must still fail on the warnings")
 	}
 }
