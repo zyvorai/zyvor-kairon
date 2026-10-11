@@ -1036,6 +1036,11 @@ func (a *Agent) reconcileMigration(ctx context.Context, item model.MachineMigrat
 	}
 	transfer, err := a.SourceMigrator.Status(ctx, session, status.TransferID)
 	if err != nil {
+		if postCopySourceLost(status, err, time.Now()) {
+			status.Phase = "NeedsRecovery"
+			status.Message = "source transfer lost after post-copy started; the source was not resumed and the destination was not aborted -- inspect both nodes before choosing a recovery action: " + err.Error()
+			return a.Kube.PatchMachineMigrationStatus(ctx, item.Namespace(), item.Metadata.Name, status)
+		}
 		return fmt.Errorf("poll source transfer: %w", err)
 	}
 	// Best-effort: renews the destination's Prepared-session lease once per

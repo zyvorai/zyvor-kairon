@@ -197,6 +197,31 @@ func postCopyStarted(status model.MachineMigrationStatus) bool {
 	return status.Adaptive != nil && status.Adaptive.PostCopyStarted
 }
 
+// postCopySourceLostAfter is how long source status polls may keep failing
+// after the post-copy switch before the transfer is treated as lost.
+const postCopySourceLostAfter = 2 * time.Minute
+
+// postCopySourceLost reports whether a failed source status poll means the
+// post-copy transfer is gone: the adapter says the transfer or its VM no
+// longer exists, or no telemetry has arrived for postCopySourceLostAfter.
+// Before the switch a failing poll is only retried, since the source still
+// holds the whole guest.
+func postCopySourceLost(status model.MachineMigrationStatus, err error, now time.Time) bool {
+	if !postCopyStarted(status) {
+		return false
+	}
+	if migration.IsRejected(err) {
+		return true
+	}
+	var last *time.Time
+	if status.Progress != nil && status.Progress.UpdatedAt != nil {
+		last = status.Progress.UpdatedAt
+	} else {
+		last = status.Adaptive.StageSince
+	}
+	return last != nil && now.Sub(*last) >= postCopySourceLostAfter
+}
+
 func adaptiveSample(transfer migration.TransferStatus) adaptive.Sample {
 	s := adaptive.Sample{
 		RAMTotal:       transfer.RAMTotal,

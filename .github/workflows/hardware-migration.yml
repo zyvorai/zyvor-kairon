@@ -31,6 +31,7 @@ jobs:
           test -f docs/COMPATIBILITY.md
           for f in scripts/hardware-migration-matrix.sh scripts/recovery-drill.sh \
                    scripts/lab-inject-source-failure.sh scripts/lab-inject-controller-failover.sh \
+                   scripts/lab-inject-postcopy-source-failure.sh \
                    scripts/lib/lab.sh; do
             bash -n "$f"
           done
@@ -71,6 +72,9 @@ jobs:
           KAIRON_HW_TARGET_SSH: ${{ vars.KAIRON_HW_TARGET_SSH }}
           KAIRON_HW_CONTROLLER_SSH: ${{ vars.KAIRON_HW_CONTROLLER_SSH }}
           KAIRON_HW_LOAD_MIB: ${{ vars.KAIRON_HW_LOAD_MIB }}
+          KAIRON_HW_ADAPTIVE_LOAD_MIB: ${{ vars.KAIRON_HW_ADAPTIVE_LOAD_MIB }}
+          KAIRON_HW_ADAPTIVE_BANDWIDTH_MBPS: ${{ vars.KAIRON_HW_ADAPTIVE_BANDWIDTH_MBPS }}
+          KAIRON_HW_POSTCOPY_MACHINE: ${{ vars.KAIRON_HW_POSTCOPY_MACHINE }}
           KAIRON_UI_URL: ${{ vars.KAIRON_UI_URL }}
           KAIRON_UI_TOKEN: ${{ secrets.KAIRON_UI_TOKEN }}
         run: |

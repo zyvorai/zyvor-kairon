@@ -302,13 +302,14 @@ kubectl -n kairon-system port-forward svc/kairon-ui 18082:18082
 | Capacity-aware scheduling, node-scoped watches, controller HA | Stable |
 | Cold migration and evacuation | Stable |
 | Secure live migration and `NeedsRecovery` | Preview, multi-host lab matrix in progress ([COMPATIBILITY](docs/COMPATIBILITY.md)) |
+| Adaptive live migration (auto-converge, post-copy switch, zstd) | Experimental, adaptive lab cases not yet run ([COMPATIBILITY](docs/COMPATIBILITY.md)) |
 | eBPF VM edge, flows, drops, capture | Preview, single-host lab green |
 | CSI snapshots with guest quiesce | Stable |
 | `kairon-ui` with SSO and VNC console | Stable |
 | MCP server for AI agents | Preview, CI end-to-end with the official SDK |
 | CPU/memory hotplug | Grow-only (QEMU) |
 
-**v0.9.1** is the latest release. Real two-host live migration is still Preview: the multi-host lab matrix is not yet green, so it is not claimed as Stable. Honest gaps live in [docs/STATUS.md](docs/STATUS.md); what comes next is in [ROADMAP.md](ROADMAP.md).
+**v0.9.1** is the latest release. Real two-host live migration is still Preview: the multi-host lab matrix is not yet green, so it is not claimed as Stable. Adaptive live migration stays Experimental until its four matrix cases pass on the nightly lab workflow, and it can't be called production-ready before the base live-migration rows are green too. Honest gaps live in [docs/STATUS.md](docs/STATUS.md); what comes next is in [ROADMAP.md](ROADMAP.md).
 
 ---
 

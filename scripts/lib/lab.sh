@@ -121,13 +121,15 @@ migration_in() {
   return 1
 }
 
-# start_migration NS MACHINE TARGET STRATEGY PREFIX -- prints the migration name.
+# start_migration NS MACHINE TARGET STRATEGY PREFIX [MIGRATE_FLAGS...] --
+# prints the migration name. Extra flags go to `kaironctl migrate`.
 start_migration() {
   local ns="$1" machine="$2" target="$3" strategy="$4" prefix="$5"
+  shift 5
   local name
   name="$prefix-$machine-$(date -u +%Y%m%d-%H%M%S)"
   name="${name:0:63}"
-  "$KAIRONCTL" migrate "$machine" --namespace "$ns" --name="$name" --strategy="$strategy" --target-node="$target" >&2
+  "$KAIRONCTL" migrate "$machine" --namespace "$ns" --name="$name" --strategy="$strategy" --target-node="$target" "$@" >&2
   echo "$name"
 }
 

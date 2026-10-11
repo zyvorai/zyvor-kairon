@@ -366,6 +366,22 @@ func TestSourceTunePostCopyAndFinishUseTheSourceRuntime(t *testing.T) {
 	}
 }
 
+func TestSourceStatusMapsAGoneSourceTo409(t *testing.T) {
+	code := http.StatusNotFound
+	a, _ := testAdapter(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":"vm not running"}`, code)
+	}, nil)
+	a.sourceRTID["sess-1"] = "vm-1"
+
+	if rec := sourceCall(t, a, a.sourceStatus, "/v1/source/sess-1/sess-1", nil); rec.Code != http.StatusConflict {
+		t.Errorf("status with FluxVM 404 = %d, want 409", rec.Code)
+	}
+	code = http.StatusInternalServerError
+	if rec := sourceCall(t, a, a.sourceStatus, "/v1/source/sess-1/sess-1", nil); rec.Code != http.StatusBadGateway {
+		t.Errorf("status with FluxVM 500 = %d, want 502", rec.Code)
+	}
+}
+
 func TestCapabilitiesReportsTheQEMUEntry(t *testing.T) {
 	a, _ := testAdapter(t, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"migration":[

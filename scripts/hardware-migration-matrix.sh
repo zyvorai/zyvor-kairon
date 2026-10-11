@@ -26,6 +26,13 @@
 #                              # and for the live case, which starts a memory-dirtying
 #                              # load in the guest the same way ("not run" without it)
 #   KAIRON_HW_LOAD_MIB         # guest RAM the live-case load rewrites (default 256)
+#   KAIRON_HW_ADAPTIVE_LOAD_MIB / KAIRON_HW_ADAPTIVE_BANDWIDTH_MBPS
+#                              # adaptive cases: guest load (default 1024) and a
+#                              # starting bandwidth low enough that the load
+#                              # outruns it (default 200), so a remedy must fire
+#   KAIRON_HW_POSTCOPY_MACHINE # disposable Machine for postcopy-source-failure,
+#                              # which kills its source QEMU after the post-copy
+#                              # switch; the lab must recreate it before each run
 #
 # Flags: --case=NAME (repeatable), --namespace=, --timeout=, --write-compat
 # (rewrite the matrix rows in docs/COMPATIBILITY.md). Exits 1 if any case
@@ -54,7 +61,8 @@ for arg in "$@"; do
   esac
 done
 if [[ ${#CASES[@]} -eq 0 ]]; then
-  CASES=(smoke cold live guest-agent needs-recovery source-failure controller-failover)
+  CASES=(smoke cold live guest-agent needs-recovery source-failure controller-failover
+    live-adaptive-converge live-postcopy-switch live-zstd postcopy-source-failure)
   [[ -n "${KAIRON_HW_EBPF_MACHINE:-}" ]] && CASES+=(live-ebpf)
 fi
 
@@ -75,6 +83,10 @@ T_SRC="Source failure during transfer"
 T_RECOVERY="Ambiguous commit → NeedsRecovery"
 T_CTRL="Controller failover mid-migration"
 T_AGENT="Guest agent exec after migration"
+T_ADAPT="Adaptive: auto-converge under load"
+T_PCSWITCH="Adaptive: post-copy switch under load"
+T_ZSTD="Adaptive: zstd multifd compression"
+T_PCFAIL="Source failure after post-copy → NeedsRecovery"
 
 record() {
   local title="$1" result="$2" notes="${3:-}"
@@ -86,12 +98,13 @@ record() {
 # Where the next migration of $1 should go: the node it isn't on.
 next_target() { other_node "$(machine_node "$NAMESPACE" "$1")" "$SOURCE" "$TARGET"; }
 
-# migrate_and_verify MACHINE STRATEGY -- migration Succeeded and the Machine
-# is healthy on the new node.
+# migrate_and_verify MACHINE STRATEGY [MIGRATE_FLAGS...] -- migration
+# Succeeded and the Machine is healthy on the new node.
 migrate_and_verify() {
   local machine="$1" strategy="$2" dest mig
+  shift 2
   dest="$(next_target "$machine")"
-  mig="$(start_migration "$NAMESPACE" "$machine" "$dest" "$strategy" "hw-$strategy")"
+  mig="$(start_migration "$NAMESPACE" "$machine" "$dest" "$strategy" "hw-${case:-$strategy}" "$@")"
   wait_until "$TIMEOUT" "$mig terminal" migration_in "$NAMESPACE" "$mig" Succeeded Failed Blocked Cancelled NeedsRecovery || return 1
   local phase
   phase="$(migration_phase "$NAMESPACE" "$mig")"
@@ -99,7 +112,7 @@ migrate_and_verify() {
   wait_until 300 "$machine healthy on $dest" machine_healthy "$NAMESPACE" "$machine" "$dest" || return 1
   LAST_MIGRATION="$mig"
   NOTE="$mig → $dest"
-  if [[ "$strategy" == "live" ]]; then
+  if [[ "$strategy" == "live" || "$strategy" == "adaptive" ]]; then
     NOTE+="$(migration_field "$NAMESPACE" "$mig" '"; downtime %sms, total %sms" % ((o.get("status") or {}).get("downtimeMs", "?"), (o.get("status") or {}).get("totalTimeMs", "?"))' 2>/dev/null || true)"
   fi
 }
@@ -125,6 +138,59 @@ live_under_load() {
   stop_guest_load "$NAMESPACE" "$machine"
   NOTE+="; guest dirtying ${mib}MiB"
   return "$rc"
+}
+
+# adaptive_check EXPR DESCRIPTION -- EXPR (json_eval over $LAST_MIGRATION)
+# must be "True"; otherwise NOTE gets the description and the engine's own
+# stage, message and actions.
+adaptive_check() {
+  local got
+  got="$(migration_field "$NAMESPACE" "$LAST_MIGRATION" "$1" 2>/dev/null || true)"
+  [[ "$got" == "True" ]] && return 0
+  NOTE+="; expected $2, got $(migration_field "$NAMESPACE" "$LAST_MIGRATION" '"stage %s: %s; actions %s" % (((o.get("status") or {}).get("adaptive") or {}).get("stage"), ((o.get("status") or {}).get("adaptive") or {}).get("message"), [a.get("action") for a in ((o.get("status") or {}).get("adaptive") or {}).get("actions") or []])' 2>/dev/null || echo "no status.adaptive")"
+  return 1
+}
+
+ADAPTIVE_ACTIONS='[a.get("action") for a in (((o.get("status") or {}).get("adaptive") or {}).get("actions") or [])]'
+ADAPTIVE_POSTCOPY='bool(((o.get("status") or {}).get("adaptive") or {}).get("postCopyStarted"))'
+
+# adaptive_under_load MACHINE CHECK DESCRIPTION MIGRATE_FLAGS... -- an
+# adaptive migration while the guest dirties KAIRON_HW_ADAPTIVE_LOAD_MIB of
+# RAM through a link capped at KAIRON_HW_ADAPTIVE_BANDWIDTH_MBPS, then CHECK.
+adaptive_under_load() {
+  local machine="$1" check="$2" desc="$3"
+  shift 3
+  if [[ -z "${KAIRON_UI_URL:-}" || -z "${KAIRON_UI_TOKEN:-}" ]]; then
+    LOAD_SKIPPED=1
+    NOTE="set KAIRON_UI_URL and KAIRON_UI_TOKEN to generate guest load"
+    return 1
+  fi
+  local mib="${KAIRON_HW_ADAPTIVE_LOAD_MIB:-1024}" bw="${KAIRON_HW_ADAPTIVE_BANDWIDTH_MBPS:-200}"
+  if ! start_guest_load "$NAMESPACE" "$machine" "$mib"; then
+    NOTE="could not start guest load in ${machine}"
+    return 1
+  fi
+  sleep 10
+  local rc=0
+  migrate_and_verify "$machine" adaptive --bandwidth-mbps="$bw" "$@" || rc=1
+  stop_guest_load "$NAMESPACE" "$machine"
+  NOTE+="; guest dirtying ${mib}MiB at ${bw}Mbps"
+  (( rc == 0 )) || return 1
+  adaptive_check "$check" "$desc"
+}
+
+# run_adaptive TITLE MACHINE CHECK DESCRIPTION MIGRATE_FLAGS...
+run_adaptive() {
+  local title="$1"
+  shift
+  LOAD_SKIPPED=0
+  if adaptive_under_load "$@"; then
+    record "$title" pass "$NOTE"
+  elif [[ "$LOAD_SKIPPED" == "1" ]]; then
+    record "$title" "not run" "$NOTE"
+  else
+    record "$title" fail "$NOTE"
+  fi
 }
 
 smoke() {
@@ -256,6 +322,47 @@ for case in "${CASES[@]}"; do
       ;;
     controller-failover)
       drill "$T_CTRL" lab-inject-controller-failover.sh
+      ;;
+    live-adaptive-converge)
+      run_adaptive "$T_ADAPT" "$MACHINE" \
+        "any(a in (\"auto-converge\", \"throttle\") for a in ${ADAPTIVE_ACTIONS}) and not ${ADAPTIVE_POSTCOPY} and bool((o.get(\"status\") or {}).get(\"progress\"))" \
+        "an auto-converge/throttle action, no post-copy, and status.progress" \
+        --auto-converge --progress-timeout=20s --max-downtime-ms=300 --completion-timeout-per-gib=300s
+      ;;
+    live-postcopy-switch)
+      run_adaptive "$T_PCSWITCH" "$MACHINE" \
+        "\"postcopy\" in ${ADAPTIVE_ACTIONS} and ${ADAPTIVE_POSTCOPY}" \
+        "a postcopy action and status.adaptive.postCopyStarted" \
+        --post-copy --post-copy-after=20s --max-downtime-ms=300 --completion-timeout-per-gib=300s
+      ;;
+    live-zstd)
+      # Idle guest memory compresses well; the load scripts' urandom
+      # fallback doesn't, so this case runs without load.
+      if migrate_and_verify "$MACHINE" adaptive --compression=zstd --compression-level=3 &&
+        adaptive_check '((o.get("status") or {}).get("progress") or {}).get("compressionRatioPercent", 0) > 100' "status.progress.compressionRatioPercent > 100"; then
+        record "$T_ZSTD" pass "$NOTE; ratio $(migration_field "$NAMESPACE" "$LAST_MIGRATION" '((o.get("status") or {}).get("progress") or {}).get("compressionRatioPercent")')%"
+      else
+        record "$T_ZSTD" fail "$NOTE"
+      fi
+      ;;
+    postcopy-source-failure)
+      PC_MACHINE="${KAIRON_HW_POSTCOPY_MACHINE:-}"
+      if [[ -z "$PC_MACHINE" || -z "${KAIRON_HW_SOURCE_SSH:-}" || -z "${KAIRON_HW_TARGET_SSH:-}" ]]; then
+        record "$T_PCFAIL" "not run" "set KAIRON_HW_POSTCOPY_MACHINE (disposable), KAIRON_HW_SOURCE_SSH and KAIRON_HW_TARGET_SSH"
+      elif [[ ! -x "$REPO_ROOT/scripts/lab-inject-postcopy-source-failure.sh" ]]; then
+        record "$T_PCFAIL" "not run" "scripts/lab-inject-postcopy-source-failure.sh missing"
+      else
+        pc_dest="$(next_target "$PC_MACHINE")"
+        pc_ssh="$KAIRON_HW_SOURCE_SSH"
+        [[ "$(machine_node "$NAMESPACE" "$PC_MACHINE")" == "$TARGET" ]] && pc_ssh="$KAIRON_HW_TARGET_SSH"
+        if "$REPO_ROOT/scripts/lab-inject-postcopy-source-failure.sh" --namespace="$NAMESPACE" --machine="$PC_MACHINE" \
+          --target="$pc_dest" --source-ssh="$pc_ssh" --disposable --recover \
+          --bandwidth-mbps="${KAIRON_HW_ADAPTIVE_BANDWIDTH_MBPS:-200}" --load-mib="${KAIRON_HW_ADAPTIVE_LOAD_MIB:-1024}"; then
+          record "$T_PCFAIL" pass "${PC_MACHINE} → ${pc_dest}: source QEMU killed after the switch; NeedsRecovery, then ForceAbort"
+        else
+          record "$T_PCFAIL" fail "${PC_MACHINE} → ${pc_dest}; see the drill log"
+        fi
+      fi
       ;;
     *)
       echo "unknown case $case" >&2

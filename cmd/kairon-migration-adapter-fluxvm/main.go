@@ -513,7 +513,13 @@ func (a *adapter) sourceStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var status migrationStatus
-	if _, err := a.flux.do(r.Context(), http.MethodGet, "/v1/vms/"+runtimeID+"/migration/status", nil, &status); err != nil {
+	if code, err := a.flux.do(r.Context(), http.MethodGet, "/v1/vms/"+runtimeID+"/migration/status", nil, &status); err != nil {
+		// A 4xx means FluxVM no longer has a running source VM; kairon-node
+		// treats that as a lost source once post-copy has started.
+		if code >= 400 && code < 500 {
+			writeError(w, http.StatusConflict, err)
+			return
+		}
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}

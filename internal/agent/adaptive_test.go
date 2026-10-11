@@ -6,6 +6,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -33,9 +34,13 @@ type tuningSource struct {
 	finishes     int
 	statusPhase  string
 	statusRemain uint64
+	statusErr    error
 }
 
 func (f *tuningSource) Status(context.Context, migration.Session, string) (migration.TransferStatus, error) {
+	if f.statusErr != nil {
+		return migration.TransferStatus{}, f.statusErr
+	}
 	st := f.startStatus
 	if f.statusPhase != "" {
 		st.Phase = f.statusPhase
@@ -369,6 +374,48 @@ func TestFailureAfterPostCopyGoesToNeedsRecovery(t *testing.T) {
 	}
 	if destination.aborts != 0 || res.networkResume {
 		t.Fatalf("post-copy failure aborted the destination (%d) or resumed the source network (%v)", destination.aborts, res.networkResume)
+	}
+}
+
+func TestSourceLostAfterPostCopyGoesToNeedsRecovery(t *testing.T) {
+	item := adaptiveMigration("Running")
+	runningAdaptive(&item, time.Now().Add(-10*time.Minute))
+	item.Status.Adaptive.PostCopyStarted = true
+	item.Status.Adaptive.Stage = model.AdaptiveStagePostCopy
+	stale := time.Now().Add(-postCopySourceLostAfter - time.Second)
+	item.Status.Progress = &model.MachineMigrationProgress{UpdatedAt: &stale}
+	destination := acceptingDestination()
+	source := &tuningSource{caps: allCaps, statusErr: errors.New("adapter: 502 qmp: connection refused")}
+	res := runMigrationTick(t, item, dbMachine(), source, destination, runningStore(t, item))
+	if res.status.Phase != "NeedsRecovery" || !strings.Contains(res.status.Message, "lost after post-copy") {
+		t.Fatalf("status = %+v", res.status)
+	}
+	if destination.aborts != 0 || res.networkResume {
+		t.Fatalf("lost source aborted the destination (%d) or resumed the source network (%v)", destination.aborts, res.networkResume)
+	}
+}
+
+func TestPostCopySourceLost(t *testing.T) {
+	now := time.Now()
+	fresh, stale := now.Add(-10*time.Second), now.Add(-postCopySourceLostAfter)
+	transient := errors.New("adapter: 502 timeout")
+	latched := func(updated *time.Time) model.MachineMigrationStatus {
+		return model.MachineMigrationStatus{
+			Adaptive: &model.MachineMigrationAdaptiveStatus{PostCopyStarted: true, StageSince: &stale},
+			Progress: &model.MachineMigrationProgress{UpdatedAt: updated},
+		}
+	}
+	if postCopySourceLost(model.MachineMigrationStatus{Progress: &model.MachineMigrationProgress{UpdatedAt: &stale}}, transient, now) {
+		t.Fatal("a failing poll before post-copy must only be retried")
+	}
+	if postCopySourceLost(latched(&fresh), transient, now) {
+		t.Fatal("a transient failure with recent telemetry must be retried")
+	}
+	if !postCopySourceLost(latched(&stale), transient, now) {
+		t.Fatal("polls failing past postCopySourceLostAfter must count as lost")
+	}
+	if !postCopySourceLost(latched(nil), transient, now) {
+		t.Fatal("without telemetry the post-copy stage start bounds the wait")
 	}
 }
 
