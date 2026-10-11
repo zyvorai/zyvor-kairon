@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zyvorai/kairon/internal/kube"
 	"github.com/zyvorai/kairon/internal/model"
 )
 
@@ -52,6 +53,19 @@ var scenarios = []Scenario{
 		Needs: func(s *session) string {
 			if s.env.PVC == "" {
 				return "pass --pvc NAME (an existing PersistentVolumeClaim) to enable"
+			}
+			return ""
+		}},
+	{ID: "snapshot-restore", Title: "Snapshot a volume and restore it", Profile: ProfileFull, DependsOn: "boot", Run: runSnapshotRestore,
+		Needs: func(s *session) string {
+			t := s.snapshotTarget(context.Background())
+			switch {
+			case t.SnapshotClass == "":
+				return "the cluster has no VolumeSnapshotClass (install a CSI driver with snapshot support)"
+			case t.StorageClass == "":
+				return "no StorageClass is served by the snapshot driver " + t.Driver
+			case !t.ImmediateBinding:
+				return "StorageClass " + t.StorageClass + " waits for a consumer, so an unattached test volume would never bind"
 			}
 			return ""
 		}},
@@ -400,6 +414,121 @@ func runDiskHotplug(ctx context.Context, s *session) error {
 		}
 		return false, nil
 	})
+}
+
+// runSnapshotRestore boots a CirrOS Machine whose boot disk lives on a PVC,
+// snapshots it through the controller and restores the snapshot into a new
+// claim. The Machine does not have to be Running for the snapshot (a PVC
+// snapshot only needs the claim), so its phase is reported, not required.
+func runSnapshotRestore(ctx context.Context, s *session) error {
+	t := s.snapshotTarget(ctx)
+	ns := s.env.Namespace
+	id := s.runID
+	srcPVC := "kairon-selftest-" + id + "-vol"
+	dstPVC := "kairon-selftest-" + id + "-restored"
+	snapName := "kairon-selftest-" + id + "-snap"
+	restoreName := "kairon-selftest-" + id + "-restore"
+
+	img, err := s.imageSpec()
+	if err != nil {
+		return err
+	}
+	sc := t.StorageClass
+	pvc := model.PersistentVolumeClaim{
+		TypeMeta: model.TypeMeta{APIVersion: "v1", Kind: "PersistentVolumeClaim"},
+		Metadata: model.ObjectMeta{Name: srcPVC, Namespace: ns, Labels: map[string]string{LabelKey: id}},
+		Spec: model.PersistentVolumeClaimSpec{
+			AccessModes:      []string{"ReadWriteOnce"},
+			Resources:        &model.PersistentVolumeClaimResources{Requests: map[string]string{"storage": "1Gi"}},
+			StorageClassName: &sc,
+		},
+	}
+	s.logf(LevelInfo, "using VolumeSnapshotClass %s and StorageClass %s (driver %s)", t.SnapshotClass, t.StorageClass, t.Driver)
+	if _, err := s.env.Kube.CreatePersistentVolumeClaim(ctx, ns, pvc); err != nil {
+		return fmt.Errorf("create PVC: %w", err)
+	}
+	s.onCleanup(func(c context.Context) { s.deleteClaim(c, srcPVC) })
+
+	m := s.newMachine("snap", img)
+	m.Spec.Network.Forwards = nil
+	m.Spec.Volumes = []model.MachineVolume{{Name: "root", ClaimName: srcPVC}}
+	if err := s.create(ctx, m); err != nil {
+		return fmt.Errorf("create Machine on the volume: %w", err)
+	}
+	s.logf(LevelInfo, "created %s with its boot disk on claim %s", m.Metadata.Name, srcPVC)
+	if cur, err := s.waitPhase(ctx, m.Metadata.Name, "Running", 90*time.Second); err != nil {
+		s.logf(LevelWarn, "the Machine on the volume is not Running (%v); snapshotting the claim anyway", err)
+	} else {
+		s.logf(LevelOK, "Machine booted from the volume on node %s", dashIfEmpty(cur.Status.NodeName))
+	}
+
+	snap := model.MachineSnapshot{
+		TypeMeta: model.TypeMeta{APIVersion: model.APIVersion, Kind: model.KindMachineSnapshot},
+		Metadata: model.ObjectMeta{Name: snapName, Namespace: ns, Labels: map[string]string{LabelKey: id}},
+		Spec:     model.MachineSnapshotSpec{MachineName: m.Metadata.Name, VolumeSnapshotClassName: t.SnapshotClass},
+	}
+	if _, err := s.env.Kube.CreateMachineSnapshot(ctx, ns, snap); err != nil {
+		return fmt.Errorf("create MachineSnapshot: %w", err)
+	}
+	s.onCleanup(func(c context.Context) { _ = s.env.Kube.DeleteMachineSnapshot(c, ns, snapName) })
+	var snapState model.MachineSnapshot
+	err = s.waitFor(ctx, "the snapshot to be ready", 2*time.Minute, func() (bool, error) {
+		cur, err := s.env.Kube.GetMachineSnapshot(ctx, ns, snapName)
+		if err != nil {
+			return false, nil
+		}
+		snapState = cur
+		if cur.Status.Phase == "Failed" {
+			return false, fmt.Errorf("snapshot failed: %s", cur.Status.Message)
+		}
+		return cur.Status.ReadyToUse || cur.Status.Phase == "Succeeded", nil
+	})
+	if err != nil {
+		s.hint = "kaironctl describe snapshot " + snapName + " -n " + ns + "; kubectl get volumesnapshot -n " + ns
+		return err
+	}
+	s.logf(LevelOK, "snapshot %s is ready (%d volume snapshot(s))", snapName, len(snapState.Status.VolumeSnapshots))
+
+	restore := model.MachineSnapshotRestore{
+		TypeMeta: model.TypeMeta{APIVersion: model.APIVersion, Kind: model.KindMachineSnapshotRestore},
+		Metadata: model.ObjectMeta{Name: restoreName, Namespace: ns, Labels: map[string]string{LabelKey: id}},
+		Spec:     model.MachineSnapshotRestoreSpec{SnapshotName: snapName, TargetClaimName: dstPVC, StorageClassName: t.StorageClass},
+	}
+	if _, err := s.env.Kube.CreateMachineSnapshotRestore(ctx, ns, restore); err != nil {
+		return fmt.Errorf("create MachineSnapshotRestore: %w", err)
+	}
+	s.onCleanup(func(c context.Context) {
+		_ = s.env.Kube.DeleteMachineSnapshotRestore(c, ns, restoreName)
+		s.deleteClaim(c, dstPVC)
+	})
+	err = s.waitFor(ctx, "the restore to complete", 2*time.Minute, func() (bool, error) {
+		cur, err := s.env.Kube.GetMachineSnapshotRestore(ctx, ns, restoreName)
+		if err != nil {
+			return false, nil
+		}
+		if cur.Status.Phase == "Failed" {
+			return false, fmt.Errorf("restore failed: %s", cur.Status.Message)
+		}
+		return cur.Status.Phase == "Succeeded", nil
+	})
+	if err != nil {
+		s.hint = "kaironctl get restores -n " + ns + "; kubectl describe pvc " + dstPVC + " -n " + ns
+		return err
+	}
+	if _, err := s.env.Kube.GetPersistentVolumeClaim(ctx, ns, dstPVC); err != nil {
+		return fmt.Errorf("the restore reported success but claim %s is missing: %w", dstPVC, err)
+	}
+	s.logf(LevelOK, "restored into claim %s", dstPVC)
+	return nil
+}
+
+// deleteClaim removes a test PVC, ignoring one that is already gone.
+func (s *session) deleteClaim(ctx context.Context, name string) {
+	if err := s.env.Kube.DeletePersistentVolumeClaim(ctx, s.env.Namespace, name); err != nil && !kube.IsNotFound(err) {
+		s.logf(LevelWarn, "could not delete claim %s: %v (kubectl delete pvc %s -n %s)", name, err, name, s.env.Namespace)
+		return
+	}
+	s.logf(LevelOK, "cleaned up claim %s", name)
 }
 
 func runFork(ctx context.Context, s *session) error {

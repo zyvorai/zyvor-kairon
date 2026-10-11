@@ -1058,6 +1058,17 @@ rules:
   - apiGroups: [""]
     resources: ["events", "pods"]
     verbs: ["get", "list"]
+  # The dashboard self-test (internal/uiapi/selftest.go) creates and removes a
+  # test volume, and looks for a snapshot-capable StorageClass.
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "create", "delete"]
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshotclasses"]
+    verbs: ["get", "list"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list"]
   - apiGroups: ["kairon.zyvor.dev"]
     resources: ["machines"]
     verbs: ["get", "list", "watch", "create", "delete", "patch"]
@@ -1066,11 +1077,11 @@ rules:
     verbs: ["get", "list", "watch", "create", "patch"]
   - apiGroups: ["kairon.zyvor.dev"]
     resources: ["machinesnapshots"]
-    verbs: ["get", "list", "watch", "create"]
+    verbs: ["get", "list", "watch", "create", "delete"]
   # machinesnapshotrestores: the dashboard's Restores page (GET/POST
   # /api/v1/restores, DELETE /api/v1/restores/{namespace}/{name} -- see
-  # internal/uiapi/restores.go). Unlike machinesnapshots just above,
-  # kairon-ui also gets delete here: internal/kube.Client has always had a
+  # internal/uiapi/restores.go). kairon-ui gets delete here (and now on
+  # machinesnapshots too, for the self-test's cleanup): internal/kube.Client has always had a
   # DeleteMachineSnapshotRestore (kaironctl delete restore already used
   # it), so this isn't a new mutation being introduced, just the
   # dashboard's own RBAC catching up to a capability that already existed.

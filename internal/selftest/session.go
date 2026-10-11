@@ -50,6 +50,12 @@ type session struct {
 	// hint and skipReason are set by a scenario for its Result.
 	hint       string
 	skipReason string
+
+	// snap caches the snapshot-capable storage pair (nil until looked up).
+	snap *kube.SnapshotTarget
+	// extraCleanups run after the Machines are gone, newest first: the
+	// snapshots, restores and claims a scenario created.
+	extraCleanups []func(ctx context.Context)
 }
 
 func newSession(env *Env, rep Reporter) *session {
@@ -235,8 +241,33 @@ func (s *session) serial(ctx context.Context, name string) string {
 	return out
 }
 
-// cleanup deletes every created Machine and waits for them to disappear.
+// snapshotTarget looks the snapshot-capable storage pair up once.
+func (s *session) snapshotTarget(ctx context.Context) kube.SnapshotTarget {
+	if s.snap == nil {
+		var t kube.SnapshotTarget
+		vcs, err := s.env.Kube.ListVolumeSnapshotClasses(ctx)
+		if err == nil && len(vcs) > 0 {
+			var scs []kube.StorageClass
+			if scs, err = s.env.Kube.ListStorageClasses(ctx); err == nil {
+				t = kube.PickSnapshotTarget(vcs, scs)
+			}
+		}
+		if err != nil {
+			s.logf(LevelWarn, "could not look up snapshot support: %v", err)
+		}
+		s.snap = &t
+	}
+	return *s.snap
+}
+
+func (s *session) onCleanup(f func(ctx context.Context)) {
+	s.extraCleanups = append(s.extraCleanups, f)
+}
+
+// cleanup deletes every created Machine and waits for them to disappear,
+// then runs the extra cleanups.
 func (s *session) cleanup() {
+	defer s.runExtraCleanups()
 	if len(s.created) == 0 {
 		return
 	}
@@ -270,4 +301,16 @@ func (s *session) cleanup() {
 	next:
 	}
 	s.created = nil
+}
+
+func (s *session) runExtraCleanups() {
+	if len(s.extraCleanups) == 0 || s.env.Keep {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	for i := len(s.extraCleanups) - 1; i >= 0; i-- {
+		s.extraCleanups[i](ctx)
+	}
+	s.extraCleanups = nil
 }

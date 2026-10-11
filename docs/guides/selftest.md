@@ -22,7 +22,7 @@ kaironctl selftest --list               # every check and what it needs
 |---|---|---|
 | `quick` | control plane, boot, serial console, stop/start | ~1 min |
 | `standard` (default) | forwarded-port network, pause/resume, vCPU hotplug, usage and conditions | ~3 min |
-| `full` | NIC hotplug (`--bridge`), disk hotplug (`--pvc`), fork, cold migration | ~8 min |
+| `full` | NIC hotplug (`--bridge`), disk hotplug (`--pvc`), snapshot and restore, fork, cold migration | ~8 min |
 
 A check whose prerequisite is missing is **skipped with the reason and the flag
 that enables it**, never dropped silently. `--strict` makes a skip a failure.
@@ -41,6 +41,7 @@ that enables it**, never dropped silently. `--strict` makes a skip a failure.
 | `observability` | `status.resourceUsage`, the `Ready` condition, events, dashboard samples | after a failed `boot` |
 | `nic-hotplug` | a tap-networked VM gets a live NIC | `--bridge` not given |
 | `disk-hotplug` | a PVC attaches live | `--pvc` not given |
+| `snapshot-restore` | a Machine whose boot disk is on a PVC is snapshotted through the controller and restored into a new claim | no `VolumeSnapshotClass`, no StorageClass for its driver, or the StorageClass waits for a consumer |
 | `fork` | a `flux-vm` VM forks into a running child | the backend is not accepted or does not start |
 | `cold-migration` | a VM moves to a second node | fewer than two capable Ready nodes |
 
@@ -66,6 +67,17 @@ capable node). Nothing is booted if the digest does not match.
 | An air-gapped cluster | `--image /path/on/the/node.qcow2` |
 | A mirror | `--image-url URL --image-digest sha256:...` |
 | A specific architecture | `--arch amd64` or `--arch arm64` |
+
+## Snapshot and restore
+
+`snapshot-restore` picks a `VolumeSnapshotClass` and a StorageClass served by the
+same CSI driver (preferring one with `Immediate` binding, then defaults), creates
+a 1Gi claim, boots a CirrOS Machine from it (`spec.volumes[0]` with the image
+seeded into the claim), snapshots it with a `MachineSnapshot`, and restores the
+snapshot into a second claim with a `MachineSnapshotRestore`. It deletes the
+snapshot, restore and both claims afterwards. The snapshot of a claim does not
+need the Machine to be Running, so a Machine that does not boot from the volume is
+reported as a warning rather than failing the check.
 
 ## Serial console and usage samples
 
