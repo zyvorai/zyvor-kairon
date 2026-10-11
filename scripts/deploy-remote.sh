@@ -125,6 +125,12 @@ Flags:
   --console-tls-key=PATH   Bring your own console relay server private key.
   --console-tls-ca=PATH    CA certificate that signed --console-tls-cert;
                           installed on the kairon-ui side to verify it.
+  --self-test[=PROFILE]   After the deploy, run 'kaironctl selftest' on the host
+                          over an SSH terminal (coloured): it boots a tiny CirrOS
+                          VM and checks power, network and more, then cleans up.
+                          PROFILE is quick (default), standard or full. Needs a
+                          reachable Kubernetes API (see --kube-url); the run's
+                          result becomes this script's exit code.
   --no-start              Install files but do not enable/start the service(s).
   --sync-only             Copy binaries + unit files to the remote host only;
                           skip user/dir/config/unit install and service start.
@@ -231,6 +237,8 @@ CONSOLE_TLS_CA=""
 RESOLVED_CONSOLE_TLS_SOURCE="none"
 NO_START=0
 SYNC_ONLY=0
+SELF_TEST=0
+SELF_TEST_PROFILE="quick"
 DRY_RUN=0
 ARCH_OVERRIDE=""
 UNINSTALL=0
@@ -306,6 +314,12 @@ while [[ $# -gt 0 ]]; do
     --console-tls-ca=*) CONSOLE_TLS_CA="${1#*=}" ;;
     --no-start) NO_START=1 ;;
     --sync-only) SYNC_ONLY=1 ;;
+    --self-test) SELF_TEST=1 ;;
+    --self-test=*)
+      SELF_TEST=1
+      SELF_TEST_PROFILE="${1#*=}"
+      case "$SELF_TEST_PROFILE" in quick|standard|full) ;; *) die "--self-test=PROFILE must be quick, standard or full (got: $SELF_TEST_PROFILE)" ;; esac
+      ;;
     --dry-run) DRY_RUN=1 ;;
     --arch=*) ARCH_OVERRIDE="${1#*=}" ;;
     --uninstall) UNINSTALL=1 ;;
@@ -532,6 +546,7 @@ $([[ "$WITH_CONSOLE" == "1" ]] && echo "Console relay port:       ${CONSOLE_PORT
 $([[ "$WITH_CONSOLE" == "1" ]] && echo "Console relay token:      will be auto-generated at deploy time (openssl rand -hex 32), shared between kairon-node and kairon-ui only -- never shown to an operator")
 $([[ "$WITH_CONSOLE_TLS" == "1" ]] && echo "Console relay TLS:        $(if [[ -n "$CONSOLE_TLS_CERT" ]]; then echo "provided via --console-tls-cert/-key/-ca"; else echo "self-signed CA + cert will be auto-generated at deploy time (openssl)"; fi)")
 Start after install:      $([[ "$NO_START" == "1" ]] && echo "no (--no-start)" || echo "yes")
+Self-test after deploy:   $([[ "$SELF_TEST" == "1" ]] && echo "yes (profile ${SELF_TEST_PROFILE})" || echo "no (add --self-test)")
 
 Remote paths:
   /usr/bin/kairon-node, /usr/bin/kaironctl$([[ "$WITH_CONTROLLER" == "1" ]] && echo ", /usr/bin/kairon-controller")$([[ "$WITH_UI" == "1" ]] && echo ", /usr/bin/kairon-ui")
@@ -1381,6 +1396,40 @@ INSTALL_EOF
   tip "ssh ${REMOTE} 'journalctl -u kairon-node -n 30 --no-pager'"
   tip "ssh ${REMOTE} 'sudo cat /etc/kairon/kairon-node.env'"
   tip "use kaironctl on that host: export KAIRON_KUBE_URL=... ; kaironctl get"
+  if [[ "$SELF_TEST" == "1" ]]; then
+    if [[ "$NO_START" == "1" ]]; then
+      warn "--self-test skipped: --no-start left the services stopped"
+    else
+      echo
+      run_selftest_remote "$SELF_TEST_PROFILE" "${ui_port:-}" || { err "self-test failed (see the log above)"; return 1; }
+    fi
+  else
+    tip "check it all works: ssh -t ${REMOTE} 'sudo kaironctl selftest --profile quick'  (or re-run with --self-test)"
+  fi
+}
+
+# run_selftest_remote runs 'kaironctl selftest' on the host through a
+# pseudo-terminal so its colours survive. It loads the node's env file for
+# the Kubernetes connection (a k3s kubeconfig is the fallback), and, when
+# kairon-ui was deployed, points the self-test at it for serial-console and
+# usage checks.
+run_selftest_remote() {
+  local profile="$1" ui_port="${2:-}" script
+  script='set -a; [ -r /etc/kairon/kairon-node.env ] && . /etc/kairon/kairon-node.env; set +a;'
+  script+=' if [ -z "${KAIRON_KUBE_URL:-}" ] && [ -r /etc/rancher/k3s/k3s.yaml ]; then export KUBECONFIG=/etc/rancher/k3s/k3s.yaml; fi;'
+  if [[ -n "$ui_port" ]]; then
+    script+=" export KAIRON_UI_URL=http://127.0.0.1:${ui_port};"
+    script+=' t=$(sed -n "s/^KAIRON_UI_TOKEN=//p" /etc/kairon/kairon-ui.env 2>/dev/null | head -1); [ -n "$t" ] && export KAIRON_UI_TOKEN="$t";'
+  fi
+  script+=" exec kaironctl selftest --profile ${profile}"
+  info "running kaironctl selftest --profile ${profile} on ${REMOTE}"
+  local rc=0
+  if [[ -n "${SSHPASS:-}" ]] && command -v sshpass >/dev/null 2>&1; then
+    sshpass -e ssh -t "${SSH_OPTS[@]}" "$REMOTE" "${SUDO} sh -c '${script}'" || rc=$?
+  else
+    ssh -t "${SSH_OPTS[@]}" "$REMOTE" "${SUDO} sh -c '${script}'" || rc=$?
+  fi
+  return "$rc"
 }
 
 case "$MODE" in
