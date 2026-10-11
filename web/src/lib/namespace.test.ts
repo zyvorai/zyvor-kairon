@@ -32,3 +32,20 @@ describe('withNamespace', () => {
     }
   });
 });
+
+describe('withNamespace all-namespaces view', () => {
+  it('lists every namespace for machines GETs only', () => {
+    expect(withNamespace('/api/v1/machines', 'prod', { all: true })).toBe('/api/v1/machines?namespace=_all');
+    expect(withNamespace('/api/v1/machines', 'prod', { all: true, method: 'get' })).toBe('/api/v1/machines?namespace=_all');
+  });
+
+  it('keeps creates and other collections in the concrete namespace', () => {
+    expect(withNamespace('/api/v1/machines', 'prod', { all: true, method: 'POST' })).toBe('/api/v1/machines?namespace=prod');
+    expect(withNamespace('/api/v1/migrations', 'prod', { all: true })).toBe('/api/v1/migrations?namespace=prod');
+    expect(withNamespace('/api/v1/snapshots', 'prod', { all: true })).toBe('/api/v1/snapshots?namespace=prod');
+  });
+
+  it('is off by default', () => {
+    expect(withNamespace('/api/v1/machines', 'prod', { all: false })).toBe('/api/v1/machines?namespace=prod');
+  });
+});

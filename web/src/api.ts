@@ -35,7 +35,7 @@ function headers(extra: Record<string, string> = {}): Record<string, string> {
 export const UNAUTHORIZED_EVENT = 'kairon:unauthorized';
 
 export async function api<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
-  const r = await fetch(withNamespace(path), { ...init, headers: headers((init.headers as Record<string, string>) || {}) });
+  const r = await fetch(withNamespace(path, undefined, { method: init.method }), { ...init, headers: headers((init.headers as Record<string, string>) || {}) });
   if (r.status === 401) {
     window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
   }

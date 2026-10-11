@@ -48,6 +48,30 @@ func (s *Server) handleListMachines(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, items)
 }
 
+// handleListAllMachines serves GET /api/v1/machines?namespace=_all: every
+// Machine in every namespace the caller is authorized for. With namespace
+// scoping on, a caller without a per-operator identity is refused (the same
+// rule requireNamespace applies) and everyone else sees only the namespaces
+// authorizedForNamespace grants -- an admin identity sees all of them.
+func (s *Server) handleListAllMachines(w http.ResponseWriter, r *http.Request) {
+	if s.NamespaceScopingEnabled && usernameFromContext(r.Context()) == "" {
+		writeError(w, http.StatusForbidden, "listing every namespace requires a per-operator identity when namespace scoping is on")
+		return
+	}
+	items, err := s.Kube.ListMachines(r.Context())
+	if err != nil {
+		writeUpstreamError(w, err)
+		return
+	}
+	visible := make([]model.Machine, 0, len(items))
+	for _, m := range items {
+		if s.authorizedForNamespace(r.Context(), m.Namespace()) {
+			visible = append(visible, m)
+		}
+	}
+	writeJSON(w, http.StatusOK, visible)
+}
+
 func (s *Server) handleGetMachine(w http.ResponseWriter, r *http.Request) {
 	m, err := s.Kube.GetMachine(r.Context(), r.PathValue("namespace"), r.PathValue("name"))
 	if err != nil {

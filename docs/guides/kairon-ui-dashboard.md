@@ -34,6 +34,16 @@ configured; see [OIDC](kairon-ui-oidc.md).
 
 The dashboard works in one namespace at a time, **`default`** unless you change it. Pick another from the **Namespace** selector in the account menu (top right); the list is the namespaces you may use (`GET /api/v1/namespaces`, which honours namespace scoping). The choice is remembered in the browser and applies to every namespaced page, action, console, log and usage-CSV download. Before this selector existed the dashboard only ever showed `default`, because it never sent the `namespace` parameter the API scopes lists by.
 
+### All namespaces (Machines)
+
+Choose **All (Machines)** in the nav selector to list Machines from every
+namespace you may use in one table, with a Namespace column; row actions
+(power, delete, priority, console, logs, details) act on the row's own
+namespace. Only the Machines list has this view: every other page, and
+creating a Machine, keeps working in the concrete namespace last selected.
+The API form is `GET /api/v1/machines?namespace=_all` (see the
+[API reference](kairon-ui-api.md)).
+
 ## Navigation
 
 Navigation is grouped into a frosted top bar with a mega-menu (a sheet on small

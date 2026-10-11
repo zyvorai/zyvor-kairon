@@ -233,7 +233,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/v1/usage.csv", s.requireNamespace(namespaceParam, s.handleLedgerCSV))
 	s.mountAgentPlane(api)
 
-	api.HandleFunc("GET /api/v1/machines", s.requireNamespace(namespaceParam, s.handleListMachines))
+	api.HandleFunc("GET /api/v1/machines", s.orAllNamespaces(s.requireNamespace(namespaceParam, s.handleListMachines), s.handleListAllMachines))
 	api.HandleFunc("POST /api/v1/machines", s.requireNamespace(namespaceParam, s.handleCreateMachine))
 	api.HandleFunc("GET /api/v1/machines/{namespace}/{name}", s.requireNamespace(namespaceFromPath, s.handleGetMachine))
 	api.HandleFunc("DELETE /api/v1/machines/{namespace}/{name}", s.requireNamespace(namespaceFromPath, s.handleDeleteMachine))
@@ -669,6 +669,25 @@ func namespaceParam(r *http.Request) string {
 		return ns
 	}
 	return "default"
+}
+
+// allNamespaces is the "?namespace=" value that asks a list route for every
+// namespace the caller may see instead of one. Only routes registered through
+// orAllNamespaces honour it; everywhere else it is just a namespace name that
+// holds no objects.
+const allNamespaces = "_all"
+
+// orAllNamespaces dispatches "?namespace=_all" to all (which does its own
+// per-namespace authorization) and every other request to scoped (normally
+// the requireNamespace-wrapped single-namespace handler).
+func (s *Server) orAllNamespaces(scoped, all http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("namespace") == allNamespaces {
+			all(w, r)
+			return
+		}
+		scoped(w, r)
+	}
 }
 
 // namespaceFromPath is namespaceParam's counterpart for a route registered
