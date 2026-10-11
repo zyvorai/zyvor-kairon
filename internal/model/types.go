@@ -68,6 +68,10 @@ const (
 	// create (or attempt) a new MachineMigration every single tick for a
 	// Machine a budget is currently blocking. RFC3339 UTC.
 	AnnotationCordonEvacuateAttemptedAt = "kairon.zyvor.dev/cordon-evacuate-attempted-at"
+	// AnnotationMemoryEvacuateAttemptedAt is the memory-pressure
+	// evacuation's retry cooldown, the same pattern as
+	// AnnotationCordonEvacuateAttemptedAt. RFC3339 UTC.
+	AnnotationMemoryEvacuateAttemptedAt = "kairon.zyvor.dev/memory-evacuate-attempted-at"
 	// AnnotationQuiesceRequest/AnnotationQuiesceStatus are a request/
 	// response pair kairon-controller and kairon-node use to coordinate
 	// guest filesystem quiesce (real guest-fsfreeze/-thaw) around a
@@ -136,6 +140,17 @@ const (
 	// unreachable, and it's safe to let the Machine be rescheduled
 	// elsewhere. Kairon cannot verify this itself.
 	ConditionFenced = "Fenced"
+	// NodeConditionKaironMemoryPressure is a Node condition kairon-node
+	// sets True when host memory stays under pressure after every
+	// elastic-memory Machine on the node is ballooned down to its minimum.
+	// The scheduler places nothing new on such a node, and
+	// kairon-controller -memory-pressure-evacuate migrates Machines off it.
+	NodeConditionKaironMemoryPressure = "KaironMemoryPressure"
+	// AnnotationMemoryOvercommitRatio on a Node lets the full memory of
+	// elastic-memory Machines add up to this multiple of allocatable (a
+	// decimal from 1.0 to 4.0; default 1.0, no overcommit). Guaranteed
+	// memory always fits allocatable.
+	AnnotationMemoryOvercommitRatio = "kairon.zyvor.dev/memory-overcommit-ratio"
 )
 
 type TypeMeta struct {
@@ -472,6 +487,51 @@ type ResourceSpec struct {
 	// -- unlike hotplug -- can be raised or lowered freely at any time, since a
 	// cgroup limit change has no "can't unplug a vCPU" asymmetry to worry about.
 	Limits *ResourceLimits `json:"limits,omitempty"`
+	// ElasticMemory gives the Machine a virtio-balloon that kairon-node
+	// inflates under host memory pressure, never below Min, and deflates
+	// again once the pressure clears. The scheduler counts Min as the
+	// guaranteed share and Memory against the node's overcommit ratio.
+	// QEMU only; refused with Hugepages and passthrough devices, whose
+	// guest memory is pinned. See docs/guides/machine-elastic-memory.md.
+	ElasticMemory *ElasticMemorySpec `json:"elasticMemory,omitempty"`
+}
+
+// ElasticMemorySpec is the reclaimable part of a Machine's memory.
+type ElasticMemorySpec struct {
+	// Min is the memory the guest always keeps, as a quantity (for
+	// example "1Gi"). Must be at most spec.resources.memory.
+	Min string `json:"min"`
+	// FreePageReporting lets the guest hand freed pages back to the host
+	// without a balloon target (guest kernel 5.8 or newer). Defaults to
+	// true.
+	FreePageReporting *bool `json:"freePageReporting,omitempty"`
+}
+
+// FreePageReportingEnabled reports the effective FreePageReporting.
+func (e *ElasticMemorySpec) FreePageReportingEnabled() bool {
+	return e == nil || e.FreePageReporting == nil || *e.FreePageReporting
+}
+
+// MemoryStatus is the balloon state of an elastic-memory Machine as
+// kairon-node last applied it.
+type MemoryStatus struct {
+	// CurrentMiB is guest memory including hot-added DIMMs.
+	CurrentMiB uint64 `json:"currentMiB,omitempty"`
+	// MinMiB is spec.resources.elasticMemory.min in MiB.
+	MinMiB uint64 `json:"minMiB,omitempty"`
+	// BalloonTargetMiB is the memory kairon-node asked the guest to give
+	// back; 0 means fully deflated.
+	BalloonTargetMiB uint64 `json:"balloonTargetMiB"`
+	// BalloonActualMiB is what the guest driver has given back so far.
+	BalloonActualMiB uint64 `json:"balloonActualMiB"`
+	// GuestAvailableMiB is the guest's own MemAvailable, when its balloon
+	// driver reports statistics.
+	GuestAvailableMiB *uint64 `json:"guestAvailableMiB,omitempty"`
+	// Reason is why the target was last changed: HostPressure, Relief or
+	// Restart.
+	Reason string `json:"reason,omitempty"`
+	// LastChangeTime is when kairon-node last changed the target.
+	LastChangeTime string `json:"lastChangeTime,omitempty"`
 }
 
 // ResourceLimits are host cgroup v2 controls for an already-running Machine
@@ -929,6 +989,9 @@ type MachineStatus struct {
 	// AppliedTopology is the NUMA binding FluxVM reported for the running
 	// VM (spec.topologyAllocation Machines only).
 	AppliedTopology *AppliedTopology `json:"appliedTopology,omitempty"`
+	// Memory is the balloon state of a spec.resources.elasticMemory
+	// Machine, written by kairon-node when it changes the target.
+	Memory *MemoryStatus `json:"memory,omitempty"`
 	// ResourceUsage is this Machine's cgroup-derived resource usage as of
 	// the last *meaningful* status write (FluxVM's GET /v1/vms/{id}/stats).
 	// High-frequency samples go to Prometheus (kairon_machine_resource_usage)
@@ -1474,8 +1537,12 @@ type SubjectAccessReviewStatus struct {
 }
 
 type NodeCondition struct {
-	Type   string `json:"type"`
-	Status string `json:"status"`
+	Type               string `json:"type"`
+	Status             string `json:"status"`
+	Reason             string `json:"reason,omitempty"`
+	Message            string `json:"message,omitempty"`
+	LastHeartbeatTime  string `json:"lastHeartbeatTime,omitempty"`
+	LastTransitionTime string `json:"lastTransitionTime,omitempty"`
 }
 
 type NodeList struct {

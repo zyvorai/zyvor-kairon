@@ -1,0 +1,34 @@
+# Two web VMs that each guarantee 2Gi but may use 8Gi. kairon-node
+# balloons them toward 2Gi when the host runs short of memory and gives
+# the memory back when pressure passes.
+# Let a node hold more full-size memory than it has:
+#   kubectl annotate node worker-1 kairon.zyvor.dev/memory-overcommit-ratio=1.5
+# See docs/guides/machine-elastic-memory.md.
+apiVersion: kairon.zyvor.dev/v1
+kind: Machine
+metadata:
+  name: web-1
+  namespace: default
+spec:
+  image: {path: /var/lib/fluxvm/images/ubuntu-24.04.qcow2}
+  runtime: {backend: qemu}
+  resources:
+    cpu: "2"
+    memory: 8Gi
+    elasticMemory:
+      min: 2Gi
+---
+apiVersion: kairon.zyvor.dev/v1
+kind: Machine
+metadata:
+  name: web-2
+  namespace: default
+spec:
+  image: {path: /var/lib/fluxvm/images/ubuntu-24.04.qcow2}
+  runtime: {backend: qemu}
+  resources:
+    cpu: "2"
+    memory: 8Gi
+    elasticMemory:
+      min: 2Gi
+      freePageReporting: false

@@ -23,6 +23,13 @@ type nodeCapacity struct {
 	ReqCPUMilli     int64  `json:"requestedCpuMilli"`
 	ReqMemoryMiB    uint64 `json:"requestedMemoryMiB"`
 	KnownAllocation bool   `json:"knownAllocatable"`
+	// GuaranteedMemoryMiB counts elastic-memory Machines at their minimum.
+	GuaranteedMemoryMiB uint64 `json:"guaranteedMemoryMiB"`
+	// MemoryOvercommitRatio is the node's
+	// kairon.zyvor.dev/memory-overcommit-ratio (1 when unset).
+	MemoryOvercommitRatio float64 `json:"memoryOvercommitRatio"`
+	// MemoryPressure is the node's KaironMemoryPressure condition.
+	MemoryPressure bool `json:"memoryPressure"`
 	// WhatIf is present only when ?cpu= and ?memory= were given.
 	WhatIf *whatIfResult `json:"whatIf,omitempty"`
 }
@@ -69,6 +76,9 @@ func (s *Server) handleNodeCapacity(w http.ResponseWriter, r *http.Request) {
 		row := nodeCapacity{
 			Node: n.Metadata.Name, Unschedulable: n.Spec.Unschedulable, Taints: len(n.Spec.Taints),
 			Machines: l.Count, ReqCPUMilli: l.CPUMilli, ReqMemoryMiB: l.MemoryMiB,
+			GuaranteedMemoryMiB:   l.GuaranteedMemoryMiB,
+			MemoryOvercommitRatio: scheduler.MemoryOvercommitRatio(n),
+			MemoryPressure:        scheduler.MemoryPressure(n),
 		}
 		for _, c := range n.Status.Conditions {
 			if c.Type == "Ready" && c.Status == "True" {
@@ -80,6 +90,9 @@ func (s *Server) handleNodeCapacity(w http.ResponseWriter, r *http.Request) {
 			fits, reason := scheduler.Fits(n, *probe, l)
 			if fits && (!row.Ready || row.Unschedulable) {
 				fits, reason = false, "node is not Ready or is unschedulable"
+			}
+			if fits && row.MemoryPressure {
+				fits, reason = false, "node reports "+model.NodeConditionKaironMemoryPressure
 			}
 			row.WhatIf = &whatIfResult{Fits: fits, Reason: reason}
 		}

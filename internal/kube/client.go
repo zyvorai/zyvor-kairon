@@ -212,6 +212,12 @@ func (c *Client) PatchMachineStatus(ctx context.Context, ns, name string, status
 	return c.request(ctx, http.MethodPatch, namespacedObjectPath(ns, "machines", name)+"/status", map[string]any{"status": status}, nil, "application/merge-patch+json")
 }
 
+// PatchMachineStatusFields merge-patches only the given status fields, for
+// writers that must not resend a whole status read earlier.
+func (c *Client) PatchMachineStatusFields(ctx context.Context, ns, name string, fields map[string]any) error {
+	return c.request(ctx, http.MethodPatch, namespacedObjectPath(ns, "machines", name)+"/status", map[string]any{"status": fields}, nil, "application/merge-patch+json")
+}
+
 func (c *Client) ListMachineMigrations(ctx context.Context) ([]model.MachineMigration, error) {
 	return c.ListMachineMigrationsWithSelector(ctx, "")
 }
@@ -1004,6 +1010,14 @@ func (c *Client) CreateNode(ctx context.Context, node map[string]any) error {
 // PatchNodeStatus merge-patches a Node's status subresource (capacity, allocatable, the Ready heartbeat).
 func (c *Client) PatchNodeStatus(ctx context.Context, name string, patch map[string]any) error {
 	return c.request(ctx, http.MethodPatch, fmt.Sprintf("/api/v1/nodes/%s/status", url.PathEscape(name)), patch, nil, "application/merge-patch+json")
+}
+
+// PatchNodeCondition upserts one Node status condition. A strategic merge
+// patch merges conditions by type, so the kubelet's own conditions stay; a
+// merge patch would replace the whole list.
+func (c *Client) PatchNodeCondition(ctx context.Context, name string, cond model.NodeCondition) error {
+	patch := map[string]any{"status": map[string]any{"conditions": []model.NodeCondition{cond}}}
+	return c.request(ctx, http.MethodPatch, fmt.Sprintf("/api/v1/nodes/%s/status", url.PathEscape(name)), patch, nil, "application/strategic-merge-patch+json")
 }
 
 func leasePath(ns, name string) string {

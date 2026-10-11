@@ -280,6 +280,9 @@ func (c *Controller) validateMachineCreate(r *http.Request, req *admission.Reque
 	if err := model.ValidateTopology(m.Spec); err != nil {
 		return admission.Deny(err.Error())
 	}
+	if err := model.ValidateElasticMemory(m.Spec); err != nil {
+		return admission.Deny(err.Error())
+	}
 	if err := model.ValidateExtraInterfaces(m.Spec.Network); err != nil {
 		return admission.Deny(err.Error())
 	}
@@ -354,6 +357,9 @@ func (c *Controller) validateMachineResize(r *http.Request, req *admission.Reque
 		return admission.Deny(err.Error())
 	}
 	if err := model.ValidateTopologyUpdate(oldM.Spec, newM.Spec); err != nil {
+		return admission.Deny(err.Error())
+	}
+	if err := model.ValidateElasticMemoryUpdate(oldM.Spec, newM.Spec); err != nil {
 		return admission.Deny(err.Error())
 	}
 	if err := tenantfence.CheckUpdate(oldM.Spec.Tenant, newM.Spec.Tenant, newM.Metadata.Annotations); err != nil {

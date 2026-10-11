@@ -97,7 +97,7 @@ Starts a proxy on `127.0.0.1` that forwards to the `kairon-ui` Service through t
 
 ```text
 kaironctl get [machines|migrations|snapshots|restores|quotas|budgets|machinesets|machinepools|machineclaims|instancetypes|migrationpolicies|snapshotschedules|networkpolicies|securitygroups|backups|backuprestores|nodes|nodetopologies] [--selector k=v]
-kaironctl describe [RESOURCE] NAME
+kaironctl describe [RESOURCE] NAME   # machine: adds an elastic-memory line from status.memory
 kaironctl create NAME --image PATH [--cpu N] [--memory SIZE] [--backend qemu|…]
                  [--forward hostPort:guestPort[/proto]] [--hostname NAME] [--user NAME]
                  [--ssh-key KEY] [--package PKG] [--runcmd CMD] [--priority N]

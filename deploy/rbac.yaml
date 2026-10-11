@@ -195,6 +195,10 @@ rules:
     resources: ["nodes"]
     # patch: the confidential-capable label (internal/agent/attest.go).
     verbs: ["get", "list", "patch"]
+  # The KaironMemoryPressure condition (internal/agent/memory.go).
+  - apiGroups: [""]
+    resources: ["nodes/status"]
+    verbs: ["patch"]
   - apiGroups: [""]
     resources: ["persistentvolumeclaims", "persistentvolumes"]
     verbs: ["get"]

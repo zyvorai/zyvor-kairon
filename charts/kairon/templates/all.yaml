@@ -89,11 +89,12 @@ rules:
     # namespace/tenant (internal/controller/tenantfence.go).
     resources: ["networksecuritygroups"]
     verbs: ["create", "delete"]
-{{ if .Values.controller.cordonEvacuation.enabled }}
+{{ if or .Values.controller.cordonEvacuation.enabled .Values.controller.memoryPressureEvacuation.enabled }}
   - apiGroups: ["kairon.zyvor.dev"]
-    # cordonEvacuation is the only reason kairon-controller itself ever
-    # creates a MachineMigration -- see internal/controller/cordon.go.
-    # Without this enabled, only kaironctl/kairon-ui do.
+    # cordonEvacuation and memoryPressureEvacuation are the only reasons
+    # kairon-controller itself ever creates a MachineMigration -- see
+    # internal/controller/cordon.go and memoryevac.go. Without either
+    # enabled, only kaironctl/kairon-ui do.
     resources: ["machinemigrations"]
     verbs: ["create"]
 {{ end }}
@@ -174,6 +175,10 @@ rules:
     resources: ["nodes"]
     # patch: the confidential-capable label (internal/agent/attest.go).
     verbs: ["get", "list", "patch"]
+  # The KaironMemoryPressure condition (internal/agent/memory.go).
+  - apiGroups: [""]
+    resources: ["nodes/status"]
+    verbs: ["patch"]
   - apiGroups: [""]
     resources: ["persistentvolumeclaims", "persistentvolumes"]
     verbs: ["get"]
@@ -350,6 +355,10 @@ spec:
             - "--cordon-evacuate={{ .Values.controller.cordonEvacuation.enabled }}"
             - "--cordon-evacuate-strategy={{ .Values.controller.cordonEvacuation.strategy }}"
             - "--cordon-evacuate-min-retry-interval={{ .Values.controller.cordonEvacuation.minRetryInterval }}"
+            - "--memory-pressure-evacuate={{ .Values.controller.memoryPressureEvacuation.enabled }}"
+            - "--memory-pressure-evacuate-strategy={{ .Values.controller.memoryPressureEvacuation.strategy }}"
+            - "--memory-pressure-evacuate-grace={{ .Values.controller.memoryPressureEvacuation.grace }}"
+            - "--memory-pressure-evacuate-min-retry-interval={{ .Values.controller.memoryPressureEvacuation.minRetryInterval }}"
             - "--stale-evacuation={{ .Values.controller.staleEvacuation.enabled }}"
             - "--stale-evacuation-max-per-tick={{ .Values.controller.staleEvacuation.maxPerTick }}"
             - "--cilium-attach={{ .Values.network.ciliumAttach.enabled }}"
@@ -620,6 +629,10 @@ spec:
             - "--csi-chap-secret-namespace={{ .Release.Namespace }}"
 {{ end }}
             - "--network-default-deny={{ .Values.node.networkDefaultDeny }}"
+            - "--memory-reclaim={{ .Values.node.memoryReclaim.enabled }}"
+            - "--memory-low-watermark-mib={{ .Values.node.memoryReclaim.lowWatermarkMiB }}"
+            - "--memory-high-watermark-mib={{ .Values.node.memoryReclaim.highWatermarkMiB }}"
+            - "--memory-psi-some-avg10={{ .Values.node.memoryReclaim.psiSomeAvg10 }}"
 {{ if .Values.node.cpuPinning.enabled }}
             - "--reserved-cpus={{ required "node.cpuPinning.reservedCPUs is required when node.cpuPinning.enabled (kubelet's reserved CPU list, e.g. 0-1)" .Values.node.cpuPinning.reservedCPUs }}"
             - "--cpu-manager-state=/kairon-cpustate/cpu_manager_state"

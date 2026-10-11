@@ -10,7 +10,7 @@ import Inspector, { KV } from '../components/Inspector';
 import NodeTools from '../components/NodeTools';
 import NodeTopologyPanel from '../components/NodeTopologyPanel';
 import EmptyHint from '../components/EmptyHint';
-import { barTone, formatCores, formatMiB, NodeCapacity, pct } from '../lib/capacity';
+import { barTone, formatCores, formatMiB, memoryLimitMiB, NodeCapacity, pct } from '../lib/capacity';
 
 function Bar({ used, total, label }: { used: number; total: number; label: string }) {
   const p = pct(used, total);
@@ -110,8 +110,22 @@ export default function Nodes() {
               header: 'Memory reserved',
               render: (n) => {
                 const c = cap[n.metadata.name];
-                return c ? <Bar used={c.requestedMemoryMiB} total={c.allocatableMemoryMiB} label={`${formatMiB(c.requestedMemoryMiB)} of ${formatMiB(c.allocatableMemoryMiB)} requested`} /> : '-';
+                if (!c) return '-';
+                const limit = memoryLimitMiB(c);
+                const over = limit > c.allocatableMemoryMiB ? ` (overcommit ${c.memoryOvercommitRatio}x of ${formatMiB(c.allocatableMemoryMiB)}; ${formatMiB(c.guaranteedMemoryMiB ?? 0)} guaranteed)` : '';
+                return <Bar used={c.requestedMemoryMiB} total={limit} label={`${formatMiB(c.requestedMemoryMiB)} of ${formatMiB(limit)} requested${over}`} />;
               },
+            },
+            {
+              header: 'Memory pressure',
+              render: (n) =>
+                cap[n.metadata.name]?.memoryPressure ? (
+                  <span className="badge badge-error" title="KaironMemoryPressure: host memory is short and every elastic-memory Machine is at its minimum; the scheduler skips this node">
+                    Pressure
+                  </span>
+                ) : (
+                  '-'
+                ),
             },
             ...(probe.cpu && probe.memory
               ? [
@@ -145,6 +159,8 @@ export default function Nodes() {
               ['Machines', usage[selected]?.machines ?? 0],
               ['CPU', usage[selected] ? formatCPUPercent(usage[selected].cpuPercent) : undefined],
               ['Memory', usage[selected] ? formatBytes(usage[selected].memoryBytes) : undefined],
+              ['Memory overcommit', cap[selected]?.memoryOvercommitRatio && cap[selected].memoryOvercommitRatio! > 1 ? `${cap[selected].memoryOvercommitRatio}x` : undefined],
+              ['Guaranteed memory', cap[selected]?.guaranteedMemoryMiB !== undefined ? formatMiB(cap[selected].guaranteedMemoryMiB!) : undefined],
             ]}
           />
           <NodeTopologyPanel node={selected} />

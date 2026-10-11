@@ -123,6 +123,7 @@ type Recorder struct {
 	backup *backupMetrics
 	// Topology scheduler -- only registered by NewRecorder, see topology.go.
 	topology *topologyMetrics
+	memory   *memoryMetrics
 
 	mu         sync.Mutex
 	phaseSince map[phaseKey]phaseState
@@ -280,6 +281,7 @@ func NewNodeRecorder() *Recorder {
 	r.machineUsageTimestamp = prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "kairon_machine_usage_sample_timestamp_seconds", Help: "Time of the last successful live FluxVM usage sample."}, []string{"namespace", "machine"})
 	reg.MustRegister(r.machineUsageTimestamp)
 	r.edge = NewEdgeRecorder(reg)
+	r.memory = newMemoryMetrics(reg)
 	return r
 }
 

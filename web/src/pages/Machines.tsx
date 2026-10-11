@@ -5,6 +5,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { api, apiJSON, getConfig, isAdmin } from '../api';
 import { Machine } from '../types';
 import { formatBytes } from '../lib/phase';
+import { formatBalloon } from '../lib/capacity';
 import { parseHash } from '../lib/route';
 import { useLiveChanges } from '../lib/live';
 import { PowerAction, undoFor } from '../lib/undo';
@@ -459,6 +460,7 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
               ['Guest IP', m.status?.guestIP],
               ['CPU', m.spec.resources.cpu],
               ['Memory', m.spec.resources.memory],
+              ['Elastic memory', m.spec.resources.elasticMemory ? (m.status?.memory ? `${formatBalloon(m.status.memory)}${m.status.memory.reason ? ` (${m.status.memory.reason})` : ''}` : `min ${m.spec.resources.elasticMemory.min}`) : undefined],
               ['Image', m.spec.image?.path],
               ['Backend', m.spec.runtime?.backend],
               ['Network', m.spec.network?.mode],

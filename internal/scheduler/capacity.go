@@ -5,9 +5,13 @@ package scheduler
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/zyvorai/kairon/internal/model"
 )
+
+// MaxMemoryOvercommitRatio caps model.AnnotationMemoryOvercommitRatio.
+const MaxMemoryOvercommitRatio = 4.0
 
 // NodeLoad tracks per-node placement pressure for one reconcile pass:
 // Machine count (legacy signal) plus requested CPU/memory so simultaneous
@@ -16,6 +20,9 @@ type NodeLoad struct {
 	Count     int
 	CPUMilli  int64
 	MemoryMiB uint64
+	// GuaranteedMemoryMiB counts elastic-memory Machines at their minimum
+	// and every other Machine at its full memory.
+	GuaranteedMemoryMiB uint64
 }
 
 // BuildNodeLoad sums resource requests of Machines that currently consume
@@ -27,12 +34,7 @@ func BuildNodeLoad(machines []model.Machine) map[string]NodeLoad {
 		if m.Spec.NodeName == "" || m.Metadata.DeletionTimestamp != nil || (desired != "Running" && desired != "Paused") {
 			continue
 		}
-		cpu, mem := machineRequests(m)
-		l := out[m.Spec.NodeName]
-		l.Count++
-		l.CPUMilli += cpu
-		l.MemoryMiB += mem
-		out[m.Spec.NodeName] = l
+		Reserve(out, m.Spec.NodeName, m)
 	}
 	return out
 }
@@ -45,6 +47,32 @@ func machineRequests(m model.Machine) (cpuMilli int64, memoryMiB uint64) {
 		memoryMiB = mem
 	}
 	return cpuMilli, memoryMiB
+}
+
+// guaranteedMemoryMiB is the memory m keeps under host pressure: its
+// elastic minimum, or all of memoryMiB.
+func guaranteedMemoryMiB(m model.Machine, memoryMiB uint64) uint64 {
+	if min, ok := m.Spec.ElasticMinMiB(); ok && min < memoryMiB {
+		return min
+	}
+	return memoryMiB
+}
+
+// MemoryOvercommitRatio is the node's model.AnnotationMemoryOvercommitRatio,
+// clamped to 1.0..MaxMemoryOvercommitRatio; 1.0 when unset or invalid.
+func MemoryOvercommitRatio(n model.Node) float64 {
+	raw, ok := n.Metadata.Annotations[model.AnnotationMemoryOvercommitRatio]
+	if !ok {
+		return 1
+	}
+	r, err := strconv.ParseFloat(raw, 64)
+	if err != nil || r < 1 {
+		return 1
+	}
+	if r > MaxMemoryOvercommitRatio {
+		return MaxMemoryOvercommitRatio
+	}
+	return r
 }
 
 func nodeAllocatable(n model.Node) (cpuMilli int64, memoryMiB uint64, ok bool) {
@@ -79,8 +107,22 @@ func capacityFits(n model.Node, m model.Machine, load NodeLoad) (bool, string) {
 	if reqCPU > 0 && load.CPUMilli+reqCPU > allocCPU {
 		return false, fmt.Sprintf("insufficient CPU: need %dm, allocatable %dm with %dm already assigned", reqCPU, allocCPU, load.CPUMilli)
 	}
-	if reqMem > 0 && load.MemoryMiB+reqMem > allocMem {
-		return false, fmt.Sprintf("insufficient memory: need %dMi, allocatable %dMi with %dMi already assigned", reqMem, allocMem, load.MemoryMiB)
+	if reqMem > 0 {
+		ratio := MemoryOvercommitRatio(n)
+		if ratio == 1 {
+			if load.MemoryMiB+reqMem > allocMem {
+				return false, fmt.Sprintf("insufficient memory: need %dMi, allocatable %dMi with %dMi already assigned", reqMem, allocMem, load.MemoryMiB)
+			}
+		} else {
+			reqMin := guaranteedMemoryMiB(m, reqMem)
+			if load.GuaranteedMemoryMiB+reqMin > allocMem {
+				return false, fmt.Sprintf("insufficient guaranteed memory: need %dMi, allocatable %dMi with %dMi already guaranteed", reqMin, allocMem, load.GuaranteedMemoryMiB)
+			}
+			limit := uint64(float64(allocMem) * ratio)
+			if load.MemoryMiB+reqMem > limit {
+				return false, fmt.Sprintf("insufficient memory: need %dMi, overcommit limit %dMi (%.2gx allocatable) with %dMi already assigned", reqMem, limit, ratio, load.MemoryMiB)
+			}
+		}
 	}
 	if m.Spec.Resources.Hugepages {
 		if hp, has := n.Status.Allocatable["hugepages-2Mi"]; has {
@@ -94,7 +136,9 @@ func capacityFits(n model.Node, m model.Machine, load NodeLoad) (bool, string) {
 
 // remainingCapacityScore returns 0..100 based on post-placement remaining
 // CPU and memory percentage (average). When allocatable is unknown, falls
-// back to -Count so least-loaded-by-count behavior is preserved.
+// back to -Count so least-loaded-by-count behavior is preserved. Memory is
+// the tighter of guaranteed memory against allocatable and full memory
+// against the overcommit limit.
 func remainingCapacityScore(n model.Node, m model.Machine, load NodeLoad) int {
 	allocCPU, allocMem, ok := nodeAllocatable(n)
 	if !ok || (allocCPU <= 0 && allocMem <= 0) {
@@ -110,14 +154,20 @@ func remainingCapacityScore(n model.Node, m model.Machine, load NodeLoad) int {
 		cpuPct = int(rem * 100 / allocCPU)
 	}
 	if allocMem > 0 {
-		var rem uint64
-		used := load.MemoryMiB + reqMem
-		if used < allocMem {
-			rem = allocMem - used
+		limit := uint64(float64(allocMem) * MemoryOvercommitRatio(n))
+		memPct = remainingPercent(load.MemoryMiB+reqMem, limit)
+		if g := remainingPercent(load.GuaranteedMemoryMiB+guaranteedMemoryMiB(m, reqMem), allocMem); g < memPct {
+			memPct = g
 		}
-		memPct = int(rem * 100 / allocMem)
 	}
 	return (cpuPct + memPct) / 2
+}
+
+func remainingPercent(used, total uint64) int {
+	if total == 0 || used >= total {
+		return 0
+	}
+	return int((total - used) * 100 / total)
 }
 
 // Reserve records that m was just placed on nodeName within this reconcile
@@ -128,6 +178,7 @@ func Reserve(load map[string]NodeLoad, nodeName string, m model.Machine) {
 	l.Count++
 	l.CPUMilli += cpu
 	l.MemoryMiB += mem
+	l.GuaranteedMemoryMiB += guaranteedMemoryMiB(m, mem)
 	load[nodeName] = l
 }
 

@@ -18,6 +18,8 @@ type RuntimeHostCapability struct {
 	Topology    bool `json:"topology"`
 	NUMABinding bool `json:"numaBinding"`
 	PCIBind     bool `json:"pciBind"`
+	// Balloon: QEMU balloon control and GET /v1/host/memory.
+	Balloon bool `json:"balloon"`
 }
 
 // HostTopology is FluxVM's GET /v1/host/topology.

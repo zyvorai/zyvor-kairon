@@ -54,6 +54,10 @@ func run() int {
 	cordonEvacuate := flag.Bool("cordon-evacuate", false, "automatically create a MachineMigration for every Machine on a Node whose spec.unschedulable transitions to true (see internal/controller/cordon.go) -- off by default, since unlike -leader-elect this is never a no-op: enabling it means a cordoned node's Machines start migrating on their own")
 	cordonEvacuateStrategy := flag.String("cordon-evacuate-strategy", "cold", "migration strategy used by -cordon-evacuate: cold|auto (never live -- see CordonEvacuation's own doc comment)")
 	cordonEvacuateMinRetryInterval := flag.Duration("cordon-evacuate-min-retry-interval", controller.DefaultCordonEvacuateMinRetryInterval, "minimum time between -cordon-evacuate retry attempts for a Machine currently blocked by a MachineDisruptionBudget")
+	memoryEvacuate := flag.Bool("memory-pressure-evacuate", envBool("KAIRON_MEMORY_PRESSURE_EVACUATE", false), "migrate Machines off a Node whose KaironMemoryPressure condition (set by kairon-node when ballooning cannot relieve host memory) stays True for -memory-pressure-evacuate-grace, one Machine per node at a time, respecting MachineDisruptionBudgets (see internal/controller/memoryevac.go); off by default")
+	memoryEvacuateStrategy := flag.String("memory-pressure-evacuate-strategy", "live", "migration strategy used by -memory-pressure-evacuate: live|auto|cold; with live, Machines with passthrough devices are skipped")
+	memoryEvacuateGrace := flag.Duration("memory-pressure-evacuate-grace", controller.DefaultMemoryEvacuateGrace, "how long KaironMemoryPressure must stay True before -memory-pressure-evacuate starts a migration")
+	memoryEvacuateMinRetryInterval := flag.Duration("memory-pressure-evacuate-min-retry-interval", controller.DefaultMemoryEvacuateMinRetryInterval, "minimum time between -memory-pressure-evacuate attempts for the same Machine")
 	staleEvacuation := flag.Bool("stale-evacuation", envBool("KAIRON_STALE_EVACUATION", false), "fence Machines annotated kairon.zyvor.dev/evacuate=true off NotReady nodes annotated kairon.zyvor.dev/node-fenced, so the scheduler places them again (see internal/controller/staleevac.go); off by default")
 	staleEvacuationMaxPerTick := flag.Int("stale-evacuation-max-per-tick", controller.DefaultStaleEvacuationMaxPerTick, "most Machines -stale-evacuation fences per reconcile tick")
 	ciliumAttach := flag.Bool("cilium-attach", envBool("KAIRON_CILIUM_ATTACH", false), "reconcile CiliumExternalWorkload for Machines with spec.network.ciliumAttach (requires Cilium CNI; off by default)")
@@ -140,6 +144,12 @@ func run() int {
 			Enabled:          *cordonEvacuate,
 			Strategy:         *cordonEvacuateStrategy,
 			MinRetryInterval: *cordonEvacuateMinRetryInterval,
+		},
+		MemoryEvacuation: controller.MemoryPressureEvacuation{
+			Enabled:          *memoryEvacuate,
+			Strategy:         *memoryEvacuateStrategy,
+			Grace:            *memoryEvacuateGrace,
+			MinRetryInterval: *memoryEvacuateMinRetryInterval,
 		},
 		StaleEvacuation: controller.StaleEvacuation{
 			Enabled:    *staleEvacuation,

@@ -15,6 +15,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -100,6 +101,11 @@ func run() int {
 	cpuManagerState := flag.String("cpu-manager-state", env("KAIRON_CPU_MANAGER_STATE", "/var/lib/kubelet/cpu_manager_state"), "kubelet cpu_manager_state file; exclusive pod CPUs listed there are kept off the pinnable set")
 	registerNode := flag.Bool("register-node", env("KAIRON_REGISTER_NODE", fmt.Sprint(runtime.GOOS == "darwin")) == "true", "create and heartbeat this host's Kubernetes Node object (a Mac has no kubelet to do it); on by default on macOS")
 	mlxURL := flag.String("mlx-url", env("KAIRON_MLX_URL", ""), "loopback OpenAI-compatible endpoint of this Mac's MLX runtime (Velora); when set the Node gets the kairon.zyvor.dev/mlx=true label and an inference-url annotation")
+	memoryReclaim := flag.Bool("memory-reclaim", env("KAIRON_MEMORY_RECLAIM", "true") == "true", "balloon spec.resources.elasticMemory Machines down toward their minimum under host memory pressure and set the KaironMemoryPressure Node condition when nothing is left to reclaim (needs a FluxVM with host.balloon) -- see docs/guides/machine-elastic-memory.md")
+	memoryLowMiB := flag.Uint64("memory-low-watermark-mib", envUint("KAIRON_MEMORY_LOW_WATERMARK_MIB", 0), "host MemAvailable below this is memory pressure; 0 (the default) is 10% of MemTotal")
+	memoryHighMiB := flag.Uint64("memory-high-watermark-mib", envUint("KAIRON_MEMORY_HIGH_WATERMARK_MIB", 0), "reclaim aims for this much MemAvailable and balloons deflate only above it; 0 (the default) is 20% of MemTotal, or twice --memory-low-watermark-mib when that is set")
+	memoryPSI := flag.Float64("memory-psi-some-avg10", envFloat("KAIRON_MEMORY_PSI_SOME_AVG10", 0), "host memory PSI some avg10 (percent) above this is memory pressure; 0 (the default) is 10")
+	memoryReclaimInterval := flag.Duration("memory-reclaim-interval", 0, "time between reclaim passes; 0 (the default) is 10s")
 	showVersion := flag.Bool("version", false, "print version")
 	flag.Parse()
 	if *showVersion {
@@ -197,9 +203,16 @@ func run() int {
 		AtlasRBDPools:                splitList(*atlasRBDPools),
 		ReservedCPUs:                 *reservedCPUs,
 		CPUManagerState:              *cpuManagerState,
-		Log:                          log,
-		Metrics:                      rec,
-		Tracer:                       oteltrace.FromEnv(),
+		MemoryReclaim: agent.MemoryReclaimConfig{
+			Disabled:         !*memoryReclaim,
+			LowWatermarkMiB:  *memoryLowMiB,
+			HighWatermarkMiB: *memoryHighMiB,
+			PSISomeAvg10:     *memoryPSI,
+			Interval:         *memoryReclaimInterval,
+		},
+		Log:     log,
+		Metrics: rec,
+		Tracer:  oteltrace.FromEnv(),
 	}
 	if err := a.Run(ctx, *interval); err != nil && ctx.Err() == nil {
 		log.Error("agent stopped", "error", err)
@@ -367,6 +380,20 @@ func splitList(s string) []string {
 
 func env(k, d string) string {
 	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return d
+}
+
+func envUint(k string, d uint64) uint64 {
+	if v, err := strconv.ParseUint(os.Getenv(k), 10, 64); err == nil {
+		return v
+	}
+	return d
+}
+
+func envFloat(k string, d float64) float64 {
+	if v, err := strconv.ParseFloat(os.Getenv(k), 64); err == nil {
 		return v
 	}
 	return d
