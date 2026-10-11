@@ -125,6 +125,11 @@ Exit status is 0 when nothing failed and 1 otherwise.
 
 ## From the deploy script
 
+Add `--remote-build` to compile on the host instead of on your machine (a
+source tarball of about 1 MB is copied; Go and, for the dashboard, Node are cached
+under `~/.cache/kairon-build` on the host and checksum-verified), which keeps the
+machine you deploy from free of a Go toolchain, build cache and `node_modules`.
+
 `scripts/deploy-remote.sh HOST USER --with-ui --self-test[=quick|standard|full]`
 runs the self-test on the host over an SSH terminal after the deploy, using the
 host's admin kubeconfig (k3s) or the node's own connection, and the dashboard

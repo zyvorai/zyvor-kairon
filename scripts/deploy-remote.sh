@@ -46,10 +46,11 @@ kairon-ui web dashboard (--with-ui). --with-ui is the one component that
 needs a local Node.js/npm toolchain (to build web/dist) -- every other
 component and mode of this script stays Node-free.
 
-Everything is cross-compiled on your machine with
+By default everything is cross-compiled on your machine with
   CGO_ENABLED=0 GOOS=linux GOARCH=<arch> go build
-and shipped as a static binary. No Go toolchain and no source tree is
-ever copied to or required on the remote host.
+and shipped as a static binary; no Go toolchain and no source tree is then
+required on the remote host. With --remote-build the source is copied to the
+host and compiled there instead (for a machine with little disk space).
 
 Target:
   USER@HOST, or USER HOST, or HOST USER (IPv4-vs-non-IPv4 auto swap).
@@ -141,6 +142,14 @@ Flags:
                           PROFILE is quick (default), standard or full. Needs a
                           reachable Kubernetes API (see --kube-url); the run's
                           result becomes this script's exit code.
+  --remote-build          Compile on the host instead of on this machine: a
+                          small source tarball (about 6 MB) is copied there and
+                          built with a Go toolchain (and Node, for --with-ui)
+                          cached under ~/.cache/kairon-build on the host, so
+                          this machine needs no Go, no Node and no build cache.
+                          The host needs curl, tar, and network access to
+                          go.dev and the Go module proxy (and npm, for the
+                          dashboard). Downloads are checksum-verified.
   --no-start              Install files but do not enable/start the service(s).
   --sync-only             Copy binaries + unit files to the remote host only;
                           skip user/dir/config/unit install and service start.
@@ -256,6 +265,7 @@ CONSOLE_TLS_CA=""
 RESOLVED_CONSOLE_TLS_SOURCE="none"
 NO_START=0
 SYNC_ONLY=0
+REMOTE_BUILD=0
 SELF_TEST=0
 SELF_TEST_PROFILE="quick"
 DRY_RUN=0
@@ -337,6 +347,7 @@ while [[ $# -gt 0 ]]; do
     --console-tls-ca=*) CONSOLE_TLS_CA="${1#*=}" ;;
     --no-start) NO_START=1 ;;
     --sync-only) SYNC_ONLY=1 ;;
+    --remote-build) REMOTE_BUILD=1 ;;
     --self-test) SELF_TEST=1 ;;
     --self-test=*)
       SELF_TEST=1
@@ -583,6 +594,7 @@ $([[ "$WITH_CONSOLE_TLS" == "1" ]] && echo "Console relay TLS:        $(if [[ -n
 Start after install:      $([[ "$NO_START" == "1" ]] && echo "no (--no-start)" || echo "yes")
 Image cache dir:          ${IMAGE_CACHE_DIR:-<unchanged>}
 $([[ "$WITH_UI" == "1" ]] && echo "Dashboard TLS:           $(if [[ "$UI_TLS" != "1" ]]; then echo "no (plain HTTP; add --ui-tls)"; elif [[ -n "$UI_TLS_CERT" ]]; then echo "provided via --ui-tls-cert/-key"; else echo "self-signed certificate generated at deploy time (openssl)"; fi)")
+Build location:           $([[ "$REMOTE_BUILD" == "1" ]] && echo "on the host (--remote-build)" || echo "this machine (cross-compile)")
 Self-test after deploy:   $([[ "$SELF_TEST" == "1" ]] && echo "yes (profile ${SELF_TEST_PROFILE})" || echo "no (add --self-test)")
 
 Remote paths:
@@ -682,6 +694,35 @@ verify_remote() {
   " || true
 }
 
+# remote_build copies a small source tarball and scripts/lib/remote-build.sh to
+# the host and compiles there, writing the binaries (and, for the dashboard,
+# kairon-ui-web.tar.gz) into the staging directory so install.sh finds them
+# exactly where a local build would have put them.
+remote_build() {
+  local local_stage="$1" remote_tmp="$2" targets="$3"
+  local src="$local_stage/kairon-src.tar.gz" tar_extra=()
+  if tar --no-xattrs -cf /dev/null -T /dev/null 2>/dev/null; then tar_extra+=(--no-xattrs); fi
+  info "packing the source (cmd, internal, charts, web, go.mod)..."
+  if git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    # Tracked and untracked-but-not-ignored files, so uncommitted edits ship
+    # and node_modules/dist/bin never do.
+    git -C "$REPO_ROOT" ls-files -z --cached --others --exclude-standard -- go.mod go.sum VERSION cmd internal charts web \
+      | while IFS= read -r -d '' f; do [[ -e "$REPO_ROOT/$f" ]] && printf '%s\0' "$f"; done \
+      | ( cd "$REPO_ROOT" && COPYFILE_DISABLE=1 tar ${tar_extra[@]+"${tar_extra[@]}"} --null -T - -czf "$src" )
+  else
+    ( cd "$REPO_ROOT" && COPYFILE_DISABLE=1 tar ${tar_extra[@]+"${tar_extra[@]}"} --exclude=node_modules --exclude=dist \
+        -czf "$src" go.mod go.sum VERSION cmd internal charts web )
+  fi
+  [[ -s "$src" ]] || die "could not pack the source tree from $REPO_ROOT"
+  info "source tarball: $(du -k "$src" | cut -f1) KiB; copying to ${REMOTE}"
+  scp_cmd "$src" "$REPO_ROOT/scripts/lib/remote-build.sh" "${REMOTE}:${remote_tmp}/"
+  info "compiling on ${REMOTE} (first run downloads a Go toolchain and modules into ~/.cache/kairon-build)..."
+  # shellcheck disable=SC2086 # targets is a space-separated word list
+  ssh_cmd "$REMOTE" "bash ${remote_tmp}/remote-build.sh ${remote_tmp}/kairon-src.tar.gz ${remote_tmp} ${RESOLVED_GOARCH} ${RESOLVED_VERSION} ${targets}" \
+    || die "the build on ${REMOTE} failed (see the output above; the build cache is ~/.cache/kairon-build)"
+  ok "built on ${REMOTE}"
+}
+
 save_deploy_last() {
   {
     echo "HOST=$HOST_ARG"
@@ -744,28 +785,34 @@ run_deploy() {
   detect_arch
   info "target arch: linux/$RESOLVED_GOARCH"
 
-  local build_dir="$REPO_ROOT/dist/deploy-remote/$RESOLVED_GOARCH"
-  mkdir -p "$build_dir"
-  info "cross-compiling for linux/$RESOLVED_GOARCH (version $RESOLVED_VERSION)..."
-  ( cd "$REPO_ROOT" && CGO_ENABLED=0 GOOS=linux GOARCH="$RESOLVED_GOARCH" go build -trimpath -ldflags="-s -w -X main.version=$RESOLVED_VERSION" -o "$build_dir/kairon-node" ./cmd/kairon-node )
-  ( cd "$REPO_ROOT" && CGO_ENABLED=0 GOOS=linux GOARCH="$RESOLVED_GOARCH" go build -trimpath -ldflags="-s -w -X main.version=$RESOLVED_VERSION" -o "$build_dir/kaironctl" ./cmd/kaironctl )
-  if [[ "$WITH_CONTROLLER" == "1" ]]; then
-    ( cd "$REPO_ROOT" && CGO_ENABLED=0 GOOS=linux GOARCH="$RESOLVED_GOARCH" go build -trimpath -ldflags="-s -w -X main.version=$RESOLVED_VERSION" -o "$build_dir/kairon-controller" ./cmd/kairon-controller )
-  fi
-  if [[ "$WITH_MIGRATION_ADAPTER_STUB" == "1" ]]; then
-    ( cd "$REPO_ROOT" && CGO_ENABLED=0 GOOS=linux GOARCH="$RESOLVED_GOARCH" go build -trimpath -o "$build_dir/kairon-migration-adapter-stub" ./cmd/kairon-migration-adapter-stub )
-  fi
-  if [[ "$WITH_UI" == "1" ]]; then
-    ( cd "$REPO_ROOT" && CGO_ENABLED=0 GOOS=linux GOARCH="$RESOLVED_GOARCH" go build -trimpath -ldflags="-s -w -X main.version=$RESOLVED_VERSION" -o "$build_dir/kairon-ui" ./cmd/kairon-ui )
-  fi
-  ok "build complete: $build_dir"
+  local build_dir=""
+  if [[ "$REMOTE_BUILD" == "1" ]]; then
+    info "--remote-build: the source will be copied to ${REMOTE} and compiled there (version $RESOLVED_VERSION)"
+  else
+    build_dir="$REPO_ROOT/dist/deploy-remote/$RESOLVED_GOARCH"
+    mkdir -p "$build_dir"
+    info "cross-compiling for linux/$RESOLVED_GOARCH (version $RESOLVED_VERSION)..."
+    ( cd "$REPO_ROOT" && CGO_ENABLED=0 GOOS=linux GOARCH="$RESOLVED_GOARCH" go build -trimpath -ldflags="-s -w -X main.version=$RESOLVED_VERSION" -o "$build_dir/kairon-node" ./cmd/kairon-node )
+    ( cd "$REPO_ROOT" && CGO_ENABLED=0 GOOS=linux GOARCH="$RESOLVED_GOARCH" go build -trimpath -ldflags="-s -w -X main.version=$RESOLVED_VERSION" -o "$build_dir/kaironctl" ./cmd/kaironctl )
+    if [[ "$WITH_CONTROLLER" == "1" ]]; then
+      ( cd "$REPO_ROOT" && CGO_ENABLED=0 GOOS=linux GOARCH="$RESOLVED_GOARCH" go build -trimpath -ldflags="-s -w -X main.version=$RESOLVED_VERSION" -o "$build_dir/kairon-controller" ./cmd/kairon-controller )
+    fi
+    if [[ "$WITH_MIGRATION_ADAPTER_STUB" == "1" ]]; then
+      ( cd "$REPO_ROOT" && CGO_ENABLED=0 GOOS=linux GOARCH="$RESOLVED_GOARCH" go build -trimpath -o "$build_dir/kairon-migration-adapter-stub" ./cmd/kairon-migration-adapter-stub )
+    fi
+    if [[ "$WITH_UI" == "1" ]]; then
+      ( cd "$REPO_ROOT" && CGO_ENABLED=0 GOOS=linux GOARCH="$RESOLVED_GOARCH" go build -trimpath -ldflags="-s -w -X main.version=$RESOLVED_VERSION" -o "$build_dir/kairon-ui" ./cmd/kairon-ui )
+    fi
+    ok "build complete: $build_dir"
 
-  if [[ "$WITH_UI" == "1" ]]; then
-    command -v npm >/dev/null 2>&1 || die "--with-ui requires 'npm' on PATH to build web/dist locally (the only place this script needs Node.js, and only with --with-ui)"
-    info "building kairon-ui web assets (npm ci && npm run build)..."
-    ( cd "$REPO_ROOT/web" && npm ci && npm run build )
-    [[ -d "$REPO_ROOT/web/dist" ]] || die "npm run build did not produce web/dist -- check the build output above"
-    ok "web/dist built"
+    if [[ "$WITH_UI" == "1" ]]; then
+      command -v npm >/dev/null 2>&1 || die "--with-ui requires 'npm' on PATH to build web/dist locally (the only place this script needs Node.js, and only with --with-ui)"
+      info "building kairon-ui web assets (npm ci && npm run build)..."
+      ( cd "$REPO_ROOT/web" && npm ci && npm run build )
+      [[ -d "$REPO_ROOT/web/dist" ]] || die "npm run build did not produce web/dist -- check the build output above"
+      ok "web/dist built"
+    fi
+
   fi
 
   local local_stage
@@ -1328,9 +1375,15 @@ fi
 systemctl status kairon-node.service --no-pager -l 2>&1 | tail -n 15 || true
 INSTALL_EOF
 
-  local scp_files=("$build_dir/kairon-node" "$build_dir/kaironctl" "$REPO_ROOT/systemd/kairon-node.service")
+  # With --remote-build the binaries and web assets are produced on the host
+  # (into the staging directory), so only units and config travel from here.
+  local scp_files=("$REPO_ROOT/systemd/kairon-node.service")
+  if [[ "$REMOTE_BUILD" != "1" ]]; then
+    scp_files+=("$build_dir/kairon-node" "$build_dir/kaironctl")
+  fi
   if [[ "$WITH_CONTROLLER" == "1" ]]; then
-    scp_files+=("$build_dir/kairon-controller" "$REPO_ROOT/systemd/kairon-controller.service")
+    [[ "$REMOTE_BUILD" == "1" ]] || scp_files+=("$build_dir/kairon-controller")
+    scp_files+=("$REPO_ROOT/systemd/kairon-controller.service")
   fi
   if [[ "$CPU_PINNING" == "1" ]]; then
     scp_files+=("$REPO_ROOT/systemd/kairon-cpustate.service" "$REPO_ROOT/systemd/kairon-cpustate.path")
@@ -1345,17 +1398,21 @@ INSTALL_EOF
     scp_files+=("$local_stage/console-tls-ca.pem" "$local_stage/console-tls-cert.pem" "$local_stage/console-tls-key.pem")
   fi
   if [[ "$WITH_MIGRATION_ADAPTER_STUB" == "1" ]]; then
-    scp_files+=("$build_dir/kairon-migration-adapter-stub" "$REPO_ROOT/systemd/kairon-migration-adapter-stub.service")
+    [[ "$REMOTE_BUILD" == "1" ]] || scp_files+=("$build_dir/kairon-migration-adapter-stub")
+    scp_files+=("$REPO_ROOT/systemd/kairon-migration-adapter-stub.service")
   fi
   if [[ "$WITH_UI" == "1" ]]; then
-    scp_files+=("$build_dir/kairon-ui" "$REPO_ROOT/systemd/kairon-ui.service")
-    # bsdtar on macOS otherwise stores com.apple.* xattrs that GNU tar on the
-    # remote host warns about once per file.
-    tar_extra=()
-    # Probe by trying it: bsdtar's --help does not list --no-xattrs even though it accepts it.
-    if tar --no-xattrs -cf /dev/null -T /dev/null 2>/dev/null; then tar_extra+=(--no-xattrs); fi
-    COPYFILE_DISABLE=1 tar "${tar_extra[@]}" -C "$REPO_ROOT/web/dist" -czf "$local_stage/kairon-ui-web.tar.gz" .
-    scp_files+=("$local_stage/kairon-ui-web.tar.gz")
+    scp_files+=("$REPO_ROOT/systemd/kairon-ui.service")
+    if [[ "$REMOTE_BUILD" != "1" ]]; then
+      scp_files+=("$build_dir/kairon-ui")
+      # bsdtar on macOS otherwise stores com.apple.* xattrs that GNU tar on the
+      # remote host warns about once per file.
+      tar_extra=()
+      # Probe by trying it: bsdtar's --help does not list --no-xattrs even though it accepts it.
+      if tar --no-xattrs -cf /dev/null -T /dev/null 2>/dev/null; then tar_extra+=(--no-xattrs); fi
+      COPYFILE_DISABLE=1 tar "${tar_extra[@]}" -C "$REPO_ROOT/web/dist" -czf "$local_stage/kairon-ui-web.tar.gz" .
+      scp_files+=("$local_stage/kairon-ui-web.tar.gz")
+    fi
     if [[ "$UI_TLS" == "1" ]]; then
       scp_files+=("$local_stage/ui-tls-cert.pem" "$local_stage/ui-tls-key.pem")
     fi
@@ -1372,6 +1429,14 @@ INSTALL_EOF
   remote_tmp="$(ssh_cmd "$REMOTE" mktemp -d)"
   info "staging files in ${REMOTE}:${remote_tmp}"
   scp_cmd "${scp_files[@]}" "${REMOTE}:${remote_tmp}/"
+
+  if [[ "$REMOTE_BUILD" == "1" ]]; then
+    local build_targets="kairon-node kaironctl"
+    [[ "$WITH_CONTROLLER" == "1" ]] && build_targets+=" kairon-controller"
+    [[ "$WITH_MIGRATION_ADAPTER_STUB" == "1" ]] && build_targets+=" kairon-migration-adapter-stub"
+    [[ "$WITH_UI" == "1" ]] && build_targets+=" kairon-ui web"
+    remote_build "$local_stage" "$remote_tmp" "$build_targets"
+  fi
 
   if [[ "$SYNC_ONLY" == "1" ]]; then
     ok "--sync-only: files copied to ${remote_tmp} on the remote host, nothing installed or started"
