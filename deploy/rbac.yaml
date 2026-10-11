@@ -220,6 +220,7 @@ rules:
   - apiGroups: [""]
     resources: ["nodes"]
     verbs: ["get", "list"]
+  # Read-only: the Machine timeline (events) and the Pods/health views.
   - apiGroups: [""]
     resources: ["events", "pods"]
     verbs: ["get", "list"]
