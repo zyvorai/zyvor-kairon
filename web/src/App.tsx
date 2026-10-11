@@ -28,7 +28,7 @@ import Account from './pages/Account';
 import Assistant from './pages/Assistant';
 import Login from './pages/Login';
 import OIDCCallback from './pages/OIDCCallback';
-import { api, logout, token, UNAUTHORIZED_EVENT, username } from './api';
+import { api, logout, SESSION_CHANGED_EVENT, token, UNAUTHORIZED_EVENT, username, usingDefaultPassword } from './api';
 import { Machine } from './types';
 import Storage from './pages/Storage';
 import Pools from './pages/Pools';
@@ -41,6 +41,12 @@ export default function App() {
   const initial = parseHash(window.location.hash);
   const [page, setPageState] = useState<Page>(initial.page);
   const [signedIn, setSignedIn] = useState(!!token());
+  const [weakPassword, setWeakPassword] = useState(usingDefaultPassword());
+  useEffect(() => {
+    const sync = () => setWeakPassword(usingDefaultPassword());
+    window.addEventListener(SESSION_CHANGED_EVENT, sync);
+    return () => window.removeEventListener(SESSION_CHANGED_EVENT, sync);
+  }, []);
   const [prefillMachine, setPrefillMachine] = useState('');
   const [prefillSnapshot, setPrefillSnapshot] = useState('');
   const [palette, setPalette] = useState(false);
@@ -219,6 +225,12 @@ export default function App() {
   return (
     <ToastProvider>
       <GlobalNav page={page} go={setPage} username={username()} health={health} onSearch={() => setPalette(true)} onSignOut={signOut} />
+      {weakPassword && page !== 'account' && (
+        <div className="pwbanner" role="alert">
+          <span>You signed in with the default lab password. Change it before exposing this dashboard.</span>
+          <button className="sm" onClick={() => setPage('account')}>Change password</button>
+        </div>
+      )}
       <main className="stage" key={ns}>
         <PageHero
           kicker={page === 'overview' ? 'VM orchestration · no KubeVirt · no libvirt' : group?.group ?? 'Account'}

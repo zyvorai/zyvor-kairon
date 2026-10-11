@@ -29,6 +29,11 @@ configured; see [OIDC](kairon-ui-oidc.md).
   before exposing the port beyond a lab network.
 - Signed-in operators change their own password from **Account**
   (`POST /api/v1/auth/password`).
+- A session that signed in with the well-known lab password `Admin@321` shows a
+  red banner on every page except Account until the password is changed (the
+  login response carries `defaultPassword: true`; the server only reports it
+  while `KAIRON_UI_DEFAULT_ADMIN_PASSWORD` is that exact value). It is a nudge,
+  not a gate: nothing is blocked.
 
 ## Namespaces
 

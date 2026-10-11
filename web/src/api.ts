@@ -7,7 +7,17 @@ export const token = () => sessionStorage.getItem('kairon-token') || '';
 export const username = () => sessionStorage.getItem('kairon-username') || '';
 export const isAdmin = () => sessionStorage.getItem('kairon-is-admin') === 'true';
 
+// True while this session signed in with the well-known lab password.
+export const usingDefaultPassword = () => sessionStorage.getItem('kairon-default-pw') === 'true';
+export const SESSION_CHANGED_EVENT = 'kairon:session-changed';
+function setDefaultPassword(on: boolean) {
+  if (on) sessionStorage.setItem('kairon-default-pw', 'true');
+  else sessionStorage.removeItem('kairon-default-pw');
+  window.dispatchEvent(new Event(SESSION_CHANGED_EVENT));
+}
+
 export function setSession(tok: string, user: string, admin = false) {
+  if (!tok) sessionStorage.removeItem('kairon-default-pw');
   if (tok) sessionStorage.setItem('kairon-token', tok);
   else sessionStorage.removeItem('kairon-token');
   if (user) sessionStorage.setItem('kairon-username', user);
@@ -79,6 +89,7 @@ export async function login(usernameInput: string, password: string): Promise<vo
   if (!r.ok) throw new Error((await r.text()) || r.statusText);
   const out = await r.json();
   setSession(out.token, out.username, out.isAdmin);
+  if (out.defaultPassword) setDefaultPassword(true);
 }
 
 // loginOrToken signs in with a username and password. Servers that still use
@@ -145,8 +156,9 @@ export async function logout(): Promise<void> {
 // it with newPassword -- see POST /api/v1/auth/password in
 // internal/uiapi/auth.go. Only meaningful for a session-token login; the
 // legacy shared token has no per-user identity to attach a password to.
-export function changeOwnPassword(currentPassword: string, newPassword: string): Promise<void> {
-  return apiJSON('/api/v1/auth/password', 'POST', { currentPassword, newPassword });
+export async function changeOwnPassword(currentPassword: string, newPassword: string): Promise<void> {
+  await apiJSON('/api/v1/auth/password', 'POST', { currentPassword, newPassword });
+  setDefaultPassword(false);
 }
 
 // resetUserPassword lets an admin account set another operator's password

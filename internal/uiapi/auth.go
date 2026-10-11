@@ -548,7 +548,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if s.Log != nil {
 		s.Log.Info("uiapi login", "username", user.Username, "remoteAddr", r.RemoteAddr)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"token": token, "username": user.Username, "isAdmin": user.IsAdmin, "expiresAt": expires})
+	resp := map[string]any{"token": token, "username": user.Username, "isAdmin": user.IsAdmin, "expiresAt": expires}
+	if s.DefaultPassword != "" && req.Password == s.DefaultPassword {
+		resp["defaultPassword"] = true
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {

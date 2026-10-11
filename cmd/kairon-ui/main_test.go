@@ -236,3 +236,14 @@ func TestLoginHint(t *testing.T) {
 		t.Fatalf("explicit hint wins, got %q", got)
 	}
 }
+
+func TestWellKnownPasswordOnlyForTheChartDefault(t *testing.T) {
+	t.Setenv("KAIRON_UI_DEFAULT_ADMIN_PASSWORD", "Admin@321")
+	if wellKnownPassword() == "" {
+		t.Fatal("chart default should be reported")
+	}
+	t.Setenv("KAIRON_UI_DEFAULT_ADMIN_PASSWORD", "something-else-123")
+	if wellKnownPassword() != "" {
+		t.Fatal("a custom password must not be reported")
+	}
+}
