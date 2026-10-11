@@ -35,7 +35,7 @@ that enables it**, never dropped silently. `--strict` makes a skip a failure.
 | `boot` | the scheduler places the VM, the node pulls and verifies the image, and the guest boots far enough to lease an IP over DHCP or print `login:` | never |
 | `console-log` | the serial console relay works and the guest did not crash | no dashboard API (`--ui-url`, `--ui-token`) |
 | `power` | stop then start | after a failed `boot` |
-| `network` | the guest answers on a forwarded port (SSH banner) | the node address is unreachable from where you run it |
+| `network` | the guest answers on a forwarded port (SSH banner) | the node address is unreachable from where you run it, or the guest's SSH server is not up yet (CirrOS starts it only after cloud-init stops waiting for a metadata service) |
 | `pause-resume` | `Paused` then `Running` | after a failed `boot` |
 | `hotplug-cpu` | a running VM gains a vCPU (`appliedVCPUs`) | after a failed `boot` |
 | `observability` | `status.resourceUsage`, the `Ready` condition, events, dashboard samples | after a failed `boot` |
