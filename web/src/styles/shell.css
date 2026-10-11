@@ -308,3 +308,14 @@
 .healthcard.ok { box-shadow: inset 3px 0 0 var(--tone-emerald); }
 .healthcard.bad { box-shadow: inset 3px 0 0 var(--tone-rose); }
 .healthcount { font-variant-numeric: tabular-nums; color: var(--text-2); font-size: 13px; }
+
+/* Node capacity packing bars + what-if */
+.packbar { position: relative; min-width: 90px; height: 18px; border-radius: 980px; background: var(--fill); overflow: hidden; }
+.packfill { position: absolute; inset: 0 auto 0 0; border-radius: 980px; transition: width 0.24s cubic-bezier(0.28, 0.11, 0.32, 1); }
+.packfill.tone-ok { background: color-mix(in srgb, var(--tone-emerald) 55%, transparent); }
+.packfill.tone-warn { background: color-mix(in srgb, var(--tone-amber) 60%, transparent); }
+.packfill.tone-error { background: color-mix(in srgb, var(--tone-rose) 60%, transparent); }
+.packbar span { position: relative; display: block; padding: 0 8px; font-size: 11px; line-height: 18px; font-variant-numeric: tabular-nums; }
+.whatif { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 12px; }
+.whatif input { width: 150px; }
+@media (prefers-reduced-motion: reduce) { .packfill { transition: none; } }

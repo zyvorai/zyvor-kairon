@@ -9,6 +9,18 @@ import ResourceTable from '../components/ResourceTable';
 import Inspector, { KV } from '../components/Inspector';
 import NodeTools from '../components/NodeTools';
 import EmptyHint from '../components/EmptyHint';
+import { barTone, formatCores, formatMiB, NodeCapacity, pct } from '../lib/capacity';
+
+function Bar({ used, total, label }: { used: number; total: number; label: string }) {
+  const p = pct(used, total);
+  if (p === null) return <span>-</span>;
+  return (
+    <div className="packbar" title={label}>
+      <div className={'packfill tone-' + barTone(p)} style={{ width: Math.min(100, p) + '%' }} />
+      <span>{p}%</span>
+    </div>
+  );
+}
 
 function formatAddresses(node: KaironNode): string {
   const addrs = node.status?.addresses || [];
@@ -36,6 +48,8 @@ export default function Nodes() {
   const [usage, setUsage] = useState<Record<string, NodeUsage>>({});
   const [msg, setMsg] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
+  const [cap, setCap] = useState<Record<string, NodeCapacity>>({});
+  const [probe, setProbe] = useState({ cpu: '', memory: '' });
 
   const refresh = () => {
     api<KaironNode[]>('/api/v1/nodes').then((r) => setItems(r ?? [])).catch((e) => setMsg(String(e)));
@@ -49,19 +63,28 @@ export default function Nodes() {
     api<NodeUsage[]>('/api/v1/nodes/usage')
       .then((rows) => setUsage(Object.fromEntries(rows.map((r) => [r.node, r]))))
       .catch(() => setUsage({}));
+    const q = probe.cpu && probe.memory ? `?cpu=${encodeURIComponent(probe.cpu)}&memory=${encodeURIComponent(probe.memory)}` : '';
+    api<NodeCapacity[]>('/api/v1/nodes/capacity' + q)
+      .then((rows) => setCap(Object.fromEntries(rows.map((r) => [r.node, r]))))
+      .catch(() => setCap({}));
   };
 
   useEffect(() => {
     refresh();
     const t = setInterval(refresh, 5000);
     return () => clearInterval(t);
-  }, []);
+  }, [probe.cpu, probe.memory]);
 
   return (
     <div className="grid">
       <div className="card span4">
         <span className="eyebrow">NODES</span>
         {msg && <p className="msg error">{msg}</p>}
+        <div className="whatif">
+          <span className="usageHint">Will it fit?</span>
+          <input aria-label="vCPUs" placeholder="vCPUs, e.g. 4" value={probe.cpu} onChange={(e) => setProbe({ ...probe, cpu: e.target.value })} />
+          <input aria-label="Memory" placeholder="memory, e.g. 8Gi" value={probe.memory} onChange={(e) => setProbe({ ...probe, memory: e.target.value })} />
+        </div>
         <ResourceTable
           items={items}
           keyFn={(n) => n.metadata.name}
@@ -75,6 +98,32 @@ export default function Nodes() {
             { header: 'Taints', render: (n) => nodeTaintsSummary(n) },
             { header: 'Addresses', render: (n) => formatAddresses(n) },
             { header: 'Machines', render: (n) => usage[n.metadata.name]?.machines ?? 0 },
+            {
+              header: 'CPU reserved',
+              render: (n) => {
+                const c = cap[n.metadata.name];
+                return c ? <Bar used={c.requestedCpuMilli} total={c.allocatableCpuMilli} label={`${formatCores(c.requestedCpuMilli)} of ${formatCores(c.allocatableCpuMilli)} cores requested`} /> : '-';
+              },
+            },
+            {
+              header: 'Memory reserved',
+              render: (n) => {
+                const c = cap[n.metadata.name];
+                return c ? <Bar used={c.requestedMemoryMiB} total={c.allocatableMemoryMiB} label={`${formatMiB(c.requestedMemoryMiB)} of ${formatMiB(c.allocatableMemoryMiB)} requested`} /> : '-';
+              },
+            },
+            ...(probe.cpu && probe.memory
+              ? [
+                  {
+                    header: 'Fits?',
+                    render: (n: KaironNode) => {
+                      const w = cap[n.metadata.name]?.whatIf;
+                      if (!w) return '-';
+                      return w.fits ? <span className="badge badge-ok">Fits</span> : <span className="badge badge-error" title={w.reason}>No</span>;
+                    },
+                  },
+                ]
+              : []),
             { header: 'CPU', render: (n) => (usage[n.metadata.name] ? formatCPUPercent(usage[n.metadata.name].cpuPercent) : '-') },
             { header: 'Memory', render: (n) => (usage[n.metadata.name] ? formatBytes(usage[n.metadata.name].memoryBytes) : '-') },
           ]}
