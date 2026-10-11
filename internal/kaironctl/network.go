@@ -319,7 +319,7 @@ func fetchObservability(ctx context.Context, namespace, name, kind string, limit
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := uiDo(req)
 	if err != nil {
 		return nil, err
 	}

@@ -319,7 +319,7 @@ func uiGet(ctx context.Context, path string) ([]byte, error) {
 	if t := uiToken(true); t != "" {
 		req.Header.Set("Authorization", "Bearer "+t)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := uiDo(req)
 	if err != nil {
 		return nil, err
 	}

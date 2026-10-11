@@ -9,7 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"encoding/pem"
 	"github.com/zyvorai/kairon/internal/selftest"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 )
 
 func sampleRun(t *termReporter) []selftest.Result {
@@ -185,5 +190,53 @@ func TestAnimationAdvancesTheSpinnerFrame(t *testing.T) {
 	tr.mu.Unlock()
 	if f < 2 {
 		t.Errorf("spinner never advanced (frame %d)", f)
+	}
+}
+
+func TestUIHTTPClientTrustsAConfiguredCA(t *testing.T) {
+	t.Setenv("KAIRON_UI_CA", "")
+	t.Setenv("KAIRON_UI_INSECURE", "")
+	if c, err := uiHTTPClient(); err != nil || c != http.DefaultClient {
+		t.Fatalf("with nothing set the default client is used, got %v %v", c, err)
+	}
+
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) }))
+	defer srv.Close()
+
+	// Without the CA the self-signed server is rejected.
+	if resp, err := http.Get(srv.URL); err == nil {
+		_ = resp.Body.Close()
+		t.Fatal("default client must reject a self-signed certificate")
+	}
+
+	pemPath := filepath.Join(t.TempDir(), "ca.pem")
+	if err := os.WriteFile(pemPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KAIRON_UI_CA", pemPath)
+	c, err := uiHTTPClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := c.Get(srv.URL)
+	if err != nil {
+		t.Fatalf("a client trusting KAIRON_UI_CA must connect: %v", err)
+	}
+	_ = resp.Body.Close()
+
+	t.Setenv("KAIRON_UI_CA", filepath.Join(t.TempDir(), "missing.pem"))
+	if _, err := uiHTTPClient(); err == nil {
+		t.Error("a missing CA file must be an error, not silently ignored")
+	}
+	t.Setenv("KAIRON_UI_CA", "")
+	t.Setenv("KAIRON_UI_INSECURE", "true")
+	c, err = uiHTTPClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp, err := c.Get(srv.URL); err != nil {
+		t.Errorf("KAIRON_UI_INSECURE must skip verification: %v", err)
+	} else {
+		_ = resp.Body.Close()
 	}
 }
