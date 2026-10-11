@@ -16,6 +16,7 @@ v0.7.0 shipped without the multi-host live-migration claim. **Still open:**
 1. **Green Zyvor lab matrix** — cold + live + live-eBPF (and the failure/NeedsRecovery/failover cases) recorded in [`COMPATIBILITY.md`](COMPATIBILITY.md). Workflow: `.github/workflows/hardware-migration.yml`; needs the self-hosted `kairon-lab` runner and the `KAIRON_HW_*` / `KAIRON_KUBE_*` secrets. Single-host systemd smoke on `80.79.5.173` is green and does not unlock the multi-host live claim.
 2. **macOS beyond one Mac** — not verified: macOS guests, live migration, CSI, the VNC relay, kairon-ui, multi-Mac clusters, Intel Macs ([`macos.md`](macos.md)).
 3. **Fleet automation** is experimental and opt-in ([`guides/enterprise-fleet.md`](guides/enterprise-fleet.md)).
+4. **Adaptive live migration** (`MigrationPolicy` `strategy: adaptive`) is experimental until the lab matrix's adaptive cases (`live-adaptive-converge`, `live-postcopy-switch`, `live-zstd`, `postcopy-source-failure`) run green on the nightly workflow. The engine, post-copy safety and adapter contract are unit- and integration-tested only ([`guides/migration-policies.md`](guides/migration-policies.md#adaptive-live-migration-experimental)).
 
 Out of band (not a code gate): CII Best Practices badge still needs human OAuth (Scorecard / issue tracker).
 

@@ -57,6 +57,47 @@ export interface RecoveryStatus {
   appliedAt?: string;
 }
 
+// Adaptive live migration settings, shared by MigrationPolicy.spec and
+// MachineMigration.spec.adaptive (internal/model/migrationpolicy.go).
+export interface MigrationAdaptiveSettings {
+  completionTimeoutPerGiB?: string;
+  progressTimeout?: string;
+  autoConverge?: { enabled?: boolean; dirtyRateThresholdMbps?: number };
+  postCopy?: { enabled?: boolean; triggerAfter?: string };
+  compression?: { algorithm: 'none' | 'zlib' | 'zstd'; level?: number };
+  bandwidth?: { maxMbps?: number; adaptive?: boolean };
+}
+
+export interface MigrationProgress {
+  dirtyPagesRate?: number;
+  dirtyRateMbps?: number;
+  throughputMbps?: number;
+  duplicatePages?: number;
+  dirtySyncCount?: number;
+  compressionRatioPercent?: number;
+  expectedDowntimeMs?: number;
+  estimatedCompletionSeconds?: number;
+  cpuThrottlePct?: number;
+  postcopyRequests?: number;
+  updatedAt?: string;
+}
+
+export interface MigrationAdaptiveStatus {
+  stage?: string;
+  message?: string;
+  startedAt?: string;
+  stageSince?: string;
+  bestRAMRemaining?: number;
+  bestProgressAt?: string;
+  postCopyStarted?: boolean;
+  postCopyArmed?: boolean;
+  bandwidthMbps?: number;
+  downtimeLimitMs?: number;
+  maxThrottlePct?: number;
+  lastBandwidthChangeAt?: string;
+  actions?: { at: string; action: string; detail?: string }[];
+}
+
 export interface MachineMigration {
   metadata: ObjectMeta;
   spec: {
@@ -69,6 +110,7 @@ export interface MachineMigration {
     multifdChannels?: number;
     migrationNetwork?: string;
     cancel?: boolean;
+    adaptive?: MigrationAdaptiveSettings & { policy?: string };
   };
   status?: {
     phase?: string;
@@ -85,6 +127,8 @@ export interface MachineMigration {
     downtimeMs?: number;
     dataPlaneEncrypted?: boolean;
     recovery?: RecoveryStatus;
+    progress?: MigrationProgress;
+    adaptive?: MigrationAdaptiveStatus;
   };
 }
 
@@ -185,7 +229,14 @@ export interface MachineInstanceType {
 
 export interface MigrationPolicy {
   metadata: ObjectMeta;
-  spec: { selector: Record<string, string>; bandwidthMbps?: number; maxConcurrent?: number };
+  spec: MigrationAdaptiveSettings & {
+    selector: Record<string, string>;
+    // Deprecated alias for bandwidth.maxMbps.
+    bandwidthMbps?: number;
+    maxConcurrent?: number;
+    strategy?: 'static' | 'adaptive';
+    maxDowntimeMs?: number;
+  };
   status?: { activeMigrations?: number };
 }
 

@@ -22,7 +22,7 @@ await client.withMachine(manifest as KaironObject, async machine => {
 }, {timeoutMs: 180000});
 ```
 
-`machines.create/get/list/patch/power/wait/delete/fork`, `pools`, `claims`, and
+`machines.create/get/list/patch/power/wait/delete/fork`, `migrations.migrate/progress` (including `strategy: adaptive`, experimental), `pools`, `claims`, and
 `resource(name, true)` support current namespaced core/fleet CRDs. `wait` checks
 current-generation readiness, accepts an abort signal, and can wait for `Stopped`
 with `{phase: 'Stopped', ready: false}`. `delete(name, uid)` always uses a UID

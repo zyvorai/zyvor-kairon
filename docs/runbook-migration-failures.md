@@ -65,6 +65,12 @@ kubectl get machinemigration -n NAMESPACE NAME -o yaml
 
 Confirm `status.recovery.appliedAction`/`appliedReason`/`appliedAcknowledgedDiagnosis`/`appliedAt` are populated (a permanent audit record, independent of later `spec.recovery` edits), and that `status.phase` progressed to `Cutover`/.../`Succeeded` or `Failed` as expected.
 
+## Failed after post-copy started
+
+A live migration that switched to post-copy (immediate `mode: post-copy`, or an adaptive migration's `PostCopy` stage) and then failed also lands in `NeedsRecovery`, with `status.adaptive.postCopyStarted: true` and a message saying the source was not resumed. Here the guest's newest memory is on the destination and the rest on the source, so neither copy is complete. Kairon deliberately left both runtimes alone, and cancel is refused from the moment post-copy starts.
+
+Inspect both hosts before acting. If the destination guest is running and healthy (QEMU completed post-copy despite the reported failure), use `ConfirmDestinationCommitted`. If the destination guest is gone or paused mid-post-copy, the guest state is lost: restore from the most recent snapshot or backup rather than resuming the source, whose memory is stale. Use `ForceAbort` with diagnosis `Unknown` to close the migration out, then repair the Machine.
+
 ## Stuck in flight (`KaironMigrationStuckInFlight`) -- cancelling instead of waiting
 
 Unlike `NeedsRecovery`, a migration merely stuck in `Starting`/`Running` for a long time (the alert's 30-minute default) is not ambiguous -- the destination has not committed yet, so it is always safe to abort. Rather than waiting it out or leaving it to eventually fail on its own:
@@ -75,7 +81,7 @@ kaironctl cancel-migration NAME [-n NAMESPACE]
 
 This patches `spec.cancel: true`; the source node's agent aborts the in-flight transfer (both the source adapter's transfer and the destination's prepared session) on its next reconcile tick and marks the migration `Cancelled` -- the source runtime is left running, untouched, on its current node throughout. The dashboard's Migration detail panel offers the same action as a "Cancel migration" button whenever a migration is in `Starting`/`Running` with `effectiveStrategy: live`.
 
-Cancel only works in that window. Both `kaironctl cancel-migration` and the dashboard refuse locally once phase has reached `Cutover` or later (the destination has already committed by then -- aborting would recreate the same split-brain risk `NeedsRecovery` exists to avoid) and for cold-strategy migrations (nothing in-flight to abort). If a migration is stuck past `Cutover`/`Adopting` instead, that is a different problem -- investigate the target node's own health rather than trying to cancel.
+Cancel only works in that window, and not at all once post-copy has started (`status.adaptive.postCopyStarted`). Both `kaironctl cancel-migration` and the dashboard refuse locally once phase has reached `Cutover` or later (the destination has already committed by then -- aborting would recreate the same split-brain risk `NeedsRecovery` exists to avoid) and for cold-strategy migrations (nothing in-flight to abort). If a migration is stuck past `Cutover`/`Adopting` instead, that is a different problem -- investigate the target node's own health rather than trying to cancel.
 
 ## Unencrypted migration data-plane
 

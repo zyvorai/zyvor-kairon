@@ -18,9 +18,35 @@ interface CreateForm {
   maxDowntimeMs: string;
   multifdChannels: string;
   migrationNetwork: string;
+  progressTimeout: string;
+  autoConverge: boolean;
+  postCopy: boolean;
+  compression: string;
 }
 
-const EMPTY_FORM: CreateForm = { machine: '', strategy: 'auto', targetNode: '', mode: 'pre-copy', bandwidthMbps: '', maxDowntimeMs: '', multifdChannels: '', migrationNetwork: '' };
+const EMPTY_FORM: CreateForm = {
+  machine: '',
+  strategy: 'auto',
+  targetNode: '',
+  mode: 'pre-copy',
+  bandwidthMbps: '',
+  maxDowntimeMs: '',
+  multifdChannels: '',
+  migrationNetwork: '',
+  progressTimeout: '',
+  autoConverge: true,
+  postCopy: false,
+  compression: '',
+};
+
+// adaptiveBody maps the adaptive form fields onto spec.adaptive overrides;
+// fields left empty fall back to the matching MigrationPolicy.
+function adaptiveBody(form: CreateForm): Record<string, unknown> {
+  const a: Record<string, unknown> = { autoConverge: { enabled: form.autoConverge }, postCopy: { enabled: form.postCopy } };
+  if (form.progressTimeout) a.progressTimeout = form.progressTimeout;
+  if (form.compression) a.compression = { algorithm: form.compression };
+  return a;
+}
 
 export default function Migrations({ prefillMachine }: { prefillMachine: string }) {
   const [items, setItems] = useState<MachineMigration[]>([]);
@@ -62,6 +88,7 @@ export default function Migrations({ prefillMachine }: { prefillMachine: string 
       if (form.bandwidthMbps) body.bandwidthMbps = Number(form.bandwidthMbps);
       if (form.maxDowntimeMs) body.maxDowntimeMs = Number(form.maxDowntimeMs);
       if (form.multifdChannels) body.multifdChannels = Number(form.multifdChannels);
+      if (form.strategy === 'adaptive') body.adaptive = adaptiveBody(form);
       await apiJSON('/api/v1/migrations', 'POST', body);
       setForm(EMPTY_FORM);
       await refresh();
@@ -102,6 +129,7 @@ export default function Migrations({ prefillMachine }: { prefillMachine: string 
                 <option value="auto">auto</option>
                 <option value="live">live</option>
                 <option value="cold">cold</option>
+                <option value="adaptive">adaptive (experimental)</option>
               </select>
             </label>
             <label>
@@ -127,6 +155,29 @@ export default function Migrations({ prefillMachine }: { prefillMachine: string 
               Migration network
               <input value={form.migrationNetwork} onChange={(e) => setForm({ ...form, migrationNetwork: e.target.value })} placeholder="empty uses the adapter default" />
             </label>
+            {form.strategy === 'adaptive' && (
+              <>
+                <label>
+                  Progress timeout
+                  <input value={form.progressTimeout} onChange={(e) => setForm({ ...form, progressTimeout: e.target.value })} placeholder="policy or 30s" />
+                </label>
+                <label>
+                  Compression
+                  <select value={form.compression} onChange={(e) => setForm({ ...form, compression: e.target.value })}>
+                    <option value="">policy default</option>
+                    <option value="none">none</option>
+                    <option value="zstd">zstd</option>
+                    <option value="zlib">zlib</option>
+                  </select>
+                </label>
+                <label>
+                  <input type="checkbox" checked={form.autoConverge} onChange={(e) => setForm({ ...form, autoConverge: e.target.checked })} /> Auto-converge when stalled
+                </label>
+                <label title="After the switch the guest runs on the target; a failure then needs operator recovery instead of resuming the source.">
+                  <input type="checkbox" checked={form.postCopy} onChange={(e) => setForm({ ...form, postCopy: e.target.checked })} /> Allow post-copy switch
+                </label>
+              </>
+            )}
           </div>
           <div className="formactions">
             <button className="primary" type="submit" disabled={busy}>
@@ -190,7 +241,9 @@ export default function Migrations({ prefillMachine }: { prefillMachine: string 
 function MigrationDetail({ migration, onChanged }: { migration: MachineMigration; onChanged: () => void }) {
   const st = migration.status || {};
   const pct = transferProgress(st.ramTransferred, st.ramTotal);
-  const cancellable = (st.phase === 'Starting' || st.phase === 'Running') && st.effectiveStrategy === 'live' && !migration.spec.cancel;
+  const postCopyStarted = !!st.adaptive?.postCopyStarted;
+  const cancellable = (st.phase === 'Starting' || st.phase === 'Running') && st.effectiveStrategy === 'live' && !migration.spec.cancel && !postCopyStarted;
+  const p = st.progress;
   return (
     <div className="card span4">
       <span className="eyebrow">{migration.metadata.name}</span>
@@ -223,14 +276,95 @@ function MigrationDetail({ migration, onChanged }: { migration: MachineMigration
           <b>{st.dataPlaneEncrypted ? 'Encrypted' : 'Cleartext'}</b>
           <span>Data-plane transport</span>
         </div>
+        {p && (
+          <>
+            <div className="tile">
+              <b>{p.throughputMbps ?? 0} Mbps</b>
+              <span>Throughput</span>
+            </div>
+            <div className="tile">
+              <b>{p.dirtyRateMbps ?? 0} Mbps</b>
+              <span>Dirty rate</span>
+            </div>
+            <div className="tile">
+              <b>{formatDuration(p.expectedDowntimeMs)}</b>
+              <span>Expected downtime</span>
+            </div>
+            <div className="tile">
+              <b>{p.estimatedCompletionSeconds ? formatDuration(p.estimatedCompletionSeconds * 1000) : 'unknown'}</b>
+              <span>Estimated finish</span>
+            </div>
+            {!!p.cpuThrottlePct && (
+              <div className="tile">
+                <b>{p.cpuThrottlePct}%</b>
+                <span>vCPU throttle</span>
+              </div>
+            )}
+            {!!p.compressionRatioPercent && (
+              <div className="tile">
+                <b>{(p.compressionRatioPercent / 100).toFixed(2)}x</b>
+                <span>Compression ratio</span>
+              </div>
+            )}
+          </>
+        )}
       </div>
+
+      {st.adaptive && <AdaptivePanel status={st.adaptive} />}
 
       {cancellable && <CancelButton migration={migration} onChanged={onChanged} />}
       {migration.spec.cancel && (st.phase === 'Starting' || st.phase === 'Running') && (
-        <p className="msg">Cancel requested -- waiting for the source node's agent to abort the transfer.</p>
+        <p className="msg">
+          {postCopyStarted
+            ? 'Cancel requested, but post-copy has started: the source can no longer take the guest back, so the migration continues.'
+            : "Cancel requested -- waiting for the source node's agent to abort the transfer."}
+        </p>
       )}
       {st.phase === 'NeedsRecovery' && <RecoveryPanel migration={migration} onChanged={onChanged} />}
     </div>
+  );
+}
+
+function AdaptivePanel({ status }: { status: NonNullable<NonNullable<MachineMigration['status']>['adaptive']> }) {
+  return (
+    <TerminalFrame title="status.adaptive (experimental)">
+      <div className="recovery-fields">
+        <div>
+          <span>Stage</span>
+          <b>{status.stage || '-'}</b>
+        </div>
+        <div>
+          <span>Bandwidth</span>
+          <b>{status.bandwidthMbps ? `${status.bandwidthMbps} Mbps` : '-'}</b>
+        </div>
+        <div>
+          <span>Downtime limit</span>
+          <b>{formatDuration(status.downtimeLimitMs)}</b>
+        </div>
+        <div>
+          <span>vCPU throttle ceiling</span>
+          <b>{status.maxThrottlePct ? `${status.maxThrottlePct}%` : '-'}</b>
+        </div>
+        <div>
+          <span>Post-copy</span>
+          <b>{status.postCopyStarted ? 'started' : status.postCopyArmed ? 'armed' : 'off'}</b>
+        </div>
+      </div>
+      {status.message && <p>{status.message}</p>}
+      {(status.actions ?? []).length > 0 && (
+        <table className="datatable">
+          <tbody>
+            {(status.actions ?? []).map((a, i) => (
+              <tr key={i}>
+                <td>{a.at}</td>
+                <td>{a.action}</td>
+                <td>{a.detail || ''}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </TerminalFrame>
   );
 }
 
@@ -308,8 +442,9 @@ function RecoveryPanel({ migration, onChanged }: { migration: MachineMigration; 
     <div className="recovery-block">
       <h3>NeedsRecovery -- operator action required</h3>
       <p>
-        The source transfer completed but the destination commit was ambiguous. Kairon has deliberately stopped reconciling this migration until you attest what actually happened -- see the current diagnosis
-        below before choosing an action.
+        {migration.status?.adaptive?.postCopyStarted
+          ? 'The transfer failed after post-copy started, so the guest\'s memory is split between source and destination. Kairon neither resumed the source nor aborted the destination; inspect both nodes and the diagnosis below before choosing an action.'
+          : 'The source transfer completed but the destination commit was ambiguous. Kairon has deliberately stopped reconciling this migration until you attest what actually happened -- see the current diagnosis below before choosing an action.'}
       </p>
       <TerminalFrame title="status.recovery (live diagnosis)">
         <div className="recovery-fields">

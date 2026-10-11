@@ -73,6 +73,52 @@ concurrency caps are already checked):
   `MachineDisruptionBudget`'s own purely-observational status
   reconciliation.
 
+## Adaptive live migration (experimental)
+
+Adaptive migration is experimental until the 3-node lab migration matrix runs green; see [`docs/STATUS.md`](../STATUS.md).
+
+With `strategy: adaptive`, kairon-node watches each live transfer's telemetry and steers it when it stalls, instead of leaving the start-time settings in place until the transfer finishes or the operator cancels it:
+
+```yaml
+apiVersion: kairon.zyvor.dev/v1
+kind: MigrationPolicy
+metadata:
+  name: databases
+  namespace: prod
+spec:
+  selector: {tier: db}
+  strategy: adaptive            # static (default) | adaptive
+  maxDowntimeMs: 250
+  completionTimeoutPerGiB: 120s
+  progressTimeout: 30s
+  autoConverge: {enabled: true, dirtyRateThresholdMbps: 750}
+  postCopy: {enabled: true, triggerAfter: 90s}
+  compression: {algorithm: zstd, level: 3}
+  bandwidth: {maxMbps: 10000, adaptive: true}
+```
+
+At admission, kairon-controller copies these settings into the migration's `spec.adaptive`, `spec.maxDowntimeMs` and `spec.bandwidthMbps`. Values set on the `MachineMigration` itself win, field by field, and later policy edits never change a migration already in flight. `bandwidthMbps` stays as a deprecated alias for `bandwidth.maxMbps`. Compression needs multifd, so admission sets `multifdChannels: 2` when compression is on and the migration didn't choose a channel count.
+
+The engine moves through these stages, skipping any remedy that is disabled or that the node can't do:
+
+1. **PreCopy.** The transfer runs with half of `maxDowntimeMs` as its downtime limit.
+2. **AutoConverge.** Guest vCPUs are throttled, with the ceiling raised from 50% to 75% to 99% while the transfer stays stalled.
+3. **RelaxDowntime.** The downtime limit rises towards `maxDowntimeMs`, straight to QEMU's expected downtime when that fits.
+4. **PostCopy.** The guest switches to running on the target while remaining pages are fetched over the network.
+
+A transfer counts as stalled when remaining RAM hasn't shrunk by 5% within `progressTimeout`. In PreCopy it also counts as stalled when the guest dirties memory at or above the transfer rate, or reaches `autoConverge.dirtyRateThresholdMbps`. `postCopy.triggerAfter` switches to post-copy once the transfer has run that long, even with other remedies left. With `bandwidth.adaptive`, the transfer starts at a quarter of `maxMbps` and the bandwidth rises while throughput keeps up with it. If throughput falls well short, the bandwidth backs off. A transfer still running after guest RAM in GiB times `completionTimeoutPerGiB`, before post-copy, is aborted and the source keeps running.
+
+**Post-copy changes the failure model.** Once post-copy starts, the guest's newest memory lives on the target and the rest on the source. If the transfer then fails, the migration goes to `NeedsRecovery`: Kairon neither resumes the source nor aborts the target, and `spec.cancel` is refused. Kairon never arms post-copy for a Machine with host devices (`spec.deviceClaims` or VFIO), when the source adapter can't switch a running transfer, or for multifd transfers on QEMU older than 10.0.
+
+Adaptive control needs the migration adapter's optional tune, postcopy and capabilities routes (see [`docs/migration-adapter.md`](../migration-adapter.md)) on both nodes. With an older adapter the migration runs with its start-time settings and `status.adaptive.stage` reads `Unsupported`. The engine's state, including a capped log of every action it took, is in `status.adaptive`; transfer telemetry is in `status.progress`. `kaironctl describe migration NAME` prints both as a readable block, and Prometheus gets `kairon_migration_progress`, `kairon_migration_adaptive_stage` and `kairon_migration_adaptive_actions_total` (see [observability](observability.md)).
+
+Per-migration overrides on the command line:
+
+```console
+$ kaironctl create migrationpolicy databases --selector tier=db --strategy adaptive --max-downtime-ms 250 --auto-converge --post-copy --post-copy-after 90s --compression zstd --compression-level 3
+$ kaironctl migrate db-1 --strategy adaptive --progress-timeout 20s --post-copy=false
+```
+
 ## Previewing what a migration would get right now (`kaironctl describe`)
 
 `describe` for every other kind in this project uniformly prints the raw

@@ -23,7 +23,7 @@ with client.temporary_machine(manifest, timeout=180) as machine:
         raise RuntimeError("guest command failed")
 ```
 
-`machines.create/get/list/patch/power/wait/delete/fork`, `pools`, `claims`,
+`machines.create/get/list/patch/power/wait/delete/fork`, `migrations.migrate/progress` (including `strategy: adaptive`, experimental), `pools`, `claims`,
 and `resource(name, fleet=True)` use Kubernetes credentials directly. Readiness
 requires `Running`, `Ready=True`, and an observed generation at least as new as
 the object's current generation. Set `ready=False` when waiting for `Stopped`.

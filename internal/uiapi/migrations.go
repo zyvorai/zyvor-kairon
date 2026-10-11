@@ -271,6 +271,10 @@ func (s *Server) handleCancelMigration(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "machinemigration is a "+current.Status.EffectiveStrategy+"-strategy migration; cancel only applies to live migrations")
 		return
 	}
+	if a := current.Status.Adaptive; a != nil && a.PostCopyStarted {
+		writeError(w, http.StatusConflict, "machinemigration has started post-copy; the source can no longer take the guest back, so it can't be cancelled")
+		return
+	}
 	patch := map[string]any{"spec": map[string]any{"cancel": true}}
 	if err := s.Kube.PatchMachineMigration(r.Context(), ns, name, patch); err != nil {
 		writeUpstreamError(w, err)

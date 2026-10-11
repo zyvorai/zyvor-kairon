@@ -968,6 +968,27 @@ func TestCancelMigrationRequiresLiveStrategy(t *testing.T) {
 	}
 }
 
+func TestCancelMigrationRefusedAfterPostCopyStarted(t *testing.T) {
+	fk := newFakeKube()
+	fk.migrations["m1"] = model.MachineMigration{Metadata: model.ObjectMeta{Name: "m1", Namespace: "default"}, Status: model.MachineMigrationStatus{
+		Phase: "Running", EffectiveStrategy: "live",
+		Adaptive: &model.MachineMigrationAdaptiveStatus{Stage: model.AdaptiveStagePostCopy, PostCopyStarted: true},
+	}}
+	s := newTestServer(t, fk, "")
+	h := s.Handler()
+
+	rr := doJSON(t, h, http.MethodPost, "/api/v1/migrations/default/m1/cancel", "", struct{}{})
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("expected 409 once post-copy has started, got %d: %s", rr.Code, rr.Body.String())
+	}
+	fk.mu.Lock()
+	cancel := fk.migrations["m1"].Spec.Cancel
+	fk.mu.Unlock()
+	if cancel {
+		t.Fatal("expected spec.cancel to stay false after post-copy started")
+	}
+}
+
 func TestCancelMigrationAppliesPatchWhenValid(t *testing.T) {
 	fk := newFakeKube()
 	fk.migrations["m1"] = model.MachineMigration{Metadata: model.ObjectMeta{Name: "m1", Namespace: "default"}, Status: model.MachineMigrationStatus{Phase: "Running", EffectiveStrategy: "live"}}

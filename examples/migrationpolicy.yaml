@@ -11,3 +11,31 @@ spec:
     tier: web
   bandwidthMbps: 500
   maxConcurrent: 2
+---
+# Adaptive live migration (experimental until the lab migration matrix
+# runs green): kairon-node throttles, relaxes downtime or switches to
+# post-copy when a transfer stalls. See docs/guides/migration-policies.md.
+apiVersion: kairon.zyvor.dev/v1
+kind: MigrationPolicy
+metadata:
+  name: databases
+  namespace: default
+spec:
+  selector:
+    tier: db
+  strategy: adaptive
+  maxDowntimeMs: 250
+  completionTimeoutPerGiB: 120s
+  progressTimeout: 30s
+  autoConverge:
+    enabled: true
+    dirtyRateThresholdMbps: 750
+  postCopy:
+    enabled: true
+    triggerAfter: 90s
+  compression:
+    algorithm: zstd
+    level: 3
+  bandwidth:
+    maxMbps: 10000
+    adaptive: true

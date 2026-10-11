@@ -90,6 +90,9 @@ func cmdCancelMigration(ctx context.Context, kc *kube.Client, args []string) {
 	if current.Status.EffectiveStrategy != "live" {
 		fatal(fmt.Errorf("machinemigration %s/%s is a %q-strategy migration; cancel only applies to live migrations", ns, name, current.Status.EffectiveStrategy))
 	}
+	if a := current.Status.Adaptive; a != nil && a.PostCopyStarted {
+		fatal(fmt.Errorf("machinemigration %s/%s has started post-copy; the source can no longer take the guest back, so it can't be cancelled", ns, name))
+	}
 	if current.Spec.Cancel {
 		okf("machinemigration/%s: cancel already requested; waiting for the source node's agent to apply it", name)
 		return

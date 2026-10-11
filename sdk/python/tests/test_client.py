@@ -99,6 +99,29 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(body["metadata"]["namespace"], "default")
         self.assertEqual(out["metadata"]["uid"], "uid-a")
         self.assertEqual(headers["Authorization"], "Bearer kube-secret")
+    def test_adaptive_migration_is_live_with_overrides(self):
+        self.client.migrations.migrate("db", name="move-db", strategy="adaptive",
+                                       adaptive={"compression": {"algorithm": "zstd", "level": 3}})
+        method, path, _, body = self.fixture.calls[-1]
+        self.assertEqual((method, path), ("POST", "/apis/kairon.zyvor.dev/v1/namespaces/default/machinemigrations"))
+        self.assertEqual(body["kind"], "MachineMigration")
+        self.assertEqual(body["spec"]["strategy"], "live")
+        self.assertEqual(body["spec"]["multifdChannels"], 2)
+        self.assertEqual(body["spec"]["adaptive"]["compression"]["algorithm"], "zstd")
+        with self.assertRaises(ValueError):
+            self.client.migrations.migrate("db", strategy="cold", adaptive={})
+        with self.assertRaises(ValueError):
+            self.client.migrations.migrate("db", strategy="fast")
+    def test_migration_progress_reads_status(self):
+        self.client.migrations.migrate("db", name="move-db", strategy="adaptive")
+        self.fixture.obj["status"] = {"phase": "Running", "ramTotal": 4, "ramRemaining": 1,
+                                      "progress": {"throughputMbps": 900},
+                                      "adaptive": {"stage": "AutoConverge"}}
+        progress = self.client.migrations.progress("move-db")
+        self.assertEqual(progress["phase"], "Running")
+        self.assertEqual(progress["ramRemaining"], 1)
+        self.assertEqual(progress["progress"]["throughputMbps"], 900)
+        self.assertEqual(progress["adaptive"]["stage"], "AutoConverge")
     def test_readiness_requires_current_generation_and_ready(self):
         obj = self.client.machines.create(MANIFEST)
         stale = copy.deepcopy(obj); stale["metadata"]["generation"] = 2
