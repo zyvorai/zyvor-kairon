@@ -318,3 +318,33 @@ func TestParseProfileAndUnknownIDs(t *testing.T) {
 		t.Errorf("UnknownIDs = %v", bad)
 	}
 }
+
+func TestBootRunsEvenWhenControlPlaneFails(t *testing.T) {
+	f := newFakeKube()
+	env := baseEnv(f)
+	env.ControlPlane = func(context.Context) []Check {
+		return []Check{{Name: "webhook", Status: Fail, Detail: "missing", Hint: "install it"}}
+	}
+	rec := &recorder{}
+	Run(context.Background(), env, rec, Options{Profile: ProfileQuick})
+	if rec.status("control-plane") != Fail {
+		t.Fatalf("control-plane = %q", rec.status("control-plane"))
+	}
+	if rec.status("boot") != Pass {
+		t.Errorf("boot = %q, want pass independent of control-plane", rec.status("boot"))
+	}
+}
+
+func TestNoCapableNodeWarnsAndHintsOnBootFailure(t *testing.T) {
+	f := newFakeKube()
+	f.nodes[0].Metadata.Labels = nil
+	f.failBoot = true
+	rec := &recorder{}
+	res := Run(context.Background(), baseEnv(f), rec, Options{Profile: ProfileQuick, Only: []string{"boot"}})
+	if len(res) != 1 || res[0].Status != Fail {
+		t.Fatalf("results = %+v", res)
+	}
+	if !strings.Contains(res[0].Hint, model.CapableLabel) {
+		t.Errorf("hint %q should mention the capable label", res[0].Hint)
+	}
+}
