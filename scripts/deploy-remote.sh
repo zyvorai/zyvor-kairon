@@ -126,17 +126,17 @@ Flags:
                           /etc/kairon/ui-tls/ and wired into kairon-ui.env
                           (set even when the file exists). Browsers warn once
                           about a self-signed certificate.
-  --console-tls           Enable one-way TLS on the kairon-ui -> kairon-node
-                          console relay hop (plaintext by default). Requires
-                          --with-console. With no --console-tls-cert/-key/-ca,
-                          a private CA + server certificate is generated
-                          locally (openssl) and installed on the remote host;
-                          its SAN list is a best-effort guess (this host's
-                          own IPs/hostname) since kairon-ui actually dials
-                          whatever address Kubernetes reports as this Node's
-                          InternalIP, which this script cannot always know --
-                          if verification fails, regenerate with an explicit
-                          --console-tls-cert/-key/-ca covering the right one.
+  --console-tls           (the default with --with-console; kept for scripts)
+                          One-way TLS on the kairon-ui -> kairon-node console
+                          relay hop. With no --console-tls-cert/-key/-ca a
+                          private CA + server certificate for the name
+                          kairon-node is generated locally (openssl) and
+                          installed; kairon-ui verifies that fixed name, so it
+                          does not matter which address it dials.
+  --console-insecure-http Serve the console relay as plain HTTP. The shared
+                          token and the VM's console data are then clear text
+                          on the network between kairon-ui and kairon-node;
+                          only for hosts where both run on one machine.
   --console-tls-cert=PATH  Bring your own console relay server certificate
                           (local path). Must be given together with
                           --console-tls-key and --console-tls-ca.
@@ -263,6 +263,8 @@ CONSOLE_PORT="8090"
 CONSOLE_PORT_EXPLICIT=0
 RESOLVED_CONSOLE_TOKEN=""
 WITH_CONSOLE_TLS=0
+CONSOLE_INSECURE_HTTP=0
+CONSOLE_TLS_SERVER_NAME=""
 UI_TLS=0
 UI_INSECURE_HTTP=0
 UI_TLS_REUSE=0
@@ -348,7 +350,8 @@ while [[ $# -gt 0 ]]; do
     --ui-port=*) UI_PORT="${1#*=}"; UI_PORT_EXPLICIT=1 ;;
     --with-console) WITH_CONSOLE=1 ;;
     --console-port=*) CONSOLE_PORT="${1#*=}"; CONSOLE_PORT_EXPLICIT=1 ;;
-    --console-tls) WITH_CONSOLE_TLS=1 ;;
+    --console-tls) WITH_CONSOLE_TLS=1 ;;   # TLS is already the default with --with-console
+    --console-insecure-http) CONSOLE_INSECURE_HTTP=1 ;;
     --ui-tls) UI_TLS=1 ;;   # HTTPS is already the default with --with-ui; kept for scripts
     --ui-insecure-http) UI_INSECURE_HTTP=1 ;;
     --ui-regenerate-cert) UI_TLS_REGEN=1 ;;
@@ -441,13 +444,23 @@ if [[ "$console_tls_paths_given" -gt 0 && "$console_tls_paths_given" -lt 3 ]]; t
   die "--console-tls-cert, --console-tls-key and --console-tls-ca must be given together (fail-closed, matches --migration-ca/-cert/-key's own validation)"
 fi
 if [[ "$console_tls_paths_given" -eq 3 ]]; then
-  [[ "$WITH_CONSOLE_TLS" == "1" ]] || die "--console-tls-cert/-key/-ca require --console-tls"
+  [[ "$WITH_CONSOLE" == "1" ]] || die "--console-tls-cert/-key/-ca require --with-console"
+  [[ "$CONSOLE_INSECURE_HTTP" != "1" ]] || die "--console-tls-cert/-key/-ca contradict --console-insecure-http"
   for p in "$CONSOLE_TLS_CERT" "$CONSOLE_TLS_KEY" "$CONSOLE_TLS_CA"; do
     [[ -f "$p" ]] || die "console TLS file not found: $p"
   done
 fi
 if [[ "$WITH_CONSOLE_TLS" == "1" && "$WITH_CONSOLE" != "1" ]]; then
   die "--console-tls requires --with-console"
+fi
+if [[ "$CONSOLE_INSECURE_HTTP" == "1" ]]; then
+  [[ "$WITH_CONSOLE" == "1" ]] || die "--console-insecure-http requires --with-console"
+  [[ "$WITH_CONSOLE_TLS" != "1" ]] || die "--console-tls contradicts --console-insecure-http"
+fi
+# The console relay carries the shared token and the VM's console, exec and
+# file data, so its TLS is on by default; plain HTTP is asked for by name.
+if [[ "$WITH_CONSOLE" == "1" && "$CONSOLE_INSECURE_HTTP" != "1" ]]; then
+  WITH_CONSOLE_TLS=1
 fi
 if [[ "$UI_INSECURE_HTTP" == "1" ]]; then
   [[ "$WITH_UI" == "1" ]] || die "--ui-insecure-http requires --with-ui"
@@ -613,6 +626,7 @@ $([[ "$WITH_UI" == "1" ]] && echo "Dashboard token:          $(if [[ -n "$UI_TOK
 $([[ "$WITH_CONSOLE" == "1" ]] && echo "Console relay port:       ${CONSOLE_PORT}$([[ "$CONSOLE_PORT_EXPLICIT" != "1" ]] && echo " (default; auto-replaced with a random free port if busy)")")
 $([[ "$WITH_CONSOLE" == "1" ]] && echo "Console relay token:      will be auto-generated at deploy time (openssl rand -hex 32), shared between kairon-node and kairon-ui only -- never shown to an operator")
 $([[ "$WITH_CONSOLE_TLS" == "1" ]] && echo "Console relay TLS:        $(if [[ -n "$CONSOLE_TLS_CERT" ]]; then echo "provided via --console-tls-cert/-key/-ca"; else echo "self-signed CA + cert will be auto-generated at deploy time (openssl)"; fi)")
+$([[ "$CONSOLE_INSECURE_HTTP" == "1" ]] && echo "Console relay TLS:        none (--console-insecure-http: token and console data in clear text)")
 Start after install:      $([[ "$NO_START" == "1" ]] && echo "no (--no-start)" || echo "yes")
 Image cache dir:          ${IMAGE_CACHE_DIR:-<unchanged>}
 $([[ "$WITH_UI" == "1" ]] && echo "Dashboard scheme:        $(if [[ "$UI_INSECURE_HTTP" == "1" ]]; then echo "http (--ui-insecure-http: clear-text logins)"; elif [[ -n "$UI_TLS_CERT" ]]; then echo "https, certificate provided via --ui-tls-cert/-key"; else echo "https, self-signed certificate generated at deploy time (openssl)"; fi)")
@@ -867,7 +881,7 @@ run_deploy() {
       info "auto-generating a self-signed console TLS certificate..."
       local remote_ips san_list
       remote_ips="$(ssh_cmd "$REMOTE" "hostname -I" 2>/dev/null || true)"
-      san_list="DNS:${remote_hostname},IP:127.0.0.1"
+      san_list="DNS:kairon-node,DNS:${remote_hostname},IP:127.0.0.1"
       local ip
       for ip in $remote_ips; do
         san_list="${san_list},IP:${ip}"
@@ -887,6 +901,7 @@ run_deploy() {
         -out "$local_stage/console-tls-cert.pem" \
         -extfile <(printf 'subjectAltName=%s' "$san_list") >/dev/null 2>&1
       RESOLVED_CONSOLE_TLS_SOURCE="generated"
+      CONSOLE_TLS_SERVER_NAME="kairon-node"
       ok "generated console TLS certificate (SAN: $san_list)"
     fi
   fi
@@ -973,6 +988,8 @@ run_deploy() {
     printf 'CONSOLE_PORT=%q\n' "$CONSOLE_PORT"
     printf 'CONSOLE_PORT_EXPLICIT=%q\n' "$CONSOLE_PORT_EXPLICIT"
     printf 'WITH_CONSOLE_TLS=%q\n' "$WITH_CONSOLE_TLS"
+    printf 'CONSOLE_INSECURE_HTTP=%q\n' "$CONSOLE_INSECURE_HTTP"
+    printf 'CONSOLE_TLS_SERVER_NAME=%q\n' "$CONSOLE_TLS_SERVER_NAME"
     printf 'RESERVED_CPUS=%q\n' "$RESERVED_CPUS"
     printf 'IMAGE_CACHE_DIR=%q\n' "$IMAGE_CACHE_DIR"
     printf 'UI_TLS=%q\n' "$UI_TLS"
@@ -991,6 +1008,16 @@ source ./params.env
 info() { printf '[*] %s\n' "$*"; }
 ok()   { printf '[+] %s\n' "$*"; }
 warn() { printf '[!] %s\n' "$*" >&2; }
+
+# Idempotent KEY=VALUE upsert into an env file (also un-comments a #KEY= line).
+set_env_key() {
+  local file="$1" key="$2" value="$3"
+  if grep -qE "^#?${key}=" "$file"; then
+    sed -i -E "s#^\#?${key}=.*#${key}=${value}#" "$file"
+  else
+    echo "${key}=${value}" >> "$file"
+  fi
+}
 
 # A port held only by OWNER (the binary this deploy is about to restart) is
 # not in use. ss reports the kernel comm name, truncated to 15 characters.
@@ -1164,20 +1191,16 @@ else
     warn "edit /etc/kairon/kairon-node.env by hand (KAIRON_NODE_CONSOLE_TOKEN must match kairon-ui.env's), then: systemctl restart kairon-node"
   fi
   if [[ "$WITH_CONSOLE_TLS" == "1" ]]; then
-    warn "--console-tls was given but KAIRON_NODE_CONSOLE_TLS_CERT/_KEY were NOT applied because the env file already exists"
-    warn "edit /etc/kairon/kairon-node.env by hand, then: systemctl restart kairon-node"
+    set_env_key /etc/kairon/kairon-node.env KAIRON_NODE_CONSOLE_TLS_CERT /etc/kairon/console-tls/cert.pem
+    set_env_key /etc/kairon/kairon-node.env KAIRON_NODE_CONSOLE_TLS_KEY /etc/kairon/console-tls/key.pem
+    ok "console relay TLS wired into /etc/kairon/kairon-node.env"
+  elif [[ "$CONSOLE_INSECURE_HTTP" == "1" ]]; then
+    sed -i -E '/^KAIRON_NODE_CONSOLE_TLS_(CERT|KEY)=/d' /etc/kairon/kairon-node.env
+    warn "console relay served as plain HTTP (--console-insecure-http)"
   fi
 fi
 
 # Sets KEY=VALUE in an env file, replacing a live or commented-out line.
-set_env_key() {
-  local file="$1" key="$2" value="$3"
-  if grep -qE "^#?${key}=" "$file"; then
-    sed -i -E "s#^\#?${key}=.*#${key}=${value}#" "$file"
-  else
-    echo "${key}=${value}" >> "$file"
-  fi
-}
 
 # Image cache: kairon-node refuses spec.image.source (and the self-test's
 # downloaded CirrOS) without one. The unit runs with ProtectSystem=strict, so
@@ -1268,6 +1291,9 @@ if [[ "$WITH_UI" == "1" ]]; then
       fi
       if [[ "$WITH_CONSOLE_TLS" == "1" ]]; then
         echo "KAIRON_NODE_CONSOLE_CA=/etc/kairon/console-tls/ca.crt"
+        if [[ -n "$CONSOLE_TLS_SERVER_NAME" ]]; then
+          echo "KAIRON_NODE_CONSOLE_SERVER_NAME=$CONSOLE_TLS_SERVER_NAME"
+        fi
       else
         echo "#KAIRON_NODE_CONSOLE_CA="
       fi
@@ -1305,8 +1331,15 @@ if [[ "$WITH_UI" == "1" ]]; then
       warn "edit /etc/kairon/kairon-ui.env by hand (KAIRON_NODE_CONSOLE_TOKEN must match kairon-node.env's), then: systemctl restart kairon-ui"
     fi
     if [[ "$WITH_CONSOLE_TLS" == "1" ]]; then
-      warn "--console-tls was given but KAIRON_NODE_CONSOLE_CA was NOT applied because the env file already exists"
-      warn "edit /etc/kairon/kairon-ui.env by hand, then: systemctl restart kairon-ui"
+      set_env_key /etc/kairon/kairon-ui.env KAIRON_NODE_CONSOLE_CA /etc/kairon/console-tls/ca.crt
+      if [[ -n "$CONSOLE_TLS_SERVER_NAME" ]]; then
+        set_env_key /etc/kairon/kairon-ui.env KAIRON_NODE_CONSOLE_SERVER_NAME "$CONSOLE_TLS_SERVER_NAME"
+      else
+        sed -i -E '/^KAIRON_NODE_CONSOLE_SERVER_NAME=/d' /etc/kairon/kairon-ui.env
+      fi
+      ok "console relay TLS wired into /etc/kairon/kairon-ui.env"
+    elif [[ "$CONSOLE_INSECURE_HTTP" == "1" ]]; then
+      sed -i -E '/^KAIRON_NODE_CONSOLE_(CA|SERVER_NAME)=/d' /etc/kairon/kairon-ui.env
     fi
     fi
   fi

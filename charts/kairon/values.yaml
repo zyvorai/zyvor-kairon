@@ -446,18 +446,25 @@ console:
   existingSecret: ""
   existingSecretKey: "token"
   tls:
-    # Opt-in one-way TLS on the kairon-ui -> kairon-node console hop
-    # (plaintext HTTP with the shared token otherwise -- see SECURITY.md's
-    # "VNC console" section). Not mutual TLS: the shared console token
-    # above already authenticates kairon-ui to kairon-node, so kairon-node
-    # only needs a server certificate, not a client-cert-verifying one.
-    enabled: false
+    # One-way TLS on the kairon-ui -> kairon-node console hop, ON by default
+    # (the hop carries the shared console token and the VM's console, exec
+    # and file data, so it is not left in clear text unless you say so).
+    # Not mutual TLS: the shared console token above already authenticates
+    # kairon-ui to kairon-node, so kairon-node only needs a server
+    # certificate. Set false only for a hop you already protect another way
+    # (a mesh, an encrypted node network); it is then plaintext HTTP.
+    enabled: true
     # secretName: a pre-created Secret with tls.crt/tls.key (kairon-node's
-    # server certificate/key) and ca.crt (the CA kairon-ui verifies it
-    # against) -- required when tls.enabled is true. No chart-generated
-    # default; unlike the console token, a real CA/cert pair isn't
-    # something Helm should be minting for you.
+    # server certificate and key) and ca.crt (the CA kairon-ui verifies it
+    # against). Empty makes the chart generate one (kairon-console-tls: a
+    # private CA and a server certificate for the name kairon-node), keep it
+    # across upgrades, and have kairon-ui verify that fixed name, so it works
+    # for every node whatever its address.
     secretName: ""
+    # serverName: the name kairon-ui verifies the node certificate against.
+    # Empty means "kairon-node" with the generated Secret, and the address
+    # being dialled (so the certificate needs the node IPs) with your own.
+    serverName: ""
 webhook:
   # Validating admission webhooks closing the gaps documented on
   # MachineQuota/MachineDisruptionBudget: without this, a namespace can

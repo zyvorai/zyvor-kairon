@@ -396,6 +396,37 @@ type: Opaque
 stringData:
   token: {{ $consoleTokenValue | quote }}
 {{ end }}
+{{ if and .Values.console.tls.enabled (not .Values.console.tls.secretName) }}
+{{- $existingTLS := lookup "v1" "Secret" .Release.Namespace "kairon-console-tls" }}
+{{- $tlsCrt := "" }}
+{{- $tlsKey := "" }}
+{{- $tlsCA := "" }}
+{{- if and $existingTLS $existingTLS.data (index $existingTLS.data "tls.crt") (index $existingTLS.data "tls.key") (index $existingTLS.data "ca.crt") }}
+{{- $tlsCrt = index $existingTLS.data "tls.crt" | b64dec }}
+{{- $tlsKey = index $existingTLS.data "tls.key" | b64dec }}
+{{- $tlsCA = index $existingTLS.data "ca.crt" | b64dec }}
+{{- else }}
+{{- $ca := genCA "kairon-console-ca" 3650 }}
+{{- $cert := genSignedCert "kairon-node" nil (list "kairon-node" "localhost") 3650 $ca }}
+{{- $tlsCrt = $cert.Cert }}
+{{- $tlsKey = $cert.Key }}
+{{- $tlsCA = $ca.Cert }}
+{{- end }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kairon-console-tls
+  namespace: {{ .Release.Namespace }}
+type: kubernetes.io/tls
+stringData:
+  tls.crt: |
+{{ $tlsCrt | indent 4 }}
+  tls.key: |
+{{ $tlsKey | indent 4 }}
+  ca.crt: |
+{{ $tlsCA | indent 4 }}
+{{ end }}
 {{ end }}
 ---
 apiVersion: apps/v1
@@ -666,7 +697,7 @@ spec:
 {{ if and .Values.console.enabled .Values.console.tls.enabled }}
         - name: console-tls
           secret:
-            secretName: {{ .Values.console.tls.secretName }}
+            secretName: {{ .Values.console.tls.secretName | default "kairon-console-tls" }}
             defaultMode: 0440
 {{ end }}
 {{ if .Values.csiNode.enabled }}
@@ -1320,6 +1351,14 @@ spec:
 {{ if .Values.console.tls.enabled }}
             - name: KAIRON_NODE_CONSOLE_CA
               value: /etc/kairon/console-tls/ca.crt
+{{- $consoleServerName := .Values.console.tls.serverName }}
+{{- if and (not $consoleServerName) (not .Values.console.tls.secretName) }}
+{{- $consoleServerName = "kairon-node" }}
+{{- end }}
+{{ if $consoleServerName }}
+            - name: KAIRON_NODE_CONSOLE_SERVER_NAME
+              value: {{ $consoleServerName | quote }}
+{{ end }}
 {{ end }}
 {{ end }}
 {{ if .Values.ui.auth.rbacConsoleCheck }}
@@ -1387,7 +1426,7 @@ spec:
 {{ if $consoleTLS }}
         - name: console-tls
           secret:
-            secretName: {{ .Values.console.tls.secretName }}
+            secretName: {{ .Values.console.tls.secretName | default "kairon-console-tls" }}
             defaultMode: 0440
 {{ end }}
 {{ if $uiTLS }}

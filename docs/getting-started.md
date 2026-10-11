@@ -184,8 +184,10 @@ rests on kairon-ui's operator auth, a single-use connection ticket bound
 to the requesting username (every session is audit-logged), and a shared
 token between kairon-ui and every kairon-node -- appropriate for a trusted
 operator team, not a hostile-network or multi-tenant deployment. That last
-hop can optionally run over one-way TLS instead of plaintext HTTP -- see
-`console.tls.enabled`/`console.tls.secretName` in `values.yaml`.
+hop runs over one-way TLS by default (the chart generates a private CA and
+certificate; `console.tls.secretName` brings your own, and
+`console.tls.enabled: false` or `deploy-remote.sh --console-insecure-http`
+opts out) -- see `console.tls.*` in `values.yaml`.
 
 **Prerequisite confirmed against a real deployment**: FluxVM creates
 `vnc.sock` root-owned with no `other` write bit, and `kairon-node` runs as
