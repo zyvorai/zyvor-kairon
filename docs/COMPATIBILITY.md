@@ -119,6 +119,25 @@ both hosts: each node's migration adapter `GET /v1/capabilities` must report
 `tune`, `autoConverge`, `postCopySwitch` and `zstd` in `compression`. Adaptive live migration is Experimental until all
 four pass on the nightly workflow alongside the base live rows.
 
+## Incremental S3 backups
+
+Single node plus MinIO, driven by
+[`scripts/lab-cbt-backup.sh`](../scripts/lab-cbt-backup.sh) against a
+disposable image-booted Machine with `spec.guestAgent.enabled` on a node
+labelled `kairon.zyvor.dev/cbt=true` (FluxVM with QEMU 5.1+). `--minio-ssh`
+starts MinIO with an Object Lock bucket and creates the labelled Secret; the
+script prints these rows. Incremental S3 backups stay Experimental until all
+four pass. FluxVM's own QEMU-gated engine test
+(`stopped_vm_chain_round_trips_through_qemu`, passed on QEMU 10.2.1) covers
+a stopped VM only, through qemu-storage-daemon, without Kairon.
+
+| Case | Last result | Date | Notes |
+|---|---|---|---|
+| CBT: changed-bytes | not run | — | Full, dirty `--dirty-mib` (64) in the guest, incremental: `changedBytes` within `--dirty-mib` .. `+ --slack-mib` |
+| CBT: restore | not run | — | Corrupt the guest file, halt, restore full + incremental, start: sha256 matches |
+| CBT: synthesize | not run | — | Synthetic full of the incremental, delete the full (S3 objects too), restore the incremental again: sha256 matches |
+| CBT: forced-full | not run | — | SIGKILL the Machine's QEMU (`--node-ssh`): the next incremental fails with `status.disk.fullRequired`, a full succeeds |
+
 ## Component versions (fill per run)
 
 | Piece | Version |

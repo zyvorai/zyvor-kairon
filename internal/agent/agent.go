@@ -167,6 +167,7 @@ type Agent struct {
 	// backups tracks MachineBackup/MachineBackupRestore disk copies
 	// running in their own goroutines (see backup.go).
 	backups backupJobs
+	cbt     cbtState
 }
 
 func (a *Agent) Reconcile(ctx context.Context) error {
@@ -1476,6 +1477,7 @@ func (a *Agent) Run(ctx context.Context, interval time.Duration) error {
 		if err != nil {
 			a.Log.Error("reconcile failed", "error", err)
 		}
+		a.publishCBTCapability(ctx)
 		if a.LivenessLeaseNamespace != "" {
 			if err := nodeliveness.Renew(ctx, a.Kube, a.LivenessLeaseNamespace, a.NodeName, a.LivenessLeaseDuration); err != nil {
 				a.Log.Warn("liveness lease renewal failed", "error", err)

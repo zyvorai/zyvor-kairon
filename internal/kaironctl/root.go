@@ -129,6 +129,7 @@ migrations, snapshots, and more. Same command tree as kubectl-kairon.`,
 		legacyCmd(opts, "snapshot", "Create a MachineSnapshot", snapshotExamples, cmdSnapshot),
 		legacyCmd(opts, "restore", "Restore a MachineSnapshot to a PVC", restoreExamples, cmdRestore),
 		legacyCmd(opts, "backup", "Back up a Machine's disks or restore a MachineBackup", backupExamples, cmdBackup),
+		legacyCmd(opts, "backuppolicy", "Schedule incremental S3 backups with GFS retention", backupPolicyExamples, cmdBackupPolicy),
 		legacyCmd(opts, "volumes", "List a Machine's volumes and their provisioning state", volumesExamples, cmdVolumes),
 		legacyCmd(opts, "disk", "Hot-attach or detach a PVC-backed disk on a Machine", diskExamples, cmdDisk),
 		legacyCmd(opts, "nic", "Hot-add or remove an extra NIC on a Machine", nicExamples, cmdNIC),
@@ -305,7 +306,10 @@ const backupExamples = `  $ kaironctl backup create web --name nightly
   $ kaironctl backup create db --atlas --keep 7
   $ kaironctl backup list
   $ kaironctl halt web && kaironctl backup restore nightly
-  $ kaironctl backup delete nightly`
+  $ kaironctl backup delete nightly
+  $ kaironctl backup create web --s3-endpoint http://minio:9000 --s3-bucket vm --s3-credentials s3-creds
+  $ kaironctl backup create web --mode incremental --parent web-20260101-000000
+  $ kaironctl backup chain web`
 
 // legacyCompletion picks the completion behaviour of a legacy verb by name.
 func legacyCompletion(opts *Options, use string) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {

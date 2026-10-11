@@ -524,6 +524,8 @@ func kaironTools(opts *Options, newKube func() (*kube.Client, error)) []mcp.Tool
 				"freezing guest filesystems through the guest agent; atlas=true also backs up Atlas volumes to S3. " +
 				"action restore copies MachineBackup `backup` back into Machine `name`, which must be halted first " +
 				"(Atlas volumes restore into new volumes). action delete removes MachineBackup `backup` and its FluxVM copy. " +
+				"mode (full, incremental or synthetic-full) makes an incremental-capable S3 backup instead: it takes the S3 target from " +
+				"MachineBackupPolicy `policy`, or from `parent` (the backup an incremental builds on, or the point a synthetic full consolidates). " +
 				"restore and delete may need a human's approval: a refused call says what to ask for; retry with the same arguments.",
 			Write:    true,
 			Approval: true,
@@ -533,6 +535,9 @@ func kaironTools(opts *Options, newKube func() (*kube.Client, error)) []mcp.Tool
 				"quiesce":      mcp.String("guest fsfreeze: auto (default), required or never", "auto", "required", "never"),
 				"atlas":        map[string]any{"type": "boolean", "description": "also back up Atlas volumes to S3 (create only)"},
 				"storageClass": mcp.String("StorageClass for restored Atlas volumes (restore only)"),
+				"mode":         mcp.String("S3 backup mode (create only)", "full", "incremental", "synthetic-full"),
+				"parent":       mcp.String("S3 backups: parent MachineBackup (create only)"),
+				"policy":       mcp.String("S3 backups: MachineBackupPolicy whose target to use (create only)"),
 			}, "action"),
 			Call: func(ctx context.Context, raw json.RawMessage) (string, error) {
 				var a struct {
@@ -542,6 +547,9 @@ func kaironTools(opts *Options, newKube func() (*kube.Client, error)) []mcp.Tool
 					Quiesce      string `json:"quiesce"`
 					Atlas        bool   `json:"atlas"`
 					StorageClass string `json:"storageClass"`
+					Mode         string `json:"mode"`
+					Parent       string `json:"parent"`
+					Policy       string `json:"policy"`
 				}
 				if err := decodeArgs(raw, &a); err != nil {
 					return "", err
@@ -557,7 +565,12 @@ func kaironTools(opts *Options, newKube func() (*kube.Client, error)) []mcp.Tool
 						if a.Atlas {
 							atlasSpec = &model.MachineBackupAtlas{}
 						}
-						b, err := createBackup(ctx, kc, ns, a.Name, a.Backup, a.Quiesce, atlasSpec)
+						nb := newBackup(ns, a.Name, a.Backup, a.Quiesce, atlasSpec)
+						nb.Spec.Mode, nb.Spec.Parent = a.Mode, a.Parent
+						if err := inheritCBTTarget(ctx, kc, &nb, a.Policy); err != nil {
+							return "", err
+						}
+						b, err := submitBackup(ctx, kc, nb)
 						if err != nil {
 							return "", err
 						}

@@ -1,0 +1,31 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: Apache-2.0
+#
+# Optional: apply alongside deploy/rbac.yaml to use CBT backups to S3
+# (MachineBackup spec.target, MachineBackupPolicy). kairon-node reads the
+# credential and encryption-key Secrets a backup names in the backup's own
+# namespace. RBAC cannot scope by label, so this is cluster-wide get;
+# kairon-node itself refuses any Secret not labelled
+# kairon.zyvor.dev/backup-credentials=true. The Helm chart's equivalent is
+# node.cbtBackup.enabled=true.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kairon-node-backup-secrets
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kairon-node-backup-secrets
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kairon-node-backup-secrets
+subjects:
+  - kind: ServiceAccount
+    name: kairon-node
+    namespace: kairon-system

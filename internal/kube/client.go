@@ -744,6 +744,42 @@ func (c *Client) PatchMigrationPolicy(ctx context.Context, ns, name string, patc
 	return c.request(ctx, http.MethodPatch, namespacedObjectPath(ns, "migrationpolicies", name), patch, nil, "application/merge-patch+json")
 }
 
+func (c *Client) ListMachineBackupPolicies(ctx context.Context) ([]model.MachineBackupPolicy, error) {
+	var list model.MachineBackupPolicyList
+	err := c.request(ctx, http.MethodGet, "/apis/kairon.zyvor.dev/v1/machinebackuppolicies", nil, &list, "")
+	return list.Items, err
+}
+
+func (c *Client) ListMachineBackupPoliciesNamespace(ctx context.Context, ns string) ([]model.MachineBackupPolicy, error) {
+	var list model.MachineBackupPolicyList
+	err := c.request(ctx, http.MethodGet, namespacePath(ns, "machinebackuppolicies"), nil, &list, "")
+	return list.Items, err
+}
+
+func (c *Client) GetMachineBackupPolicy(ctx context.Context, ns, name string) (model.MachineBackupPolicy, error) {
+	var p model.MachineBackupPolicy
+	err := c.request(ctx, http.MethodGet, namespacedObjectPath(ns, "machinebackuppolicies", name), nil, &p, "")
+	return p, err
+}
+
+func (c *Client) CreateMachineBackupPolicy(ctx context.Context, ns string, p model.MachineBackupPolicy) (model.MachineBackupPolicy, error) {
+	var out model.MachineBackupPolicy
+	err := c.request(ctx, http.MethodPost, namespacePath(ns, "machinebackuppolicies"), p, &out, "")
+	return out, err
+}
+
+func (c *Client) DeleteMachineBackupPolicy(ctx context.Context, ns, name string) error {
+	return c.request(ctx, http.MethodDelete, namespacedObjectPath(ns, "machinebackuppolicies", name), nil, nil, "")
+}
+
+func (c *Client) PatchMachineBackupPolicy(ctx context.Context, ns, name string, patch map[string]any) error {
+	return c.request(ctx, http.MethodPatch, namespacedObjectPath(ns, "machinebackuppolicies", name), patch, nil, "application/merge-patch+json")
+}
+
+func (c *Client) PatchMachineBackupPolicyStatus(ctx context.Context, ns, name string, status model.MachineBackupPolicyStatus) error {
+	return c.request(ctx, http.MethodPatch, namespacedObjectPath(ns, "machinebackuppolicies", name)+"/status", map[string]any{"status": status}, nil, "application/merge-patch+json")
+}
+
 func (c *Client) ListMachineSnapshotSchedules(ctx context.Context) ([]model.MachineSnapshotSchedule, error) {
 	var list model.MachineSnapshotScheduleList
 	err := c.request(ctx, http.MethodGet, "/apis/kairon.zyvor.dev/v1/machinesnapshotschedules", nil, &list, "")

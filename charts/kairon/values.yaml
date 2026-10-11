@@ -132,6 +132,12 @@ node:
   # (grants kairon-node get on Secrets there).
   thirdPartyCSISecrets:
     enabled: false
+  # cbtBackup: let kairon-node read the S3 credential and encryption-key
+  # Secrets that MachineBackups with spec.target name. Grants cluster-wide
+  # get on Secrets; kairon-node only reads Secrets labelled
+  # kairon.zyvor.dev/backup-credentials=true.
+  cbtBackup:
+    enabled: false
   # atlasRBDPools: Ceph pools kairon-node may boot Atlas atlas.mode=rbd
   # volumes from, opened in place by FluxVM (storage=ceph-rbd-in-place)
   # with the Ceph credentials in FluxVM's own [storage] config. Empty

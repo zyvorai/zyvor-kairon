@@ -69,6 +69,7 @@ The root [README](https://github.com/zyvorai/zyvor-kairon/blob/main/README.md) i
 | [`guides/migration-policies.md`](guides/migration-policies.md) | `MigrationPolicy`: selector-scoped migration bandwidth defaulting and concurrency caps |
 | [`guides/machine-snapshot-quiesce.md`](guides/machine-snapshot-quiesce.md) | Real guest `fsfreeze`/`fsthaw` around `MachineSnapshot`, and the controller↔node coordination protocol behind it |
 | [`guides/machine-backup.md`](guides/machine-backup.md) | Full disk backups with guest fsfreeze (`MachineBackup`) through FluxVM or Atlas S3, and in-place restore (`MachineBackupRestore`) |
+| [`guides/machine-backup-incremental.md`](guides/machine-backup-incremental.md) | Incremental S3 backups with changed-block tracking, `MachineBackupPolicy` schedules, GFS retention, synthetic fulls, encryption and Object Lock (experimental) |
 | [`guides/machine-snapshot-restore.md`](guides/machine-snapshot-restore.md) | Restoring a `MachineSnapshot` volume into a new `PersistentVolumeClaim` via the standard CSI `dataSource` flow |
 | [`guides/machine-pause-resume.md`](guides/machine-pause-resume.md) · [`guides/machine-halt.md`](guides/machine-halt.md) | `spec.powerState: Paused`/`Halted`: suspending guest CPUs vs. powering off the VMM process while FluxVM keeps its record |
 | [`guides/machine-hotplug.md`](guides/machine-hotplug.md) | Growing `spec.resources.cpu`/`.memory` (kept across stop/start, `hotplug-persist`), and hot-attaching PVC disks (`spec.disks`) and extra NICs (`spec.network.extraInterfaces`) on a `Running` Machine |

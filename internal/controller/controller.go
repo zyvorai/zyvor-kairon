@@ -398,6 +398,10 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 		c.Log.Error("machine snapshot schedule reconciliation failed", "error", err)
 	}
 
+	if err := c.reconcileMachineBackupPolicies(ctx, machines); err != nil {
+		c.Log.Error("machine backup policy reconciliation failed", "error", err)
+	}
+
 	c.reconcileAttestation(ctx, machines, nodes)
 	c.reconcileAgentStatus(ctx, machines, nodes)
 	c.reconcileCordonEvacuation(ctx, machines, nodes, migrations)

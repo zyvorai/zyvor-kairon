@@ -46,6 +46,7 @@ type fakeKube struct {
 	events            []model.Event
 	backups           map[string]model.MachineBackup
 	backupRestores    []model.MachineBackupRestore
+	backupPolicies    map[string]model.MachineBackupPolicy
 	// patches records every raw merge-patch body, keyed by object path.
 	patches  map[string][]string
 	podsJSON []map[string]any
@@ -98,6 +99,60 @@ func (f *fakeKube) handler() http.Handler {
 			}
 			f.backups[b.Metadata.Name] = b
 			_ = json.NewEncoder(w).Encode(b)
+		case r.Method == http.MethodGet && r.URL.Path == "/apis/kairon.zyvor.dev/v1/namespaces/default/machinebackups":
+			items := make([]model.MachineBackup, 0, len(f.backups))
+			for _, b := range f.backups {
+				items = append(items, b)
+			}
+			_ = json.NewEncoder(w).Encode(model.MachineBackupList{Items: items})
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/apis/kairon.zyvor.dev/v1/namespaces/default/machinebackups/"):
+			b, ok := f.backups[strings.TrimPrefix(r.URL.Path, "/apis/kairon.zyvor.dev/v1/namespaces/default/machinebackups/")]
+			if !ok {
+				http.Error(w, `{"kind":"Status","code":404}`, http.StatusNotFound)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(b)
+		case strings.HasPrefix(r.URL.Path, "/apis/kairon.zyvor.dev/v1/namespaces/default/machinebackuppolicies"):
+			if f.backupPolicies == nil {
+				f.backupPolicies = map[string]model.MachineBackupPolicy{}
+			}
+			name := strings.TrimPrefix(strings.TrimPrefix(r.URL.Path, "/apis/kairon.zyvor.dev/v1/namespaces/default/machinebackuppolicies"), "/")
+			switch r.Method {
+			case http.MethodGet:
+				if name == "" {
+					items := make([]model.MachineBackupPolicy, 0, len(f.backupPolicies))
+					for _, p := range f.backupPolicies {
+						items = append(items, p)
+					}
+					_ = json.NewEncoder(w).Encode(model.MachineBackupPolicyList{Items: items})
+					return
+				}
+				p, ok := f.backupPolicies[name]
+				if !ok {
+					http.Error(w, `{"kind":"Status","code":404}`, http.StatusNotFound)
+					return
+				}
+				_ = json.NewEncoder(w).Encode(p)
+			case http.MethodPost:
+				var p model.MachineBackupPolicy
+				_ = json.NewDecoder(r.Body).Decode(&p)
+				f.backupPolicies[p.Metadata.Name] = p
+				_ = json.NewEncoder(w).Encode(p)
+			case http.MethodPatch:
+				var patch struct {
+					Spec struct {
+						Suspend bool `json:"suspend"`
+					} `json:"spec"`
+				}
+				_ = json.NewDecoder(r.Body).Decode(&patch)
+				p := f.backupPolicies[name]
+				p.Spec.Suspend = patch.Spec.Suspend
+				f.backupPolicies[name] = p
+				_, _ = w.Write([]byte("{}"))
+			case http.MethodDelete:
+				delete(f.backupPolicies, name)
+				_, _ = w.Write([]byte("{}"))
+			}
 		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/apis/kairon.zyvor.dev/v1/namespaces/default/machinebackups/"):
 			delete(f.backups, strings.TrimPrefix(r.URL.Path, "/apis/kairon.zyvor.dev/v1/namespaces/default/machinebackups/"))
 			w.WriteHeader(http.StatusOK)

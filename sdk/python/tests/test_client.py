@@ -122,6 +122,33 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(progress["ramRemaining"], 1)
         self.assertEqual(progress["progress"]["throughputMbps"], 900)
         self.assertEqual(progress["adaptive"]["stage"], "AutoConverge")
+    def test_incremental_backup_inherits_parent_target_and_chain_groups(self):
+        target = {"s3": {"endpoint": "http://minio:9000", "bucket": "vm", "credentialsSecretRef": "s3"}}
+        self.fixture.responses = [{"metadata": {"name": "f1"}, "spec": {"machineName": "web", "target": target,
+                                                                         "encryption": {"keySecretRef": "k"}}}]
+        self.client.backups.create(machine="web", parent="f1", name="i1")
+        method, path, _, body = self.fixture.calls[-1]
+        self.assertEqual((method, path), ("POST", "/apis/kairon.zyvor.dev/v1/namespaces/default/machinebackups"))
+        self.assertEqual(body["spec"]["mode"], "incremental")
+        self.assertEqual(body["spec"]["target"], target)
+        self.assertEqual(body["spec"]["encryption"]["keySecretRef"], "k")
+        with self.assertRaises(ValueError):
+            self.client.backups.create(machine="web", mode="incremental")
+        with self.assertRaises(ValueError):
+            self.client.backups.create(machine="web", mode="differential", target=target)
+
+        def point(name, mode, seq, parent="", at="2026-01-01T00:00:00Z"):
+            return {"metadata": {"name": name}, "spec": {"machineName": "web", "target": target, "mode": mode},
+                    "status": {"phase": "Succeeded", "pointInTime": at, "storedBytes": 10,
+                               "chain": {"id": "c1", "sequence": seq, "parent": parent}}}
+        self.fixture.responses = [{"items": [point("i1", "incremental", 2, "f1", "2026-01-01T01:00:00Z"),
+                                             point("f1", "full", 1),
+                                             {"metadata": {"name": "local"}, "spec": {"machineName": "web"}}]}]
+        chains = self.client.backups.chain("web")
+        self.assertEqual(len(chains), 1)
+        self.assertEqual([p["name"] for p in chains[0]["points"]], ["f1", "i1"])
+        self.assertEqual(chains[0]["points"][1]["depth"], 1)
+        self.assertEqual(chains[0]["storedBytes"], 20)
     def test_readiness_requires_current_generation_and_ready(self):
         obj = self.client.machines.create(MANIFEST)
         stale = copy.deepcopy(obj); stale["metadata"]["generation"] = 2

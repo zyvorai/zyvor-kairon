@@ -32,7 +32,7 @@ KINDS = {
     "machinebackups": "MachineBackup", "machinebackuprestores": "MachineBackupRestore",
     "machinedisruptionbudgets": "MachineDisruptionBudget", "machineinstancetypes": "MachineInstanceType",
     "machinesnapshotschedules": "MachineSnapshotSchedule", "migrationpolicies": "MigrationPolicy",
-    "networksecuritygroups": "NetworkSecurityGroup",
+    "networksecuritygroups": "NetworkSecurityGroup", "machinebackuppolicies": "MachineBackupPolicy",
 }
 FLEET_KINDS = {
     "machinehaprofiles": "MachineHAProfile", "nodefencerequests": "NodeFenceRequest",
@@ -254,6 +254,88 @@ class Migrations(Resource):
         return out
 
 
+BACKUP_MODES = ("full", "incremental", "synthetic-full")
+
+
+class Backups(Resource):
+    """MachineBackups. ``create(machine=..., mode=...)`` makes an S3 backup that
+    can be incremental; ``chain`` shows a Machine's S3 backups as chains."""
+    def create(self, manifest: dict | None = None, *, machine: str = "", mode: str = "",
+               parent: str = "", policy: str = "", target: dict | None = None,
+               name: str | None = None, quiesce: str = "", encryption_key_secret: str = "",
+               immutable_for: str = "") -> dict:
+        """Create from a full manifest, or build one for ``machine``. An S3 backup
+        takes its target from ``target``, else from MachineBackupPolicy ``policy``,
+        else (incremental or synthetic-full) from its ``parent`` backup."""
+        if manifest is not None:
+            return super().create(manifest)
+        _segment(machine)
+        if mode and mode not in BACKUP_MODES:
+            raise ValueError("mode must be full, incremental or synthetic-full")
+        if quiesce and quiesce not in ("auto", "required", "never"):
+            raise ValueError("quiesce must be auto, required or never")
+        spec: dict = {"machineName": machine}
+        for key, value in (("mode", mode), ("parent", parent), ("quiesce", quiesce),
+                           ("immutableFor", immutable_for)):
+            if value:
+                spec[key] = value
+        if encryption_key_secret:
+            spec["encryption"] = {"algorithm": "aes256-gcm", "keySecretRef": encryption_key_secret}
+        if target is not None:
+            spec["target"] = copy.deepcopy(target)
+        elif policy:
+            p = self._http.request("GET", self.path.rsplit("/", 1)[0] + "/machinebackuppolicies/" + _segment(policy))["spec"]
+            spec["target"] = p["target"]
+            for key in ("compression", "encryption", "immutableFor", "quiesce"):
+                if key in p and key not in spec:
+                    spec[key] = p[key]
+        elif parent:
+            p = self.get(parent)["spec"]
+            if not p.get("target"):
+                raise ValueError("parent is not an S3 backup")
+            for key in ("target", "compression", "encryption", "immutableFor"):
+                if key in p:
+                    spec[key] = p[key]
+            spec.setdefault("mode", "incremental")
+        elif mode:
+            raise ValueError("mode needs an S3 target: target, policy or parent")
+        if policy:
+            spec["policyName"] = _segment(policy)
+        name = name or f"{machine}-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}"
+        return super().create({"apiVersion": API_VERSION, "kind": "MachineBackup",
+                               "metadata": {"name": name, "namespace": self.namespace}, "spec": spec})
+
+    def chain(self, machine: str) -> list[dict]:
+        """The Machine's S3 backups grouped by chain, newest chain first; each
+        point has name, kind, phase, sequence, depth (incrementals back to the
+        full), pointInTime, storedBytes and changedBytes."""
+        _segment(machine)
+        chains: dict[str, list[dict]] = {}
+        for b in self.list():
+            spec, status = b.get("spec", {}), b.get("status", {})
+            if spec.get("machineName") != machine or not spec.get("target") or not status.get("chain"):
+                continue
+            chains.setdefault(status["chain"]["id"], []).append(b)
+        out = []
+        for cid, items in chains.items():
+            items.sort(key=lambda b: (b["status"]["chain"].get("sequence", 0), b["metadata"].get("creationTimestamp", "")))
+            depth: dict[str, int] = {}
+            points = []
+            for b in items:
+                st, kind = b["status"], b["spec"].get("mode") or "full"
+                d = 0
+                if kind == "incremental":
+                    d = depth.get(st["chain"].get("parent", ""), 0) + 1
+                depth[b["metadata"]["name"]] = d
+                points.append({"name": b["metadata"]["name"], "kind": kind, "phase": st.get("phase", ""),
+                               "sequence": st["chain"].get("sequence", 0), "depth": d,
+                               "pointInTime": st.get("pointInTime"), "storedBytes": st.get("storedBytes", 0),
+                               "changedBytes": st.get("changedBytes", 0)})
+            out.append({"id": cid, "storedBytes": sum(p["storedBytes"] for p in points), "points": points})
+        out.sort(key=lambda c: max((p["pointInTime"] or "" for p in c["points"]), default=""), reverse=True)
+        return out
+
+
 class Client:
     def __init__(self, kube_url: str, token: str, *, namespace: str = "default",
                  ca_file: str | None = None, timeout: float = 30, allow_insecure: bool = False):
@@ -265,6 +347,8 @@ class Client:
         self.migrations = Migrations(self._http, namespace, "machinemigrations", "MachineMigration", API_VERSION)
         self.pools = self.resource("machinepools")
         self.claims = self.resource("machineclaims")
+        self.backups = Backups(self._http, namespace, "machinebackups", "MachineBackup", API_VERSION)
+        self.backup_policies = self.resource("machinebackuppolicies")
 
     def resource(self, name: str, *, fleet: bool = False) -> Resource:
         kinds = FLEET_KINDS if fleet else KINDS

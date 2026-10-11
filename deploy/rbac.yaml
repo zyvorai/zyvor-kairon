@@ -94,7 +94,7 @@ rules:
     resources: ["machines"]
     verbs: ["create", "delete"]
   - apiGroups: ["kairon.zyvor.dev"]
-    resources: ["machinesnapshotschedules", "machinesnapshotschedules/status"]
+    resources: ["machinesnapshotschedules", "machinesnapshotschedules/status", "machinebackuppolicies", "machinebackuppolicies/status"]
     verbs: ["get", "list", "watch", "patch"]
   - apiGroups: ["kairon.zyvor.dev"]
     # MachineSnapshotSchedule is the second reason kairon-controller itself
@@ -115,6 +115,11 @@ rules:
     # actually make against what their own ClusterRole/Role really grants,
     # the same way this one was found by hand.
     resources: ["machinesnapshots"]
+    verbs: ["create", "delete"]
+  - apiGroups: ["kairon.zyvor.dev"]
+    # MachineBackupPolicy creates S3 MachineBackups and deletes the ones
+    # its retention no longer needs (internal/controller/machinebackuppolicy.go).
+    resources: ["machinebackups"]
     verbs: ["create", "delete"]
   - apiGroups: ["kairon.zyvor.dev"]
     # A deleting MachinePool deletes the claims bound to its warm members
@@ -274,6 +279,10 @@ rules:
   - apiGroups: ["kairon.zyvor.dev"]
     resources: ["machinebackups", "machinebackuprestores"]
     verbs: ["get", "list", "watch", "create", "delete"]
+  # Backup Policies page (internal/uiapi/backup_actions.go).
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machinebackuppolicies"]
+    verbs: ["get", "list", "watch", "create", "delete", "patch"]
   - apiGroups: ["kairon.zyvor.dev"]
     resources: ["machinesets"]
     verbs: ["get", "list", "watch", "delete", "patch"]

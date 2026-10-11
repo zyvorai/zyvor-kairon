@@ -48,7 +48,7 @@ New since v0.6.0 (current: v0.9.1):
 | **Import from VMware** | `kaironctl import ova` streams an OVA once, reads vCPU, memory and firmware from the OVF, and FluxVM converts and repairs the disk. [Guide →](docs/guides/migrate-from-vmware.md) |
 | **Warm pools and claims** | `MachinePool` keeps booted Machines ready; a `MachineClaim` binds one in a single reconcile tick, with per-claim egress allowlists. [Guide →](docs/guides/machine-pools.md) |
 | **VM fork** | `kaironctl fork` and the MCP `fork_machine` tool fork a running Machine through FluxVM. [Guide →](docs/guides/machine-fork.md) |
-| **Backups** | `MachineBackup` and `MachineBackupRestore` with guest filesystem freeze, plus Atlas S3 backup jobs for Atlas volumes. [Guide →](docs/guides/machine-backup.md) |
+| **Backups** | `MachineBackup` and `MachineBackupRestore` with guest filesystem freeze, plus Atlas S3 backup jobs for Atlas volumes. Incremental S3 backups with policies and GFS retention (experimental). [Guide →](docs/guides/machine-backup.md) |
 | **Live disks and NICs** | Hot-attach PVC disks and hot-add or remove extra NICs on running Machines (`kaironctl disk`, `kaironctl nic`). [Guide →](docs/guides/machine-hotplug.md) |
 | **Tenant fence** | `kairon.zyvor.dev/tenant-fence` turns `spec.tenant` into an east-west deny of other tenants' guest addresses in the namespace. [Guide →](docs/guides/tenant-fence.md) |
 | **Preemption by Halt** | An opted-in high-priority Machine that can't be placed halts an opted-in lower-priority one, and it resumes when the preemptor leaves. [Guide →](docs/guides/preemption.md) |

@@ -38,7 +38,7 @@ const KINDS: Record<string, string> = {
   machinebackups: 'MachineBackup', machinebackuprestores: 'MachineBackupRestore',
   machinedisruptionbudgets: 'MachineDisruptionBudget', machineinstancetypes: 'MachineInstanceType',
   machinesnapshotschedules: 'MachineSnapshotSchedule', migrationpolicies: 'MigrationPolicy',
-  networksecuritygroups: 'NetworkSecurityGroup',
+  networksecuritygroups: 'NetworkSecurityGroup', machinebackuppolicies: 'MachineBackupPolicy',
 };
 const FLEET_KINDS: Record<string, string> = {
   machinehaprofiles: 'MachineHAProfile', nodefencerequests: 'NodeFenceRequest',
@@ -272,12 +272,101 @@ export class Migrations extends Resource {
     };
   }
 }
+export type BackupMode = 'full' | 'incremental' | 'synthetic-full';
+export interface BackupOptions {
+  name?: string;
+  /** S3 backups: full (default), incremental or synthetic-full. */
+  mode?: BackupMode;
+  /** The backup an incremental builds on, or the point a synthetic full consolidates. */
+  parent?: string;
+  /** Take the S3 target from this MachineBackupPolicy. */
+  policy?: string;
+  /** spec.target, e.g. {s3: {endpoint, bucket, credentialsSecretRef}}. */
+  target?: Record<string, Json>;
+  quiesce?: 'auto' | 'required' | 'never';
+  encryptionKeySecret?: string;
+  immutableFor?: string;
+}
+export interface BackupChainPoint {
+  name: string; kind: string; phase: string; sequence: number; depth: number;
+  pointInTime?: string; storedBytes: number; changedBytes: number;
+}
+export interface BackupChain {id: string; storedBytes: number; points: BackupChainPoint[]}
+export class Backups extends Resource {
+  /**
+   * Create from a full manifest, or build one for a Machine. An S3 backup takes
+   * its target from options.target, else from options.policy, else (incremental
+   * or synthetic-full) from options.parent.
+   */
+  async create(manifestOrMachine: KaironObject | string, options: BackupOptions = {}): Promise<KaironObject> {
+    if (typeof manifestOrMachine !== 'string') return super.create(manifestOrMachine);
+    const machine = segment(manifestOrMachine);
+    if (options.mode && !['full', 'incremental', 'synthetic-full'].includes(options.mode)) throw new Error('mode must be full, incremental or synthetic-full');
+    const spec: Record<string, Json> = {machineName: machine};
+    if (options.mode) spec.mode = options.mode;
+    if (options.parent) spec.parent = segment(options.parent);
+    if (options.quiesce) spec.quiesce = options.quiesce;
+    if (options.immutableFor) spec.immutableFor = options.immutableFor;
+    if (options.encryptionKeySecret) spec.encryption = {algorithm: 'aes256-gcm', keySecretRef: options.encryptionKeySecret};
+    if (options.target) {
+      spec.target = structuredClone(options.target);
+    } else if (options.policy) {
+      const p = (await this.http.request<KaironObject>('GET', `${this.path.replace(/\/machinebackups$/, '')}/machinebackuppolicies/${segment(options.policy)}`)).spec ?? {};
+      spec.target = p.target as Json;
+      for (const k of ['compression', 'encryption', 'immutableFor', 'quiesce']) if (k in p && !(k in spec)) spec[k] = p[k] as Json;
+    } else if (options.parent) {
+      const p = (await this.get(options.parent)).spec ?? {};
+      if (!p.target) throw new Error('parent is not an S3 backup');
+      for (const k of ['target', 'compression', 'encryption', 'immutableFor']) if (k in p) spec[k] = p[k] as Json;
+      spec.mode ??= 'incremental';
+    } else if (options.mode) {
+      throw new Error('mode needs an S3 target: target, policy or parent');
+    }
+    if (options.policy) spec.policyName = segment(options.policy);
+    const name = options.name ?? `${machine}-${new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)}`;
+    return super.create({apiVersion: API_VERSION, kind: 'MachineBackup', metadata: {name, namespace: this.namespace}, spec});
+  }
+  /** The Machine's S3 backups grouped by chain, newest chain first. */
+  async chain(machine: string): Promise<BackupChain[]> {
+    segment(machine);
+    const byChain = new Map<string, KaironObject[]>();
+    for (const b of await this.list()) {
+      const chain = b.status?.chain as Record<string, Json> | undefined;
+      if (b.spec?.machineName !== machine || !b.spec?.target || !chain) continue;
+      const id = String(chain.id);
+      byChain.set(id, [...(byChain.get(id) ?? []), b]);
+    }
+    const seq = (b: KaironObject) => Number((b.status?.chain as Record<string, Json>).sequence ?? 0);
+    const out: BackupChain[] = [];
+    for (const [id, items] of byChain) {
+      items.sort((a, b) => seq(a) - seq(b) || String(a.metadata.creationTimestamp ?? '').localeCompare(String(b.metadata.creationTimestamp ?? '')));
+      const depth = new Map<string, number>();
+      const points = items.map((b): BackupChainPoint => {
+        const st = b.status ?? {};
+        const chain = st.chain as Record<string, Json>;
+        const kind = String(b.spec?.mode ?? 'full');
+        const d = kind === 'incremental' ? (depth.get(String(chain.parent ?? '')) ?? 0) + 1 : 0;
+        depth.set(b.metadata.name, d);
+        return {
+          name: b.metadata.name, kind, phase: String(st.phase ?? ''), sequence: seq(b), depth: d,
+          ...(st.pointInTime ? {pointInTime: String(st.pointInTime)} : {}),
+          storedBytes: Number(st.storedBytes ?? 0), changedBytes: Number(st.changedBytes ?? 0),
+        };
+      });
+      out.push({id, storedBytes: points.reduce((n, p) => n + p.storedBytes, 0), points});
+    }
+    const newest = (c: BackupChain) => c.points.reduce((t, p) => (p.pointInTime && p.pointInTime > t ? p.pointInTime : t), '');
+    return out.sort((a, b) => newest(b).localeCompare(newest(a)));
+  }
+}
 export class Client {
   readonly namespace: string;
   readonly machines: Machines;
   readonly migrations: Migrations;
   readonly pools: Resource;
   readonly claims: Resource;
+  readonly backups: Backups;
+  readonly backupPolicies: Resource;
   private readonly http: HTTP;
   constructor(kubeURL: string, token: string, options: Options = {}) {
     this.namespace = namespace(options.namespace ?? 'default');
@@ -285,6 +374,8 @@ export class Client {
     this.machines = new Machines(this.http, this.namespace, 'machines', 'Machine', API_VERSION);
     this.migrations = new Migrations(this.http, this.namespace, 'machinemigrations', 'MachineMigration', API_VERSION);
     this.pools = this.resource('machinepools'); this.claims = this.resource('machineclaims');
+    this.backups = new Backups(this.http, this.namespace, 'machinebackups', 'MachineBackup', API_VERSION);
+    this.backupPolicies = this.resource('machinebackuppolicies');
   }
   resource(name: string, fleet = false): Resource {
     const kinds = fleet ? FLEET_KINDS : KINDS;

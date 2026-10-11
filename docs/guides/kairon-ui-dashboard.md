@@ -108,7 +108,8 @@ in the browser only).
 |---|---|---|
 | Storage | `GET /api/v1/atlas/{path...}` | Read-only Atlas volumes, pools, backups and health. Needs `ui.atlas.*`, and administrator access when namespace scoping is on; see [Atlas storage](machine-storage-atlas.md#dashboard-storage-page). |
 | Pools & claims | `GET /api/v1/machinepools`, `/machineclaims` | Warm [MachinePools](machine-pools.md) and the claims bound to them. |
-| Backups | `GET /api/v1/machinebackups`, `/machinebackuprestores` | Off-cluster [machine backups](machine-backup.md) and their restores. |
+| Backups | `GET /api/v1/machinebackups`, `/machinebackuprestores`, `/machines/{ns}/{name}/backup-chains` | Off-cluster [machine backups](machine-backup.md) and their restores, plus each Machine's [incremental S3 chains](machine-backup-incremental.md) with a Restore button per point. |
+| Backup policies | `GET`/`POST /api/v1/machinebackuppolicies`, `POST .../suspend`, `DELETE` | Create, suspend and delete `MachineBackupPolicy` objects and see each selected Machine's chain state. |
 | Images | `GET`/`PUT`/`DELETE /api/v1/images` | Upload and serve images to nodes; upload and delete need an administrator. See [image import](machine-image-import.md). |
 
 The list routes honour namespace scoping exactly like the other `namespace`

@@ -35,6 +35,16 @@ string. Both preserve the UI's admin and Machine-access checks.
 `capabilities(node)` and `usageCSV()` reuse current UI endpoints.
 Kubernetes and UI credentials are separate.
 
+`backups.create(machine, {mode, parent, policy, target})` makes an S3
+MachineBackup (incremental, experimental) and `backups.chain(machine)` returns
+a Machine's chains, newest first; `backupPolicies` is the
+`MachineBackupPolicy` resource. See `docs/guides/machine-backup-incremental.md`.
+
+```typescript
+await client.backups.create('web', {policy: 'web-hourly', mode: 'incremental'});
+for (const chain of await client.backups.chain('web')) console.log(chain.id, chain.points.map(p => p.name));
+```
+
 TLS uses the supplied fetch implementation's trust store. For private cluster
 CAs, configure a trusted Node dispatcher/fetch implementation; the SDK never
 disables TLS verification. HTTP is restricted to localhost/loopback unless

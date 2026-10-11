@@ -38,6 +38,7 @@ import Storage from './pages/Storage';
 import Pools from './pages/Pools';
 import Images from './pages/Images';
 import Backups from './pages/Backups';
+import BackupPolicies from './pages/BackupPolicies';
 import { PageHero } from './components/ui';
 import { groupOf, NAV, NavItem } from './lib/nav';
 
@@ -229,6 +230,7 @@ export default function App() {
     pools: <Pools />,
     images: <Images />,
     backups: <Backups />,
+    'backup-policies': <BackupPolicies />,
     assistant: <Assistant />,
     account: <Account />,
   }[page];

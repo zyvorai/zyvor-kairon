@@ -12,7 +12,7 @@ For per-kind field tables, status fields, safety gates, the REST/CLI surface and
 | Recovery plans | Same-cluster dependency DAG, backup age checks, durable progress, restore timing, isolated image-disk test restores | Cross-cluster replication, failover/failback, automatic Atlas PVC cutover, application health verification |
 | Balancing | Reserved CPU/memory pressure, scheduler constraints, cooldowns, dry-run recommendations, migration intents | Live PSI/I/O pressure, migration cost model and hardware certification |
 | Autoscaling | MachineSet/Pool replica bounds, fresh Prometheus CPU, stabilization, max-step and budget checks | Custom metrics; CPU uses existing FluxVM lifetime-average sample, not a rolling window |
-| Backup groups | Per-Machine quiesce, durable batches, scheduling, owned backup retention | Distributed transaction consistency, incremental backups and immutable retention |
+| Backup groups | Per-Machine quiesce, durable batches, scheduling, owned backup retention | Distributed transaction consistency. Incremental S3 backups with Object Lock are per Machine through `MachineBackupPolicy` ([machine-backup-incremental.md](machine-backup-incremental.md)), not yet through backup groups |
 | Virtual networks | Durable IPv4/IPv6 IPAM on administrator-provisioned bridges; network/template claim binding | Overlay/VRF, DHCP/DNS services, routing and network provisioning |
 | Import campaigns | Digest-pinned OVA batches, concurrency bounds and owned Machine progress | vCenter inventory, staged cutover and migration rollback; Stopped entries are only staged |
 | Self-service templates | Immutable versions, digest-pinned sources, TTL-limited claims, optional network claims | Approval workflow UI and catalog publishing lifecycle |

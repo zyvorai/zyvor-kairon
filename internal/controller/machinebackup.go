@@ -70,6 +70,10 @@ func (c *Controller) reconcileMachineBackup(ctx context.Context, b model.Machine
 			finals := model.RemoveFinalizer(b.Metadata.Finalizers, model.FinalizerFluxVMBackup)
 			return c.Kube.PatchMachineBackup(ctx, b.Namespace(), b.Metadata.Name, map[string]any{"metadata": map[string]any{"finalizers": finals}})
 		}
+		if model.HasFinalizerList(b.Metadata.Finalizers, model.FinalizerCBTBackup) && !cbtWroteAnything(b) {
+			finals := model.RemoveFinalizer(b.Metadata.Finalizers, model.FinalizerCBTBackup)
+			return c.Kube.PatchMachineBackup(ctx, b.Namespace(), b.Metadata.Name, map[string]any{"metadata": map[string]any{"finalizers": finals}})
+		}
 		return nil
 	}
 	switch b.Status.Phase {
@@ -99,6 +103,12 @@ func (c *Controller) reconcileMachineBackup(ctx context.Context, b model.Machine
 	if phase != model.BackupRunning {
 		status["completionTime"] = time.Now().UTC()
 	}
+	if phase == model.BackupSucceeded && b.IsCBT() {
+		promoteCBTResult(b, status)
+	}
+	if c.Metrics != nil && phase != model.BackupRunning && b.IsCBT() && b.Status.Disk != nil {
+		c.Metrics.ObserveCBTBackup(b, phase)
+	}
 	return c.Kube.PatchMachineBackupStatus(ctx, b.Namespace(), b.Metadata.Name, status)
 }
 
@@ -125,8 +135,17 @@ func (c *Controller) startMachineBackup(ctx context.Context, b model.MachineBack
 	status := map[string]any{"phase": model.BackupRunning}
 	var parts []string
 
+	if b.IsCBT() {
+		if err := c.startCBTBackup(ctx, b, machine, status); err != nil {
+			return err
+		}
+		parts = append(parts, fmt.Sprintf("%s disks to s3://%s", b.BackupMode(), b.Spec.Target.S3.Bucket))
+	} else if err := model.ValidateCBTBackup(b); err != nil {
+		return err
+	}
+
 	// FluxVM owns the root disk only when the Machine boots from an image.
-	if len(machine.Spec.Volumes) == 0 {
+	if len(machine.Spec.Volumes) == 0 && !b.IsCBT() {
 		if machine.Spec.NodeName == "" {
 			return fmt.Errorf("machine %s is not scheduled to a node yet", machine.Metadata.Name)
 		}
@@ -320,7 +339,28 @@ func (c *Controller) startMachineBackupRestore(ctx context.Context, r model.Mach
 	}
 	status := map[string]any{"phase": model.BackupRunning, "machineName": machineName}
 	var parts []string
-	if b.Status.Disk != nil && b.Status.Disk.Name != "" {
+	if b.IsCBT() && b.Status.ManifestKey != "" {
+		machine, ok := machines[r.Namespace()+"/"+machineName]
+		if !ok {
+			return fmt.Errorf("machine %s/%s not found", r.Namespace(), machineName)
+		}
+		if err := c.cbtNodeReady(ctx, machine.Spec.NodeName); err != nil {
+			return err
+		}
+		bases, err := c.syntheticBases(ctx, b)
+		if err != nil {
+			return err
+		}
+		status["nodeName"] = machine.Spec.NodeName
+		status["disk"] = model.DiskBackupStatus{
+			Phase:          model.BackupPending,
+			Name:           b.Metadata.Name,
+			ManifestKey:    b.Status.ManifestKey,
+			SyntheticBases: bases,
+			Message:        "waiting for kairon-node on " + machine.Spec.NodeName,
+		}
+		parts = append(parts, "disks from s3 into machine "+machineName)
+	} else if b.Status.Disk != nil && b.Status.Disk.Name != "" {
 		machine, ok := machines[r.Namespace()+"/"+machineName]
 		if !ok {
 			return fmt.Errorf("machine %s/%s not found", r.Namespace(), machineName)
