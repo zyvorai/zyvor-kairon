@@ -16,6 +16,7 @@
 - Dashboard: the active namespace is a visible selector in the nav bar (instead of hidden in the account menu); Stop and Halt ask for confirmation, and power actions show a result toast; the sign-in fields are stacked.
 - Dashboard: "All (Machines)" in the nav namespace selector lists Machines from every namespace you may use (`GET /api/v1/machines?namespace=_all`, filtered per namespace when namespace scoping is on).
 - Dashboard empty lists say which namespace they are scoped to and the first command to run (for example `kaironctl create machineset ...`, or how to label a node on the Nodes page).
+- Dashboard Machines table: row checkboxes with bulk Start/Stop (one confirmation for a batch; per-Machine requests, failures reported by name and kept selected).
 - Dashboard tables: a filter box (every column, all words must match, with an "N of M" count) appears on lists longer than five rows; the CSV export follows the filter.
 - Dashboard sign-in: on screens 1000px and wider the credentials card sits beside the hero, so signing in no longer needs a scroll.
 - Dashboard sign-in is one username and password form (no separate "API token" screen; the legacy shared token works as the password) and the nav uses the Zyvor Z logomark.

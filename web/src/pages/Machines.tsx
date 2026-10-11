@@ -123,6 +123,7 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
     const t = parseHash(window.location.hash).target;
     return t ? toRef(t) : null;
   });
+  const [checked, setChecked] = useState<Set<string>>(new Set());
   const toast = useToast();
 
   // Palette "New machine" and #/machines/<ns>/<name> deep links.
@@ -176,6 +177,37 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
     } finally {
       setBusy(false);
     }
+  }
+
+  // Selection survives the 5s poll, but drops machines that no longer exist.
+  const checkedItems = items.filter((x) => checked.has(refOf(x)));
+
+  async function bulkPower(action: 'start' | 'stop') {
+    // Only act on machines the action applies to: start skips Running/Paused,
+    // stop skips everything not Running.
+    const targets = checkedItems.filter((x) =>
+      action === 'stop' ? x.status?.phase === 'Running' : x.status?.phase !== 'Running' && x.status?.phase !== 'Paused',
+    );
+    if (targets.length === 0) {
+      toast(`None of the selected machines can be ${action === 'stop' ? 'stopped' : 'started'}`, 'err');
+      return;
+    }
+    if (action === 'stop' && !confirm(`Stop ${targets.length} machine${targets.length === 1 ? '' : 's'}? Guests are shut down.`)) return;
+    setMsg('');
+    const failed: string[] = [];
+    for (const x of targets) {
+      try {
+        await api(`/api/v1/machines/${encodeURIComponent(nsOf(x))}/${encodeURIComponent(x.metadata.name)}/${action}`, { method: 'POST' });
+      } catch {
+        failed.push(x.metadata.name);
+      }
+    }
+    const done = targets.length - failed.length;
+    const verb = action === 'stop' ? 'Stopped' : 'Started';
+    if (failed.length === 0) toast(`${verb} ${done} machine${done === 1 ? '' : 's'}`);
+    else toast(`${verb} ${done}; failed: ${failed.join(', ')}`, 'err');
+    setChecked(new Set(failed.map((n) => refOf(targets.find((t) => t.metadata.name === n)!))));
+    await refresh();
   }
 
   async function power(ref: string, action: 'start' | 'stop' | 'pause' | 'resume' | 'halt') {
@@ -289,6 +321,14 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
           <Plus size={14} style={{ verticalAlign: -2 }} /> New machine
         </button>
       </div>
+      {checkedItems.length > 0 && (
+        <div className="toolbar" role="region" aria-label="Bulk actions">
+          <span className="usageHint">{checkedItems.length} selected</span>
+          <button className="sm" onClick={() => bulkPower('start')}>Start</button>
+          <button className="sm" onClick={() => bulkPower('stop')}>Stop</button>
+          <button className="sm ghost" onClick={() => setChecked(new Set())}>Clear</button>
+        </div>
+      )}
       {msg && <p className="msg error">{msg}</p>}
       {items.length === 0 && !msg ? (
         <div className="card">
@@ -303,6 +343,8 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
           onRowClick={(x) => setSelected(refOf(x))}
           selectedKey={selected ?? undefined}
           csvName="kairon-machines"
+          checked={checked}
+          onCheckedChange={setChecked}
         />
       )}
 

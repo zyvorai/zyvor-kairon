@@ -34,6 +34,16 @@ configured; see [OIDC](kairon-ui-oidc.md).
 
 The dashboard works in one namespace at a time, **`default`** unless you change it. Pick another from the **Namespace** selector in the account menu (top right); the list is the namespaces you may use (`GET /api/v1/namespaces`, which honours namespace scoping). The choice is remembered in the browser and applies to every namespaced page, action, console, log and usage-CSV download. Before this selector existed the dashboard only ever showed `default`, because it never sent the `namespace` parameter the API scopes lists by.
 
+### Bulk power actions (Machines)
+
+Tick rows in the Machines table (the header box selects every row currently
+shown, after filtering) to get a bar with **Start**, **Stop** and **Clear**.
+Start skips Machines that are already Running or Paused; Stop applies only to
+Running ones and asks once for the whole batch. Each Machine is sent as its
+own `POST /api/v1/machines/{ns}/{name}/{start|stop}`, one at a time, so a
+failure never blocks the rest: the toast names the ones that failed and they
+stay selected. Works in the all-namespaces view too.
+
 ### All namespaces (Machines)
 
 Choose **All (Machines)** in the nav selector to list Machines from every
