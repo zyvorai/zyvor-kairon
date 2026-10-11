@@ -7,6 +7,7 @@ import { Machine } from '../types';
 import { formatBytes } from '../lib/phase';
 import { parseHash } from '../lib/route';
 import { useLiveChanges } from '../lib/live';
+import { PowerAction, undoFor } from '../lib/undo';
 import { Plus } from 'lucide-react';
 import ResourceTable, { Column } from '../components/ResourceTable';
 import Inspector, { KV } from '../components/Inspector';
@@ -228,16 +229,17 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
     await refresh();
   }
 
-  async function power(ref: string, action: 'start' | 'stop' | 'pause' | 'resume' | 'halt') {
+  async function power(ref: string, action: PowerAction, isUndo = false) {
     const { ns, name } = splitRef(ref);
     // Stop and halt interrupt a running guest: ask first, like delete does.
-    if (action === 'stop' && !confirm(`Stop machine "${name}"? The guest is shut down.`)) return;
+    if (!isUndo && action === 'stop' && !confirm(`Stop machine "${name}"? The guest is shut down.`)) return;
     if (action === 'halt' && !confirm(`Halt machine "${name}"? The guest is powered off without a clean shutdown.`)) return;
     setMsg('');
     try {
       await api(`/api/v1/machines/${encodeURIComponent(ns)}/${encodeURIComponent(name)}/${action}`, { method: 'POST' });
       const done = { start: 'Started', stop: 'Stopped', pause: 'Paused', resume: 'Resumed', halt: 'Halted' }[action];
-      toast(`${done} ${name}`);
+      const back = isUndo ? undefined : undoFor(action);
+      toast(`${done} ${name}`, 'ok', back ? () => void power(ref, back, true) : undefined);
       await refresh();
     } catch (err) {
       setMsg(String(err));
