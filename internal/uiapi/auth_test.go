@@ -365,3 +365,36 @@ func TestAuthConfigIncludesStats(t *testing.T) {
 		t.Fatalf("unexpected stats: %+v", out.Stats)
 	}
 }
+
+func TestLoginFlagsTheWellKnownDefaultPassword(t *testing.T) {
+	s := newUserTestServer(t, []User{
+		{Username: "admin", PasswordHash: hashFor(t, "Admin@321")},
+		{Username: "bob", PasswordHash: hashFor(t, "other-pass-1")},
+	}, "test-session-secret")
+	s.DefaultPassword = "Admin@321"
+	h := s.Handler()
+
+	flag := func(user, pw string) bool {
+		t.Helper()
+		rr := login(t, h, user, pw)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("login %s: %d %s", user, rr.Code, rr.Body.String())
+		}
+		var out map[string]any
+		if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		v, _ := out["defaultPassword"].(bool)
+		return v
+	}
+	if !flag("admin", "Admin@321") {
+		t.Fatal("login with the well-known password should be flagged")
+	}
+	if flag("bob", "other-pass-1") {
+		t.Fatal("a different password must not be flagged")
+	}
+	s.DefaultPassword = ""
+	if flag("admin", "Admin@321") {
+		t.Fatal("no flag when the server has no well-known password configured")
+	}
+}

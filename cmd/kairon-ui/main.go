@@ -196,6 +196,7 @@ func run() int {
 		Users:           users,
 		SessionSecret:   []byte(os.Getenv("KAIRON_UI_SESSION_SECRET")),
 		LoginHint:       loginHint(),
+		DefaultPassword: wellKnownPassword(),
 		AtlasURL:        *atlasURL,
 		AtlasToken:      atlasToken,
 		AtlasConsoleURL: *atlasConsoleURL,
@@ -427,6 +428,17 @@ func hashPassword(args []string) int {
 	}
 	fmt.Println(string(hash))
 	return 0
+}
+
+const wellKnownDefaultPassword = "Admin@321"
+
+// wellKnownPassword returns the chart's well-known lab password while it is
+// the configured admin password, so logins using it can be flagged.
+func wellKnownPassword() string {
+	if os.Getenv("KAIRON_UI_DEFAULT_ADMIN_PASSWORD") == wellKnownDefaultPassword {
+		return wellKnownDefaultPassword
+	}
+	return ""
 }
 
 // loginHint is the text shown under the dashboard sign-in form. An explicit

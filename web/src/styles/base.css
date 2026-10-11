@@ -287,3 +287,9 @@ table.datatable .rowactions { display: flex; gap: 6px; justify-content: flex-end
 .tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--hairline); margin: 14px 0 10px; }
 .tabs button { background: transparent; border: 0; border-radius: 0; padding: 8px 10px; font-size: 13px; color: var(--text-2); border-bottom: 2px solid transparent; min-height: 0; }
 .tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+
+/* Shown while the session used the well-known lab password. */
+.pwbanner {
+  display: flex; gap: 12px; align-items: center; justify-content: center; flex-wrap: wrap;
+  padding: 8px 16px; font-size: 13px; background: var(--danger-bg); color: var(--danger);
+}

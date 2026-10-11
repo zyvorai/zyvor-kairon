@@ -72,6 +72,11 @@ type Server struct {
 	// LoginHint is optional free text shown under the sign-in form (lab
 	// installs use it to advertise the well-known default login).
 	LoginHint string
+	// DefaultPassword, when non-empty, is a well-known lab password
+	// (the chart's "Admin@321"). A login that succeeds with exactly this
+	// password gets "defaultPassword": true in its response so the
+	// dashboard can nag until it is changed. It never gates anything.
+	DefaultPassword string
 	// UsersSecretNamespace/UsersSecretName/UsersSecretKey tell
 	// persistUsers (auth.go) which Kubernetes Secret to write an updated
 	// Users list back into after a password change, so it survives a pod
