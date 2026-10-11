@@ -372,3 +372,89 @@ func TestFleetViewerCannotMutate(t *testing.T) {
 		t.Fatalf("namespace discovery: %d %s", rr.Code, rr.Body.String())
 	}
 }
+
+// TestListMachinesAllNamespaces covers ?namespace=_all: every namespace the
+// caller may see, never one they may not.
+func TestListMachinesAllNamespaces(t *testing.T) {
+	fk := newFakeKube()
+	fk.machines["a-vm"] = model.Machine{Metadata: model.ObjectMeta{Name: "a-vm", Namespace: "default"}}
+	fk.machines["b-vm"] = model.Machine{Metadata: model.ObjectMeta{Name: "b-vm", Namespace: "b"}}
+	fk.machines["c-vm"] = model.Machine{Metadata: model.ObjectMeta{Name: "c-vm", Namespace: "c"}}
+
+	names := func(t *testing.T, rr *httptest.ResponseRecorder) []string {
+		t.Helper()
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+		}
+		var ms []model.Machine
+		if err := json.Unmarshal(rr.Body.Bytes(), &ms); err != nil {
+			t.Fatalf("decode: %v: %s", err, rr.Body.String())
+		}
+		out := make([]string, 0, len(ms))
+		for _, m := range ms {
+			out = append(out, m.Metadata.Name)
+		}
+		sortStrings(out)
+		return out
+	}
+
+	t.Run("scoped user sees only their namespaces", func(t *testing.T) {
+		s := newNamespaceScopingTestServer(t, fk, []User{
+			{Username: "bob", PasswordHash: hashFor(t, "bob-pw"), Namespaces: []string{"default", "c"}},
+		}, nil, true)
+		h := s.Handler()
+		token := loginToken(t, h, "bob", "bob-pw")
+		got := names(t, doJSON(t, h, http.MethodGet, "/api/v1/machines?namespace=_all", token, nil))
+		if strings.Join(got, ",") != "a-vm,c-vm" {
+			t.Fatalf("got %v, want [a-vm c-vm]", got)
+		}
+	})
+
+	t.Run("admin sees every namespace", func(t *testing.T) {
+		s := newNamespaceScopingTestServer(t, fk, []User{
+			{Username: "root", PasswordHash: hashFor(t, "root-pw"), IsAdmin: true},
+		}, nil, true)
+		h := s.Handler()
+		token := loginToken(t, h, "root", "root-pw")
+		got := names(t, doJSON(t, h, http.MethodGet, "/api/v1/machines?namespace=_all", token, nil))
+		if strings.Join(got, ",") != "a-vm,b-vm,c-vm" {
+			t.Fatalf("got %v", got)
+		}
+	})
+
+	t.Run("scoping off lists everything", func(t *testing.T) {
+		s := newNamespaceScopingTestServer(t, fk, []User{
+			{Username: "bob", PasswordHash: hashFor(t, "bob-pw"), Namespaces: []string{"default"}},
+		}, nil, false)
+		h := s.Handler()
+		token := loginToken(t, h, "bob", "bob-pw")
+		got := names(t, doJSON(t, h, http.MethodGet, "/api/v1/machines?namespace=_all", token, nil))
+		if len(got) != 3 {
+			t.Fatalf("got %v", got)
+		}
+	})
+
+	t.Run("single-namespace requests are unchanged", func(t *testing.T) {
+		s := newNamespaceScopingTestServer(t, fk, []User{
+			{Username: "bob", PasswordHash: hashFor(t, "bob-pw"), Namespaces: []string{"default"}},
+		}, nil, true)
+		h := s.Handler()
+		token := loginToken(t, h, "bob", "bob-pw")
+		// (The fake apiserver does not filter namespaced lists, so only the
+		// authorization outcome of the single-namespace route is asserted.)
+		if rr := doJSON(t, h, http.MethodGet, "/api/v1/machines?namespace=default", token, nil); rr.Code != http.StatusOK {
+			t.Fatalf("in-scope namespace must stay 200, got %d", rr.Code)
+		}
+		if rr := doJSON(t, h, http.MethodGet, "/api/v1/machines?namespace=b", token, nil); rr.Code != http.StatusForbidden {
+			t.Fatalf("out-of-scope namespace must stay 403, got %d", rr.Code)
+		}
+	})
+}
+
+func sortStrings(s []string) {
+	for i := 1; i < len(s); i++ {
+		for j := i; j > 0 && s[j] < s[j-1]; j-- {
+			s[j], s[j-1] = s[j-1], s[j]
+		}
+	}
+}

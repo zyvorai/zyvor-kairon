@@ -18,7 +18,7 @@ import Exec from './Exec';
 import AgentFiles from './AgentFiles';
 import Logs from './Logs';
 import NetworkPanel from './NetworkPanel';
-import { currentNamespace } from '../lib/namespace';
+import { allNamespaces, currentNamespace } from '../lib/namespace';
 import EmptyHint from '../components/EmptyHint';
 // Lazy-loaded: @xterm/xterm alone adds ~300kB to the bundle, not worth
 // shipping to every visitor when only a Machine with
@@ -86,6 +86,16 @@ const EMPTY_FORM: CreateForm = {
   forward: '',
 };
 
+// A Machine is addressed by "namespace/name": with the all-namespaces view the
+// same name can exist in several namespaces.
+const nsOf = (m: Machine) => m.metadata.namespace || currentNamespace();
+const refOf = (m: Machine) => `${nsOf(m)}/${m.metadata.name}`;
+const splitRef = (ref: string) => {
+  const i = ref.indexOf('/');
+  return { ns: ref.slice(0, i), name: ref.slice(i + 1) };
+};
+const toRef = (target: string) => (target.includes('/') ? target : `${currentNamespace()}/${target}`);
+
 export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machine: string) => void; onSnapshot: (machine: string) => void }) {
   const [items, setItems] = useState<Machine[]>([]);
   const [form, setForm] = useState<CreateForm>(EMPTY_FORM);
@@ -111,7 +121,7 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
   const [creating, setCreating] = useState(false);
   const [selected, setSelected] = useState<string | null>(() => {
     const t = parseHash(window.location.hash).target;
-    return t ? t.split('/').pop() ?? null : null;
+    return t ? toRef(t) : null;
   });
   const toast = useToast();
 
@@ -120,7 +130,7 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
     const onNew = () => setCreating(true);
     const onHash = () => {
       const t = parseHash(window.location.hash).target;
-      if (t) setSelected(t.split('/').pop() ?? null);
+      if (t) setSelected(toRef(t));
     };
     window.addEventListener('kairon:new-machine', onNew);
     window.addEventListener('hashchange', onHash);
@@ -168,13 +178,14 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
     }
   }
 
-  async function power(name: string, action: 'start' | 'stop' | 'pause' | 'resume' | 'halt') {
+  async function power(ref: string, action: 'start' | 'stop' | 'pause' | 'resume' | 'halt') {
+    const { ns, name } = splitRef(ref);
     // Stop and halt interrupt a running guest: ask first, like delete does.
     if (action === 'stop' && !confirm(`Stop machine "${name}"? The guest is shut down.`)) return;
     if (action === 'halt' && !confirm(`Halt machine "${name}"? The guest is powered off without a clean shutdown.`)) return;
     setMsg('');
     try {
-      await api(`/api/v1/machines/${currentNamespace()}/${encodeURIComponent(name)}/${action}`, { method: 'POST' });
+      await api(`/api/v1/machines/${encodeURIComponent(ns)}/${encodeURIComponent(name)}/${action}`, { method: 'POST' });
       const done = { start: 'Started', stop: 'Stopped', pause: 'Paused', resume: 'Resumed', halt: 'Halted' }[action];
       toast(`${done} ${name}`);
       await refresh();
@@ -189,8 +200,9 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
   // to `kaironctl edit machine NAME --priority N` (see
   // docs/guides/machine-placement.md's "Scheduling priority" section),
   // which until now was kaironctl/kubectl-only.
-  async function setPriority(name: string) {
-    const raw = priorityEdits[name];
+  async function setPriority(ref: string) {
+    const { ns, name } = splitRef(ref);
+    const raw = priorityEdits[ref];
     const priority = Number(raw);
     if (raw === undefined || raw.trim() === '' || !Number.isInteger(priority)) {
       setMsg('Priority must be a whole number');
@@ -198,10 +210,10 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
     }
     setMsg('');
     try {
-      await apiJSON(`/api/v1/machines/${currentNamespace()}/${encodeURIComponent(name)}/priority`, 'POST', { priority });
+      await apiJSON(`/api/v1/machines/${encodeURIComponent(ns)}/${encodeURIComponent(name)}/priority`, 'POST', { priority });
       setPriorityEdits((prev) => {
         const next = { ...prev };
-        delete next[name];
+        delete next[ref];
         return next;
       });
       await refresh();
@@ -210,19 +222,23 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
     }
   }
 
-  async function remove(name: string) {
+  async function remove(ref: string) {
+    const { ns, name } = splitRef(ref);
     if (!confirm(`Delete machine "${name}"? This deletes the underlying VM runtime too.`)) return;
     setMsg('');
     try {
-      await api(`/api/v1/machines/${currentNamespace()}/${encodeURIComponent(name)}`, { method: 'DELETE' });
+      await api(`/api/v1/machines/${encodeURIComponent(ns)}/${encodeURIComponent(name)}`, { method: 'DELETE' });
       await refresh();
     } catch (err) {
       setMsg(String(err));
     }
   }
 
-  const selectedMachine = items.find((m) => m.metadata.name === selected);
+  const selectedMachine = items.find((m) => refOf(m) === selected);
   const columns: Column<Machine>[] = [
+    ...(allNamespaces()
+      ? [{ header: 'Namespace', render: (m: Machine) => m.metadata.namespace || '-', sortValue: (m: Machine) => m.metadata.namespace || '' }]
+      : []),
     { header: 'Name', render: (m) => <b>{m.metadata.name}</b>, sortValue: (m) => m.metadata.name },
     { header: 'Node', render: (m) => m.spec.nodeName || m.status?.nodeName || '-', sortValue: (m) => m.spec.nodeName || m.status?.nodeName || '' },
     { header: 'Phase', render: (m) => <Status phase={m.status?.phase} />, sortValue: (m) => m.status?.phase || 'Unknown' },
@@ -252,13 +268,13 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
       render: (m) => (
         <div className="rowactions" onClick={(e) => e.stopPropagation()}>
           {m.status?.phase === 'Running' ? (
-            <button className="sm" onClick={() => power(m.metadata.name, 'stop')}>Stop</button>
+            <button className="sm" onClick={() => power(refOf(m), 'stop')}>Stop</button>
           ) : m.status?.phase === 'Paused' ? (
-            <button className="sm" onClick={() => power(m.metadata.name, 'resume')}>Resume</button>
+            <button className="sm" onClick={() => power(refOf(m), 'resume')}>Resume</button>
           ) : (
-            <button className="sm" onClick={() => power(m.metadata.name, 'start')}>Start</button>
+            <button className="sm" onClick={() => power(refOf(m), 'start')}>Start</button>
           )}
-          <button className="sm ghost" onClick={() => setSelected(m.metadata.name)}>Details</button>
+          <button className="sm ghost" onClick={() => setSelected(refOf(m))}>Details</button>
         </div>
       ),
     },
@@ -282,9 +298,9 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
         <ResourceTable
           items={items}
           columns={columns}
-          keyFn={(x) => x.metadata.name}
+          keyFn={refOf}
           emptyText={<EmptyHint what="machines" command="kaironctl create NAME --image PATH" />}
-          onRowClick={(x) => setSelected(x.metadata.name)}
+          onRowClick={(x) => setSelected(refOf(x))}
           selectedKey={selected ?? undefined}
           csvName="kairon-machines"
         />
@@ -364,13 +380,13 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
           onClose={() => setSelected(null)}
           actions={
             <>
-              {m.status?.phase === 'Running' && <button onClick={() => power(m.metadata.name, 'pause')}>Pause</button>}
-              {m.status?.phase === 'Paused' && <button onClick={() => power(m.metadata.name, 'resume')}>Resume</button>}
-              {m.status?.phase === 'Running' && <button onClick={() => power(m.metadata.name, 'halt')}>Halt</button>}
-              {m.status?.phase === 'Halted' && <button onClick={() => power(m.metadata.name, 'start')}>Resume</button>}
-              <button onClick={() => onMigrate(m.metadata.name)}>Migrate</button>
-              <button onClick={() => onSnapshot(m.metadata.name)}>Snapshot</button>
-              <button className="danger" onClick={() => remove(m.metadata.name)}>Delete</button>
+              {m.status?.phase === 'Running' && <button onClick={() => power(refOf(m), 'pause')}>Pause</button>}
+              {m.status?.phase === 'Paused' && <button onClick={() => power(refOf(m), 'resume')}>Resume</button>}
+              {m.status?.phase === 'Running' && <button onClick={() => power(refOf(m), 'halt')}>Halt</button>}
+              {m.status?.phase === 'Halted' && <button onClick={() => power(refOf(m), 'start')}>Resume</button>}
+              {nsOf(m) === currentNamespace() && <button onClick={() => onMigrate(m.metadata.name)}>Migrate</button>}
+              {nsOf(m) === currentNamespace() && <button onClick={() => onSnapshot(m.metadata.name)}>Snapshot</button>}
+              <button className="danger" onClick={() => remove(refOf(m))}>Delete</button>
             </>
           }
         >
@@ -393,39 +409,39 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
               type="number"
               step={1}
               className="priorityInput"
-              value={priorityEdits[m.metadata.name] ?? String(m.spec.priority ?? 0)}
-              onChange={(e) => setPriorityEdits((prev) => ({ ...prev, [m.metadata.name]: e.target.value }))}
+              value={priorityEdits[refOf(m)] ?? String(m.spec.priority ?? 0)}
+              onChange={(e) => setPriorityEdits((prev) => ({ ...prev, [refOf(m)]: e.target.value }))}
             />
-            {priorityEdits[m.metadata.name] !== undefined && priorityEdits[m.metadata.name] !== String(m.spec.priority ?? 0) && (
-              <button className="sm" onClick={() => setPriority(m.metadata.name)}>Set</button>
+            {priorityEdits[refOf(m)] !== undefined && priorityEdits[refOf(m)] !== String(m.spec.priority ?? 0) && (
+              <button className="sm" onClick={() => setPriority(refOf(m))}>Set</button>
             )}
           </div>
           <h4>Tools</h4>
           <div className="rowactions" style={{ justifyContent: 'flex-start', padding: '8px 0' }}>
-            {consoleEnabled && consoleEligible(m) && <button onClick={() => setConsoleFor(m.metadata.name)}>Console</button>}
-            {consoleEnabled && textConsoleEligible(m) && <button onClick={() => setTextConsoleFor(m.metadata.name)}>Text console</button>}
-            {consoleEnabled && isAdmin() && execEligible(m) && <button onClick={() => setExecFor(m.metadata.name)}>Exec</button>}
-            {consoleEnabled && isAdmin() && textConsoleEligible(m) && <button onClick={() => setAgentFilesFor(m.metadata.name)}>Files</button>}
-            {consoleEnabled && logsEligible(m) && <button onClick={() => setLogsFor(m.metadata.name)}>Logs</button>}
-            {consoleEnabled && logsEligible(m) && <button onClick={() => setNetworkFor(m.metadata.name)}>Network</button>}
+            {consoleEnabled && consoleEligible(m) && <button onClick={() => setConsoleFor(refOf(m))}>Console</button>}
+            {consoleEnabled && textConsoleEligible(m) && <button onClick={() => setTextConsoleFor(refOf(m))}>Text console</button>}
+            {consoleEnabled && isAdmin() && execEligible(m) && <button onClick={() => setExecFor(refOf(m))}>Exec</button>}
+            {consoleEnabled && isAdmin() && textConsoleEligible(m) && <button onClick={() => setAgentFilesFor(refOf(m))}>Files</button>}
+            {consoleEnabled && logsEligible(m) && <button onClick={() => setLogsFor(refOf(m))}>Logs</button>}
+            {consoleEnabled && logsEligible(m) && <button onClick={() => setNetworkFor(refOf(m))}>Network</button>}
             {!consoleEnabled && <span className="usageHint">Console relay is not enabled on this deployment.</span>}
           </div>
           {consoleEnabled && m.status?.phase && m.status.phase !== 'Pending' && (
-            <MachineOps namespace={m.metadata.namespace || currentNamespace()} name={m.metadata.name} />
+            <MachineOps namespace={nsOf(m)} name={m.metadata.name} />
           )}
         </Inspector>
       )}
 
-      {consoleFor && <Console namespace={currentNamespace()} name={consoleFor} onClose={() => setConsoleFor(null)} />}
+      {consoleFor && <Console namespace={splitRef(consoleFor).ns} name={splitRef(consoleFor).name} onClose={() => setConsoleFor(null)} />}
       {textConsoleFor && (
         <Suspense fallback={<div className="consoleOverlay" />}>
-          <TextConsole namespace={currentNamespace()} name={textConsoleFor} onClose={() => setTextConsoleFor(null)} />
+          <TextConsole namespace={splitRef(textConsoleFor).ns} name={splitRef(textConsoleFor).name} onClose={() => setTextConsoleFor(null)} />
         </Suspense>
       )}
-      {execFor && <Exec namespace={currentNamespace()} name={execFor} onClose={() => setExecFor(null)} />}
-      {agentFilesFor && <AgentFiles namespace={currentNamespace()} name={agentFilesFor} onClose={() => setAgentFilesFor(null)} />}
-      {logsFor && <Logs namespace={currentNamespace()} name={logsFor} onClose={() => setLogsFor(null)} />}
-      {networkFor && <NetworkPanel namespace={currentNamespace()} name={networkFor} onClose={() => setNetworkFor(null)} />}
+      {execFor && <Exec namespace={splitRef(execFor).ns} name={splitRef(execFor).name} onClose={() => setExecFor(null)} />}
+      {agentFilesFor && <AgentFiles namespace={splitRef(agentFilesFor).ns} name={splitRef(agentFilesFor).name} onClose={() => setAgentFilesFor(null)} />}
+      {logsFor && <Logs namespace={splitRef(logsFor).ns} name={splitRef(logsFor).name} onClose={() => setLogsFor(null)} />}
+      {networkFor && <NetworkPanel namespace={splitRef(networkFor).ns} name={splitRef(networkFor).name} onClose={() => setNetworkFor(null)} />}
     </div>
   );
 }

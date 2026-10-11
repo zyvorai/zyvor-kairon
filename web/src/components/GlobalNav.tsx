@@ -4,7 +4,7 @@
 import { LogOut, Menu, Moon, Search, Sun, UserCog, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
-import { currentNamespace, setNamespace } from '../lib/namespace';
+import { allNamespaces, currentNamespace, setAllNamespaces, setNamespace } from '../lib/namespace';
 import { NAV, NavItem, Page } from '../lib/nav';
 import { applyTheme, storedTheme, Theme } from '../lib/theme';
 import { iconFor } from './navIcons';
@@ -31,6 +31,7 @@ export default function GlobalNav({
   const closeTimer = useRef<number | undefined>(undefined);
   const [namespaces, setNamespaces] = useState<string[]>([]);
   const namespace = currentNamespace();
+  const all = allNamespaces();
 
   // The namespaces this operator may use, for the nav selector.
   useEffect(() => {
@@ -110,7 +111,19 @@ export default function GlobalNav({
         <div className="gn-right">
           <label className="gn-ns" title="Namespace the dashboard works in">
             <span>ns</span>
-            <select aria-label="Namespace" value={namespace} onChange={(e) => setNamespace(e.target.value)}>
+            <select
+              aria-label="Namespace"
+              value={all ? '_all' : namespace}
+              onChange={(e) => {
+                if (e.target.value === '_all') {
+                  setAllNamespaces(true);
+                } else {
+                  setAllNamespaces(false);
+                  setNamespace(e.target.value);
+                }
+              }}
+            >
+              <option value="_all">All (Machines)</option>
               {[...new Set([namespace, ...namespaces])].map((ns) => (
                 <option key={ns} value={ns}>
                   {ns}
