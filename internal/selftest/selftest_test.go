@@ -26,6 +26,8 @@ type fakeKube struct {
 	migrate   bool
 	deleted   []string
 	createErr error
+	// pendingForever leaves created Machines in phase Pending.
+	pendingForever bool
 }
 
 func newFakeKube() *fakeKube {
@@ -50,6 +52,9 @@ func (f *fakeKube) CreateMachine(_ context.Context, ns string, m model.Machine) 
 	m.Status.Phase = "Running"
 	if f.failBoot {
 		m.Status.Phase, m.Status.Message = "Failed", "image digest mismatch"
+	}
+	if f.pendingForever {
+		m.Status.Phase, m.Status.Message = "Pending", "no Ready Kairon-capable nodes match placement constraints"
 	}
 	m.Status.AppliedVCPUs = 1
 	m.Status.ResourceUsage = &model.ResourceUsage{CPUPercent: 3, MemoryBytes: 64 << 20}
@@ -343,6 +348,27 @@ func TestNoCapableNodeWarnsAndHintsOnBootFailure(t *testing.T) {
 	res := Run(context.Background(), baseEnv(f), rec, Options{Profile: ProfileQuick, Only: []string{"boot"}})
 	if len(res) != 1 || res[0].Status != Fail {
 		t.Fatalf("results = %+v", res)
+	}
+	if !strings.Contains(res[0].Hint, model.CapableLabel) {
+		t.Errorf("hint %q should mention the capable label", res[0].Hint)
+	}
+}
+
+func TestNoCapableNodeFailsFastInsteadOfWaitingFullBootTimeout(t *testing.T) {
+	f := newFakeKube()
+	f.nodes[0].Metadata.Labels = nil
+	f.pendingForever = true
+	env := baseEnv(f)
+	env.BootTimeout = 10 * time.Minute // would hang the test if the fast path were missing
+	clock := time.Now()
+	env.Now = func() time.Time { clock = clock.Add(5 * time.Second); return clock } // fake time runs ahead
+	rec := &recorder{}
+	res := Run(context.Background(), env, rec, Options{Profile: ProfileQuick, Only: []string{"boot"}})
+	if len(res) != 1 || res[0].Status != Fail {
+		t.Fatalf("results = %+v", res)
+	}
+	if !strings.Contains(res[0].Reason, "timed out after 45s") {
+		t.Errorf("reason %q should show the 45s fail-fast window", res[0].Reason)
 	}
 	if !strings.Contains(res[0].Hint, model.CapableLabel) {
 		t.Errorf("hint %q should mention the capable label", res[0].Hint)

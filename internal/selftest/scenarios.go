@@ -100,9 +100,16 @@ func runBoot(ctx context.Context, s *session) error {
 	if err != nil {
 		return err
 	}
+	// With no capable node the scheduler cannot place the Machine, so waiting
+	// the full boot timeout only delays an answer we already have. Give it a
+	// short window in case the label is applied or the scheduler is lenient.
+	bootWait := s.env.BootTimeout
 	if nodes, err := s.capableNodes(ctx); err == nil && len(nodes) == 0 {
-		s.logf(LevelWarn, "no Ready node carries %s=true; the scheduler may leave the Machine Pending", model.CapableLabel)
+		s.logf(LevelWarn, "no Ready node carries %s=true; the scheduler is expected to leave the Machine Pending", model.CapableLabel)
 		s.hint = "kubectl label node <name> " + model.CapableLabel + "=true"
+		if w := 45 * time.Second; w < bootWait {
+			bootWait = w
+		}
 	}
 	m := s.newMachine("vm", img)
 	s.hostPort = randomPort()
@@ -121,7 +128,7 @@ func runBoot(ctx context.Context, s *session) error {
 	s.vm = m.Metadata.Name
 
 	started := s.env.Now()
-	cur, err := s.waitPhase(ctx, s.vm, "Running", s.env.BootTimeout)
+	cur, err := s.waitPhase(ctx, s.vm, "Running", bootWait)
 	if err != nil {
 		if s.hint == "" {
 			s.hint = "kaironctl describe machine " + s.vm + " -n " + s.env.Namespace + "; kaironctl logs node"
