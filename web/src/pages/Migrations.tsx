@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react';
 import { api, apiJSON } from '../api';
 import { MachineMigration } from '../types';
+import { useLiveChanges } from '../lib/live';
 import { badgeClass, formatBytes, formatDuration, transferProgress } from '../lib/phase';
 import TerminalFrame from '../components/TerminalFrame';
 import { allNamespaces, currentNamespace } from '../lib/namespace';
@@ -36,11 +37,17 @@ export default function Migrations({ prefillMachine }: { prefillMachine: string 
   const refresh = () =>
     api<MachineMigration[]>('/api/v1/migrations').then((r) => setItems(r ?? [])).catch((e) => setMsg(String(e)));
 
+  // Stream-driven: a migration change refetches immediately; polling is
+  // only the backstop (RAM-transfer progress isn't a watch event until the
+  // controller writes status, so keep a short poll while disconnected).
+  const live = useLiveChanges((c) => {
+    if (c.kind === 'MachineMigration') refresh();
+  });
   useEffect(() => {
     refresh();
-    const t = setInterval(refresh, 3000);
+    const t = setInterval(refresh, live ? 10000 : 3000);
     return () => clearInterval(t);
-  }, []);
+  }, [live]);
 
   const showNs = allNamespaces();
   const keyOf = (m: MachineMigration) => `${m.metadata.namespace || ''}/${m.metadata.name}`;

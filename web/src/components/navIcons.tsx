@@ -27,6 +27,7 @@ const ICONS: Record<string, ReactNode> = {
   'network-policies': <Network size={18} />,
   'security-groups': <ShieldCheck size={18} />,
   fleet: <Layers size={18} />,
+  network: <Network size={18} />,
   system: <Stethoscope size={18} />,
   assistant: <Sparkles size={18} />,
   account: <UserCog size={18} />,

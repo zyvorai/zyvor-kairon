@@ -30,7 +30,19 @@ export interface Machine {
     guestIP?: string;
     message?: string;
     resourceUsage?: { cpuPercent?: number; memoryBytes?: number; diskReadBytes?: number; diskWriteBytes?: number };
+    guestIPs?: string[];
+    network?: MachineNetworkStatus;
   };
+}
+
+// Mirrors internal/model/network.go's MachineNetworkStatus.
+export interface MachineNetworkStatus {
+  guestIP?: string;
+  guestIPs?: string[];
+  tapName?: string;
+  dataplane?: { attached: boolean; mode?: string; identity?: number; policyFingerprint?: string; policySynced?: boolean; interface?: string };
+  cilium?: { externalWorkload?: string; identity?: number; ipv4?: string; message?: string };
+  edge?: { identity?: number; guestIPSource?: string; antiSpoof?: boolean; policyName?: string; conntrackRestored?: number; blackholeWindowMs?: number };
 }
 
 export interface RecoveryStatus {

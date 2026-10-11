@@ -59,6 +59,7 @@ export const NAV = [
       { id: 'disruption-budgets', label: 'Disruption budgets', blurb: 'Limit concurrent voluntary disruptions' },
       { id: 'network-policies', label: 'Network policies', blurb: 'Per-machine ingress and egress rules' },
       { id: 'security-groups', label: 'Security groups', blurb: 'Reusable network rule sets' },
+      { id: 'network', label: 'Network overview', blurb: 'Dataplane, policy sync and edge state per VM' },
     ],
   },
   {
