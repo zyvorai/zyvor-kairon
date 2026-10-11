@@ -10,6 +10,7 @@ import { Plus } from 'lucide-react';
 import ResourceTable, { Column } from '../components/ResourceTable';
 import Inspector, { KV } from '../components/Inspector';
 import MachineOps from '../components/MachineOps';
+import MachineTimeline from '../components/MachineTimeline';
 import Sheet from '../components/Sheet';
 import { EmptyState, Status } from '../components/ui';
 import { useToast } from '../components/Toast';
@@ -445,6 +446,7 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
               ['Created', m.metadata.creationTimestamp],
             ]}
           />
+          <MachineTimeline namespace={nsOf(m)} name={m.metadata.name} phase={m.status?.phase} />
           <h4>Scheduling priority</h4>
           <div className="rowactions" style={{ justifyContent: 'flex-start', padding: '8px 0' }}>
             <input

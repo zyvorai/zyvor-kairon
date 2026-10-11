@@ -257,6 +257,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/qga/firewall/open", s.requireNamespace(namespaceFromPath, s.handleQGAFirewallOpen))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/qga/firewall/close", s.requireNamespace(namespaceFromPath, s.handleQGAFirewallClose))
 	api.HandleFunc("GET /api/v1/machines/{namespace}/{name}/logs", s.requireNamespace(namespaceFromPath, s.handleLogs))
+	api.HandleFunc("GET /api/v1/machines/{namespace}/{name}/timeline", s.requireNamespace(namespaceFromPath, s.handleMachineTimeline))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/vm-snapshot", s.requireNamespace(namespaceFromPath, s.handleVMSnapshot))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/vm-restore-snapshot", s.requireNamespace(namespaceFromPath, s.handleVMRestoreSnapshot))
 

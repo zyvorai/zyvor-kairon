@@ -42,6 +42,7 @@ type fakeKube struct {
 	networkPolicies   map[string]model.MachineNetworkPolicy
 	securityGroups    map[string]model.NetworkSecurityGroup
 	nodes             []model.Node
+	events            []model.Event
 	// secrets holds only stringData, keyed by "namespace/name" -- enough
 	// to exercise Client.PatchSecretStringData (see
 	// uiapi.Server.persistUsers) without modeling a full core/v1 Secret.
@@ -76,6 +77,8 @@ func (f *fakeKube) handler() http.Handler {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/namespaces/default/events":
+			_ = json.NewEncoder(w).Encode(map[string]any{"items": f.events})
 		case r.Method == http.MethodGet && r.URL.Path == "/apis/kairon.zyvor.dev/v1/machines":
 			items := make([]model.Machine, 0, len(f.machines))
 			for _, m := range f.machines {

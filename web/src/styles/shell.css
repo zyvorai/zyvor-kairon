@@ -281,3 +281,16 @@
   .gn { gap: 10px; }
   .gn-brand small { display: none; }
 }
+
+/* Machine timeline (inspector) */
+.timeline { list-style: none; margin: 0; padding: 0; }
+.timeline-row { display: grid; grid-template-columns: 14px 1fr; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--hairline); font-size: 13px; }
+.timeline-row:last-child { border-bottom: 0; }
+.timeline-dot { width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: var(--text-3, #8e8e93); }
+.timeline-row.tone-ok .timeline-dot { background: var(--tone-emerald); }
+.timeline-row.tone-warn .timeline-dot { background: var(--tone-amber); }
+.timeline-row.tone-error .timeline-dot { background: var(--tone-rose); }
+.timeline-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.timeline-title time { margin-left: auto; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.timeline-tag { padding: 1px 8px; border-radius: 980px; background: var(--fill); color: var(--text-2); font-size: 11px; font-family: var(--font-mono); }
+.timeline-msg { margin-top: 2px; color: var(--text-2); word-break: break-word; }
