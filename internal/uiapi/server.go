@@ -237,6 +237,8 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/v1/overview", s.handleOverview)
 	api.HandleFunc("GET /api/v1/namespaces", s.handleNamespaces)
 	api.HandleFunc("GET /api/v1/stream", s.handleStream)
+	api.HandleFunc("GET /api/v1/pods", s.handlePods)
+	api.HandleFunc("GET /api/v1/health", s.handleHealth)
 	api.HandleFunc("GET /api/v1/fleet/{resource}", s.requireNamespace(namespaceParam, s.handleListFleet))
 	api.HandleFunc("POST /api/v1/fleet/{resource}", s.requireNamespace(namespaceParam, s.handleCreateFleet))
 	api.HandleFunc("DELETE /api/v1/fleet/{resource}/{namespace}/{name}", s.requireNamespace(namespaceFromPath, s.handleDeleteFleet))

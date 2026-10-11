@@ -1039,3 +1039,67 @@ func (c *Client) SubjectAccessReview(ctx context.Context, sar model.SubjectAcces
 	}
 	return out.Status, nil
 }
+
+// PodSummary is the slice of a core/v1 Pod the dashboard shows.
+type PodSummary struct {
+	Namespace  string            `json:"namespace"`
+	Name       string            `json:"name"`
+	Phase      string            `json:"phase"`
+	Node       string            `json:"node,omitempty"`
+	IP         string            `json:"ip,omitempty"`
+	Ready      bool              `json:"ready"`
+	Restarts   int               `json:"restarts"`
+	Labels     map[string]string `json:"labels,omitempty"`
+	StartTime  time.Time         `json:"startTime,omitempty"`
+	Containers int               `json:"containers"`
+}
+
+// ListPods lists pods in every namespace, or in namespace when non-empty.
+func (c *Client) ListPods(ctx context.Context, namespace string) ([]PodSummary, error) {
+	path := "/api/v1/pods"
+	if namespace != "" {
+		path = fmt.Sprintf("/api/v1/namespaces/%s/pods", url.PathEscape(namespace))
+	}
+	var list struct {
+		Items []struct {
+			Metadata struct {
+				Name      string            `json:"name"`
+				Namespace string            `json:"namespace"`
+				Labels    map[string]string `json:"labels"`
+			} `json:"metadata"`
+			Spec struct {
+				NodeName   string            `json:"nodeName"`
+				Containers []json.RawMessage `json:"containers"`
+			} `json:"spec"`
+			Status struct {
+				Phase             string    `json:"phase"`
+				PodIP             string    `json:"podIP"`
+				StartTime         time.Time `json:"startTime"`
+				ContainerStatuses []struct {
+					Ready        bool `json:"ready"`
+					RestartCount int  `json:"restartCount"`
+				} `json:"containerStatuses"`
+			} `json:"status"`
+		} `json:"items"`
+	}
+	if err := c.request(ctx, http.MethodGet, path, nil, &list, ""); err != nil {
+		return nil, err
+	}
+	out := make([]PodSummary, 0, len(list.Items))
+	for _, it := range list.Items {
+		p := PodSummary{
+			Namespace: it.Metadata.Namespace, Name: it.Metadata.Name, Phase: it.Status.Phase,
+			Node: it.Spec.NodeName, IP: it.Status.PodIP, Labels: it.Metadata.Labels,
+			StartTime: it.Status.StartTime, Containers: len(it.Spec.Containers),
+			Ready: len(it.Status.ContainerStatuses) > 0,
+		}
+		for _, cs := range it.Status.ContainerStatuses {
+			p.Restarts += cs.RestartCount
+			if !cs.Ready {
+				p.Ready = false
+			}
+		}
+		out = append(out, p)
+	}
+	return out, nil
+}

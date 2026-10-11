@@ -64,7 +64,10 @@ export const NAV = [
   {
     group: 'Operations',
     tone: 'amber',
-    items: [{ id: 'fleet', label: 'Fleet operations', blurb: 'Bulk actions across many machines' }],
+    items: [
+      { id: 'fleet', label: 'Fleet operations', blurb: 'Bulk actions across many machines' },
+      { id: 'system', label: 'System', blurb: 'Kairon components and pods' },
+    ],
   },
   {
     group: 'AI',
