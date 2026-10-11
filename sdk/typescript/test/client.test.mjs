@@ -148,3 +148,22 @@ test('adaptive migration is a live migration with policy overrides', async () =>
   assert.equal(progress.progress.throughputMbps, 900);
   assert.equal(progress.adaptive.stage, 'AutoConverge');
 });
+test('incremental backup inherits its parent target; chain groups S3 backups', async () => {
+  const target = {s3: {endpoint: 'http://minio:9000', bucket: 'vm', credentialsSecretRef: 's3'}};
+  responseQueue.push({metadata: {name: 'f1'}, spec: {machineName: 'web', target, encryption: {keySecretRef: 'k'}}});
+  await client.backups.create('web', {parent: 'f1', name: 'i1'});
+  const call = calls.at(-1);
+  assert.equal(call.path, `/apis/${API_VERSION}/namespaces/default/machinebackups`);
+  assert.equal(call.body.spec.mode, 'incremental');
+  assert.deepEqual(call.body.spec.target, target);
+  assert.equal(call.body.spec.encryption.keySecretRef, 'k');
+  await assert.rejects(client.backups.create('web', {mode: 'incremental'}), /S3 target/);
+  const point = (name, mode, sequence, parent = '', at = '2026-01-01T00:00:00Z') =>
+    ({metadata: {name}, spec: {machineName: 'web', target, mode}, status: {phase: 'Succeeded', pointInTime: at, storedBytes: 10, chain: {id: 'c1', sequence, parent}}});
+  responseQueue.push({items: [point('i1', 'incremental', 2, 'f1', '2026-01-01T01:00:00Z'), point('f1', 'full', 1), {metadata: {name: 'local'}, spec: {machineName: 'web'}}]});
+  const chains = await client.backups.chain('web');
+  assert.equal(chains.length, 1);
+  assert.deepEqual(chains[0].points.map(p => p.name), ['f1', 'i1']);
+  assert.equal(chains[0].points[1].depth, 1);
+  assert.equal(chains[0].storedBytes, 20);
+});

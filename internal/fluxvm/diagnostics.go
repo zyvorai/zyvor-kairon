@@ -50,6 +50,35 @@ type RuntimeCapabilities struct {
 	OrchestrationOwner string                       `json:"orchestrationOwner"`
 	Migration          []RuntimeMigrationCapability `json:"migration"`
 	Snapshot           []RuntimeSnapshotCapability  `json:"snapshot"`
+	Backup             []RuntimeBackupCapability    `json:"backup,omitempty"`
+}
+
+// RuntimeBackupCapability is one backup backend FluxVM offers; "cbt" with
+// incremental and an "s3" target means S3 incremental backups work here.
+type RuntimeBackupCapability struct {
+	Backend     string   `json:"backend"`
+	Full        bool     `json:"full"`
+	Incremental bool     `json:"incremental"`
+	Targets     []string `json:"targets"`
+	Compression []string `json:"compression"`
+	Encryption  []string `json:"encryption"`
+}
+
+// CBTBackup reports whether FluxVM takes incremental backups to S3.
+func (r *RuntimeCapabilities) CBTBackup() bool {
+	if r == nil {
+		return false
+	}
+	for _, b := range r.Backup {
+		if b.Incremental {
+			for _, t := range b.Targets {
+				if t == "s3" {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // GetRuntimeCapabilities returns this node's real, current capability

@@ -10,7 +10,12 @@ Which disks get copied depends on how the Machine boots:
 | Machine boots from | What a MachineBackup copies | Where it lands |
 |---|---|---|
 | `spec.image` (FluxVM owns the root disk) | the root disk and every FluxVM-owned data disk, as one consistent set | FluxVM's `state_dir/backups/` on the Machine's node |
+| `spec.image` with `spec.target.s3` | the same disks, full or only the blocks changed since the parent | an S3 bucket, restorable on any node ([incremental S3 backups](machine-backup-incremental.md), experimental) |
 | `spec.volumes[].atlas` (with `spec.atlas` set) | each Atlas volume, through an Atlas backup job | the Atlas S3 bucket |
+
+On-node backups are lost with the node. For off-node, incremental and
+scheduled backups with GFS retention and Object Lock, see
+[machine-backup-incremental.md](machine-backup-incremental.md).
 
 PVC disks attached through `spec.disks` belong to their storage, not to
 FluxVM, and are skipped. Use `MachineSnapshot` or your storage's own

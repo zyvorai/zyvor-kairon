@@ -94,6 +94,9 @@ func (a *Agent) patchDiskBackup(ctx context.Context, b model.MachineBackup, disk
 }
 
 func (a *Agent) reconcileDiskBackup(ctx context.Context, b model.MachineBackup, machines map[string]model.Machine) error {
+	if b.IsCBT() {
+		return a.reconcileCBTBackup(ctx, b, machines)
+	}
 	key := "backup/" + b.Namespace() + "/" + b.Metadata.Name
 	if a.backups.busy(key) {
 		return nil
@@ -205,6 +208,9 @@ func (a *Agent) reconcileDiskRestore(ctx context.Context, r model.MachineBackupR
 		return nil
 	}
 	disk := *r.Status.Disk
+	if disk.ManifestKey != "" {
+		return a.reconcileCBTRestore(ctx, r, disk, machines)
+	}
 	switch disk.Phase {
 	case model.BackupPending:
 	case model.BackupRunning:

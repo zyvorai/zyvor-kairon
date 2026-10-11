@@ -178,6 +178,13 @@ func cmdGet(ctx context.Context, kc *kube.Client, args []string) {
 			}
 			fmt.Printf("%s\t%s\t%d\n", p.Metadata.Name, bw, p.Status.ActiveMigrations)
 		}
+	case "backuppolicy", "backuppolicies", "machinebackuppolicies":
+		items, err := kc.ListMachineBackupPoliciesNamespace(ctx, ns)
+		if err != nil {
+			fatal(err)
+		}
+		items = selectorFilter(items, selector, func(p model.MachineBackupPolicy) map[string]string { return p.Metadata.Labels })
+		printBackupPolicies(os.Stdout, items)
 	case "snapshotschedule", "snapshotschedules", "machinesnapshotschedules":
 		items, err := kc.ListMachineSnapshotSchedulesNamespace(ctx, ns)
 		if err != nil {

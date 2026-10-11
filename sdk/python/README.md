@@ -45,6 +45,17 @@ create with a lost response: inspect the named object instead of blindly retryin
 or deleting by name. The context manager cannot clean up an object whose UID was
 never returned. For CI, use the expiry sweeper described in the ecosystem guide.
 
+`backups.create(machine=..., mode=..., parent=..., policy=..., target=...)` makes
+an S3 MachineBackup (incremental, experimental) and `backups.chain(machine)`
+returns a Machine's chains, newest first; `backup_policies` is the
+`MachineBackupPolicy` resource. See `docs/guides/machine-backup-incremental.md`.
+
+```python
+client.backups.create(machine="web", policy="web-hourly", mode="incremental")
+for chain in client.backups.chain("web"):
+    print(chain["id"], [p["name"] for p in chain["points"]])
+```
+
 The SDK does not load kubeconfig, refresh OIDC tokens, provide watch streams, or
 expose cluster-scoped `MachineImage` resources. Supply current credentials and
 explicit endpoints. Generic CRD operations still pass admission and caller RBAC;

@@ -78,6 +78,8 @@ func resourcePlural(resource string) (plural string, core bool, ok bool) {
 		return "migrationpolicies", false, true
 	case "snapshotschedule", "snapshotschedules", "machinesnapshotschedule", "machinesnapshotschedules":
 		return "machinesnapshotschedules", false, true
+	case "backuppolicy", "backuppolicies", "machinebackuppolicy", "machinebackuppolicies":
+		return "machinebackuppolicies", false, true
 	case "networkpolicy", "networkpolicies", "machinenetworkpolicy", "machinenetworkpolicies":
 		return "machinenetworkpolicies", false, true
 	case "securitygroup", "securitygroups", "networksecuritygroup", "networksecuritygroups":

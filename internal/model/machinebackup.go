@@ -62,6 +62,26 @@ type MachineBackupSpec struct {
 	Quiesce string `json:"quiesce,omitempty"`
 	// Atlas, when set, also backs up the Machine's Atlas volumes to S3.
 	Atlas *MachineBackupAtlas `json:"atlas,omitempty"`
+
+	// Target, when set, sends the disk half to S3 as a changed-block-tracking
+	// chain instead of FluxVM's node-local backups directory. See
+	// machinebackupcbt.go.
+	Target *BackupTarget `json:"target,omitempty"`
+	// Mode is full, incremental or synthetic-full (with Target only).
+	Mode string `json:"mode,omitempty"`
+	// Parent is the MachineBackup an incremental builds on, or the chain
+	// point a synthetic-full consolidates. An incremental created by a
+	// policy may leave it empty: the newest successful backup of that
+	// policy and Machine is used.
+	Parent string `json:"parent,omitempty"`
+	// PolicyName is the MachineBackupPolicy that created this backup.
+	PolicyName string `json:"policyName,omitempty"`
+	// Compression of the uploaded layers; zstd is the only choice.
+	Compression string            `json:"compression,omitempty"`
+	Encryption  *BackupEncryption `json:"encryption,omitempty"`
+	// ImmutableFor sets S3 Object Lock (COMPLIANCE) retention on every
+	// object, e.g. "720h" or "30d". The bucket must have Object Lock on.
+	ImmutableFor string `json:"immutableFor,omitempty"`
 }
 
 type MachineBackupAtlas struct {
@@ -84,6 +104,19 @@ type MachineBackupStatus struct {
 	Disk           *DiskBackupStatus    `json:"disk,omitempty"`
 	Volumes        []VolumeBackupStatus `json:"volumes,omitempty"`
 	CompletionTime *time.Time           `json:"completionTime,omitempty"`
+
+	// The rest is set for backups with spec.target.
+	Chain *BackupChainStatus `json:"chain,omitempty"`
+	// Kind is full, incremental or synthetic-full.
+	Kind string `json:"kind,omitempty"`
+	// PointInTime is the instant this backup restores to; a synthetic full
+	// carries the point it consolidates.
+	PointInTime    *time.Time `json:"pointInTime,omitempty"`
+	ManifestKey    string     `json:"manifestKey,omitempty"`
+	StoredBytes    int64      `json:"storedBytes,omitempty"`
+	ChangedBytes   int64      `json:"changedBytes,omitempty"`
+	Objects        []string   `json:"objects,omitempty"`
+	RetentionUntil *time.Time `json:"retentionUntil,omitempty"`
 }
 
 // DiskBackupStatus is the FluxVM half of a backup or restore.
@@ -95,6 +128,21 @@ type DiskBackupStatus struct {
 	SizeBytes int64    `json:"sizeBytes,omitempty"`
 	Quiesced  bool     `json:"quiesced,omitempty"`
 	Disks     []string `json:"disks,omitempty"`
+
+	// CBT (spec.target) fields. JobID is FluxVM's pollable job, which
+	// outlives kairon-node restarts.
+	JobID        string `json:"jobID,omitempty"`
+	ManifestKey  string `json:"manifestKey,omitempty"`
+	StoredBytes  int64  `json:"storedBytes,omitempty"`
+	ChangedBytes int64  `json:"changedBytes,omitempty"`
+	// FullRequired: FluxVM could not run the incremental (dirty bitmap
+	// missing or inconsistent, e.g. after an unclean stop, a restore or a
+	// new disk); the next backup must be a full.
+	FullRequired bool     `json:"fullRequired,omitempty"`
+	Objects      []string `json:"objects,omitempty"`
+	// SyntheticBases are the chain's synthetic fulls a restore or synthesize
+	// may read instead of layers they replaced.
+	SyntheticBases []string `json:"syntheticBases,omitempty"`
 }
 
 // VolumeBackupStatus is one Atlas volume's backup or restore job.
@@ -111,7 +159,8 @@ type VolumeBackupStatus struct {
 
 // MachineBackupRestore restores a Succeeded MachineBackup. The disk half is
 // copied back in place into a halted Machine on the backup's node (the
-// backup's own Machine by default). Atlas volumes restore into new Atlas
+// backup's own Machine by default); a backup in S3 (spec.target) restores
+// on any node that runs a CBT-capable FluxVM. Atlas volumes restore into new Atlas
 // volumes, reported in status.volumes, since a bound PVC can't be swapped
 // in place.
 type MachineBackupRestore struct {

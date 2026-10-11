@@ -50,6 +50,7 @@ export const NAV = [
       { id: 'snapshot-schedules', label: 'Snapshot schedules', blurb: 'Recurring snapshots and retention' },
       { id: 'restores', label: 'Restores', blurb: 'Restore a snapshot into a new claim' },
       { id: 'backups', label: 'Backups', blurb: 'Off-cluster machine backups and restores' },
+      { id: 'backup-policies', label: 'Backup policies', blurb: 'Scheduled incremental S3 backups and retention' },
     ],
   },
   {

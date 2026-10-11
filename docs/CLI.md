@@ -176,10 +176,18 @@ kaironctl backup create MACHINE [--name NAME] [--quiesce auto|required|never] [-
 kaironctl backup list
 kaironctl backup restore BACKUP [--machine NAME] [--storage-class NAME]   # Machine must be halted
 kaironctl backup delete NAME
+kaironctl backup create MACHINE --s3-endpoint URL --s3-bucket NAME --s3-credentials SECRET [--encryption-key SECRET] [--immutable-for 30d]
+kaironctl backup create MACHINE --parent BACKUP [--mode incremental|synthetic-full]   # S3 settings from the parent
+kaironctl backup create MACHINE --policy POLICY [--mode full|incremental]
+kaironctl backup chain MACHINE
+kaironctl backuppolicy create NAME --selector k=v --incremental-every 1h --s3-endpoint URL --s3-bucket NAME --s3-credentials SECRET [--hourly N] [--daily N] [--monthly N]
+kaironctl backuppolicy get [NAME] | describe NAME | suspend NAME | resume NAME | delete NAME
 ```
 
-`get`, `describe` and `delete` also take `backup` and `backuprestore`. See
-[guides/machine-backup.md](guides/machine-backup.md).
+`get`, `describe` and `delete` also take `backup`, `backuprestore` and
+`backuppolicy`. See [guides/machine-backup.md](guides/machine-backup.md) and,
+for incremental S3 backups,
+[guides/machine-backup-incremental.md](guides/machine-backup-incremental.md).
 
 ## Images
 

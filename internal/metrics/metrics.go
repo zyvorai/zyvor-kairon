@@ -119,6 +119,9 @@ type Recorder struct {
 	machineResourceUsage  *prometheus.GaugeVec
 	machineUsageTimestamp *prometheus.GaugeVec
 
+	// S3 MachineBackups -- only registered by NewRecorder, see backup.go.
+	backup *backupMetrics
+
 	mu         sync.Mutex
 	phaseSince map[phaseKey]phaseState
 	completed  map[phaseKey]bool
@@ -245,6 +248,7 @@ func NewRecorder() *Recorder {
 	reg.MustRegister(r.phaseCount, r.phaseAgeSeconds, r.completedTotal, r.transferDuration, r.cutoverDowntime, r.dataPlaneEncrypted,
 		r.migrationProgress, r.adaptiveStage, r.adaptiveActions,
 		r.quotaResource, r.disruptionBudgetStatus, r.machineSetStatus, r.reconcileDuration, r.reconcileErrors, r.reconcileItemErrors, r.webhookDecisions, r.apiRequestDuration)
+	r.backup = newBackupMetrics(reg)
 	return r
 }
 

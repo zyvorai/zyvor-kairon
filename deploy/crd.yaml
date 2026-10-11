@@ -923,6 +923,178 @@ spec:
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
+  name: machinebackuppolicies.kairon.zyvor.dev
+spec:
+  group: kairon.zyvor.dev
+  scope: Namespaced
+  names:
+    plural: machinebackuppolicies
+    singular: machinebackuppolicy
+    kind: MachineBackupPolicy
+    shortNames:
+    - kmbp
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    subresources: &subresources
+      status: {}
+    additionalPrinterColumns: &columns
+    - name: Mode
+      type: string
+      jsonPath: .spec.mode
+    - name: Incremental
+      type: string
+      jsonPath: .spec.incrementalEvery
+    - name: Full
+      type: string
+      jsonPath: .spec.fullEvery
+    - name: Suspended
+      type: boolean
+      jsonPath: .spec.suspend
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+    schema: &schema
+      openAPIV3Schema:
+        type: object
+        required:
+        - spec
+        properties:
+          spec:
+            type: object
+            required:
+            - selector
+            - incrementalEvery
+            - target
+            properties:
+              selector:
+                type: object
+                minProperties: 1
+                additionalProperties:
+                  type: string
+              mode:
+                type: string
+                enum: [incremental, full]
+              fullEvery:
+                type: string
+                pattern: '^([0-9]+d|([0-9]+(\.[0-9]+)?(h|m|s))+)$'
+              incrementalEvery:
+                type: string
+                pattern: '^([0-9]+d|([0-9]+(\.[0-9]+)?(h|m|s))+)$'
+              target:
+                type: object
+                required:
+                - s3
+                properties:
+                  s3:
+                    type: object
+                    required:
+                    - endpoint
+                    - bucket
+                    - credentialsSecretRef
+                    properties:
+                      endpoint:
+                        type: string
+                        pattern: '^https?://'
+                      bucket:
+                        type: string
+                        minLength: 1
+                      region:
+                        type: string
+                      prefix:
+                        type: string
+                        pattern: '^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$'
+                      credentialsSecretRef:
+                        type: string
+                        minLength: 1
+                      pathStyle:
+                        type: boolean
+              compression:
+                type: string
+                enum: [zstd]
+              encryption:
+                type: object
+                required:
+                - keySecretRef
+                properties:
+                  algorithm:
+                    type: string
+                    enum: [aes256-gcm]
+                  keySecretRef:
+                    type: string
+                    minLength: 1
+              immutableFor:
+                type: string
+                pattern: '^([0-9]+d|([0-9]+(\.[0-9]+)?(h|m|s))+)$'
+              quiesce:
+                type: string
+                enum: [auto, required, never]
+              retention:
+                type: object
+                properties:
+                  hourly:
+                    type: integer
+                    minimum: 0
+                  daily:
+                    type: integer
+                    minimum: 0
+                  monthly:
+                    type: integer
+                    minimum: 0
+              suspend:
+                type: boolean
+          status:
+            type: object
+            properties:
+              machines:
+                type: array
+                items:
+                  type: object
+                  required:
+                  - machineName
+                  properties:
+                    machineName:
+                      type: string
+                    chainID:
+                      type: string
+                    lastFull:
+                      type: string
+                      format: date-time
+                    lastIncremental:
+                      type: string
+                      format: date-time
+                    nextRun:
+                      type: string
+                      format: date-time
+                    skipped:
+                      type: string
+                    lastError:
+                      type: string
+                    retentionHeld:
+                      type: array
+                      items:
+                        type: string
+  - name: v1beta1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1beta1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema
+  - name: v1alpha1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1alpha1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
   name: machinebackuprestores.kairon.zyvor.dev
 spec:
   group: kairon.zyvor.dev
@@ -1004,6 +1176,14 @@ spec:
                     type: array
                     items:
                       type: string
+                  jobID:
+                    type: string
+                  manifestKey:
+                    type: string
+                  syntheticBases:
+                    type: array
+                    items:
+                      type: string
               volumes:
                 type: array
                 items:
@@ -1069,6 +1249,13 @@ spec:
     - name: Phase
       type: string
       jsonPath: .status.phase
+    - name: Kind
+      type: string
+      jsonPath: .status.kind
+    - name: Changed
+      type: integer
+      jsonPath: .status.changedBytes
+      priority: 1
     - name: Quiesced
       type: boolean
       jsonPath: .status.disk.quiesced
@@ -1088,6 +1275,18 @@ spec:
             x-kubernetes-validations:
             - rule: self == oldSelf
               message: a MachineBackup is immutable; create a new one
+            - rule: "!has(self.mode) || has(self.target)"
+              message: mode needs target
+            - rule: "!has(self.mode) || self.mode != 'incremental' || has(self.parent) || has(self.policyName)"
+              message: an incremental backup needs parent or policyName
+            - rule: "!has(self.mode) || self.mode != 'synthetic-full' || has(self.parent)"
+              message: a synthetic-full backup needs parent
+            - rule: "!has(self.mode) || self.mode != 'full' || !has(self.parent)"
+              message: a full backup has no parent
+            - rule: "!has(self.immutableFor) || has(self.target)"
+              message: immutableFor needs target
+            - rule: "!has(self.encryption) || has(self.target)"
+              message: encryption needs target
             properties:
               machineName:
                 type: string
@@ -1110,6 +1309,58 @@ spec:
                   maxAgeSeconds:
                     type: integer
                     minimum: 0
+              target:
+                type: object
+                required:
+                - s3
+                properties:
+                  s3:
+                    type: object
+                    required:
+                    - endpoint
+                    - bucket
+                    - credentialsSecretRef
+                    properties:
+                      endpoint:
+                        type: string
+                        pattern: '^https?://'
+                      bucket:
+                        type: string
+                        minLength: 1
+                      region:
+                        type: string
+                      prefix:
+                        type: string
+                        pattern: '^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$'
+                      credentialsSecretRef:
+                        type: string
+                        minLength: 1
+                      pathStyle:
+                        type: boolean
+              mode:
+                type: string
+                enum: [full, incremental, synthetic-full]
+              parent:
+                type: string
+              policyName:
+                type: string
+              compression:
+                type: string
+                enum: [zstd]
+              encryption:
+                type: object
+                required:
+                - keySecretRef
+                properties:
+                  algorithm:
+                    type: string
+                    enum: [aes256-gcm]
+                  keySecretRef:
+                    type: string
+                    minLength: 1
+              immutableFor:
+                type: string
+                pattern: '^([0-9]+d|([0-9]+(\.[0-9]+)?(h|m|s))+)$'
           status:
             type: object
             properties:
@@ -1139,6 +1390,59 @@ spec:
                     type: array
                     items:
                       type: string
+                  jobID:
+                    type: string
+                  manifestKey:
+                    type: string
+                  storedBytes:
+                    type: integer
+                  changedBytes:
+                    type: integer
+                  fullRequired:
+                    type: boolean
+                  objects:
+                    type: array
+                    items:
+                      type: string
+                  syntheticBases:
+                    type: array
+                    items:
+                      type: string
+              chain:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  sequence:
+                    type: integer
+                  backupID:
+                    type: string
+                  parent:
+                    type: string
+                  parentBackupID:
+                    type: string
+                  parentManifestKey:
+                    type: string
+                  base:
+                    type: string
+              kind:
+                type: string
+              pointInTime:
+                type: string
+                format: date-time
+              manifestKey:
+                type: string
+              storedBytes:
+                type: integer
+              changedBytes:
+                type: integer
+              objects:
+                type: array
+                items:
+                  type: string
+              retentionUntil:
+                type: string
+                format: date-time
               volumes:
                 type: array
                 items:

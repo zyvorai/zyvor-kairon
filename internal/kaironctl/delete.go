@@ -80,6 +80,8 @@ func canonicalKind(kind string) (string, error) {
 		return "migrationpolicy", nil
 	case "snapshotschedule", "snapshotschedules", "machinesnapshotschedules":
 		return "snapshotschedule", nil
+	case "backuppolicy", "backuppolicies", "machinebackuppolicies":
+		return "backuppolicy", nil
 	case "networkpolicy", "networkpolicies", "machinenetworkpolicies":
 		return "networkpolicy", nil
 	case "securitygroup", "securitygroups", "networksecuritygroups":
@@ -126,6 +128,8 @@ func deleteByKindName(ctx context.Context, kc *kube.Client, ns, kind, name strin
 		return canonical, kc.DeleteMigrationPolicy(ctx, ns, name)
 	case "snapshotschedule":
 		return canonical, kc.DeleteMachineSnapshotSchedule(ctx, ns, name)
+	case "backuppolicy":
+		return canonical, kc.DeleteMachineBackupPolicy(ctx, ns, name)
 	case "networkpolicy":
 		return canonical, kc.DeleteMachineNetworkPolicy(ctx, ns, name)
 	case "securitygroup":
@@ -264,6 +268,14 @@ func matchingNames(ctx context.Context, kc *kube.Client, ns, kind string, select
 		}
 	case "snapshotschedule", "snapshotschedules", "machinesnapshotschedules":
 		items, err := kc.ListMachineSnapshotSchedulesNamespace(ctx, ns)
+		if err != nil {
+			return nil, err
+		}
+		for _, it := range items {
+			names = appendIfMatch(names, it.Metadata.Name, it.Metadata.Labels, selector)
+		}
+	case "backuppolicy", "backuppolicies", "machinebackuppolicies":
+		items, err := kc.ListMachineBackupPoliciesNamespace(ctx, ns)
 		if err != nil {
 			return nil, err
 		}

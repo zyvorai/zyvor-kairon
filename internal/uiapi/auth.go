@@ -470,7 +470,7 @@ func bearerToken(r *http.Request) string {
 
 // crdKinds is the number of CRDs deploy/crd.yaml ships (kairon.zyvor.dev and
 // fleet.kairon.zyvor.dev); TestCRDKindsMatchBundle keeps it honest.
-const crdKinds = 30
+const crdKinds = 31
 
 type loginRequest struct {
 	Username string `json:"username"`

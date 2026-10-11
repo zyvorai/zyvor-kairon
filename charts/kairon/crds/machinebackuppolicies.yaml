@@ -1,0 +1,174 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: machinebackuppolicies.kairon.zyvor.dev
+spec:
+  group: kairon.zyvor.dev
+  scope: Namespaced
+  names:
+    plural: machinebackuppolicies
+    singular: machinebackuppolicy
+    kind: MachineBackupPolicy
+    shortNames:
+    - kmbp
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    subresources: &subresources
+      status: {}
+    additionalPrinterColumns: &columns
+    - name: Mode
+      type: string
+      jsonPath: .spec.mode
+    - name: Incremental
+      type: string
+      jsonPath: .spec.incrementalEvery
+    - name: Full
+      type: string
+      jsonPath: .spec.fullEvery
+    - name: Suspended
+      type: boolean
+      jsonPath: .spec.suspend
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+    schema: &schema
+      openAPIV3Schema:
+        type: object
+        required:
+        - spec
+        properties:
+          spec:
+            type: object
+            required:
+            - selector
+            - incrementalEvery
+            - target
+            properties:
+              selector:
+                type: object
+                minProperties: 1
+                additionalProperties:
+                  type: string
+              mode:
+                type: string
+                enum: [incremental, full]
+              fullEvery:
+                type: string
+                pattern: '^([0-9]+d|([0-9]+(\.[0-9]+)?(h|m|s))+)$'
+              incrementalEvery:
+                type: string
+                pattern: '^([0-9]+d|([0-9]+(\.[0-9]+)?(h|m|s))+)$'
+              target:
+                type: object
+                required:
+                - s3
+                properties:
+                  s3:
+                    type: object
+                    required:
+                    - endpoint
+                    - bucket
+                    - credentialsSecretRef
+                    properties:
+                      endpoint:
+                        type: string
+                        pattern: '^https?://'
+                      bucket:
+                        type: string
+                        minLength: 1
+                      region:
+                        type: string
+                      prefix:
+                        type: string
+                        pattern: '^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$'
+                      credentialsSecretRef:
+                        type: string
+                        minLength: 1
+                      pathStyle:
+                        type: boolean
+              compression:
+                type: string
+                enum: [zstd]
+              encryption:
+                type: object
+                required:
+                - keySecretRef
+                properties:
+                  algorithm:
+                    type: string
+                    enum: [aes256-gcm]
+                  keySecretRef:
+                    type: string
+                    minLength: 1
+              immutableFor:
+                type: string
+                pattern: '^([0-9]+d|([0-9]+(\.[0-9]+)?(h|m|s))+)$'
+              quiesce:
+                type: string
+                enum: [auto, required, never]
+              retention:
+                type: object
+                properties:
+                  hourly:
+                    type: integer
+                    minimum: 0
+                  daily:
+                    type: integer
+                    minimum: 0
+                  monthly:
+                    type: integer
+                    minimum: 0
+              suspend:
+                type: boolean
+          status:
+            type: object
+            properties:
+              machines:
+                type: array
+                items:
+                  type: object
+                  required:
+                  - machineName
+                  properties:
+                    machineName:
+                      type: string
+                    chainID:
+                      type: string
+                    lastFull:
+                      type: string
+                      format: date-time
+                    lastIncremental:
+                      type: string
+                      format: date-time
+                    nextRun:
+                      type: string
+                      format: date-time
+                    skipped:
+                      type: string
+                    lastError:
+                      type: string
+                    retentionHeld:
+                      type: array
+                      items:
+                        type: string
+  - name: v1beta1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1beta1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema
+  - name: v1alpha1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1alpha1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema

@@ -15,7 +15,7 @@ import (
 // completionKinds are the resource spellings `get`, `describe`, `delete` and
 // `edit` accept, in the short form shell completion offers.
 var completionKinds = []string{
-	"backups", "backuprestores", "budgets", "claims", "instancetypes", "machinepools", "machinesets",
+	"backuppolicies", "backups", "backuprestores", "budgets", "claims", "instancetypes", "machinepools", "machinesets",
 	"machines", "migrationpolicies", "migrations", "networkpolicies", "nodes", "quotas", "restores",
 	"securitygroups", "snapshotschedules", "snapshots",
 }

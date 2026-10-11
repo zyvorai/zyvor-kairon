@@ -30,6 +30,8 @@ type backupKube struct {
 	mu       sync.Mutex
 	backups  map[string]*model.MachineBackup
 	restores map[string]*model.MachineBackupRestore
+	nodes    map[string]model.Node
+	policies map[string]*model.MachineBackupPolicy
 }
 
 func mergeInto(dst any, patch json.RawMessage) {
@@ -56,7 +58,26 @@ func (f *backupKube) handler(t *testing.T) http.HandlerFunc {
 		var body map[string]json.RawMessage
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		switch {
-		case r.Method == http.MethodGet && p == "machinebackups":
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/nodes/"):
+			n, ok := f.nodes[strings.TrimPrefix(r.URL.Path, "/api/v1/nodes/")]
+			if !ok {
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = io.WriteString(w, `{"kind":"Status","code":404}`)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(n)
+		case r.Method == http.MethodGet && p == "machinebackuppolicies":
+			items := make([]model.MachineBackupPolicy, 0, len(f.policies))
+			for _, x := range f.policies {
+				items = append(items, *x)
+			}
+			_ = json.NewEncoder(w).Encode(model.MachineBackupPolicyList{Items: items})
+		case r.Method == http.MethodPatch && strings.HasPrefix(p, "namespaces/prod/machinebackuppolicies/"):
+			name := strings.TrimSuffix(strings.TrimPrefix(p, "namespaces/prod/machinebackuppolicies/"), "/status")
+			f.policies[name].Status = model.MachineBackupPolicyStatus{}
+			mergeInto(&f.policies[name].Status, body["status"])
+			_, _ = io.WriteString(w, `{}`)
+		case r.Method == http.MethodGet && (p == "machinebackups" || p == "namespaces/prod/machinebackups"):
 			items := make([]model.MachineBackup, 0, len(f.backups))
 			for _, b := range f.backups {
 				items = append(items, *b)
@@ -68,6 +89,22 @@ func (f *backupKube) handler(t *testing.T) http.HandlerFunc {
 				items = append(items, *x)
 			}
 			_ = json.NewEncoder(w).Encode(model.MachineBackupRestoreList{Items: items})
+		case r.Method == http.MethodPost && p == "namespaces/prod/machinebackups":
+			raw, _ := json.Marshal(body)
+			var b model.MachineBackup
+			_ = json.Unmarshal(raw, &b)
+			b.Metadata.CreationTimestamp = time.Now().UTC()
+			f.backups[b.Metadata.Name] = &b
+			_ = json.NewEncoder(w).Encode(b)
+		case r.Method == http.MethodDelete && strings.HasPrefix(p, "namespaces/prod/machinebackups/"):
+			name := strings.TrimPrefix(p, "namespaces/prod/machinebackups/")
+			if b, ok := f.backups[name]; ok && len(b.Metadata.Finalizers) > 0 {
+				now := time.Now()
+				b.Metadata.DeletionTimestamp = &now
+			} else {
+				delete(f.backups, name)
+			}
+			_, _ = io.WriteString(w, `{}`)
 		case strings.HasPrefix(p, "namespaces/prod/machinebackups/"):
 			rest := strings.TrimPrefix(p, "namespaces/prod/machinebackups/")
 			name, sub, _ := strings.Cut(rest, "/")

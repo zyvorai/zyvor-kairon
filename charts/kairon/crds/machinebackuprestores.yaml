@@ -85,6 +85,14 @@ spec:
                     type: array
                     items:
                       type: string
+                  jobID:
+                    type: string
+                  manifestKey:
+                    type: string
+                  syntheticBases:
+                    type: array
+                    items:
+                      type: string
               volumes:
                 type: array
                 items:

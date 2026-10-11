@@ -1,0 +1,72 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: Apache-2.0
+
+# Incremental S3 backups (experimental): FluxVM tracks changed blocks in
+# persistent dirty bitmaps, so after one full each hourly backup uploads only
+# what the guest wrote since the last one. A new chain starts weekly; GFS
+# retention keeps 24 hourly, 7 daily and 3 monthly points and consolidates
+# chains with synthetic fulls as old points expire.
+#
+# Both Secrets must carry kairon.zyvor.dev/backup-credentials=true, and
+# kairon-node needs node.cbtBackup.enabled=true (Helm) or
+# deploy/rbac-cbt-backup.yaml to read them.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: s3-backup
+  namespace: default
+  labels:
+    kairon.zyvor.dev/backup-credentials: "true"
+stringData:
+  accessKeyId: minioadmin
+  secretAccessKey: change-me
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backup-key
+  namespace: default
+  labels:
+    kairon.zyvor.dev/backup-credentials: "true"
+stringData:
+  # head -c 32 /dev/urandom | base64
+  key: REPLACE-WITH-BASE64-OF-32-RANDOM-BYTES
+  keyId: backup-key-2026
+---
+apiVersion: kairon.zyvor.dev/v1
+kind: MachineBackupPolicy
+metadata:
+  name: web-hourly
+  namespace: default
+spec:
+  selector:
+    tier: web
+  mode: incremental        # incremental (default) | full
+  incrementalEvery: 1h     # minimum 5m
+  fullEvery: 168h          # start a new chain weekly (default)
+  target:
+    s3:
+      endpoint: http://minio.backup.svc:9000
+      bucket: vm-backups
+      prefix: kairon
+      credentialsSecretRef: s3-backup
+  compression: zstd
+  encryption:
+    algorithm: aes256-gcm
+    keySecretRef: backup-key
+  immutableFor: 30d        # S3 Object Lock (the bucket must have it enabled)
+  quiesce: auto
+  retention:
+    hourly: 24
+    daily: 7
+    monthly: 3
+---
+# Restore any point of a chain in place; the restore waits until web has
+# spec.powerState: Halted. Name a backup from `kaironctl backup chain web`.
+apiVersion: kairon.zyvor.dev/v1
+kind: MachineBackupRestore
+metadata:
+  name: web-restore
+  namespace: default
+spec:
+  backupName: web-hourly-web-incr-1767225600

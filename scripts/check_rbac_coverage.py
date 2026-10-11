@@ -80,6 +80,7 @@ HELM_SET_FLAGS = [
     "controller.cordonEvacuation.enabled=true",
     "node.livenessLease.enabled=true",
     "node.csi.chap.enabled=true",
+    "node.cbtBackup.enabled=true",
     "node.thirdPartyCSIDrivers.example\\.csi=/run/example.sock",
     "network.ciliumAttach.enabled=true",
     "network.ciliumPolicySync.enabled=true",
@@ -127,7 +128,7 @@ COMPONENTS = {
     },
     "kairon-node": {
         "dirs": ["internal/agent", "internal/nodeliveness", "cmd/kairon-node"],
-        "rbac_names": ["kairon-node", "kairon-node-liveness-lease", "kairon-node-csi-chap"],
+        "rbac_names": ["kairon-node", "kairon-node-liveness-lease", "kairon-node-csi-chap", "kairon-node-backup-secrets"],
     },
     "kairon-ui": {
         "dirs": ["internal/uiapi", "cmd/kairon-ui"],
