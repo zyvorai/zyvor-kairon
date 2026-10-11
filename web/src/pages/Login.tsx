@@ -105,6 +105,7 @@ function LoginChrome({ children, hint, stats }: { children: React.ReactNode; hin
 
 function Field({
   label,
+  name,
   value,
   onChange,
   type = 'text',
@@ -113,6 +114,7 @@ function Field({
   right,
 }: {
   label: string;
+  name: string;
   value: string;
   onChange: (v: string) => void;
   type?: string;
@@ -124,6 +126,7 @@ function Field({
     <label className={'siw-field' + (value ? ' filled' : '')}>
       <input
         required
+        name={name}
         type={type}
         autoFocus={autoFocus}
         autoComplete={autoComplete}
@@ -156,12 +159,18 @@ export default function Login({ onSignedIn }: { onSignedIn: () => void }) {
 
   async function signIn(e: React.FormEvent) {
     e.preventDefault();
-    if (!config) return;
+    if (!config || busy) return;
+    // Read the DOM, not React state: browser autofill and password managers can
+    // fill the inputs without firing the change events state depends on.
+    const data = new FormData(e.currentTarget as HTMLFormElement);
+    const u = String(data.get('username') ?? user).trim();
+    const p = String(data.get('password') ?? password);
+    if (!u || !p) return;
     setBusy(true);
     setMsg('');
     try {
-      const how = await loginOrToken(user.trim(), password, config);
-      remember(rememberMe && how === 'password' ? user.trim() : null);
+      const how = await loginOrToken(u, p, config);
+      remember(rememberMe && how === 'password' ? u : null);
       onSignedIn();
     } catch {
       setPassword('');
@@ -205,9 +214,10 @@ export default function Login({ onSignedIn }: { onSignedIn: () => void }) {
         <form onSubmit={signIn} key={shake} className={shake ? 'shake' : undefined}>
           <h3>Sign in.</h3>
           <div className="siw stacked">
-            <Field label="Username" autoComplete="username" autoFocus={!user} value={user} onChange={setUser} />
+            <Field label="Username" name="username" autoComplete="username" autoFocus={!user} value={user} onChange={setUser} />
             <Field
               label="Password"
+              name="password"
               type={showPw ? 'text' : 'password'}
               autoComplete="current-password"
               autoFocus={!!user}
@@ -231,7 +241,7 @@ export default function Login({ onSignedIn }: { onSignedIn: () => void }) {
             </div>
           )}
           <div className="formactions">
-            <button className="primary wide" type="submit" disabled={busy || !user || !password}>
+            <button className="primary wide" type="submit" disabled={busy}>
               {busy ? <Loader2 size={16} className="spin" /> : 'Sign in'}
             </button>
           </div>
