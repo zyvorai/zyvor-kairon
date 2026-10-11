@@ -66,6 +66,12 @@ type Server struct {
 	// page's stat band.
 	Version string
 
+	// SelftestNamespace is where dashboard-started self-tests create their
+	// Machines; empty means "default".
+	SelftestNamespace string
+	selftestJobs      *selftestStore
+	selftestOnce      sync.Once
+
 	// history backs GET .../metrics; filled by RunMetricsSampler.
 	history     *metricsHistory
 	historyOnce sync.Once
@@ -238,6 +244,11 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/v1/namespaces", s.handleNamespaces)
 	api.HandleFunc("GET /api/v1/stream", s.handleStream)
 	api.HandleFunc("GET /api/v1/insights", s.handleInsights)
+	api.HandleFunc("GET /api/v1/selftest/scenarios", s.handleSelftestScenarios)
+	api.HandleFunc("GET /api/v1/selftest", s.handleSelftestList)
+	api.HandleFunc("POST /api/v1/selftest", s.handleSelftestStart)
+	api.HandleFunc("GET /api/v1/selftest/{id}", s.handleSelftestGet)
+	api.HandleFunc("DELETE /api/v1/selftest/{id}", s.handleSelftestCancel)
 	api.HandleFunc("GET /api/v1/pods", s.handlePods)
 	api.HandleFunc("GET /api/v1/health", s.handleHealth)
 	api.HandleFunc("GET /api/v1/fleet/{resource}", s.requireNamespace(namespaceParam, s.handleListFleet))
