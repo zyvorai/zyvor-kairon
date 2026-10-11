@@ -14,6 +14,7 @@ import MachineOps from '../components/MachineOps';
 import MachineTimeline from '../components/MachineTimeline';
 import MachineMetrics from '../components/MachineMetrics';
 import MachineActions from '../components/MachineActions';
+import MachinePlacement from '../components/MachinePlacement';
 import Sheet from '../components/Sheet';
 import { EmptyState, Status } from '../components/ui';
 import { useToast } from '../components/Toast';
@@ -464,6 +465,9 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
           />
           <MachineMetrics namespace={nsOf(m)} name={m.metadata.name} />
           <MachineTimeline namespace={nsOf(m)} name={m.metadata.name} phase={m.status?.phase} />
+          {(!m.status?.phase || m.status.phase === 'Pending') && m.spec.resources.cpu && m.spec.resources.memory && (
+            <MachinePlacement cpu={m.spec.resources.cpu} memory={m.spec.resources.memory} />
+          )}
           <h4>Scheduling priority</h4>
           <div className="rowactions" style={{ justifyContent: 'flex-start', padding: '8px 0' }}>
             <input

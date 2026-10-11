@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import GlobalNav from './components/GlobalNav';
-import CommandPalette, { pageEntries, PaletteEntry } from './components/CommandPalette';
+import CommandPalette, { machineVerbEntries, pageEntries, PaletteEntry } from './components/CommandPalette';
 import { ToastProvider } from './components/Toast';
 import { namespaceView, NAMESPACE_EVENT } from './lib/namespace';
 import { formatHash, parseHash } from './lib/route';
@@ -158,7 +158,7 @@ export default function App() {
         },
       },
     ];
-    return [...actions, ...pages, ...ms];
+    return [...actions, ...machineVerbEntries(machines, goMigrate, goSnapshot), ...pages, ...ms];
   }, [machines, setPage]);
 
   function goMigrate(machine: string) {
