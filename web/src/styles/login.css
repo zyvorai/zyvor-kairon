@@ -150,3 +150,22 @@ button.wide { width: 100%; min-height: 40px; }
 
 @media (max-width: 720px) { .login-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 .login-stat small { overflow-wrap: anywhere; }
+
+/* Wide screens: hero and credentials side by side, so signing in never needs a
+   scroll. The credentials column stays pinned while a tall hero scrolls. */
+@media (min-width: 1000px) {
+  .login-scroll { display: grid; grid-template-columns: minmax(0, 1fr) minmax(400px, 460px); scroll-snap-type: none; }
+  .login-hero .login-chapter-inner { text-align: left; width: min(820px, 100%); }
+  .login-hero .login-chips,
+  .login-hero .login-pills,
+  .login-hero .login-ctas { justify-content: flex-start; }
+  .login-hero .loginbrand-tagline,
+  .login-hero .login-stats-note { margin-left: 0; }
+  .login-hero .login-ctas .primary { display: none; }
+  .login-hero .login-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .login-signin { position: sticky; top: 0; height: 100vh; min-height: 0; align-self: start; }
+  .login-signin .login-chapter-inner { width: min(400px, 100%); }
+}
+@media (min-width: 1500px) {
+  .login-hero .login-stats { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
