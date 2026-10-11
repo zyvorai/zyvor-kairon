@@ -110,6 +110,8 @@ func cmdDescribe(ctx context.Context, kc *kube.Client, args []string) {
 	case "node", "nodes":
 		// Cluster-scoped, like `kaironctl get node` above -- ns is unused.
 		out, err = kc.GetNode(ctx, name)
+	case "nodetopology", "nodetopologies", "knt":
+		out, err = kc.GetNodeTopology(ctx, name)
 	default:
 		fatal(fmt.Errorf("unknown resource %q", kind))
 		return

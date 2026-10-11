@@ -338,6 +338,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/v1/nodes", s.handleListNodes)
 	api.HandleFunc("GET /api/v1/nodes/usage", s.handleNodeUsage)
 	api.HandleFunc("GET /api/v1/nodes/capacity", s.handleNodeCapacity)
+	api.HandleFunc("GET /api/v1/nodes/{node}/topology", s.handleNodeTopology)
 	api.HandleFunc("GET /api/v1/nodes/{node}/sandboxes", s.handleListNodeSandboxes)
 	api.HandleFunc("GET /api/v1/nodes/{node}/templates", s.handleListTemplates)
 	api.HandleFunc("POST /api/v1/nodes/{node}/templates", s.handleBuildTemplate)

@@ -49,6 +49,13 @@ spec:
         properties:
           spec:
             type: object
+            x-kubernetes-validations:
+            - rule: "!has(self.topology) || !has(self.topology.policy) || self.topology.policy == 'none' || (has(self.resources) && has(self.resources.cpuPinning) && self.resources.cpuPinning)"
+              message: "spec.topology.policy other than none needs spec.resources.cpuPinning: true"
+            - rule: "!has(self.devices) || size(self.devices) == 0 || !has(self.runtime) || !has(self.runtime.backend) || self.runtime.backend in ['auto', 'qemu']"
+              message: "spec.devices needs the qemu backend"
+            - rule: "!has(oldSelf.nodeName) || oldSelf.nodeName == '' || (has(self.topology) == has(oldSelf.topology) && (!has(self.topology) || self.topology == oldSelf.topology) && has(self.devices) == has(oldSelf.devices) && (!has(self.devices) || self.devices == oldSelf.devices))"
+              message: "spec.topology and spec.devices cannot change after the Machine is scheduled"
             properties:
               nodeName:
                 type: string
@@ -583,6 +590,95 @@ spec:
                     name:
                       type: string
                       minLength: 1
+              topology:
+                type: object
+                description: Place CPUs, memory and devices by host NUMA
+                  locality from the node's NodeTopology. See
+                  docs/guides/machine-topology.md.
+                properties:
+                  policy:
+                    type: string
+                    enum: [none, best-effort, restricted, single-numa-node]
+                  hugepageSize:
+                    type: string
+                    enum: ["2Mi", "1Gi"]
+              devices:
+                type: array
+                description: PCI devices picked from the node's NodeTopology
+                  and passed through with VFIO (qemu backend).
+                maxItems: 8
+                x-kubernetes-list-type: map
+                x-kubernetes-list-map-keys: [name]
+                items:
+                  type: object
+                  required: [name, class]
+                  properties:
+                    name:
+                      type: string
+                      pattern: '^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$'
+                      maxLength: 32
+                    class:
+                      type: string
+                      enum: [gpu, nic, nvme, accelerator]
+                    vendor:
+                      type: string
+                      maxLength: 16
+                    model:
+                      type: string
+                      pattern: '^[0-9a-f]{4}$'
+                      maxLength: 4
+                    count:
+                      type: integer
+                      minimum: 1
+                      maximum: 16
+                    minMemory:
+                      type: string
+                      maxLength: 16
+                    virtualFunction:
+                      type: boolean
+                    alignment:
+                      type: array
+                      maxItems: 2
+                      items:
+                        type: string
+                        enum: [sameNuma, samePcieRoot]
+              topologyAllocation:
+                type: object
+                description: Set by kairon-controller together with nodeName.
+                properties:
+                  numaNodes:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, cpus, memoryMiB]
+                      properties:
+                        id:
+                          type: integer
+                          minimum: 0
+                        cpus:
+                          type: string
+                        memoryMiB:
+                          type: integer
+                          format: int64
+                          minimum: 0
+                        hugepages:
+                          type: integer
+                          format: int64
+                          minimum: 0
+                  devices:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, bdf]
+                      properties:
+                        name:
+                          type: string
+                        bdf:
+                          type: string
+                        numaNode:
+                          type: integer
+                        pcieRoot:
+                          type: string
               guestAgent:
                 type: object
                 properties:
@@ -666,6 +762,34 @@ spec:
                     items:
                       type: integer
                       minimum: 0
+              appliedTopology:
+                type: object
+                properties:
+                  numaNodes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        hostNode:
+                          type: integer
+                        vcpus:
+                          type: string
+                        hostCpus:
+                          type: string
+                        memoryMiB:
+                          type: integer
+                          format: int64
+                        policy:
+                          type: string
+                  devices:
+                    type: array
+                    items:
+                      type: string
+                  observedAt:
+                    type: string
+                    format: date-time
+                  message:
+                    type: string
               resourceUsage:
                 type: object
                 properties:

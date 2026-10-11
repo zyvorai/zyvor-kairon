@@ -421,6 +421,10 @@ export class UIClient {
   capabilities(node: string): Promise<Record<string, Json>> {
     return this.http.request('GET', `/api/v1/nodes/${segment(node)}/capabilities`);
   }
+  /** The node's NodeTopology status and the Machines' topology allocations on it. */
+  topology(node: string): Promise<Record<string, Json>> {
+    return this.http.request('GET', `/api/v1/nodes/${segment(node)}/topology`);
+  }
   usageCSV(): Promise<string> {
     return this.http.request('GET', '/api/v1/usage.csv?' + new URLSearchParams({namespace: this.namespace}), undefined, {raw: true});
   }

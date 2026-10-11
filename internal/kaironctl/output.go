@@ -86,6 +86,8 @@ func resourcePlural(resource string) (plural string, core bool, ok bool) {
 		return "networksecuritygroups", false, true
 	case "node", "nodes":
 		return "nodes", true, true
+	case "nodetopology", "nodetopologies", "knt":
+		return "nodetopologies", false, true
 	}
 	return "", false, false
 }
@@ -94,6 +96,9 @@ func resourcePlural(resource string) (plural string, core bool, ok bool) {
 func listPath(plural string, core bool, ns string) string {
 	if core {
 		return "/api/v1/" + plural
+	}
+	if plural == "nodetopologies" {
+		return fmt.Sprintf("/apis/%s/v1/%s", crdGroup, plural)
 	}
 	return fmt.Sprintf("/apis/%s/v1/namespaces/%s/%s", crdGroup, url.PathEscape(ns), plural)
 }

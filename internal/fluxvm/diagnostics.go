@@ -51,6 +51,7 @@ type RuntimeCapabilities struct {
 	Migration          []RuntimeMigrationCapability `json:"migration"`
 	Snapshot           []RuntimeSnapshotCapability  `json:"snapshot"`
 	Backup             []RuntimeBackupCapability    `json:"backup,omitempty"`
+	Host               RuntimeHostCapability        `json:"host"`
 }
 
 // RuntimeBackupCapability is one backup backend FluxVM offers; "cbt" with

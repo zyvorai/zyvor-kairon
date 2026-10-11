@@ -688,6 +688,29 @@ func (c *Client) ListMachineImages(ctx context.Context) ([]model.MachineImage, e
 	return list.Items, err
 }
 
+// ListNodeTopologies lists every node's cluster-scoped hardware graph.
+func (c *Client) ListNodeTopologies(ctx context.Context) ([]model.NodeTopology, error) {
+	var list model.NodeTopologyList
+	err := c.request(ctx, http.MethodGet, "/apis/kairon.zyvor.dev/v1/nodetopologies", nil, &list, "")
+	return list.Items, err
+}
+
+func (c *Client) GetNodeTopology(ctx context.Context, name string) (model.NodeTopology, error) {
+	var t model.NodeTopology
+	err := c.request(ctx, http.MethodGet, "/apis/kairon.zyvor.dev/v1/nodetopologies/"+url.PathEscape(name), nil, &t, "")
+	return t, err
+}
+
+func (c *Client) CreateNodeTopology(ctx context.Context, t model.NodeTopology) (model.NodeTopology, error) {
+	var out model.NodeTopology
+	err := c.request(ctx, http.MethodPost, "/apis/kairon.zyvor.dev/v1/nodetopologies", t, &out, "")
+	return out, err
+}
+
+func (c *Client) PatchNodeTopologyStatus(ctx context.Context, name string, status model.NodeTopologyStatus) error {
+	return c.request(ctx, http.MethodPatch, "/apis/kairon.zyvor.dev/v1/nodetopologies/"+url.PathEscape(name)+"/status", map[string]any{"status": status}, nil, "application/merge-patch+json")
+}
+
 func (c *Client) ListMachineInstanceTypes(ctx context.Context) ([]model.MachineInstanceType, error) {
 	var list model.MachineInstanceTypeList
 	err := c.request(ctx, http.MethodGet, "/apis/kairon.zyvor.dev/v1/machineinstancetypes", nil, &list, "")

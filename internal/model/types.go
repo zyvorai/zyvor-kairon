@@ -241,7 +241,15 @@ type MachineSpec struct {
 	// live-migrate. See MachineCdrom.
 	Cdroms       []MachineCdrom         `json:"cdroms,omitempty"`
 	DeviceClaims []DeviceClaimReference `json:"deviceClaims,omitempty"`
-	GuestAgent   GuestAgentSpec         `json:"guestAgent,omitempty"`
+	// Topology places CPUs, memory and devices by host NUMA locality
+	// from the node's NodeTopology. See docs/guides/machine-topology.md.
+	Topology *TopologySpec `json:"topology,omitempty"`
+	// Devices are PCI devices the scheduler picks from NodeTopology and
+	// kairon-node passes through with VFIO (qemu backend).
+	Devices []MachineDevice `json:"devices,omitempty"`
+	// TopologyAllocation is set by the scheduler with spec.nodeName.
+	TopologyAllocation *TopologyAllocation `json:"topologyAllocation,omitempty"`
+	GuestAgent         GuestAgentSpec      `json:"guestAgent,omitempty"`
 	// Sandbox opts this Machine into FluxVM's own agent-sandbox track
 	// (BackendKind::FluxVm, its own in-tree lightweight hypervisor) --
 	// see SandboxSpec's own doc comment. Nil for every other Machine.
@@ -918,6 +926,9 @@ type MachineStatus struct {
 	// purely so internal/agent/resourcelimits.go can skip a redundant FluxVM
 	// call when nothing has actually changed since the last reconcile tick.
 	AppliedResourceLimits *ResourceLimits `json:"appliedResourceLimits,omitempty"`
+	// AppliedTopology is the NUMA binding FluxVM reported for the running
+	// VM (spec.topologyAllocation Machines only).
+	AppliedTopology *AppliedTopology `json:"appliedTopology,omitempty"`
 	// ResourceUsage is this Machine's cgroup-derived resource usage as of
 	// the last *meaningful* status write (FluxVM's GET /v1/vms/{id}/stats).
 	// High-frequency samples go to Prometheus (kairon_machine_resource_usage)
@@ -1146,6 +1157,12 @@ type MachineMigrationStatus struct {
 	// spec.adaptive. Any live migration also gets it once post-copy starts,
 	// to carry the PostCopyStarted latch.
 	Adaptive *MachineMigrationAdaptiveStatus `json:"adaptive,omitempty"`
+	// TargetTopologyAllocation and TargetAllocatedCPUSet are the live
+	// migration target's placement for a spec.topology Machine: the same
+	// guest NUMA shape on the target's NUMA nodes. The source agent hands
+	// it to the receiver; cutover copies it into the Machine's spec.
+	TargetTopologyAllocation *TopologyAllocation `json:"targetTopologyAllocation,omitempty"`
+	TargetAllocatedCPUSet    []uint32            `json:"targetAllocatedCpuSet,omitempty"`
 }
 
 // MachineMigrationProgress is integer-only telemetry (no floats in the

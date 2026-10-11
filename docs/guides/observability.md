@@ -33,6 +33,8 @@ component apiserver call visibility for free, labeled `method`
 | `kairon_migration_progress` | gauge | `namespace`, `name`, `field` | Telemetry for a migration in Starting or Running. `field` is `dirty_rate_mbps`, `ram_remaining_bytes`, `ram_transferred_bytes`, `throughput_mbps`, `expected_downtime_ms`, `cpu_throttle_pct`, `estimated_completion_seconds`, `compression_ratio_percent` or `duplicate_pages`. |
 | `kairon_migration_adaptive_stage` | gauge | `namespace`, `name`, `stage` | 1 for the adaptive engine's current stage: `PreCopy`, `AutoConverge`, `RelaxDowntime`, `PostCopy`, `Abort` or `Unsupported`. |
 | `kairon_migration_adaptive_actions_total` | counter | `action` | Adaptive engine actions, such as `auto-converge`, `throttle`, `relax-downtime`, `bandwidth`, `postcopy`, `abort`, `tune-failed` and `postcopy-refused`. |
+| `kairon_topology_allocation_failures_total` | counter | `reason` | Scheduling attempts for `spec.topology`/`spec.devices` Machines that found no placement; `reason` is `TopologyUnsatisfiable`, `DRAAllocationPending` or `Unschedulable`. |
+| `kairon_node_numa_free_cpus` | gauge | `node`, `numa` | Pinnable CPUs not held by a Machine, per NUMA node, from each `NodeTopology`. See [topology-aware placement](machine-topology.md). |
 
 `kairon-node` also registers the VM-edge metrics below (not registered on the controller or kairon-ui). Details, including how drops are read from FluxVM, are in [`docs/ebpf-edge.md`](../ebpf-edge.md#metrics).
 

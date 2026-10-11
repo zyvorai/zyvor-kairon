@@ -1,7 +1,8 @@
 # User guide: Machine placement
 
 How `spec.placement` steers which node a Machine lands on, and what today's
-real limits are.
+real limits are. NUMA, GPU and NIC locality inside a node is
+[topology-aware placement](machine-topology.md).
 
 ## Fields
 
@@ -304,8 +305,11 @@ preemptor is gone. Nothing is evicted or migrated. See
 
 ## Real limits today
 
-- **DRA topology-awareness is a best-effort hint, not an allocation
-  decision.** `kairon-controller` has no role in DRA device allocation
+- **DRA topology-awareness is a best-effort hint unless the Machine sets a
+  hard `spec.topology.policy`** (`restricted` or `single-numa-node`; see
+  [topology-aware placement](machine-topology.md#dra-device-claims)), which
+  makes the claim's node and NUMA node binding. Otherwise
+  `kairon-controller` has no role in DRA device allocation
   itself -- for a Machine with `spec.deviceClaims`, it only reads back an
   already-allocated `ResourceClaim`'s device pool and, if that pool maps to
   a specific node via a `ResourceSlice`, adds a small fixed score bonus
@@ -313,14 +317,13 @@ preemptor is gone. Nothing is evicted or migrated. See
   node (a network-attached device pool), contributes no hint at all --
   scheduling falls back to the other signals.
 - **Evaluated against the reconcile-time Machine list, not a live watch.**
-  A `Machine` scheduled in the same reconcile tick as the one it's meant to
-  be co-located/separated from may not see that Machine's `spec.nodeName`
-  yet (only set once its own scheduling completes) and fail with the same
-  "no eligible nodes" message -- resolved automatically on the next
-  reconcile tick (every `controller.interval`, 5s by default) once the
-  other Machine has a node. This is a real, observed timing window, not a
-  hypothetical -- it applies to `DoNotSchedule` topology-spread domain
-  counts too, not just affinity/anti-affinity.
+  Placements made earlier in the same reconcile tick are visible to later
+  Machines in it (node, pinned CPUs and topology allocation), so they no
+  longer collide on cores. Machines are still placed one at a time in
+  priority order, so a Machine whose affinity target is placed later in the
+  same tick waits for the next tick (every `controller.interval`, 5s by
+  default). This applies to `DoNotSchedule` topology-spread domain counts
+  too.
 - **`DoNotSchedule` domains are only counted among candidate nodes, not
   every node in the cluster** -- a domain with matching Machines but no
   currently-eligible node in it (filtered out by `architecture`/

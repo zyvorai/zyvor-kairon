@@ -253,7 +253,7 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	draHints, err := c.buildDRAHints(ctx, machines)
+	draPlacements, err := c.buildDRAPlacements(ctx, machines)
 	if err != nil {
 		return err
 	}
@@ -284,17 +284,25 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 		pending = append(pending, m)
 	}
 	scheduler.SortByPriorityDesc(pending)
+	topologies, err := c.nodeTopologies(ctx, nodes, machines)
+	if err != nil {
+		return err
+	}
 
 	var unschedulable []model.Machine
 	for _, m := range pending {
-		node, err := c.Scheduler.Choose(m, nodes, machines, nodeLoad, draHints[m.Namespace()+"/"+m.Metadata.Name])
+		key := m.Namespace() + "/" + m.Metadata.Name
+		topo := scheduler.TopologyInput{Nodes: topologies, DRA: draPlacements[key]}
+		node, err := c.Scheduler.ChooseTopology(m, nodes, machines, nodeLoad, topo)
 		if err != nil {
 			unschedulable = append(unschedulable, m)
+			reason := unschedulableReason(m, err)
+			c.observeTopologyFailure(m, reason)
 			status := m.Status
 			status.Phase = "Pending"
 			status.Message = err.Error()
 			status.Conditions = model.SetCondition(status.Conditions, model.Condition{
-				Type: "Scheduled", Status: "False", Reason: "Unschedulable", Message: err.Error(),
+				Type: "Scheduled", Status: "False", Reason: reason, Message: err.Error(),
 			})
 			if statusErr := c.Kube.PatchMachineStatus(ctx, m.Namespace(), m.Metadata.Name, status); statusErr != nil {
 				c.Log.Error("machine status patch failed", "namespace", m.Namespace(), "machine", m.Metadata.Name, "error", statusErr)
@@ -329,21 +337,52 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 			continue
 		}
 		specPatch := map[string]any{"nodeName": node}
-		if m.Spec.Resources.CPUPinning {
+		var chosenNode model.Node
+		for _, n := range nodes {
+			if n.Metadata.Name == node {
+				chosenNode = n
+				break
+			}
+		}
+		var cpuset []uint32
+		var topoAlloc *model.TopologyAllocation
+		if m.Spec.NeedsTopology() {
+			// Same snapshot ChooseTopology filtered on, so node, cores,
+			// NUMA memory and devices land in one patch below.
+			alloc, _, reason, ok := scheduler.AllocateTopology(m, chosenNode, machines, topo)
+			if ok && reason != "" {
+				msg := fmt.Sprintf("%s: %s", scheduler.TopologyUnsatisfiable, reason)
+				c.observeTopologyFailure(m, scheduler.TopologyUnsatisfiable)
+				status := m.Status
+				status.Phase = "Pending"
+				status.Message = msg
+				status.Conditions = model.SetCondition(status.Conditions, model.Condition{
+					Type: "Scheduled", Status: "False", Reason: scheduler.TopologyUnsatisfiable, Message: msg,
+				})
+				if statusErr := c.Kube.PatchMachineStatus(ctx, m.Namespace(), m.Metadata.Name, status); statusErr != nil {
+					c.Log.Error("machine status patch failed", "namespace", m.Namespace(), "machine", m.Metadata.Name, "error", statusErr)
+				}
+				unschedulable = append(unschedulable, m)
+				continue
+			}
+			if ok {
+				topoAlloc = alloc.TopologyAllocation()
+				specPatch["topologyAllocation"] = topoAlloc
+				if len(alloc.CPUs) > 0 {
+					cpuset = alloc.CPUs
+					specPatch["resources"] = map[string]any{"allocatedCpuSet": cpuset}
+				}
+			}
+		}
+		if m.Spec.Resources.CPUPinning && cpuset == nil {
 			// Allocated in the same scheduling pass Choose's own
 			// eligibility check already used (the same machines/nodes
 			// snapshot), so "which node" and "which cores" are decided
 			// together and patched in one call below -- they can never
-			// land separately. See scheduler.AllocateCPUSet's own doc
-			// comment for why this doesn't attempt NUMA-aware selection.
-			var chosenNode model.Node
-			for _, n := range nodes {
-				if n.Metadata.Name == node {
-					chosenNode = n
-					break
-				}
-			}
-			cpuset, err := scheduler.AllocateCPUSet(m, chosenNode, machines)
+			// land separately. Topology Machines take their cores from
+			// AllocateTopology above instead.
+			var err error
+			cpuset, err = scheduler.AllocateCPUSet(m, chosenNode, machines)
 			if err != nil {
 				status := m.Status
 				status.Phase = "Pending"
@@ -366,6 +405,7 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 			return err
 		}
 		scheduler.Reserve(nodeLoad, node, m)
+		markScheduled(machines, m, node, cpuset, topoAlloc)
 		c.Log.Info("scheduled machine", "namespace", m.Namespace(), "machine", m.Metadata.Name, "node", node)
 	}
 	c.preemptForPending(ctx, unschedulable, machines, migrations)
@@ -472,9 +512,19 @@ func (c *Controller) reconcileMigration(ctx context.Context, migration model.Mac
 		if err != nil {
 			return c.blockMigration(ctx, migration, err.Error())
 		}
-		target, err := c.migrationTarget(machine, migration.Spec.TargetNode, strategy, nodes, machineList, nodeLoad)
+		target, err := c.migrationTarget(ctx, machine, migration.Spec.TargetNode, strategy, nodes, machineList, nodeLoad)
 		if err != nil {
 			return c.blockMigration(ctx, migration, err.Error())
+		}
+		if strategy == "live" && machine.Spec.NeedsTopology() {
+			alloc, err := c.liveTopologyTarget(ctx, machine, target, nodes, machineList)
+			if err != nil {
+				return c.blockMigration(ctx, migration, err.Error())
+			}
+			if alloc != nil {
+				status.TargetTopologyAllocation = alloc.TopologyAllocation()
+				status.TargetAllocatedCPUSet = alloc.CPUs
+			}
 		}
 		if c.MaxConcurrentPerNode > 0 && load.byNode[target] >= c.MaxConcurrentPerNode {
 			return c.blockMigration(ctx, migration, fmt.Sprintf("target node %s has reached its concurrent migration limit (%d active, max %d)", target, load.byNode[target], c.MaxConcurrentPerNode))
@@ -532,8 +582,13 @@ func (c *Controller) reconcileMigration(ctx context.Context, migration model.Mac
 		if status.EffectiveStrategy != "live" {
 			return fmt.Errorf("cutover phase is only valid for live migration")
 		}
+		spec := map[string]any{"nodeName": status.TargetNode}
+		if status.TargetTopologyAllocation != nil {
+			spec["topologyAllocation"] = status.TargetTopologyAllocation
+			spec["resources"] = map[string]any{"allocatedCpuSet": status.TargetAllocatedCPUSet}
+		}
 		patch := map[string]any{
-			"spec": map[string]any{"nodeName": status.TargetNode},
+			"spec": spec,
 			"metadata": map[string]any{
 				"annotations": map[string]any{
 					model.AnnotationAdoptOnly:    "true",
@@ -566,8 +621,15 @@ func (c *Controller) reconcileMigration(ctx context.Context, migration model.Mac
 		if machine.Status.Phase != "Stopped" {
 			return nil
 		}
+		spec := map[string]any{"nodeName": status.TargetNode, "powerState": "Running"}
+		if machine.Spec.NeedsTopology() {
+			if err := c.coldTopologyTarget(ctx, machine, status.TargetNode, nodes, machineList, spec); err != nil {
+				status.Message = err.Error()
+				return c.Kube.PatchMachineMigrationStatus(ctx, migration.Namespace(), migration.Metadata.Name, status)
+			}
+		}
 		if err := c.Kube.PatchMachine(ctx, machine.Namespace(), machine.Metadata.Name, map[string]any{
-			"spec":     map[string]any{"nodeName": status.TargetNode, "powerState": "Running"},
+			"spec":     spec,
 			"metadata": map[string]any{"labels": map[string]any{model.AssignedNodeLabel: status.TargetNode}},
 		}); err != nil {
 			return err
@@ -621,7 +683,7 @@ func liveBackendEligible(backend string) bool {
 	return backend == "" || backend == "auto" || backend == "qemu"
 }
 
-func (c *Controller) migrationTarget(machine model.Machine, requested, strategy string, nodes []model.Node, machineList []model.Machine, nodeLoad map[string]scheduler.NodeLoad) (string, error) {
+func (c *Controller) migrationTarget(ctx context.Context, machine model.Machine, requested, strategy string, nodes []model.Node, machineList []model.Machine, nodeLoad map[string]scheduler.NodeLoad) (string, error) {
 	var candidates []model.Node
 	for _, n := range nodes {
 		if n.Metadata.Name == machine.Spec.NodeName {
@@ -640,7 +702,20 @@ func (c *Controller) migrationTarget(machine model.Machine, requested, strategy 
 	// source node anyway (device claims aren't re-resolved by a
 	// migration), so a DRA topology hint has nothing meaningful to nudge
 	// toward for target selection specifically.
-	target, err := c.Scheduler.Choose(machine, candidates, machineList, nodeLoad, "")
+	var target string
+	var err error
+	if machine.Spec.NeedsTopology() {
+		if strategy == "live" && len(machine.Spec.Devices) > 0 {
+			return "", fmt.Errorf("migration preflight failed: spec.devices are passed through with VFIO and cannot live-migrate; use strategy cold")
+		}
+		topologies, terr := c.nodeTopologies(ctx, nodes, machineList)
+		if terr != nil {
+			return "", fmt.Errorf("list node topologies: %w", terr)
+		}
+		target, err = c.Scheduler.ChooseTopology(machine, candidates, machineList, nodeLoad, scheduler.TopologyInput{Nodes: topologies})
+	} else {
+		target, err = c.Scheduler.Choose(machine, candidates, machineList, nodeLoad, "")
+	}
 	if err != nil {
 		if requested != "" {
 			return "", fmt.Errorf("target node %q is not eligible: %w", requested, err)

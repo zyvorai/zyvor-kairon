@@ -42,10 +42,43 @@ type Scheduler struct {
 // load carries per-node Machine count plus reserved CPU/memory for this
 // reconcile pass so concurrent placements cannot overcommit a node.
 func (s Scheduler) Choose(m model.Machine, nodes []model.Node, machines []model.Machine, load map[string]NodeLoad, draPreferredNode string) (string, error) {
+	return s.ChooseTopology(m, nodes, machines, load, TopologyInput{DRA: DRAPlacement{Node: draPreferredNode}})
+}
+
+// TopologyInput is the hardware context for one scheduling decision.
+type TopologyInput struct {
+	// Nodes is every node's NodeTopology by node name.
+	Nodes map[string]model.NodeTopology
+	DRA   DRAPlacement
+}
+
+// DRAPlacement is what DRA already decided for a Machine's deviceClaims.
+type DRAPlacement struct {
+	// Node hosts an allocated claim's devices ("" when none resolved).
+	Node string
+	// BDFs are the allocated devices' PCI addresses, when known.
+	BDFs []string
+	// Pending is true while some claim has no allocation yet.
+	Pending bool
+}
+
+// ChooseTopology is Choose for Machines that may also need a topology
+// placement (spec.topology / spec.devices). For a hard policy
+// (restricted, single-numa-node) DRA is a filter: an allocated claim pins
+// the node and its devices' NUMA nodes, an unallocated one keeps the
+// Machine pending. Under policy none DRA stays a +5 preference.
+func (s Scheduler) ChooseTopology(m model.Machine, nodes []model.Node, machines []model.Machine, load map[string]NodeLoad, topo TopologyInput) (string, error) {
+	if m.Spec.HardTopology() && topo.DRA.Pending {
+		return "", fmt.Errorf("DRAAllocationPending: a deviceClaim has no allocation yet; spec.topology.policy %s waits for it", m.Spec.TopologyPolicy())
+	}
+	draPreferredNode := topo.DRA.Node
 	var preSkew []model.Node
 	reasons := map[string]int{}
 	for _, n := range nodes {
 		ok, reason := s.eligible(m, n, nodes, machines, load[n.Metadata.Name])
+		if ok {
+			ok, reason = topologyEligible(m, n, machines, topo)
+		}
 		if ok {
 			preSkew = append(preSkew, n)
 			continue
@@ -65,6 +98,7 @@ func (s Scheduler) Choose(m model.Machine, nodes []model.Node, machines []model.
 	bestScore := 0
 	for i, n := range eligible {
 		sc := s.score(m, n, nodes, machines, load[n.Metadata.Name], draPreferredNode)
+		sc += topologyScore(m, n, machines, topo)
 		switch {
 		case i == 0 || sc > bestScore:
 			bestScore = sc
@@ -106,7 +140,7 @@ func (s Scheduler) score(m model.Machine, n model.Node, nodes []model.Node, mach
 			sc -= preferNoScheduleTaintPenalty
 		}
 	}
-	if draPreferredNode != "" && n.Metadata.Name == draPreferredNode {
+	if draPreferredNode != "" && n.Metadata.Name == draPreferredNode && !m.Spec.HardTopology() {
 		sc += draPreferenceWeight
 	}
 	return sc

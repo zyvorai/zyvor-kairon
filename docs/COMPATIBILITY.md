@@ -138,6 +138,25 @@ a stopped VM only, through qemu-storage-daemon, without Kairon.
 | CBT: synthesize | not run | — | Synthetic full of the incremental, delete the full (S3 objects too), restore the incremental again: sha256 matches |
 | CBT: forced-full | not run | — | SIGKILL the Machine's QEMU (`--node-ssh`): the next incremental fails with `status.disk.fullRequired`, a full succeeds |
 
+## Topology-aware placement
+
+Driven by [`scripts/lab-topology.sh`](../scripts/lab-topology.sh) against one
+node with the `kairon.zyvor.dev/pinnable-cpus` label and a FluxVM that
+reports `host.topology`; the script prints these rows and reports a case
+"not run" when the node's hardware cannot exercise it. Topology-aware
+placement stays Experimental until the multi-NUMA, GPU+NIC and SR-IOV rows
+pass. FluxVM's QEMU-gated `numa_qemu` test (passed on QEMU 10.2.1) checks
+the memory backend's `policy=bind` and vCPU thread affinity without Kairon.
+
+| Case | Last result | Date | Notes |
+|---|---|---|---|
+| Topology: nodetopology | pass | 2026-10-11 | Single-socket node (12 CPUs, 1 NUMA node, QEMU 10.2.1, k3s 1.35): `NodeTopology` with 1 NUMA node, 3 PCI devices, `numaBinding` true |
+| Topology: single-numa | pass | 2026-10-11 | Same node, pinnable CPUs 2-11: guest node 0 on host numa0, vCPU threads on CPUs 2-3, 1024MiB `policy=bind` (`status.appliedTopology`) |
+| Topology: unsatisfiable | pass | 2026-10-11 | Same node: a `single-numa-node` Machine asking for an NVIDIA GPU stayed Pending, reason `TopologyUnsatisfiable` (one NUMA node, so the oversize-CPU variant is refused by the plain capacity check first) |
+| Topology: multi-numa | not run | 2026-10-11 | Lab host has one NUMA node |
+| Topology: gpu-nic | not run | 2026-10-11 | No allowlisted GPU and NIC under one PCIe root in the lab |
+| Topology: sriov | not run | 2026-10-11 | No SR-IOV VF in the lab |
+
 ## Component versions (fill per run)
 
 | Piece | Version |

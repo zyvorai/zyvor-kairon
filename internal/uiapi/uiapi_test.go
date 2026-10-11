@@ -43,6 +43,7 @@ type fakeKube struct {
 	networkPolicies   map[string]model.MachineNetworkPolicy
 	securityGroups    map[string]model.NetworkSecurityGroup
 	nodes             []model.Node
+	nodeTopologies    []model.NodeTopology
 	events            []model.Event
 	backups           map[string]model.MachineBackup
 	backupRestores    []model.MachineBackupRestore
@@ -421,6 +422,17 @@ func (f *fakeKube) handler() http.Handler {
 
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/nodes":
 			_ = json.NewEncoder(w).Encode(model.NodeList{Items: f.nodes})
+
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/apis/kairon.zyvor.dev/v1/nodetopologies/"):
+			name := strings.TrimPrefix(r.URL.Path, "/apis/kairon.zyvor.dev/v1/nodetopologies/")
+			for _, t := range f.nodeTopologies {
+				if t.Metadata.Name == name {
+					_ = json.NewEncoder(w).Encode(t)
+					return
+				}
+			}
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(map[string]any{"kind": "Status", "code": 404, "reason": "NotFound"})
 
 		case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/api/v1/namespaces/") && strings.Contains(r.URL.Path, "/secrets/"):
 			key := strings.TrimPrefix(r.URL.Path, "/api/v1/namespaces/")

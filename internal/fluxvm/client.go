@@ -130,6 +130,9 @@ type CreateRequest struct {
 	NUMANode  *int   `json:"numa_node,omitempty"`
 	CPUSet    string `json:"cpuset,omitempty"`
 	Hugepages bool   `json:"hugepages,omitempty"`
+	// NUMA binds guest NUMA nodes to host nodes, from
+	// spec.topologyAllocation (QEMU only).
+	NUMA []NUMANode `json:"numa,omitempty"`
 	// SecureBoot/TPM mirror FluxVM's own CreateVmRequest fields of the same
 	// name (fluxvm-core/src/model.rs) exactly -- enforced at
 	// buildCreateRequest against the same backend restrictions FluxVM's own
@@ -468,6 +471,13 @@ func buildCreateRequest(m model.Machine, defaultBackend string, vfioDevices []st
 	if r := m.Spec.Resources; (r.NUMANode != nil || r.CPUSet != "" || r.Hugepages) && backend != "qemu" {
 		return CreateRequest{}, fmt.Errorf("spec.resources.numaNode/cpuSet/hugepages require the qemu backend (FluxVM only supports them there); Machine resolves to backend %q", backend)
 	}
+	numa, err := numaFromAllocation(m.Spec.TopologyAllocation, cpu, mem)
+	if err != nil {
+		return CreateRequest{}, err
+	}
+	if (len(numa) > 0 || len(m.Spec.Devices) > 0) && backend != "qemu" {
+		return CreateRequest{}, fmt.Errorf("spec.topology and spec.devices require the qemu backend; Machine resolves to backend %q", backend)
+	}
 	if len(sharedFolders) > 0 && backend != "qemu" {
 		return CreateRequest{}, fmt.Errorf("spec.volumes beyond [0] (virtiofs data volumes) require the qemu backend; Machine resolves to backend %q", backend)
 	}
@@ -515,6 +525,7 @@ func buildCreateRequest(m model.Machine, defaultBackend string, vfioDevices []st
 		NUMANode:      m.Spec.Resources.NUMANode,
 		CPUSet:        m.Spec.Resources.CPUSet,
 		Hugepages:     m.Spec.Resources.Hugepages,
+		NUMA:          numa,
 		SecureBoot:    m.Spec.Security.SecureBoot,
 		TPM:           m.Spec.Security.TPM,
 		SharedFolders: sharedFolders,

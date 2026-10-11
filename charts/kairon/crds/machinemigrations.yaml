@@ -251,6 +251,31 @@ spec:
                   prepare() response; false (including on an older adapter that
                   predates this field) means the transfer crossed the network
                   in cleartext.
+              targetTopologyAllocation:
+                type: object
+                description: The live migration target's NUMA placement for a
+                  spec.topology Machine (same guest NUMA shape as the source).
+                properties:
+                  numaNodes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        cpus:
+                          type: string
+                        memoryMiB:
+                          type: integer
+                          format: int64
+                        hugepages:
+                          type: integer
+                          format: int64
+              targetAllocatedCpuSet:
+                type: array
+                items:
+                  type: integer
+                  minimum: 0
               recovery:
                 type: object
                 description: Populated only while phase == NeedsRecovery -- a live

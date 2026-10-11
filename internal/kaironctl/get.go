@@ -265,6 +265,27 @@ func cmdGet(ctx context.Context, kc *kube.Client, args []string) {
 		for _, n := range items {
 			fmt.Printf("%s\t%s\t%t\t%s\n", n.Metadata.Name, nodeReadyStatus(n), n.Spec.Unschedulable, nodeTaintsSummary(n))
 		}
+	case "nodetopology", "nodetopologies", "knt":
+		items, err := kc.ListNodeTopologies(ctx)
+		if err != nil {
+			fatal(err)
+		}
+		items = selectorFilter(items, selector, func(t model.NodeTopology) map[string]string { return t.Metadata.Labels })
+		fmt.Printf("NAME\tNUMA\tCPUS\tDEVICES\tALLOCATABLE\tBINDING\n")
+		for _, t := range items {
+			cpus, allocatable := 0, 0
+			for _, n := range t.Status.NUMANodes {
+				if list, err := model.ParseCPUList(n.CPUs); err == nil {
+					cpus += len(list)
+				}
+			}
+			for _, d := range t.Status.Devices {
+				if d.Allocatable {
+					allocatable++
+				}
+			}
+			fmt.Printf("%s\t%d\t%d\t%d\t%d\t%t\n", t.Metadata.Name, len(t.Status.NUMANodes), cpus, len(t.Status.Devices), allocatable, t.Status.NUMABinding)
+		}
 	default:
 		fatal(fmt.Errorf("unknown resource %q", resource))
 	}
