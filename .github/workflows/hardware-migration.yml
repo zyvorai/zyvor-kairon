@@ -70,6 +70,9 @@ jobs:
           KAIRON_HW_SOURCE_SSH: ${{ vars.KAIRON_HW_SOURCE_SSH }}
           KAIRON_HW_TARGET_SSH: ${{ vars.KAIRON_HW_TARGET_SSH }}
           KAIRON_HW_CONTROLLER_SSH: ${{ vars.KAIRON_HW_CONTROLLER_SSH }}
+          KAIRON_HW_LOAD_MIB: ${{ vars.KAIRON_HW_LOAD_MIB }}
+          KAIRON_UI_URL: ${{ vars.KAIRON_UI_URL }}
+          KAIRON_UI_TOKEN: ${{ secrets.KAIRON_UI_TOKEN }}
         run: |
           if [[ "${KAIRON_HW_LAB:-}" != "1" ]]; then
             echo "KAIRON_HW_LAB not set — skipping (configure lab vars/secrets to enable)."

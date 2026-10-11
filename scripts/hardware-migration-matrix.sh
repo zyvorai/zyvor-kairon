@@ -22,7 +22,10 @@
 #   KAIRON_UI_URL / KAIRON_UI_TOKEN
 #                              # admin kairon-ui session for the guest-agent case,
 #                              # which runs a command in KAIRON_HW_MACHINE (needs
-#                              # spec.guestAgent.enabled) through ui -> node -> QGA
+#                              # spec.guestAgent.enabled) through ui -> node -> QGA,
+#                              # and for the live case, which starts a memory-dirtying
+#                              # load in the guest the same way ("not run" without it)
+#   KAIRON_HW_LOAD_MIB         # guest RAM the live-case load rewrites (default 256)
 #
 # Flags: --case=NAME (repeatable), --namespace=, --timeout=, --write-compat
 # (rewrite the matrix rows in docs/COMPATIBILITY.md). Exits 1 if any case
@@ -94,7 +97,34 @@ migrate_and_verify() {
   phase="$(migration_phase "$NAMESPACE" "$mig")"
   [[ "$phase" == "Succeeded" ]] || { lab_log "$mig ended $phase"; return 1; }
   wait_until 300 "$machine healthy on $dest" machine_healthy "$NAMESPACE" "$machine" "$dest" || return 1
+  LAST_MIGRATION="$mig"
   NOTE="$mig → $dest"
+  if [[ "$strategy" == "live" ]]; then
+    NOTE+="$(migration_field "$NAMESPACE" "$mig" '"; downtime %sms, total %sms" % ((o.get("status") or {}).get("downtimeMs", "?"), (o.get("status") or {}).get("totalTimeMs", "?"))' 2>/dev/null || true)"
+  fi
+}
+
+# live_under_load MACHINE -- live migration while the guest dirties
+# KAIRON_HW_LOAD_MIB of RAM. Without kairon-ui credentials there is no way
+# to start the load, so the row is "not run" rather than an idle-guest pass.
+live_under_load() {
+  local machine="$1"
+  if [[ -z "${KAIRON_UI_URL:-}" || -z "${KAIRON_UI_TOKEN:-}" ]]; then
+    LOAD_SKIPPED=1
+    NOTE="set KAIRON_UI_URL and KAIRON_UI_TOKEN to generate guest load"
+    return 1
+  fi
+  local mib="${KAIRON_HW_LOAD_MIB:-256}"
+  if ! start_guest_load "$NAMESPACE" "$machine" "$mib"; then
+    NOTE="could not start guest load in ${machine}"
+    return 1
+  fi
+  sleep 10
+  local rc=0
+  migrate_and_verify "$machine" live || rc=1
+  stop_guest_load "$NAMESPACE" "$machine"
+  NOTE+="; guest dirtying ${mib}MiB"
+  return "$rc"
 }
 
 smoke() {
@@ -133,9 +163,7 @@ guest_agent_exec() {
   fi
   local nonce out
   nonce="kairon-hw-$(date -u +%s)-$RANDOM"
-  out="$(curl -fsS -X POST -H "Authorization: Bearer ${KAIRON_UI_TOKEN}" -H "Content-Type: application/json" \
-    --data "{\"path\":\"/bin/sh\",\"args\":[\"-c\",\"echo ${nonce}\"],\"timeoutSeconds\":30}" \
-    "${KAIRON_UI_URL%/}/api/v1/machines/${NAMESPACE}/${MACHINE}/exec")" || { NOTE="exec request failed"; return 1; }
+  out="$(guest_exec "$NAMESPACE" "$MACHINE" "echo ${nonce}")" || { NOTE="exec request failed"; return 1; }
   if ! python3 -c 'import json,sys; r=json.loads(sys.argv[1]); sys.exit(0 if r.get("exitCode")==0 and sys.argv[2] in r.get("stdout","") else 1)' "$out" "$nonce"; then
     NOTE="unexpected exec result: ${out:0:200}"
     return 1
@@ -179,7 +207,14 @@ for case in "${CASES[@]}"; do
       if migrate_and_verify "$MACHINE" cold; then record "$T_COLD" pass "$NOTE"; else record "$T_COLD" fail "$NOTE"; fi
       ;;
     live)
-      if migrate_and_verify "$MACHINE" live; then record "$T_LIVE" pass "$NOTE"; else record "$T_LIVE" fail "$NOTE"; fi
+      LOAD_SKIPPED=0
+      if live_under_load "$MACHINE"; then
+        record "$T_LIVE" pass "$NOTE"
+      elif [[ "$LOAD_SKIPPED" == "1" ]]; then
+        record "$T_LIVE" "not run" "$NOTE"
+      else
+        record "$T_LIVE" fail "$NOTE"
+      fi
       ;;
     guest-agent)
       if [[ -z "${KAIRON_UI_URL:-}" || -z "${KAIRON_UI_TOKEN:-}" ]]; then

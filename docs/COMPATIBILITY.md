@@ -39,7 +39,11 @@ the workflow writes it to a file), `KAIRON_HW_MACHINE`,
 case), `KAIRON_HW_IMAGE` (real create/stop/start/delete smoke),
 `KAIRON_HW_SOURCE_SSH` / `KAIRON_HW_TARGET_SSH` (failure drills; the runner
 needs passwordless SSH and sudo for `iptables` / `systemctl`) and
-`KAIRON_HW_CONTROLLER_SSH` (systemd controller instead of Pods). Until then,
+`KAIRON_HW_CONTROLLER_SSH` (systemd controller instead of Pods), and
+`KAIRON_UI_URL` (var) / `KAIRON_UI_TOKEN` (secret) for the guest-agent case
+and for the live case, which starts a memory-dirtying load in the guest
+over the guest agent (`KAIRON_HW_LOAD_MIB`, default 256) and records
+`not run` without them. Until then,
 push-triggered runs succeed on the `validate` job only and leave every
 **migration** row below as `not run`.
 
