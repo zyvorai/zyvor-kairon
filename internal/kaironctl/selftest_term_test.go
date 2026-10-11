@@ -121,3 +121,69 @@ func TestDoctorAsChecksTreats403AsNotChecked(t *testing.T) {
 		t.Errorf("a real failure must stay a failure, got %+v", got[1])
 	}
 }
+
+func TestLiveStatusLineIsErasedAroundLogLinesAndNeverInPlainOutput(t *testing.T) {
+	var buf bytes.Buffer
+	now := time.Unix(1_000, 0)
+	tr := &termReporter{w: &buf, start: now, now: func() time.Time { return now }, color: true, live: true, tickEvery: -1}
+
+	tr.StepStart("boot", "Boot a CirrOS VM")
+	if !strings.Contains(buf.String(), "boot  Boot a CirrOS VM") || !strings.Contains(buf.String(), "\r\033[2K") {
+		t.Fatalf("expected a header and a drawn status line, got %q", buf.String())
+	}
+	before := buf.Len()
+	tr.Log(selftest.LevelInfo, "creating the VM")
+	got := buf.String()[before:]
+	// Erase the status line, write the log line, then redraw the status.
+	const erase = "\r\033[2K"
+	logAt := strings.Index(got, "creating the VM")
+	if !strings.HasPrefix(got, erase) || logAt < 0 {
+		t.Fatalf("the status line must be erased before the log line: %q", got)
+	}
+	redraw := got[logAt:]
+	if !strings.Contains(redraw, erase) || !strings.Contains(redraw, "boot  Boot a CirrOS VM") {
+		t.Errorf("the status line must be redrawn after the log line: %q", got)
+	}
+
+	tr.StepDone(selftest.Result{ID: "boot", Status: selftest.Pass, Duration: time.Second})
+	tr.Close()
+	after := buf.String()
+	if strings.LastIndex(after, "boot  Boot a CirrOS VM") > strings.LastIndex(after, "pass") {
+		t.Errorf("the status line was redrawn after the step finished: %q", after)
+	}
+}
+
+func TestNoStatusLineWhenNotLive(t *testing.T) {
+	var buf bytes.Buffer
+	tr := &termReporter{w: &buf, start: time.Now(), now: time.Now, color: true, live: false}
+	tr.StepStart("boot", "Boot")
+	tr.Log(selftest.LevelOK, "ok")
+	tr.StepDone(selftest.Result{ID: "boot", Status: selftest.Pass})
+	tr.Close()
+	if strings.Contains(buf.String(), "\r") || strings.Contains(buf.String(), "\033[2K") {
+		t.Errorf("a non-interactive writer must never get cursor control: %q", buf.String())
+	}
+}
+
+func TestAnimationAdvancesTheSpinnerFrame(t *testing.T) {
+	var buf bytes.Buffer
+	tr := &termReporter{w: &buf, start: time.Now(), now: time.Now, color: false, live: true, tickEvery: 5 * time.Millisecond}
+	tr.StepStart("boot", "Boot")
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		tr.mu.Lock()
+		f := tr.frame
+		tr.mu.Unlock()
+		if f >= 2 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	tr.Close()
+	tr.mu.Lock()
+	f := tr.frame
+	tr.mu.Unlock()
+	if f < 2 {
+		t.Errorf("spinner never advanced (frame %d)", f)
+	}
+}

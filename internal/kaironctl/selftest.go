@@ -167,6 +167,7 @@ func runSelftest(cmd *cobra.Command, o *selftestOpts, version string) error {
 	var term *termReporter
 	if o.Output == "" {
 		term = newTermReporter(out)
+		defer term.Close()
 		reporters = append(reporters, term)
 		term.Banner(profile, "run "+runID, "namespace "+o.TestNS, "kaironctl "+version, time.Now().Format("2006-01-02 15:04:05"))
 	}
