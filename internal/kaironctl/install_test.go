@@ -30,14 +30,14 @@ func TestBuildHelmUpgradeArgsInstall(t *testing.T) {
 		Timeout:     5 * time.Minute,
 		Sets:        []string{"ui.enabled=true"},
 		ValuesFiles: []string{"extra.yaml"},
-		Version:     "0.8.0",
+		Version:     "0.9.0",
 	}
 	args := buildHelmUpgradeArgs(h, false)
 	joined := strings.Join(args, " ")
 	for _, want := range []string{
 		"upgrade", "--install", "kairon", "./charts/kairon",
 		"--namespace", "kairon-system", "--create-namespace",
-		"--version", "0.8.0", "--set", "ui.enabled=true",
+		"--version", "0.9.0", "--set", "ui.enabled=true",
 		"-f", "extra.yaml", "--wait", "--timeout",
 	} {
 		if !strings.Contains(joined, want) {

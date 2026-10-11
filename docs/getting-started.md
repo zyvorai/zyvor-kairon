@@ -42,14 +42,14 @@ Tagged releases publish the Helm chart and the images to GitHub Container Regist
 
 ```bash
 helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \
-  --version 0.8.0 -n kairon-system --create-namespace \
-  -f https://raw.githubusercontent.com/zyvorai/kairon/v0.8.0/charts/kairon/values-production.yaml
+  --version 0.9.0 -n kairon-system --create-namespace \
+  -f https://raw.githubusercontent.com/zyvorai/kairon/v0.9.0/charts/kairon/values-production.yaml
 ```
 
 - Images are `ghcr.io/zyvorai/kairon-{controller,node,ui,csi-node,csi-controller}:<version>`; the chart's image tags default to its `appVersion`, so the chart version selects the images.
 - Drop the `-f` overlay for the evaluation profile.
-- Helm applies `crds/` only on first install. When upgrading, apply the CRDs from the same tag first (`kubectl apply --server-side -f https://raw.githubusercontent.com/zyvorai/kairon/v0.8.0/deploy/crd.yaml`); see [CRD versioning](guides/crd-versioning.md#upgrading-an-existing-cluster).
-- Fetch the matching `kaironctl` from the release: `https://github.com/zyvorai/kairon/releases/download/v0.8.0/kaironctl-linux-amd64`, or `kubectl krew install kairon`.
+- Helm applies `crds/` only on first install. When upgrading, apply the CRDs from the same tag first (`kubectl apply --server-side -f https://raw.githubusercontent.com/zyvorai/kairon/v0.9.0/deploy/crd.yaml`); see [CRD versioning](guides/crd-versioning.md#upgrading-an-existing-cluster).
+- Fetch the matching `kaironctl` from the release: `https://github.com/zyvorai/kairon/releases/download/v0.9.0/kaironctl-linux-amd64`, or `kubectl krew install kairon`.
 
 Raw manifests still work:
 
