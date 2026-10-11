@@ -57,6 +57,13 @@ type Recorder struct {
 	transferDuration   *prometheus.HistogramVec
 	cutoverDowntime    prometheus.Histogram
 	dataPlaneEncrypted *prometheus.GaugeVec
+	migrationProgress  *prometheus.GaugeVec
+	adaptiveStage      *prometheus.GaugeVec
+	adaptiveActions    *prometheus.CounterVec
+	// adaptiveSeen is the newest status.adaptive.actions timestamp already
+	// counted per migration, so re-observing the same status never
+	// double-counts.
+	adaptiveSeen map[phaseKey]time.Time
 
 	// MachineQuota utilization -- only registered by NewRecorder
 	// (kairon-controller), see ObserveQuotas. Like migration-lifecycle
@@ -180,6 +187,20 @@ func NewRecorder() *Recorder {
 			Name: "kairon_migration_dataplane_encrypted",
 			Help: "1 if an active live migration's QEMU data-plane transport is TLS-encrypted, 0 otherwise.",
 		}, []string{"namespace", "name"}),
+		migrationProgress: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "kairon_migration_progress",
+			Help: "Active live migration telemetry (status.progress), by namespace, name and field " +
+				"(dirty_rate_mbps/ram_remaining_bytes/ram_transferred_bytes/throughput_mbps/expected_downtime_ms/" +
+				"cpu_throttle_pct/estimated_completion_seconds/compression_ratio_percent/duplicate_pages).",
+		}, []string{"namespace", "name", "field"}),
+		adaptiveStage: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "kairon_migration_adaptive_stage",
+			Help: "1 for an active adaptive migration's current engine stage (status.adaptive.stage).",
+		}, []string{"namespace", "name", "stage"}),
+		adaptiveActions: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "kairon_migration_adaptive_actions_total",
+			Help: "Adaptive engine actions recorded in status.adaptive.actions, by action.",
+		}, []string{"action"}),
 		quotaResource: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "kairon_quota_resource",
 			Help: "MachineQuota usage and limit, by namespace, quota name, resource (machines/cpu_cores/memory_mib), " +
@@ -218,9 +239,11 @@ func NewRecorder() *Recorder {
 		apiRequestDuration: newAPIRequestDurationMetric(),
 		phaseSince:         map[phaseKey]phaseState{},
 		completed:          map[phaseKey]bool{},
+		adaptiveSeen:       map[phaseKey]time.Time{},
 		now:                time.Now,
 	}
 	reg.MustRegister(r.phaseCount, r.phaseAgeSeconds, r.completedTotal, r.transferDuration, r.cutoverDowntime, r.dataPlaneEncrypted,
+		r.migrationProgress, r.adaptiveStage, r.adaptiveActions,
 		r.quotaResource, r.disruptionBudgetStatus, r.machineSetStatus, r.reconcileDuration, r.reconcileErrors, r.reconcileItemErrors, r.webhookDecisions, r.apiRequestDuration)
 	return r
 }
@@ -305,6 +328,8 @@ func (r *Recorder) ObserveMigrations(migrations []model.MachineMigration) {
 	counts := map[string]int{}
 	seen := map[phaseKey]bool{}
 	r.dataPlaneEncrypted.Reset()
+	r.migrationProgress.Reset()
+	r.adaptiveStage.Reset()
 
 	for _, m := range migrations {
 		phase := m.Status.Phase
@@ -341,13 +366,16 @@ func (r *Recorder) ObserveMigrations(migrations []model.MachineMigration) {
 				encrypted = 1
 			}
 			r.dataPlaneEncrypted.WithLabelValues(key.namespace, key.name).Set(encrypted)
+			r.observeProgress(key, m.Status)
 		}
+		r.countAdaptiveActions(key, m.Status.Adaptive)
 	}
 
 	for key := range r.phaseSince {
 		if !seen[key] {
 			delete(r.phaseSince, key)
 			delete(r.completed, key)
+			delete(r.adaptiveSeen, key)
 		}
 	}
 
@@ -355,6 +383,43 @@ func (r *Recorder) ObserveMigrations(migrations []model.MachineMigration) {
 	for phase, n := range counts {
 		r.phaseCount.WithLabelValues(phase).Set(float64(n))
 	}
+}
+
+func (r *Recorder) observeProgress(key phaseKey, st model.MachineMigrationStatus) {
+	set := func(field string, v uint64) {
+		r.migrationProgress.WithLabelValues(key.namespace, key.name, field).Set(float64(v))
+	}
+	set("ram_remaining_bytes", st.RAMRemaining)
+	set("ram_transferred_bytes", st.RAMTransferred)
+	if p := st.Progress; p != nil {
+		set("dirty_rate_mbps", p.DirtyRateMbps)
+		set("throughput_mbps", p.ThroughputMbps)
+		set("expected_downtime_ms", p.ExpectedDowntimeMs)
+		set("cpu_throttle_pct", p.CPUThrottlePct)
+		set("estimated_completion_seconds", p.EstimatedCompletionSeconds)
+		set("compression_ratio_percent", p.CompressionRatioPercent)
+		set("duplicate_pages", p.DuplicatePages)
+	}
+	if a := st.Adaptive; a != nil && a.Stage != "" {
+		r.adaptiveStage.WithLabelValues(key.namespace, key.name, a.Stage).Set(1)
+	}
+}
+
+func (r *Recorder) countAdaptiveActions(key phaseKey, a *model.MachineMigrationAdaptiveStatus) {
+	if a == nil {
+		return
+	}
+	last := r.adaptiveSeen[key]
+	newest := last
+	for _, act := range a.Actions {
+		if act.At.After(last) {
+			r.adaptiveActions.WithLabelValues(act.Action).Inc()
+			if act.At.After(newest) {
+				newest = act.At
+			}
+		}
+	}
+	r.adaptiveSeen[key] = newest
 }
 
 // ObserveQuotas is a pure function of the current MachineQuota list, each

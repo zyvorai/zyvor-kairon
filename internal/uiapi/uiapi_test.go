@@ -840,6 +840,31 @@ func TestCreateMigrationDefaultsAndAutoName(t *testing.T) {
 	}
 }
 
+func TestCreateMigrationAdaptiveStrategy(t *testing.T) {
+	s := newTestServer(t, newFakeKube(), "")
+	h := s.Handler()
+	req := createMigrationRequest{Machine: "db", Strategy: "adaptive", Adaptive: &model.MachineMigrationAdaptiveSpec{Compression: &model.MigrationCompression{Algorithm: "zstd", Level: 3}}}
+	rr := doJSON(t, h, http.MethodPost, "/api/v1/migrations", "", req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var out model.MachineMigration
+	if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out.Spec.Strategy != "live" || out.Spec.Adaptive == nil || out.Spec.MultifdChannels != 2 {
+		t.Fatalf("spec = %+v", out.Spec)
+	}
+	for _, bad := range []createMigrationRequest{
+		{Machine: "db", Strategy: "cold", Adaptive: &model.MachineMigrationAdaptiveSpec{}},
+		{Machine: "db", Strategy: "adaptive", Adaptive: &model.MachineMigrationAdaptiveSpec{ProgressTimeout: "soon"}},
+	} {
+		if rr := doJSON(t, h, http.MethodPost, "/api/v1/migrations", "", bad); rr.Code != http.StatusBadRequest {
+			t.Errorf("%+v: expected 400, got %d", bad, rr.Code)
+		}
+	}
+}
+
 func TestCreateMigrationRequiresMachine(t *testing.T) {
 	s := newTestServer(t, newFakeKube(), "")
 	h := s.Handler()
