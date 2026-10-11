@@ -153,8 +153,13 @@ func runConnectivity(ctx context.Context, kc *kube.Client, ns string) doctorRepo
 		}
 	}
 	// The dashboard Service port, as clients reach it.
-	if _, err := proxyGet(ctx, kc, "services", ns, "http:kairon-ui:18082", "/readyz"); err == nil {
-		rep.add(doctorCheck{Name: "dashboard service", Status: checkOK, Detail: "kairon-ui:18082 /readyz"})
+	// The dashboard serves HTTPS by default; an install with ui.insecureHttp
+	// serves plain HTTP, which is reported as a warning rather than hidden.
+	if _, err := proxyGet(ctx, kc, "services", ns, "https:kairon-ui:18082", "/readyz"); err == nil {
+		rep.add(doctorCheck{Name: "dashboard service", Status: checkOK, Detail: "https://kairon-ui:18082 /readyz"})
+	} else if _, httpErr := proxyGet(ctx, kc, "services", ns, "http:kairon-ui:18082", "/readyz"); httpErr == nil {
+		rep.add(doctorCheck{Name: "dashboard service", Status: checkWarn, Detail: "kairon-ui:18082 answers on plain HTTP only",
+			Hint: "logins and tokens are clear text; remove ui.insecureHttp (the dashboard serves HTTPS by default)"})
 	} else if !kube.IsNotFound(err) {
 		rep.add(doctorCheck{Name: "dashboard service", Status: checkWarn, Detail: err.Error(),
 			Hint: "the Service may use a different port (ui.service.port) or the dashboard is disabled"})
