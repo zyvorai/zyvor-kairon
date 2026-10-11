@@ -48,6 +48,29 @@ function HomepageHeader() {
   );
 }
 
+function DashboardPreview() {
+  const hero = useBaseUrl('/anim/hero.gif');
+  return (
+    <section className="padding-vert--lg">
+      <div className="container text--center">
+        <Reveal>
+          <Heading as="h2">See it work</Heading>
+          <p>
+            The dashboard is just another Kubernetes API client. Captured against a sample-data stack.{' '}
+            <Link to="/gallery">Open the gallery</Link>
+          </p>
+          <img
+            src={hero}
+            alt="The Kairon dashboard: overview, machines, migrations, snapshots, nodes and network policies"
+            style={{maxWidth: 1000, width: '100%', borderRadius: 18, boxShadow: '0 12px 40px rgba(0,0,0,0.15)'}}
+            loading="lazy"
+          />
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
 function ProblemStatement() {
   return (
     <section className={styles.problem}>
@@ -213,6 +236,7 @@ export default function Home(): ReactNode {
       <HomepageHeader />
       <main>
         <ProblemStatement />
+        <DashboardPreview />
         <Reveal>
           <FeatureHighlights />
         </Reveal>

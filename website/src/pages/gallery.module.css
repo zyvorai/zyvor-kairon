@@ -1,0 +1,80 @@
+/* Copyright 2026 Zyvor · https://zyvor.dev */
+/* SPDX-License-Identifier: Apache-2.0 */
+.header {
+  padding: clamp(3.5rem, 9vw, 6rem) 1.5rem 2rem;
+  text-align: center;
+  background: #000;
+  color: #f5f5f7;
+}
+.eyebrow {
+  margin: 0 0 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #86868b;
+}
+.header h1 {
+  font-size: clamp(2.25rem, 5vw, 3.75rem);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+  margin: 0 0 1rem;
+  color: #f5f5f7;
+}
+.lede {
+  max-width: 36rem;
+  margin: 0 auto;
+  font-size: 1.15rem;
+  line-height: 1.45;
+  color: #a1a1a6;
+}
+.main {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 3.25rem;
+}
+.main h2 {
+  margin: 0 0 1rem;
+  letter-spacing: -0.02em;
+}
+.note {
+  margin: 0 0 1.25rem;
+  color: var(--ifm-color-emphasis-700);
+}
+.shot {
+  margin: 0;
+}
+.shot img,
+.diagram {
+  width: 100%;
+  border-radius: 18px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+  display: block;
+  background: #1d1d1f;
+}
+.shot figcaption {
+  text-align: center;
+  margin-top: 0.9rem;
+  font-size: 1.05rem;
+  font-weight: 500;
+  color: var(--ifm-color-emphasis-700);
+}
+.pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.5rem;
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+@media (max-width: 760px) {
+  .pair {
+    grid-template-columns: 1fr;
+  }
+}
