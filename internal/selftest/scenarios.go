@@ -341,7 +341,7 @@ func runObservability(ctx context.Context, s *session) error {
 		return err
 	}
 	if c, ok := model.FindCondition(m.Status.Conditions, "Ready"); !ok || c.Status != "True" {
-		return fmt.Errorf("Ready condition is not True (%+v)", c)
+		return fmt.Errorf("the Ready condition is not True (%+v)", c)
 	}
 	s.logf(LevelOK, "Ready condition is True")
 
