@@ -553,9 +553,9 @@ func runFork(ctx context.Context, s *session) error {
 	}
 	parent := s.newMachine("fork", img)
 	parent.Spec.Runtime.Backend = "flux-vm"
-	// The flux-vm backend accepts only network.mode none or tap; none needs
-	// no host bridge and the fork does not depend on guest networking.
-	parent.Spec.Network = model.NetworkSpec{Mode: "none"}
+	// The flux-vm backend needs tap networking (the CRD does not accept
+	// "none"), and fork needs it inside a network namespace.
+	parent.Spec.Network = model.NetworkSpec{Mode: "tap", NetNS: true}
 	if err := s.create(ctx, parent); err != nil {
 		s.skipReason = "the flux-vm backend was not accepted here: " + err.Error()
 		return nil
