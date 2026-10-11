@@ -258,6 +258,7 @@ identity gets `403`, and everyone else is filtered per namespace
 | Method | Path | Access |
 |---|---|---|
 | GET | `/api/v1/overview` | session |
+| GET | `/api/v1/insights` | session |
 | GET | `/api/v1/pods` | session |
 | GET | `/api/v1/health` | session |
 | GET | `/api/v1/stream` | session |
@@ -322,6 +323,7 @@ identity gets `403`, and everyone else is filtered per namespace
 - **`GET /api/v1/stream`** is a Server-Sent Events feed of Machine and MachineMigration changes the caller may see. Each `change` event carries `type` (`ADDED`, `MODIFIED`, `DELETED`), `kind`, `namespace`, `name` and, when known, `phase`, `nodeName` and `message`. A `: ping` comment arrives every 20 s. Read it with `fetch` streaming, because it needs the `Authorization` header.
 - **`GET .../timeline`** merges the Machine's Kubernetes Events with its status conditions, newest first.
 - **`GET .../metrics?range=15m`** returns the usage samples (CPU percent, memory, disk read and write) kairon-ui recorded every 15 s, up to one hour. The history is in memory, per replica, and lost on restart; `cpuPercent` is the lifetime average `status.resourceUsage` reports.
+- **`GET /api/v1/insights`** returns deterministic findings for the Overview's attention strip: failed Machines, Machines unschedulable for 5 minutes or more, migrations in `NeedsRecovery` or in flight for over 30 minutes, nodes that are not Ready with Machines assigned or at least 90% requested, and quotas at 90% or more. Each finding names the `page` and `target` to open. Node findings are omitted for non-administrators when namespace scoping is on.
 - **`GET /api/v1/nodes/capacity`** reports allocatable against requested CPU and memory per node using the scheduler's own accounting. With `?cpu=4&memory=8Gi` each row also says whether a Machine of that size would fit.
 - **`GET /api/v1/pods`** lists Kairon's own pods (`app.kubernetes.io/name=kairon-*`); add `scope=all` for every pod the caller may see and `node=NAME` to filter. **`GET /api/v1/health`** rolls those pods up per component. Both need the `kairon-ui` ClusterRole's `pods` and `events` read rules, which the chart and `deploy/rbac.yaml` now grant.
 
