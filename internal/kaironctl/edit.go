@@ -7,6 +7,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/zyvorai/kairon/internal/kube"
@@ -14,7 +15,7 @@ import (
 
 func cmdEdit(ctx context.Context, kc *kube.Client, args []string) {
 	if len(args) < 2 {
-		fatal(fmt.Errorf("usage: kaironctl edit migrationpolicy NAME [--bandwidth-mbps N] [--max-concurrent N] | edit snapshotschedule NAME [--suspend true|false] [--interval-seconds N] [--keep-last N] [--starting-deadline-seconds N] | edit quota NAME [--max-machines N] [--max-total-cpu N] [--max-total-memory SIZE] | edit budget NAME [--selector k=v] [--min-available X] [--max-unavailable X] | edit machine NAME --priority N | edit machineset NAME [--strategy RollingUpdate|Recreate] [--max-unavailable X] | edit networkpolicy NAME [--machine-name X] [--selector k=v] [--allow-cidr CIDR] [--deny-cidr CIDR] [--allow-port proto/port] [--default-allow BOOL] [--audit-mode BOOL] [--max-egress-mbps N] [--max-egress-pps N] | edit securitygroup NAME [--group-label k=v] [--priority N] [--description TEXT] [policy flags as above]"))
+		fatal(fmt.Errorf("usage: kaironctl edit migrationpolicy NAME [--bandwidth-mbps N] [--max-concurrent N] [--strategy static|adaptive] [tuning flags] | edit snapshotschedule NAME [--suspend true|false] [--interval-seconds N] [--keep-last N] [--starting-deadline-seconds N] | edit quota NAME [--max-machines N] [--max-total-cpu N] [--max-total-memory SIZE] | edit budget NAME [--selector k=v] [--min-available X] [--max-unavailable X] | edit machine NAME --priority N | edit machineset NAME [--strategy RollingUpdate|Recreate] [--max-unavailable X] | edit networkpolicy NAME [--machine-name X] [--selector k=v] [--allow-cidr CIDR] [--deny-cidr CIDR] [--allow-port proto/port] [--default-allow BOOL] [--audit-mode BOOL] [--max-egress-mbps N] [--max-egress-pps N] | edit securitygroup NAME [--group-label k=v] [--priority N] [--description TEXT] [policy flags as above]"))
 	}
 	kind, name := strings.ToLower(args[0]), args[1]
 	switch kind {
@@ -127,14 +128,22 @@ func cmdEditMigrationPolicy(ctx context.Context, kc *kube.Client, name string, a
 	ns := fs.String("namespace", "default", "namespace")
 	bandwidth := fs.Uint64("bandwidth-mbps", 0, "new default migration bandwidth")
 	maxConcurrent := fs.Int("max-concurrent", 0, "new cap on simultaneous non-terminal migrations")
+	var tuning policyTuningFlags
+	tuning.register(fs)
 	editSpecFromFlags(fs, args, func(spec map[string]any, flagName string) {
 		switch flagName {
 		case "bandwidth-mbps":
 			spec["bandwidthMbps"] = *bandwidth
 		case "max-concurrent":
 			spec["maxConcurrent"] = *maxConcurrent
+		default:
+			tuningPatch, err := tuning.patch(visited(fs))
+			if err != nil {
+				fatal(err)
+			}
+			maps.Copy(spec, tuningPatch)
 		}
-	}, "pass at least one of --bandwidth-mbps or --max-concurrent", func(spec map[string]any) error {
+	}, "pass at least one of --bandwidth-mbps, --max-concurrent or a tuning flag such as --strategy", func(spec map[string]any) error {
 		return kc.PatchMigrationPolicy(ctx, *ns, name, map[string]any{"spec": spec})
 	}, "migrationpolicy", name)
 }

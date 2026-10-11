@@ -28,30 +28,46 @@ func (d NetworkAwareDestination) Prepare(ctx context.Context, session Session) (
 	if !res.TransferSupported || d.Flux == nil || session.RuntimeID == "" {
 		return res, nil
 	}
-	if len(session.NetworkSnapshot) == 0 && len(session.ConntrackSnapshot) == 0 {
+	// A separate destination runtime only becomes a VM at commit, so its
+	// network state is restored then (see Commit).
+	if res.DestinationRuntimeID != "" {
 		return res, nil
 	}
-	if len(session.NetworkSnapshot) > 0 {
-		if err := d.Flux.NetworkMigrationRestore(ctx, session.RuntimeID, session.NetworkSnapshot); err != nil {
-			_ = d.Inner.Abort(ctx, session)
-			return PrepareResult{}, fmt.Errorf("network migration restore: %w", err)
-		}
-	}
-	if err := restoreConntrack(ctx, d.Flux, session, d.Restores); err != nil {
+	if err := d.restoreNetwork(ctx, session, session.RuntimeID); err != nil {
 		_ = d.Inner.Abort(ctx, session)
 		return PrepareResult{}, err
 	}
 	return res, nil
 }
 
+func (d NetworkAwareDestination) restoreNetwork(ctx context.Context, session Session, runtimeID string) error {
+	if len(session.NetworkSnapshot) > 0 {
+		if err := d.Flux.NetworkMigrationRestore(ctx, runtimeID, session.NetworkSnapshot); err != nil {
+			return fmt.Errorf("network migration restore: %w", err)
+		}
+	}
+	session.RuntimeID = runtimeID
+	return restoreConntrack(ctx, d.Flux, session, d.Restores)
+}
+
 func (d NetworkAwareDestination) Commit(ctx context.Context, session Session) error {
 	if err := d.Inner.Commit(ctx, session); err != nil {
 		return err
 	}
-	if d.Flux == nil || len(session.NetworkSnapshot) == 0 || session.RuntimeID == "" {
+	if d.Flux == nil {
 		return nil
 	}
-	if err := d.Flux.NetworkMigrationResume(ctx, session.RuntimeID); err != nil {
+	runtimeID := session.RuntimeID
+	if session.DestinationRuntimeID != "" {
+		runtimeID = session.DestinationRuntimeID
+		if err := d.restoreNetwork(ctx, session, runtimeID); err != nil {
+			return err
+		}
+	}
+	if len(session.NetworkSnapshot) == 0 || runtimeID == "" {
+		return nil
+	}
+	if err := d.Flux.NetworkMigrationResume(ctx, runtimeID); err != nil {
 		return fmt.Errorf("network migration resume: %w", err)
 	}
 	return nil

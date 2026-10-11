@@ -62,6 +62,8 @@ type Record struct {
 		// Cdroms are the VM's CD-ROM drives; an empty Path is an ejected
 		// drive (the device stays so the guest's layout doesn't change).
 		Cdroms []Cdrom `json:"cdroms,omitempty"`
+		// VFIODevices are host PCI devices passed through to the guest.
+		VFIODevices []string `json:"vfio_devices,omitempty"`
 	} `json:"request,omitempty"`
 }
 
@@ -401,6 +403,20 @@ func (c *Client) Get(ctx context.Context, id string) (*Record, error) {
 		return nil, err
 	}
 	return &r, nil
+}
+
+// GetRaw returns FluxVM's VM record exactly as served, for handing to
+// another FluxVM (a migration receiver launched from it) without dropping
+// fields Record doesn't model.
+func (c *Client) GetRaw(ctx context.Context, id string) (json.RawMessage, error) {
+	data, err := c.do(ctx, http.MethodGet, "/v1/vms/"+url.PathEscape(id), nil)
+	if err != nil {
+		return nil, err
+	}
+	if !json.Valid(data) {
+		return nil, fmt.Errorf("fluxvm returned an invalid VM record for %s", id)
+	}
+	return json.RawMessage(data), nil
 }
 
 // buildCreateRequest maps a Machine spec onto FluxVM's own CreateVmRequest

@@ -208,6 +208,52 @@ class Machines(Resource):
                        "kairon.zyvor.dev/assigned-node": source["spec"]["nodeName"]}}, "spec": spec})
 
 
+class Migrations(Resource):
+    def migrate(self, machine: str, *, name: str | None = None, strategy: str = "auto",
+                target_node: str = "", mode: str = "", bandwidth_mbps: int = 0,
+                max_downtime_ms: int = 0, multifd_channels: int = 0,
+                adaptive: dict | None = None) -> dict:
+        """Create a MachineMigration. strategy="adaptive" is a live migration steered
+        by kairon-node's adaptive engine (experimental); ``adaptive`` overrides the
+        matching MigrationPolicy's settings field by field."""
+        _segment(machine)
+        if strategy not in ("auto", "live", "cold", "adaptive"):
+            raise ValueError("strategy must be auto, live, cold or adaptive")
+        if strategy == "adaptive":
+            strategy = "live"
+            adaptive = {} if adaptive is None else adaptive
+        if adaptive is not None and strategy != "live":
+            raise ValueError("adaptive settings need strategy live or adaptive")
+        compression = (adaptive or {}).get("compression") or {}
+        if compression.get("algorithm", "none") != "none" and not multifd_channels:
+            multifd_channels = 2
+        spec: dict = {"machineName": machine, "strategy": strategy}
+        for key, value in (("targetNode", target_node), ("mode", mode)):
+            if value:
+                spec[key] = value
+        for key, value in (("bandwidthMbps", bandwidth_mbps), ("maxDowntimeMs", max_downtime_ms),
+                           ("multifdChannels", multifd_channels)):
+            if value:
+                _positive(value, key)
+                spec[key] = value
+        if adaptive is not None:
+            spec["adaptive"] = copy.deepcopy(adaptive)
+        name = name or f"{machine}-migrate-{int(time.time() * 1000):x}"
+        return self.create({"apiVersion": API_VERSION, "kind": "MachineMigration",
+                            "metadata": {"name": name, "namespace": self.namespace}, "spec": spec})
+
+    def progress(self, name: str) -> dict:
+        """Transfer progress, telemetry and adaptive engine state from status."""
+        status = self.get(name).get("status", {})
+        out = {"phase": status.get("phase", "Pending")}
+        for key in ("ramTotal", "ramTransferred", "ramRemaining", "downtimeMs"):
+            out[key] = status.get(key, 0)
+        for key in ("progress", "adaptive"):
+            if key in status:
+                out[key] = status[key]
+        return out
+
+
 class Client:
     def __init__(self, kube_url: str, token: str, *, namespace: str = "default",
                  ca_file: str | None = None, timeout: float = 30, allow_insecure: bool = False):
@@ -216,6 +262,7 @@ class Client:
             raise ValueError("namespace must be a DNS label")
         self._http = _HTTP(kube_url, token, ca_file=ca_file, timeout=timeout, allow_insecure=allow_insecure)
         self.machines = Machines(self._http, namespace, "machines", "Machine", API_VERSION)
+        self.migrations = Migrations(self._http, namespace, "machinemigrations", "MachineMigration", API_VERSION)
         self.pools = self.resource("machinepools")
         self.claims = self.resource("machineclaims")
 

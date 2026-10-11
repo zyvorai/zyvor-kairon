@@ -131,3 +131,20 @@ test('primary and cleanup failures are both retained', async () => {
     object.metadata.uid = 'replacement'; throw new Error('original');
   }), e => e instanceof AggregateError && e.errors[0].message === 'original' && e.errors[1].status === 409);
 });
+test('adaptive migration is a live migration with policy overrides', async () => {
+  await client.migrations.migrate('db', {name: 'move-db', strategy: 'adaptive', adaptive: {compression: {algorithm: 'zstd', level: 3}}});
+  const call = calls.at(-1);
+  assert.equal(call.path, `/apis/${API_VERSION}/namespaces/default/machinemigrations`);
+  assert.equal(call.body.kind, 'MachineMigration');
+  assert.equal(call.body.spec.strategy, 'live');
+  assert.equal(call.body.spec.multifdChannels, 2);
+  assert.equal(call.body.spec.adaptive.compression.algorithm, 'zstd');
+  assert.throws(() => client.migrations.migrate('db', {strategy: 'cold', adaptive: {}}), /adaptive settings/);
+  assert.throws(() => client.migrations.migrate('db', {bandwidthMbps: 1.5}), /positive integer/);
+  object.status = {phase: 'Running', ramTotal: 4, ramRemaining: 1, progress: {throughputMbps: 900}, adaptive: {stage: 'AutoConverge'}};
+  const progress = await client.migrations.progress('move-db');
+  assert.equal(progress.phase, 'Running');
+  assert.equal(progress.ramRemaining, 1);
+  assert.equal(progress.progress.throughputMbps, 900);
+  assert.equal(progress.adaptive.stage, 'AutoConverge');
+});

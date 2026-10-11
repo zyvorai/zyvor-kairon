@@ -5,6 +5,8 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/zyvorai/kairon/internal/kube"
 	"github.com/zyvorai/kairon/internal/model"
@@ -67,25 +69,170 @@ func AdmitMigrationPolicy(states []*MigrationPolicyState, machine model.Machine)
 	return ""
 }
 
-// BandwidthMbpsFromPolicies returns the first matching MigrationPolicy's
-// BandwidthMbps (list order, not otherwise sorted -- see
-// MigrationPolicySpec.BandwidthMbps's own doc comment for why this is
-// deliberately "first match," not merged), or 0 if none match or none set
-// one. Exported (not just called from controller.go's reconcile loop
-// anymore) so kaironctl's `describe migrationpolicy` preview can compute
-// the identical "what bandwidth would this machine actually get" answer
-// without duplicating this decision -- same reasoning as AdmitMigrationPolicy
-// already being exported for kaironctl's evacuate preview.
-func BandwidthMbpsFromPolicies(states []*MigrationPolicyState, machine model.Machine) uint64 {
+// MigrationTuning is what admission snapshots from MigrationPolicies onto
+// a MachineMigration.
+type MigrationTuning struct {
+	BandwidthMbps uint64
+	MaxDowntimeMs uint64
+	// Adaptive is set when a matching policy has strategy adaptive.
+	Adaptive *model.MachineMigrationAdaptiveSpec
+}
+
+// ResolveMigrationTuning resolves each setting from the first matching
+// MigrationPolicy (list order, not otherwise sorted) that sets it --
+// deliberately "first match," not merged or most-restrictive, keeping
+// policies a simple default rather than a second enforcement layer on top
+// of MaxConcurrent. Exported so kaironctl's `describe migrationpolicy`
+// preview computes the identical answer.
+func ResolveMigrationTuning(states []*MigrationPolicyState, machine model.Machine) MigrationTuning {
+	var t MigrationTuning
 	for _, st := range states {
-		if machine.Namespace() != st.policy.Namespace() || !model.LabelsMatch(machine.Metadata.Labels, st.policy.Spec.Selector) {
+		p := st.policy
+		if machine.Namespace() != p.Namespace() || !model.LabelsMatch(machine.Metadata.Labels, p.Spec.Selector) {
 			continue
 		}
-		if st.policy.Spec.BandwidthMbps > 0 {
-			return st.policy.Spec.BandwidthMbps
+		if t.BandwidthMbps == 0 {
+			t.BandwidthMbps = p.Spec.MaxBandwidthMbps()
+		}
+		if t.MaxDowntimeMs == 0 {
+			t.MaxDowntimeMs = p.Spec.MaxDowntimeMs
+		}
+		if t.Adaptive == nil && p.Spec.Strategy == model.MigrationTuningAdaptive {
+			t.Adaptive = &model.MachineMigrationAdaptiveSpec{
+				Policy:                  p.Metadata.Name,
+				CompletionTimeoutPerGiB: p.Spec.CompletionTimeoutPerGiB,
+				ProgressTimeout:         p.Spec.ProgressTimeout,
+				AutoConverge:            p.Spec.AutoConverge,
+				PostCopy:                p.Spec.PostCopy,
+				Compression:             p.Spec.Compression,
+				Bandwidth:               p.Spec.Bandwidth,
+			}
+			if t.Adaptive.Bandwidth == nil && p.Spec.BandwidthMbps > 0 {
+				t.Adaptive.Bandwidth = &model.MigrationBandwidth{MaxMbps: p.Spec.BandwidthMbps}
+			}
 		}
 	}
-	return 0
+	return t
+}
+
+// BandwidthMbpsFromPolicies returns the bandwidth ResolveMigrationTuning
+// would default a migration of machine to, or 0.
+func BandwidthMbpsFromPolicies(states []*MigrationPolicyState, machine model.Machine) uint64 {
+	return ResolveMigrationTuning(states, machine).BandwidthMbps
+}
+
+// defaultCompressionMultifdChannels is used when compression is
+// snapshotted onto a migration that didn't ask for multifd, since QEMU only
+// compresses multifd channels.
+const defaultCompressionMultifdChannels = 2
+
+// MigrationTuningPatch returns the spec merge patch that applies t to spec,
+// or nil when there is nothing to change. Every value the migration set
+// explicitly wins, field by field, including inside spec.adaptive.
+func MigrationTuningPatch(spec model.MachineMigrationSpec, t MigrationTuning) (map[string]any, error) {
+	patch := map[string]any{}
+	adaptive := mergeAdaptiveSpec(spec.Adaptive, t.Adaptive)
+	if adaptive != nil {
+		if err := ValidateAdaptiveSpec(*adaptive); err != nil {
+			return nil, err
+		}
+		if spec.Adaptive == nil || *adaptive != *spec.Adaptive {
+			patch["adaptive"] = adaptive
+		}
+		if c := adaptive.Compression; c != nil && c.Algorithm != model.MigrationCompressionNone && spec.MultifdChannels == 0 {
+			patch["multifdChannels"] = defaultCompressionMultifdChannels
+		}
+	}
+	if spec.BandwidthMbps == 0 {
+		bw := t.BandwidthMbps
+		if adaptive != nil && adaptive.Bandwidth != nil && adaptive.Bandwidth.MaxMbps > 0 {
+			bw = adaptive.Bandwidth.MaxMbps
+			if adaptive.Bandwidth.Adaptive {
+				bw = max(bw/4, 1)
+			}
+		}
+		if bw > 0 {
+			patch["bandwidthMbps"] = bw
+		}
+	}
+	if spec.MaxDowntimeMs == 0 && t.MaxDowntimeMs > 0 {
+		patch["maxDowntimeMs"] = t.MaxDowntimeMs
+	}
+	if len(patch) == 0 {
+		return nil, nil
+	}
+	return patch, nil
+}
+
+func mergeAdaptiveSpec(explicit, policy *model.MachineMigrationAdaptiveSpec) *model.MachineMigrationAdaptiveSpec {
+	if explicit == nil && policy == nil {
+		return nil
+	}
+	if explicit == nil {
+		out := *policy
+		return &out
+	}
+	out := *explicit
+	if policy == nil {
+		return &out
+	}
+	if out.Policy == "" {
+		out.Policy = policy.Policy
+	}
+	if out.CompletionTimeoutPerGiB == "" {
+		out.CompletionTimeoutPerGiB = policy.CompletionTimeoutPerGiB
+	}
+	if out.ProgressTimeout == "" {
+		out.ProgressTimeout = policy.ProgressTimeout
+	}
+	if out.AutoConverge == nil {
+		out.AutoConverge = policy.AutoConverge
+	}
+	if out.PostCopy == nil {
+		out.PostCopy = policy.PostCopy
+	}
+	if out.Compression == nil {
+		out.Compression = policy.Compression
+	}
+	if out.Bandwidth == nil {
+		out.Bandwidth = policy.Bandwidth
+	}
+	return &out
+}
+
+// ValidateAdaptiveSpec checks what the CRD schema can't: Go duration syntax.
+func ValidateAdaptiveSpec(a model.MachineMigrationAdaptiveSpec) error {
+	for name, v := range map[string]string{
+		"completionTimeoutPerGiB": a.CompletionTimeoutPerGiB,
+		"progressTimeout":         a.ProgressTimeout,
+		"postCopy.triggerAfter":   triggerAfter(a.PostCopy),
+	} {
+		if v == "" {
+			continue
+		}
+		d, err := time.ParseDuration(v)
+		if err != nil || d <= 0 {
+			return fmt.Errorf("adaptive %s %q must be a positive duration such as 30s", name, v)
+		}
+	}
+	if c := a.Compression; c != nil {
+		switch c.Algorithm {
+		case model.MigrationCompressionNone, model.MigrationCompressionZlib, model.MigrationCompressionZstd:
+		default:
+			return fmt.Errorf("adaptive compression algorithm %q must be none, zlib or zstd", c.Algorithm)
+		}
+		if (c.Algorithm == model.MigrationCompressionZstd && c.Level > 20) || (c.Algorithm == model.MigrationCompressionZlib && c.Level > 9) {
+			return fmt.Errorf("adaptive compression level %d is out of range for %s", c.Level, c.Algorithm)
+		}
+	}
+	return nil
+}
+
+func triggerAfter(p *model.MigrationPostCopy) string {
+	if p == nil {
+		return ""
+	}
+	return p.TriggerAfter
 }
 
 // loadMigrationPolicyStates lists every MigrationPolicy and computes its

@@ -77,3 +77,80 @@ func TestBandwidthMbpsFromPoliciesReturnsZeroWhenNoneMatch(t *testing.T) {
 		t.Fatalf("expected 0 for a non-matching Machine, got %d", bw)
 	}
 }
+
+func adaptivePolicy() model.MigrationPolicy {
+	p := webPolicy("adaptive-mp", 0, 0)
+	p.Spec.Strategy = model.MigrationTuningAdaptive
+	p.Spec.MaxDowntimeMs = 250
+	p.Spec.CompletionTimeoutPerGiB = "120s"
+	p.Spec.ProgressTimeout = "30s"
+	p.Spec.AutoConverge = &model.MigrationAutoConverge{Enabled: true, DirtyRateThresholdMbps: 750}
+	p.Spec.PostCopy = &model.MigrationPostCopy{Enabled: true, TriggerAfter: "90s"}
+	p.Spec.Compression = &model.MigrationCompression{Algorithm: "zstd", Level: 3}
+	p.Spec.Bandwidth = &model.MigrationBandwidth{MaxMbps: 10000, Adaptive: true}
+	return p
+}
+
+func TestResolveMigrationTuningSnapshotsAdaptivePolicy(t *testing.T) {
+	machine := webMachine("web-1", "node-a", "Running")
+	states := LoadMigrationPolicyStates([]model.MigrationPolicy{adaptivePolicy()}, []model.Machine{machine}, nil)
+	tuning := ResolveMigrationTuning(states, machine)
+	if tuning.BandwidthMbps != 10000 || tuning.MaxDowntimeMs != 250 || tuning.Adaptive == nil || tuning.Adaptive.Policy != "adaptive-mp" {
+		t.Fatalf("tuning = %+v", tuning)
+	}
+	patch, err := MigrationTuningPatch(model.MachineMigrationSpec{MachineName: "web-1"}, tuning)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if patch["bandwidthMbps"] != uint64(2500) {
+		t.Fatalf("adaptive bandwidth must start at a quarter of maxMbps, got %v", patch["bandwidthMbps"])
+	}
+	if patch["maxDowntimeMs"] != uint64(250) || patch["multifdChannels"] != defaultCompressionMultifdChannels {
+		t.Fatalf("patch = %v", patch)
+	}
+	a, ok := patch["adaptive"].(*model.MachineMigrationAdaptiveSpec)
+	if !ok || a.ProgressTimeout != "30s" || a.Compression.Algorithm != "zstd" {
+		t.Fatalf("adaptive patch = %#v", patch["adaptive"])
+	}
+}
+
+func TestMigrationTuningPatchExplicitValuesWin(t *testing.T) {
+	machine := webMachine("web-1", "node-a", "Running")
+	states := LoadMigrationPolicyStates([]model.MigrationPolicy{adaptivePolicy()}, []model.Machine{machine}, nil)
+	spec := model.MachineMigrationSpec{
+		MachineName: "web-1", BandwidthMbps: 800, MaxDowntimeMs: 50, MultifdChannels: 8,
+		Adaptive: &model.MachineMigrationAdaptiveSpec{ProgressTimeout: "10s", PostCopy: &model.MigrationPostCopy{Enabled: false}},
+	}
+	patch, err := MigrationTuningPatch(spec, ResolveMigrationTuning(states, machine))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"bandwidthMbps", "maxDowntimeMs", "multifdChannels"} {
+		if _, ok := patch[k]; ok {
+			t.Fatalf("explicit %s overwritten: %v", k, patch)
+		}
+	}
+	a := patch["adaptive"].(*model.MachineMigrationAdaptiveSpec)
+	if a.ProgressTimeout != "10s" || a.PostCopy.Enabled || a.CompletionTimeoutPerGiB != "120s" {
+		t.Fatalf("merge = %+v", a)
+	}
+}
+
+func TestMigrationTuningPatchStaticPolicyOnlySetsBandwidth(t *testing.T) {
+	machine := webMachine("web-1", "node-a", "Running")
+	states := LoadMigrationPolicyStates([]model.MigrationPolicy{webPolicy("web-mp", 0, 500)}, []model.Machine{machine}, nil)
+	patch, err := MigrationTuningPatch(model.MachineMigrationSpec{MachineName: "web-1"}, ResolveMigrationTuning(states, machine))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(patch) != 1 || patch["bandwidthMbps"] != uint64(500) {
+		t.Fatalf("patch = %v", patch)
+	}
+}
+
+func TestMigrationTuningPatchRejectsBadDurations(t *testing.T) {
+	spec := model.MachineMigrationSpec{MachineName: "web-1", Adaptive: &model.MachineMigrationAdaptiveSpec{ProgressTimeout: "soon"}}
+	if _, err := MigrationTuningPatch(spec, MigrationTuning{}); err == nil {
+		t.Fatal("expected an invalid progressTimeout to be rejected")
+	}
+}

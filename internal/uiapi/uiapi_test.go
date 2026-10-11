@@ -840,6 +840,31 @@ func TestCreateMigrationDefaultsAndAutoName(t *testing.T) {
 	}
 }
 
+func TestCreateMigrationAdaptiveStrategy(t *testing.T) {
+	s := newTestServer(t, newFakeKube(), "")
+	h := s.Handler()
+	req := createMigrationRequest{Machine: "db", Strategy: "adaptive", Adaptive: &model.MachineMigrationAdaptiveSpec{Compression: &model.MigrationCompression{Algorithm: "zstd", Level: 3}}}
+	rr := doJSON(t, h, http.MethodPost, "/api/v1/migrations", "", req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var out model.MachineMigration
+	if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out.Spec.Strategy != "live" || out.Spec.Adaptive == nil || out.Spec.MultifdChannels != 2 {
+		t.Fatalf("spec = %+v", out.Spec)
+	}
+	for _, bad := range []createMigrationRequest{
+		{Machine: "db", Strategy: "cold", Adaptive: &model.MachineMigrationAdaptiveSpec{}},
+		{Machine: "db", Strategy: "adaptive", Adaptive: &model.MachineMigrationAdaptiveSpec{ProgressTimeout: "soon"}},
+	} {
+		if rr := doJSON(t, h, http.MethodPost, "/api/v1/migrations", "", bad); rr.Code != http.StatusBadRequest {
+			t.Errorf("%+v: expected 400, got %d", bad, rr.Code)
+		}
+	}
+}
+
 func TestCreateMigrationRequiresMachine(t *testing.T) {
 	s := newTestServer(t, newFakeKube(), "")
 	h := s.Handler()
@@ -940,6 +965,27 @@ func TestCancelMigrationRequiresLiveStrategy(t *testing.T) {
 	rr := doJSON(t, h, http.MethodPost, "/api/v1/migrations/default/m1/cancel", "", struct{}{})
 	if rr.Code != http.StatusConflict {
 		t.Fatalf("expected 409 for a cold-strategy migration, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestCancelMigrationRefusedAfterPostCopyStarted(t *testing.T) {
+	fk := newFakeKube()
+	fk.migrations["m1"] = model.MachineMigration{Metadata: model.ObjectMeta{Name: "m1", Namespace: "default"}, Status: model.MachineMigrationStatus{
+		Phase: "Running", EffectiveStrategy: "live",
+		Adaptive: &model.MachineMigrationAdaptiveStatus{Stage: model.AdaptiveStagePostCopy, PostCopyStarted: true},
+	}}
+	s := newTestServer(t, fk, "")
+	h := s.Handler()
+
+	rr := doJSON(t, h, http.MethodPost, "/api/v1/migrations/default/m1/cancel", "", struct{}{})
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("expected 409 once post-copy has started, got %d: %s", rr.Code, rr.Body.String())
+	}
+	fk.mu.Lock()
+	cancel := fk.migrations["m1"].Spec.Cancel
+	fk.mu.Unlock()
+	if cancel {
+		t.Fatal("expected spec.cancel to stay false after post-copy started")
 	}
 }
 

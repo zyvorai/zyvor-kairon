@@ -27,6 +27,9 @@ spec:
     - name: BandwidthMbps
       type: integer
       jsonPath: .spec.bandwidthMbps
+    - name: Strategy
+      type: string
+      jsonPath: .spec.strategy
     - name: Active
       type: integer
       jsonPath: .status.activeMigrations
@@ -48,9 +51,79 @@ spec:
               bandwidthMbps:
                 type: integer
                 minimum: 0
+                description: Deprecated alias for bandwidth.maxMbps.
               maxConcurrent:
                 type: integer
                 minimum: 0
+              strategy:
+                type: string
+                enum:
+                - static
+                - adaptive
+                description: static (default) uses start-time settings only; adaptive
+                  lets kairon-node throttle, relax downtime or switch to post-copy
+                  when a transfer stalls. Experimental until lab-green.
+              maxDowntimeMs:
+                type: integer
+                format: int64
+                minimum: 0
+              completionTimeoutPerGiB:
+                type: string
+                pattern: '^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$'
+                description: Guest RAM in GiB times this Go duration bounds an adaptive
+                  migration before it is aborted with the source left running.
+              progressTimeout:
+                type: string
+                pattern: '^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$'
+                description: How long remaining RAM may fail to shrink before the
+                  transfer counts as stalled.
+              autoConverge:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                  dirtyRateThresholdMbps:
+                    type: integer
+                    format: int64
+                    minimum: 0
+              postCopy:
+                type: object
+                description: Lets the engine switch a stalled transfer to post-copy. After
+                  the switch a failure parks the migration in NeedsRecovery; the source is
+                  never resumed.
+                properties:
+                  enabled:
+                    type: boolean
+                  triggerAfter:
+                    type: string
+                    pattern: '^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$'
+              compression:
+                type: object
+                required:
+                - algorithm
+                properties:
+                  algorithm:
+                    type: string
+                    enum:
+                    - none
+                    - zlib
+                    - zstd
+                  level:
+                    type: integer
+                    minimum: 0
+                    maximum: 20
+                x-kubernetes-validations:
+                - rule: "self.algorithm != 'zlib' || !has(self.level) || self.level <= 9"
+                  message: zlib level must be 0-9
+              bandwidth:
+                type: object
+                properties:
+                  maxMbps:
+                    type: integer
+                    format: int64
+                    minimum: 0
+                  adaptive:
+                    type: boolean
           status:
             type: object
             properties:

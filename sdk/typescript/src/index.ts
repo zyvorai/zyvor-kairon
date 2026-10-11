@@ -60,6 +60,10 @@ function positive(value: number): number {
   if (!Number.isFinite(value) || value <= 0) throw new Error('timeout/interval must be finite and positive');
   return value;
 }
+function positiveInt(value: number, label: string): number {
+  if (!Number.isInteger(value) || value <= 0) throw new Error(`${label} must be a positive integer`);
+  return value;
+}
 function namespace(value: string): string {
   segment(value);
   if (value.length > 63 || value.includes('.')) throw new Error('namespace must be a DNS label');
@@ -209,9 +213,69 @@ export class Machines extends Resource {
     }, spec: {...structuredClone(source.spec), powerState: 'Running', ttlSeconds}});
   }
 }
+export interface AdaptiveMigrationSettings {
+  completionTimeoutPerGiB?: string;
+  progressTimeout?: string;
+  autoConverge?: {enabled?: boolean; dirtyRateThresholdMbps?: number};
+  postCopy?: {enabled?: boolean; triggerAfter?: string};
+  compression?: {algorithm: 'none' | 'zlib' | 'zstd'; level?: number};
+  bandwidth?: {maxMbps?: number; adaptive?: boolean};
+}
+export interface MigrateOptions {
+  name?: string;
+  // 'adaptive' is a live migration steered by kairon-node's adaptive engine (experimental).
+  strategy?: 'auto' | 'live' | 'cold' | 'adaptive';
+  targetNode?: string;
+  mode?: 'pre-copy' | 'post-copy';
+  bandwidthMbps?: number;
+  maxDowntimeMs?: number;
+  multifdChannels?: number;
+  // Overrides the matching MigrationPolicy's adaptive settings, field by field.
+  adaptive?: AdaptiveMigrationSettings;
+}
+export interface MigrationProgress {
+  phase: string;
+  ramTotal: number;
+  ramTransferred: number;
+  ramRemaining: number;
+  downtimeMs: number;
+  progress?: Record<string, Json>;
+  adaptive?: Record<string, Json>;
+}
+export class Migrations extends Resource {
+  migrate(machine: string, options: MigrateOptions = {}): Promise<KaironObject> {
+    segment(machine);
+    let strategy = options.strategy ?? 'auto';
+    let adaptive = options.adaptive;
+    if (strategy === 'adaptive') { strategy = 'live'; adaptive ??= {}; }
+    if (adaptive && strategy !== 'live') throw new Error("adaptive settings need strategy 'live' or 'adaptive'");
+    let multifd = options.multifdChannels;
+    if (adaptive?.compression && adaptive.compression.algorithm !== 'none' && !multifd) multifd = 2;
+    const spec: Record<string, Json> = {machineName: machine, strategy};
+    if (options.targetNode) spec.targetNode = options.targetNode;
+    if (options.mode) spec.mode = options.mode;
+    if (options.bandwidthMbps) spec.bandwidthMbps = positiveInt(options.bandwidthMbps, 'bandwidthMbps');
+    if (options.maxDowntimeMs) spec.maxDowntimeMs = positiveInt(options.maxDowntimeMs, 'maxDowntimeMs');
+    if (multifd) spec.multifdChannels = positiveInt(multifd, 'multifdChannels');
+    if (adaptive) spec.adaptive = structuredClone(adaptive) as Json;
+    const name = options.name ?? `${machine}-migrate-${Date.now().toString(36)}`;
+    return this.create({apiVersion: API_VERSION, kind: 'MachineMigration', metadata: {name, namespace: this.namespace}, spec});
+  }
+  async progress(name: string): Promise<MigrationProgress> {
+    const status = (await this.get(name)).status ?? {};
+    return {
+      phase: String(status.phase ?? 'Pending'),
+      ramTotal: Number(status.ramTotal ?? 0), ramTransferred: Number(status.ramTransferred ?? 0),
+      ramRemaining: Number(status.ramRemaining ?? 0), downtimeMs: Number(status.downtimeMs ?? 0),
+      ...(status.progress ? {progress: status.progress as Record<string, Json>} : {}),
+      ...(status.adaptive ? {adaptive: status.adaptive as Record<string, Json>} : {}),
+    };
+  }
+}
 export class Client {
   readonly namespace: string;
   readonly machines: Machines;
+  readonly migrations: Migrations;
   readonly pools: Resource;
   readonly claims: Resource;
   private readonly http: HTTP;
@@ -219,6 +283,7 @@ export class Client {
     this.namespace = namespace(options.namespace ?? 'default');
     this.http = new HTTP(kubeURL, token, options);
     this.machines = new Machines(this.http, this.namespace, 'machines', 'Machine', API_VERSION);
+    this.migrations = new Migrations(this.http, this.namespace, 'machinemigrations', 'MachineMigration', API_VERSION);
     this.pools = this.resource('machinepools'); this.claims = this.resource('machineclaims');
   }
   resource(name: string, fleet = false): Resource {

@@ -26,6 +26,14 @@ wired to each component's own `Recorder` in `cmd/*/main.go`) gives every
 component apiserver call visibility for free, labeled `method`
 (GET/POST/PATCH/PUT/DELETE) and `outcome` (ok/error).
 
+`kairon-controller` also reports live migration telemetry from each MachineMigration's `status.progress` and `status.adaptive`. Adaptive migration is experimental until the lab migration matrix runs green.
+
+| Metric | Type | Labels | Meaning |
+|---|---|---|---|
+| `kairon_migration_progress` | gauge | `namespace`, `name`, `field` | Telemetry for a migration in Starting or Running. `field` is `dirty_rate_mbps`, `ram_remaining_bytes`, `ram_transferred_bytes`, `throughput_mbps`, `expected_downtime_ms`, `cpu_throttle_pct`, `estimated_completion_seconds`, `compression_ratio_percent` or `duplicate_pages`. |
+| `kairon_migration_adaptive_stage` | gauge | `namespace`, `name`, `stage` | 1 for the adaptive engine's current stage: `PreCopy`, `AutoConverge`, `RelaxDowntime`, `PostCopy`, `Abort` or `Unsupported`. |
+| `kairon_migration_adaptive_actions_total` | counter | `action` | Adaptive engine actions, such as `auto-converge`, `throttle`, `relax-downtime`, `bandwidth`, `postcopy`, `abort`, `tune-failed` and `postcopy-refused`. |
+
 `kairon-node` also registers the VM-edge metrics below (not registered on the controller or kairon-ui). Details, including how drops are read from FluxVM, are in [`docs/ebpf-edge.md`](../ebpf-edge.md#metrics).
 
 | Metric | Type | Labels | Meaning |

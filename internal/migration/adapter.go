@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -60,6 +61,38 @@ func (a *Adapter) AbortSource(ctx context.Context, session Session, transferID s
 	return a.do(ctx, http.MethodPost, path, map[string]any{}, nil)
 }
 
+// Capabilities reports the adapter's optional features. An adapter that
+// predates GET /v1/capabilities (404) has none.
+func (a *Adapter) Capabilities(ctx context.Context) (Capabilities, error) {
+	var out Capabilities
+	err := a.do(ctx, http.MethodGet, "/v1/capabilities", nil, &out)
+	var se *adapterStatusError
+	if errors.As(err, &se) && se.code == http.StatusNotFound {
+		return Capabilities{}, nil
+	}
+	return out, err
+}
+
+func (a *Adapter) sourcePath(session Session, transferID, action string) string {
+	return "/v1/source/" + url.PathEscape(session.ID) + "/" + url.PathEscape(transferID) + "/" + action
+}
+
+func (a *Adapter) Tune(ctx context.Context, session Session, transferID string, req TuneRequest) (TransferStatus, error) {
+	var out TransferStatus
+	err := a.do(ctx, http.MethodPost, a.sourcePath(session, transferID, "tune"), req, &out)
+	return out, err
+}
+
+func (a *Adapter) StartPostCopy(ctx context.Context, session Session, transferID string) (TransferStatus, error) {
+	var out TransferStatus
+	err := a.do(ctx, http.MethodPost, a.sourcePath(session, transferID, "postcopy"), map[string]any{}, &out)
+	return out, err
+}
+
+func (a *Adapter) Finish(ctx context.Context, session Session, transferID string) error {
+	return a.do(ctx, http.MethodPost, a.sourcePath(session, transferID, "finish"), map[string]any{}, nil)
+}
+
 // Abort satisfies SourceDriver. Destination abort uses the same method name,
 // so SourceDriver is implemented through SourceAdapter below.
 type SourceAdapter struct{ Adapter *Adapter }
@@ -72,6 +105,36 @@ func (a SourceAdapter) Status(ctx context.Context, s Session, id string) (Transf
 }
 func (a SourceAdapter) Abort(ctx context.Context, s Session, id string) error {
 	return a.Adapter.AbortSource(ctx, s, id)
+}
+func (a SourceAdapter) Capabilities(ctx context.Context) (Capabilities, error) {
+	return a.Adapter.Capabilities(ctx)
+}
+func (a SourceAdapter) Tune(ctx context.Context, s Session, id string, req TuneRequest) (TransferStatus, error) {
+	return a.Adapter.Tune(ctx, s, id, req)
+}
+func (a SourceAdapter) StartPostCopy(ctx context.Context, s Session, id string) (TransferStatus, error) {
+	return a.Adapter.StartPostCopy(ctx, s, id)
+}
+func (a SourceAdapter) Finish(ctx context.Context, s Session, id string) error {
+	return a.Adapter.Finish(ctx, s, id)
+}
+
+// IsRejected reports whether err is the adapter definitively refusing a
+// request (HTTP 4xx) rather than a transport failure or a backend error
+// that may have taken partial effect.
+func IsRejected(err error) bool {
+	var se *adapterStatusError
+	return errors.As(err, &se) && se.code >= 400 && se.code < 500
+}
+
+type adapterStatusError struct {
+	path string
+	code int
+	body string
+}
+
+func (e *adapterStatusError) Error() string {
+	return fmt.Sprintf("migration adapter %s: HTTP %d: %s", e.path, e.code, e.body)
 }
 
 func (a *Adapter) do(ctx context.Context, method, path string, body any, out any) error {
@@ -100,7 +163,7 @@ func (a *Adapter) do(ctx context.Context, method, path string, body any, out any
 	defer func() { _ = resp.Body.Close() }()
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("migration adapter %s: HTTP %d: %s", path, resp.StatusCode, strings.TrimSpace(string(data)))
+		return &adapterStatusError{path: path, code: resp.StatusCode, body: strings.TrimSpace(string(data))}
 	}
 	if out != nil && len(data) > 0 {
 		if err := json.Unmarshal(data, out); err != nil {

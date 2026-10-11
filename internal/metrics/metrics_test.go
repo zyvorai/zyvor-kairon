@@ -495,3 +495,39 @@ func TestCachedUsageDoesNotRefreshLiveSampleTimestamp(t *testing.T) {
 		t.Fatal("cached sample advanced freshness")
 	}
 }
+
+func TestObserveMigrationsReportsProgressAndAdaptiveState(t *testing.T) {
+	r := NewRecorder()
+	m := migration("prod", "a", "Running")
+	m.Status.RAMRemaining = 1 << 30
+	m.Status.Progress = &model.MachineMigrationProgress{DirtyRateMbps: 700, ThroughputMbps: 900, CPUThrottlePct: 50, EstimatedCompletionSeconds: 42}
+	t0 := time.Unix(100, 0)
+	m.Status.Adaptive = &model.MachineMigrationAdaptiveStatus{
+		Stage:   model.AdaptiveStageAutoConverge,
+		Actions: []model.MachineMigrationAdaptiveAction{{At: t0, Action: "auto-converge"}},
+	}
+	r.ObserveMigrations([]model.MachineMigration{m})
+	for field, want := range map[string]float64{"dirty_rate_mbps": 700, "throughput_mbps": 900, "cpu_throttle_pct": 50, "estimated_completion_seconds": 42, "ram_remaining_bytes": 1 << 30} {
+		if got := testutil.ToFloat64(r.migrationProgress.WithLabelValues("prod", "a", field)); got != want {
+			t.Errorf("%s = %v, want %v", field, got, want)
+		}
+	}
+	if got := testutil.ToFloat64(r.adaptiveStage.WithLabelValues("prod", "a", model.AdaptiveStageAutoConverge)); got != 1 {
+		t.Errorf("stage gauge = %v", got)
+	}
+	// Re-observing the same log never double-counts; only new entries count.
+	r.ObserveMigrations([]model.MachineMigration{m})
+	m.Status.Adaptive.Actions = append(m.Status.Adaptive.Actions, model.MachineMigrationAdaptiveAction{At: t0.Add(time.Minute), Action: "throttle"})
+	r.ObserveMigrations([]model.MachineMigration{m})
+	if got := testutil.ToFloat64(r.adaptiveActions.WithLabelValues("auto-converge")); got != 1 {
+		t.Errorf("auto-converge count = %v, want 1", got)
+	}
+	if got := testutil.ToFloat64(r.adaptiveActions.WithLabelValues("throttle")); got != 1 {
+		t.Errorf("throttle count = %v, want 1", got)
+	}
+	m.Status.Phase = "Succeeded"
+	r.ObserveMigrations([]model.MachineMigration{m})
+	if n := testutil.CollectAndCount(r.migrationProgress); n != 0 {
+		t.Errorf("finished migration still reports %d progress series", n)
+	}
+}

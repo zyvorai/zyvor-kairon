@@ -475,11 +475,19 @@ func (c *Controller) reconcileMigration(ctx context.Context, migration model.Mac
 		if c.MaxConcurrentPerNode > 0 && load.byNode[target] >= c.MaxConcurrentPerNode {
 			return c.blockMigration(ctx, migration, fmt.Sprintf("target node %s has reached its concurrent migration limit (%d active, max %d)", target, load.byNode[target], c.MaxConcurrentPerNode))
 		}
-		if migration.Spec.BandwidthMbps == 0 {
-			if bw := BandwidthMbpsFromPolicies(policyStates, machine); bw > 0 {
-				if err := c.Kube.PatchMachineMigration(ctx, migration.Namespace(), migration.Metadata.Name, map[string]any{"spec": map[string]any{"bandwidthMbps": bw}}); err != nil {
-					c.Log.Error("migration policy bandwidth default patch failed", "namespace", migration.Namespace(), "migration", migration.Metadata.Name, "error", err)
-				}
+		tuning := MigrationTuning{}
+		if strategy == "live" {
+			tuning = ResolveMigrationTuning(policyStates, machine)
+		} else {
+			tuning.BandwidthMbps = BandwidthMbpsFromPolicies(policyStates, machine)
+		}
+		patch, err := MigrationTuningPatch(migration.Spec, tuning)
+		if err != nil {
+			return c.blockMigration(ctx, migration, err.Error())
+		}
+		if patch != nil {
+			if err := c.Kube.PatchMachineMigration(ctx, migration.Namespace(), migration.Metadata.Name, map[string]any{"spec": patch}); err != nil {
+				c.Log.Error("migration policy tuning snapshot patch failed", "namespace", migration.Namespace(), "migration", migration.Metadata.Name, "error", err)
 			}
 		}
 		status.SourceNode = machine.Spec.NodeName

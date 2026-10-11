@@ -26,9 +26,11 @@ Automation entry points:
   [`scripts/recovery-drill.sh`](../scripts/recovery-drill.sh) (firewalls the
   destination's control port mid-migration, then runs `kaironctl recover`),
   [`scripts/lab-inject-source-failure.sh`](../scripts/lab-inject-source-failure.sh)
-  (stops `kairon-node` on the source during transfer), and
+  (stops `kairon-node` on the source during transfer),
   [`scripts/lab-inject-controller-failover.sh`](../scripts/lab-inject-controller-failover.sh)
-  (restarts the controller mid-migration)
+  (restarts the controller mid-migration), and
+  [`scripts/lab-inject-postcopy-source-failure.sh`](../scripts/lab-inject-postcopy-source-failure.sh)
+  (kills the source QEMU after the post-copy switch; destroys the guest)
 
 **Lab enablement (current blocker for the multi-host matrix):** the
 `matrix` job runs only on `runs-on: [self-hosted, kairon-lab]`. Bring that
@@ -39,7 +41,15 @@ the workflow writes it to a file), `KAIRON_HW_MACHINE`,
 case), `KAIRON_HW_IMAGE` (real create/stop/start/delete smoke),
 `KAIRON_HW_SOURCE_SSH` / `KAIRON_HW_TARGET_SSH` (failure drills; the runner
 needs passwordless SSH and sudo for `iptables` / `systemctl`) and
-`KAIRON_HW_CONTROLLER_SSH` (systemd controller instead of Pods). Until then,
+`KAIRON_HW_CONTROLLER_SSH` (systemd controller instead of Pods), and
+`KAIRON_UI_URL` (var) / `KAIRON_UI_TOKEN` (secret) for the guest-agent case
+and for the live case, which starts a memory-dirtying load in the guest
+over the guest agent (`KAIRON_HW_LOAD_MIB`, default 256) and records
+`not run` without them. The adaptive cases take `KAIRON_HW_ADAPTIVE_LOAD_MIB`
+(default 1024) and `KAIRON_HW_ADAPTIVE_BANDWIDTH_MBPS` (default 200), and the
+post-copy source-failure drill needs `KAIRON_HW_POSTCOPY_MACHINE`, a
+disposable Machine the lab recreates before each run (sudo `pkill` on the
+source host). Until then,
 push-triggered runs succeed on the `validate` job only and leave every
 **migration** row below as `not run`.
 
@@ -90,6 +100,10 @@ the multi-host matrix above.
 | Source failure during transfer | not run | — | |
 | Ambiguous commit → `NeedsRecovery` | not run | — | |
 | Controller failover mid-migration | not run | — | |
+| Adaptive: auto-converge under load | not run | — | `--strategy adaptive --auto-converge` with the guest dirtying `KAIRON_HW_ADAPTIVE_LOAD_MIB` through a `KAIRON_HW_ADAPTIVE_BANDWIDTH_MBPS` link; needs an `auto-converge`/`throttle` action, no post-copy, and `status.progress` |
+| Adaptive: post-copy switch under load | not run | — | `--post-copy --post-copy-after=20s` under the same load; needs a `postcopy` action and `status.adaptive.postCopyStarted` |
+| Adaptive: zstd multifd compression | not run | — | `--compression=zstd --compression-level=3` on an idle guest; needs `status.progress.compressionRatioPercent` above 100 |
+| Source failure after post-copy → `NeedsRecovery` | not run | — | `lab-inject-postcopy-source-failure.sh` kills the source QEMU after the switch on the disposable `KAIRON_HW_POSTCOPY_MACHINE`; must land `NeedsRecovery` with the source not resumed, then `ForceAbort` |
 
 `hardware-migration-matrix.sh --write-compat` rewrites these rows from a
 run (the workflow uploads the result as the `compatibility-md` artifact);
@@ -99,6 +113,11 @@ and the script exits non-zero if any case fails. For the eBPF live case, the lab
 Machine must set `dataplaneMode: ebpf` and `dataplaneRequired: true` so
 migration network quiesce/export/restore exercises FluxVM's TC/eBPF path
 (see [`network-fabric.md`](network-fabric.md)).
+
+The four adaptive rows need FluxVM with the adaptive migration controls on
+both hosts: each node's migration adapter `GET /v1/capabilities` must report
+`tune`, `autoConverge`, `postCopySwitch` and `zstd` in `compression`. Adaptive live migration is Experimental until all
+four pass on the nightly workflow alongside the base live rows.
 
 ## Component versions (fill per run)
 

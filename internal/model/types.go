@@ -1056,6 +1056,26 @@ type MachineMigrationSpec struct {
 	// which have no in-flight transfer to abort at all; use the Machine's
 	// own spec.powerState/spec.nodeName instead.
 	Cancel bool `json:"cancel,omitempty"`
+	// Adaptive, when set, runs this live migration under kairon-node's
+	// adaptive engine. The controller snapshots it from the matching
+	// MigrationPolicy at admission, filling only fields left unset here, so
+	// node agents never read policies and policy edits never change a
+	// migration already in flight.
+	Adaptive *MachineMigrationAdaptiveSpec `json:"adaptive,omitempty"`
+}
+
+// MachineMigrationAdaptiveSpec mirrors MigrationPolicySpec's adaptive
+// fields; MaxDowntimeMs and the starting bandwidth live in the
+// migration's own maxDowntimeMs and bandwidthMbps.
+type MachineMigrationAdaptiveSpec struct {
+	// Policy names the MigrationPolicy the settings were copied from.
+	Policy                  string                 `json:"policy,omitempty"`
+	CompletionTimeoutPerGiB string                 `json:"completionTimeoutPerGiB,omitempty"`
+	ProgressTimeout         string                 `json:"progressTimeout,omitempty"`
+	AutoConverge            *MigrationAutoConverge `json:"autoConverge,omitempty"`
+	PostCopy                *MigrationPostCopy     `json:"postCopy,omitempty"`
+	Compression             *MigrationCompression  `json:"compression,omitempty"`
+	Bandwidth               *MigrationBandwidth    `json:"bandwidth,omitempty"`
 }
 
 // MachineMigrationRecoverySpec is the operator's attested recovery
@@ -1120,6 +1140,74 @@ type MachineMigrationStatus struct {
 	// record of whatever recovery action was actually applied (if any) --
 	// kept even if spec.recovery is later edited or cleared.
 	Recovery *MachineMigrationRecoveryStatus `json:"recovery,omitempty"`
+	// Progress is the transfer telemetry from the latest adapter poll.
+	Progress *MachineMigrationProgress `json:"progress,omitempty"`
+	// Adaptive is the adaptive engine's state for migrations with
+	// spec.adaptive. Any live migration also gets it once post-copy starts,
+	// to carry the PostCopyStarted latch.
+	Adaptive *MachineMigrationAdaptiveStatus `json:"adaptive,omitempty"`
+}
+
+// MachineMigrationProgress is integer-only telemetry (no floats in the
+// API): rates are rounded down.
+type MachineMigrationProgress struct {
+	DirtyPagesRate uint64 `json:"dirtyPagesRate,omitempty"`
+	DirtyRateMbps  uint64 `json:"dirtyRateMbps,omitempty"`
+	ThroughputMbps uint64 `json:"throughputMbps,omitempty"`
+	DuplicatePages uint64 `json:"duplicatePages,omitempty"`
+	DirtySyncCount uint64 `json:"dirtySyncCount,omitempty"`
+	// CompressionRatioPercent is uncompressed page bytes over bytes sent,
+	// times 100; set only when compression is on.
+	CompressionRatioPercent    uint64     `json:"compressionRatioPercent,omitempty"`
+	ExpectedDowntimeMs         uint64     `json:"expectedDowntimeMs,omitempty"`
+	EstimatedCompletionSeconds uint64     `json:"estimatedCompletionSeconds,omitempty"`
+	CPUThrottlePct             uint64     `json:"cpuThrottlePct,omitempty"`
+	PostcopyRequests           uint64     `json:"postcopyRequests,omitempty"`
+	UpdatedAt                  *time.Time `json:"updatedAt,omitempty"`
+}
+
+const (
+	AdaptiveStagePreCopy       = "PreCopy"
+	AdaptiveStageAutoConverge  = "AutoConverge"
+	AdaptiveStageRelaxDowntime = "RelaxDowntime"
+	AdaptiveStagePostCopy      = "PostCopy"
+	AdaptiveStageAbort         = "Abort"
+	AdaptiveStageUnsupported   = "Unsupported"
+
+	// MaxAdaptiveActions caps status.adaptive.actions, oldest dropped first.
+	MaxAdaptiveActions = 20
+)
+
+// MachineMigrationAdaptiveStatus holds just enough state for a restarted
+// kairon-node to resume the adaptive engine's decisions.
+type MachineMigrationAdaptiveStatus struct {
+	Stage      string     `json:"stage,omitempty"`
+	Message    string     `json:"message,omitempty"`
+	StartedAt  *time.Time `json:"startedAt,omitempty"`
+	StageSince *time.Time `json:"stageSince,omitempty"`
+	// BestRAMRemaining is the lowest remaining RAM seen, and
+	// BestProgressAt when it last improved meaningfully.
+	BestRAMRemaining uint64     `json:"bestRAMRemaining,omitempty"`
+	BestProgressAt   *time.Time `json:"bestProgressAt,omitempty"`
+	// PostCopyStarted latches once the transfer entered post-copy. From
+	// then on the source can't be resumed.
+	PostCopyStarted bool `json:"postCopyStarted,omitempty"`
+	// PostCopyArmed records that both ends enabled post-copy at stream
+	// start, the precondition for switching to it later.
+	PostCopyArmed bool `json:"postCopyArmed,omitempty"`
+	// Currently applied settings.
+	BandwidthMbps   uint64 `json:"bandwidthMbps,omitempty"`
+	DowntimeLimitMs uint64 `json:"downtimeLimitMs,omitempty"`
+	MaxThrottlePct  uint8  `json:"maxThrottlePct,omitempty"`
+	// LastBandwidthChangeAt paces adaptive bandwidth steps.
+	LastBandwidthChangeAt *time.Time                       `json:"lastBandwidthChangeAt,omitempty"`
+	Actions               []MachineMigrationAdaptiveAction `json:"actions,omitempty"`
+}
+
+type MachineMigrationAdaptiveAction struct {
+	At     time.Time `json:"at"`
+	Action string    `json:"action"`
+	Detail string    `json:"detail,omitempty"`
 }
 
 // MachineMigrationRecoveryStatus mirrors migration.DiagnosisResult (the

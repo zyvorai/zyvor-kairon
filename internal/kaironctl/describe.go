@@ -66,6 +66,9 @@ func cmdDescribe(ctx context.Context, kc *kube.Client, args []string) {
 		// The fifth -- see describeMachine's own doc comment.
 		describeMachine(ctx, kc, ns, name)
 		return
+	case "migration", "migrations", "machinemigrations":
+		describeMigration(ctx, kc, ns, name)
+		return
 	}
 	var (
 		out any
@@ -263,8 +266,97 @@ func describeMigrationPolicy(ctx context.Context, kc *kube.Client, ns, name stri
 				bwLine = fmt.Sprintf("%d Mbps (from %q, an earlier-matching MigrationPolicy, not this one)", bw, winner)
 			}
 		}
+		if a := controller.ResolveMigrationTuning(states, m).Adaptive; a != nil {
+			if a.Policy == policy.Metadata.Name {
+				bwLine += ", adaptive (this policy)"
+			} else {
+				bwLine += fmt.Sprintf(", adaptive (from %q)", a.Policy)
+			}
+		}
 		fmt.Printf("  %-24s %-40s %s\n", m.Metadata.Name, verdict, bwLine)
 	}
+}
+
+// describeMigration prints the raw MachineMigration, then a readable
+// progress block for live transfers.
+func describeMigration(ctx context.Context, kc *kube.Client, ns, name string) {
+	mig, err := kc.GetMachineMigration(ctx, ns, name)
+	if err != nil {
+		fatal(err)
+	}
+	b, _ := json.MarshalIndent(mig, "", "  ")
+	fmt.Println(string(b))
+	if block := migrationProgressBlock(mig.Status); block != "" {
+		fmt.Println()
+		fmt.Print(block)
+	}
+}
+
+func migrationProgressBlock(st model.MachineMigrationStatus) string {
+	if st.RAMTotal == 0 && st.Progress == nil && st.Adaptive == nil {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Progress (%s):\n", st.Phase)
+	if st.RAMTotal > 0 {
+		pct := st.RAMTransferred * 100 / st.RAMTotal
+		fmt.Fprintf(&b, "  Transferred:        %s of %s (%d%%), %s remaining\n", humanBytes(st.RAMTransferred), humanBytes(st.RAMTotal), min(pct, 100), humanBytes(st.RAMRemaining))
+	}
+	if p := st.Progress; p != nil {
+		fmt.Fprintf(&b, "  Throughput:         %d Mbps\n", p.ThroughputMbps)
+		fmt.Fprintf(&b, "  Dirty rate:         %d Mbps (%d pages/s)\n", p.DirtyRateMbps, p.DirtyPagesRate)
+		fmt.Fprintf(&b, "  Expected downtime:  %d ms\n", p.ExpectedDowntimeMs)
+		if p.CPUThrottlePct > 0 {
+			fmt.Fprintf(&b, "  vCPU throttle:      %d%%\n", p.CPUThrottlePct)
+		}
+		if p.CompressionRatioPercent > 0 {
+			fmt.Fprintf(&b, "  Compression ratio:  %d.%02dx\n", p.CompressionRatioPercent/100, p.CompressionRatioPercent%100)
+		}
+		if p.DuplicatePages > 0 {
+			fmt.Fprintf(&b, "  Duplicate pages:    %d\n", p.DuplicatePages)
+		}
+		if p.EstimatedCompletionSeconds > 0 {
+			fmt.Fprintf(&b, "  Estimated finish:   %s\n", (time.Duration(p.EstimatedCompletionSeconds) * time.Second).String())
+		} else {
+			fmt.Fprintf(&b, "  Estimated finish:   unknown (the guest dirties memory as fast as the link drains it)\n")
+		}
+	}
+	if st.DowntimeMs > 0 {
+		fmt.Fprintf(&b, "  Downtime:           %d ms\n", st.DowntimeMs)
+	}
+	if a := st.Adaptive; a != nil {
+		fmt.Fprintf(&b, "Adaptive (experimental):\n")
+		fmt.Fprintf(&b, "  Stage:              %s\n", a.Stage)
+		if a.Message != "" {
+			fmt.Fprintf(&b, "  Message:            %s\n", a.Message)
+		}
+		if a.BandwidthMbps > 0 || a.DowntimeLimitMs > 0 {
+			fmt.Fprintf(&b, "  Applied:            bandwidth %d Mbps, downtime limit %d ms, vCPU throttle ceiling %d%%\n", a.BandwidthMbps, a.DowntimeLimitMs, a.MaxThrottlePct)
+		}
+		switch {
+		case a.PostCopyStarted:
+			fmt.Fprintf(&b, "  Post-copy:          started -- a failure now needs operator recovery\n")
+		case a.PostCopyArmed:
+			fmt.Fprintf(&b, "  Post-copy:          armed\n")
+		}
+		for _, act := range a.Actions {
+			fmt.Fprintf(&b, "  %s  %-16s %s\n", act.At.UTC().Format(time.RFC3339), act.Action, act.Detail)
+		}
+	}
+	return b.String()
+}
+
+func humanBytes(n uint64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := uint64(unit), 0
+	for m := n / unit; m >= unit; m /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
 // firstOverlappingBandwidthPolicy names the first (list-order) policy that
@@ -275,7 +367,7 @@ func describeMigrationPolicy(ctx context.Context, kc *kube.Client, ns, name stri
 // admission/bandwidth decision itself.
 func firstOverlappingBandwidthPolicy(policies []model.MigrationPolicy, m model.Machine) string {
 	for _, p := range policies {
-		if model.LabelsMatch(m.Metadata.Labels, p.Spec.Selector) && p.Spec.BandwidthMbps > 0 {
+		if model.LabelsMatch(m.Metadata.Labels, p.Spec.Selector) && p.Spec.MaxBandwidthMbps() > 0 {
 			return p.Metadata.Name
 		}
 	}

@@ -5,6 +5,7 @@ package kaironctl
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"strings"
@@ -251,6 +252,8 @@ func cmdCreateMigrationPolicy(ctx context.Context, kc *kube.Client, args []strin
 	fs.Var(&selector, "selector", "label key=value this policy applies to (repeatable, required)")
 	bandwidth := fs.Uint64("bandwidth-mbps", 0, "default migration bandwidth for a matching Machine's migration, if it didn't already set one explicitly")
 	maxConcurrent := fs.Int("max-concurrent", 0, "cap on simultaneous non-terminal migrations of matching Machines cluster-wide; 0 is unlimited within this policy's own scope")
+	var tuning policyTuningFlags
+	tuning.register(fs)
 	_ = fs.Parse(args[1:])
 	if len(selector) == 0 {
 		fatal(fmt.Errorf("--selector k=v is required (repeatable)"))
@@ -263,6 +266,14 @@ func cmdCreateMigrationPolicy(ctx context.Context, kc *kube.Client, args []strin
 		TypeMeta: model.TypeMeta{APIVersion: model.APIVersion, Kind: model.KindMigrationPolicy},
 		Metadata: model.ObjectMeta{Name: name, Namespace: *ns},
 		Spec:     model.MigrationPolicySpec{Selector: selectorMap, BandwidthMbps: *bandwidth, MaxConcurrent: *maxConcurrent},
+	}
+	tuningPatch, err := tuning.patch(visited(fs))
+	if err != nil {
+		fatal(err)
+	}
+	raw, _ := json.Marshal(tuningPatch)
+	if err := json.Unmarshal(raw, &p.Spec); err != nil {
+		fatal(err)
 	}
 	out, err := kc.CreateMigrationPolicy(ctx, *ns, p)
 	if err != nil {

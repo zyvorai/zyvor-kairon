@@ -1611,6 +1611,10 @@ spec:
     - name: Phase
       type: string
       jsonPath: .status.phase
+    - name: Stage
+      type: string
+      jsonPath: .status.adaptive.stage
+      priority: 1
     schema: &schema
       openAPIV3Schema:
         type: object
@@ -1696,6 +1700,76 @@ spec:
                   never by Kairon itself. A documented no-op once phase has
                   advanced to Cutover or later, and for cold-strategy migrations,
                   which have no in-flight transfer to abort.
+              adaptive:
+                type: object
+                description: Runs this live migration under kairon-node's adaptive
+                  engine. Snapshotted from the matching MigrationPolicy at admission,
+                  filling only fields left unset here. Experimental until lab-green.
+                properties:
+                  policy:
+                    type: string
+                  completionTimeoutPerGiB:
+                    type: string
+                    pattern: '^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$'
+                    description: Guest RAM in GiB times this Go duration bounds an adaptive
+                      migration before it is aborted with the source left running.
+                  progressTimeout:
+                    type: string
+                    pattern: '^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$'
+                    description: How long remaining RAM may fail to shrink before the
+                      transfer counts as stalled.
+                  autoConverge:
+                    type: object
+                    properties:
+                      enabled:
+                        type: boolean
+                      dirtyRateThresholdMbps:
+                        type: integer
+                        format: int64
+                        minimum: 0
+                  postCopy:
+                    type: object
+                    description: Lets the engine switch a stalled transfer to post-copy. After
+                      the switch a failure parks the migration in NeedsRecovery; the source is
+                      never resumed.
+                    properties:
+                      enabled:
+                        type: boolean
+                      triggerAfter:
+                        type: string
+                        pattern: '^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$'
+                  compression:
+                    type: object
+                    required:
+                    - algorithm
+                    properties:
+                      algorithm:
+                        type: string
+                        enum:
+                        - none
+                        - zlib
+                        - zstd
+                      level:
+                        type: integer
+                        minimum: 0
+                        maximum: 20
+                    x-kubernetes-validations:
+                    - rule: "self.algorithm != 'zlib' || !has(self.level) || self.level <= 9"
+                      message: zlib level must be 0-9
+                  bandwidth:
+                    type: object
+                    properties:
+                      maxMbps:
+                        type: integer
+                        format: int64
+                        minimum: 0
+                      adaptive:
+                        type: boolean
+            x-kubernetes-validations:
+            - rule: "!has(self.adaptive) || !has(self.adaptive.compression) || self.adaptive.compression.algorithm == 'none' || (has(self.multifdChannels) && self.multifdChannels > 0)"
+              message: adaptive compression requires multifdChannels > 0
+            - rule: "!has(self.adaptive) || !has(self.strategy) || self.strategy != 'cold'"
+              message: adaptive settings apply only to live migrations
           status:
             type: object
             properties:
@@ -1778,6 +1852,66 @@ spec:
                   appliedAt:
                     type: string
                     format: date-time
+              progress:
+                type: object
+                description: Transfer telemetry from the latest adapter poll.
+                properties:
+                  dirtyPagesRate: &u64
+                    type: integer
+                    format: int64
+                    minimum: 0
+                  dirtyRateMbps: *u64
+                  throughputMbps: *u64
+                  duplicatePages: *u64
+                  dirtySyncCount: *u64
+                  compressionRatioPercent: *u64
+                  expectedDowntimeMs: *u64
+                  estimatedCompletionSeconds: *u64
+                  cpuThrottlePct: *u64
+                  postcopyRequests: *u64
+                  updatedAt:
+                    type: string
+                    format: date-time
+              adaptive:
+                type: object
+                description: Adaptive engine state for spec.adaptive migrations; any
+                  live migration gets it once post-copy starts, to latch postCopyStarted.
+                properties:
+                  stage:
+                    type: string
+                  message:
+                    type: string
+                  startedAt: &ts
+                    type: string
+                    format: date-time
+                  stageSince: *ts
+                  bestRAMRemaining: *u64
+                  bestProgressAt: *ts
+                  postCopyStarted:
+                    type: boolean
+                  postCopyArmed:
+                    type: boolean
+                  bandwidthMbps: *u64
+                  downtimeLimitMs: *u64
+                  maxThrottlePct:
+                    type: integer
+                    minimum: 0
+                    maximum: 100
+                  lastBandwidthChangeAt: *ts
+                  actions:
+                    type: array
+                    maxItems: 20
+                    items:
+                      type: object
+                      required:
+                      - at
+                      - action
+                      properties:
+                        at: *ts
+                        action:
+                          type: string
+                        detail:
+                          type: string
   - name: v1beta1
     served: true
     storage: false
@@ -3372,6 +3506,9 @@ spec:
     - name: BandwidthMbps
       type: integer
       jsonPath: .spec.bandwidthMbps
+    - name: Strategy
+      type: string
+      jsonPath: .spec.strategy
     - name: Active
       type: integer
       jsonPath: .status.activeMigrations
@@ -3393,9 +3530,79 @@ spec:
               bandwidthMbps:
                 type: integer
                 minimum: 0
+                description: Deprecated alias for bandwidth.maxMbps.
               maxConcurrent:
                 type: integer
                 minimum: 0
+              strategy:
+                type: string
+                enum:
+                - static
+                - adaptive
+                description: static (default) uses start-time settings only; adaptive
+                  lets kairon-node throttle, relax downtime or switch to post-copy
+                  when a transfer stalls. Experimental until lab-green.
+              maxDowntimeMs:
+                type: integer
+                format: int64
+                minimum: 0
+              completionTimeoutPerGiB:
+                type: string
+                pattern: '^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$'
+                description: Guest RAM in GiB times this Go duration bounds an adaptive
+                  migration before it is aborted with the source left running.
+              progressTimeout:
+                type: string
+                pattern: '^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$'
+                description: How long remaining RAM may fail to shrink before the
+                  transfer counts as stalled.
+              autoConverge:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                  dirtyRateThresholdMbps:
+                    type: integer
+                    format: int64
+                    minimum: 0
+              postCopy:
+                type: object
+                description: Lets the engine switch a stalled transfer to post-copy. After
+                  the switch a failure parks the migration in NeedsRecovery; the source is
+                  never resumed.
+                properties:
+                  enabled:
+                    type: boolean
+                  triggerAfter:
+                    type: string
+                    pattern: '^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$'
+              compression:
+                type: object
+                required:
+                - algorithm
+                properties:
+                  algorithm:
+                    type: string
+                    enum:
+                    - none
+                    - zlib
+                    - zstd
+                  level:
+                    type: integer
+                    minimum: 0
+                    maximum: 20
+                x-kubernetes-validations:
+                - rule: "self.algorithm != 'zlib' || !has(self.level) || self.level <= 9"
+                  message: zlib level must be 0-9
+              bandwidth:
+                type: object
+                properties:
+                  maxMbps:
+                    type: integer
+                    format: int64
+                    minimum: 0
+                  adaptive:
+                    type: boolean
           status:
             type: object
             properties:

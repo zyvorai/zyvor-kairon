@@ -3,15 +3,14 @@
 
 // Command kairon-migration-adapter-fluxvm is a real implementation of the
 // Kairon migration adapter contract (docs/migration-adapter.md), backed by
-// FluxVM's own migration receiver endpoint (POST /v1/migration/receivers)
-// and its existing source-side QEMU migration REST API
-// (/v1/vms/{id}/migration/{start,status,cancel}). Unlike
-// kairon-migration-adapter-stub, this adapter drives a real QEMU pre-copy
-// migration -- it requires a FluxVM instance with the receiver endpoint
-// (see fluxvm's docs/runtime-boundary-phase-2.md), and requires the
-// Machine to use NetworkSpec::Tap/Macvtap with an explicit MAC (FluxVM's
-// storage contract v1 also requires shared storage -- the same disk path
-// must be reachable from both the source and target FluxVM instances).
+// FluxVM's adopt-mode migration receivers (POST /v1/migration/receivers
+// with the source's VM record, then activate, then adopt at commit) and
+// its source-side QEMU migration REST API
+// (/v1/vms/{id}/migration/{start,status,cancel,tune,postcopy,finish}).
+// Unlike kairon-migration-adapter-stub, this adapter drives a real QEMU
+// migration. FluxVM's storage contract v1 requires shared storage: the
+// same disk path must be reachable from both the source and target FluxVM
+// instances (see fluxvm's docs/runtime-boundary.md).
 package main
 
 import (
@@ -82,40 +81,71 @@ func (c *fluxClient) do(ctx context.Context, method, path string, body, out any)
 	return resp.StatusCode, nil
 }
 
-// networkSpec/createVMSpec mirror only the fields of FluxVM's own
-// CreateVmRequest/NetworkSpec this adapter needs to set -- every other
-// field has a #[serde(default)] on the Rust side, so omitting them here
-// is safe (they resolve to FluxVM's own defaults, e.g. StorageBackend::Default).
-type networkSpec struct {
-	Mode   string `json:"mode"`
-	Bridge string `json:"bridge,omitempty"`
-	MAC    string `json:"mac,omitempty"`
-}
-
-type createVMSpec struct {
-	Name      string      `json:"name"`
-	Backend   string      `json:"backend"`
-	Image     string      `json:"image"`
-	VCPUs     uint32      `json:"vcpus,omitempty"`
-	MemoryMiB uint64      `json:"memory_mib,omitempty"`
-	Network   networkSpec `json:"network"`
-}
-
+// receiverRequest mirrors the fields of FluxVM's MigrationReceiverRequest
+// this adapter sets. With `record` (the source's own VM record) FluxVM
+// launches an adopt-mode receiver with the source's device model, which
+// `adopt` later turns into a running VM.
 type receiverRequest struct {
-	Spec               createVMSpec `json:"spec"`
-	DiskPath           string       `json:"disk_path"`
-	ReceiverTTLSeconds uint64       `json:"receiver_ttl_seconds,omitempty"`
-	// MigrationBindAddress, when set, is the literal IP FluxVM's receiver
-	// binds/advertises its -incoming listener on instead of 0.0.0.0.
-	MigrationBindAddress string        `json:"migration_bind_address,omitempty"`
-	Tls                  *migrationTLS `json:"tls,omitempty"`
+	Record           json.RawMessage    `json:"record"`
+	ListenHost       string             `json:"listen_host,omitempty"`
+	AdvertiseHost    string             `json:"advertise_host,omitempty"`
+	ExpiresInSeconds uint64             `json:"expires_in_seconds,omitempty"`
+	Tls              *migrationTLS      `json:"tls,omitempty"`
+	Capabilities     streamCapabilities `json:"capabilities"`
 }
 
+// streamCapabilities mirrors FluxVM's MigrationStreamCapabilities.
+type streamCapabilities struct {
+	MultifdChannels uint8        `json:"multifd_channels,omitempty"`
+	Compression     *compression `json:"compression,omitempty"`
+	PostCopy        bool         `json:"post_copy,omitempty"`
+}
+
+type compression struct {
+	Algorithm string `json:"algorithm"`
+	Level     *uint8 `json:"level,omitempty"`
+}
+
+// receiverInfo is the subset of FluxVM's MigrationReceiver this adapter reads.
 type receiverInfo struct {
-	ID        string `json:"id"`
-	Status    string `json:"status"`
-	Port      uint16 `json:"port"`
-	ExpiresAt string `json:"expires_at"`
+	ID    string `json:"id"`
+	URI   string `json:"uri"`
+	Token string `json:"token"`
+	// Capabilities is absent from FluxVM releases that predate stream
+	// negotiation.
+	Capabilities *streamCapabilities `json:"capabilities"`
+}
+
+type receiverToken struct {
+	Token string `json:"token"`
+}
+
+type autoConverge struct {
+	InitialPct   uint8 `json:"initial_pct,omitempty"`
+	IncrementPct uint8 `json:"increment_pct,omitempty"`
+	MaxPct       uint8 `json:"max_pct,omitempty"`
+}
+
+type tuneRequest struct {
+	BandwidthMbps           uint64 `json:"bandwidth_mbps,omitempty"`
+	MaxDowntimeMs           uint64 `json:"max_downtime_ms,omitempty"`
+	CPUThrottleInitialPct   uint8  `json:"cpu_throttle_initial_pct,omitempty"`
+	CPUThrottleIncrementPct uint8  `json:"cpu_throttle_increment_pct,omitempty"`
+	MaxCPUThrottlePct       uint8  `json:"max_cpu_throttle_pct,omitempty"`
+}
+
+// runtimeCapabilities is the part of FluxVM's GET /v1/runtime/capabilities
+// this adapter reads.
+type runtimeCapabilities struct {
+	Migration []struct {
+		Backend             string   `json:"backend"`
+		Live                bool     `json:"live"`
+		AutoConverge        bool     `json:"autoConverge"`
+		Compression         []string `json:"compression"`
+		PostCopySwitch      bool     `json:"postCopySwitch"`
+		LiveTune            bool     `json:"liveTune"`
+		PostCopyWithMultifd bool     `json:"postCopyWithMultifd"`
+	} `json:"migration"`
 }
 
 // migrationTLS mirrors FluxVM's MigrationTlsSpec. TLSHostname is meaningful
@@ -135,6 +165,9 @@ type migrationStartRequest struct {
 	MaxDowntimeMs   uint64        `json:"max_downtime_ms,omitempty"`
 	MultifdChannels uint8         `json:"multifd_channels,omitempty"`
 	Tls             *migrationTLS `json:"tls,omitempty"`
+	AutoConverge    *autoConverge `json:"auto_converge,omitempty"`
+	Compression     *compression  `json:"compression,omitempty"`
+	PostCopy        string        `json:"post_copy,omitempty"`
 }
 
 // migrationStatus mirrors FluxVM's MigrationStatus JSON shape.
@@ -147,6 +180,17 @@ type migrationStatus struct {
 	TotalTimeMs    uint64 `json:"total_time_ms,omitempty"`
 	DowntimeMs     uint64 `json:"downtime_ms,omitempty"`
 	Error          string `json:"error,omitempty"`
+
+	DirtyPagesRate     uint64  `json:"dirty_pages_rate,omitempty"`
+	DirtySyncCount     uint64  `json:"dirty_sync_count,omitempty"`
+	PageSize           uint64  `json:"page_size,omitempty"`
+	DuplicatePages     uint64  `json:"duplicate_pages,omitempty"`
+	NormalBytes        uint64  `json:"normal_bytes,omitempty"`
+	Mbps               float64 `json:"mbps,omitempty"`
+	ExpectedDowntimeMs uint64  `json:"expected_downtime_ms,omitempty"`
+	CPUThrottlePct     uint64  `json:"cpu_throttle_pct,omitempty"`
+	SetupTimeMs        uint64  `json:"setup_time_ms,omitempty"`
+	PostcopyRequests   uint64  `json:"postcopy_requests,omitempty"`
 }
 
 // fluxPhaseToKairon translates FluxVM's MigrationPhase (capitalized, e.g.
@@ -176,6 +220,19 @@ func toTransferStatus(transferID string, s migrationStatus) migration.TransferSt
 		RAMTotal:       s.RAMTotal,
 		TotalTimeMs:    s.TotalTimeMs,
 		DowntimeMs:     s.DowntimeMs,
+		PostCopyActive: strings.EqualFold(s.Phase, "postcopy-active") || strings.HasPrefix(s.Status, "postcopy"),
+		Telemetry: &migration.Telemetry{
+			DirtyPagesRate:     s.DirtyPagesRate,
+			DirtySyncCount:     s.DirtySyncCount,
+			PageSize:           s.PageSize,
+			DuplicatePages:     s.DuplicatePages,
+			NormalBytes:        s.NormalBytes,
+			Mbps:               s.Mbps,
+			ExpectedDowntimeMs: s.ExpectedDowntimeMs,
+			CPUThrottlePct:     s.CPUThrottlePct,
+			SetupTimeMs:        s.SetupTimeMs,
+			PostcopyRequests:   s.PostcopyRequests,
+		},
 	}
 }
 
@@ -201,8 +258,18 @@ type adapter struct {
 	tlsCA, tlsCert, tlsKey string
 
 	mu         sync.Mutex
-	destByID   map[string]string // session.ID -> fluxvm receiver id
-	sourceRTID map[string]string // session.ID -> source runtimeID (for status/abort)
+	destByID   map[string]*destReceiver // session.ID -> fluxvm receiver
+	sourceRTID map[string]string        // session.ID -> source runtimeID (for status/abort)
+
+	// adoptWait bounds how long commit retries adopt while FluxVM reports
+	// the incoming side still finishing (409).
+	adoptWait time.Duration
+}
+
+type destReceiver struct {
+	id        string
+	token     string
+	committed bool
 }
 
 func newAdapter(log *slog.Logger, flux *fluxClient, advertiseHost, bridge string, ttl uint64, migrationNetworks map[string]string, tlsCA, tlsCert, tlsKey string) *adapter {
@@ -210,8 +277,9 @@ func newAdapter(log *slog.Logger, flux *fluxClient, advertiseHost, bridge string
 		log: log, flux: flux, advertiseHost: advertiseHost, bridge: bridge, receiverTTLSec: ttl,
 		migrationNetworks: migrationNetworks,
 		tlsCA:             tlsCA, tlsCert: tlsCert, tlsKey: tlsKey,
-		destByID:   map[string]string{},
+		destByID:   map[string]*destReceiver{},
 		sourceRTID: map[string]string{},
+		adoptWait:  15 * time.Second,
 	}
 }
 
@@ -233,6 +301,10 @@ func (a *adapter) handler() http.Handler {
 	mux.HandleFunc("POST /v1/source/start", a.sourceStart)
 	mux.HandleFunc("GET /v1/source/{sessionID}/{transferID}", a.sourceStatus)
 	mux.HandleFunc("POST /v1/source/{sessionID}/{transferID}/abort", a.sourceAbort)
+	mux.HandleFunc("POST /v1/source/{sessionID}/{transferID}/tune", a.sourceTune)
+	mux.HandleFunc("POST /v1/source/{sessionID}/{transferID}/postcopy", a.sourcePostCopy)
+	mux.HandleFunc("POST /v1/source/{sessionID}/{transferID}/finish", a.sourceFinish)
+	mux.HandleFunc("GET /v1/capabilities", a.capabilities)
 	return http.MaxBytesHandler(mux, 1<<20)
 }
 
@@ -243,8 +315,11 @@ func (a *adapter) prepare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session := req.Session
-	if session.DiskPath == "" || session.MAC == "" {
-		writeError(w, http.StatusUnprocessableEntity, fmt.Errorf("session missing diskPath/mac -- kairon-node's Session extension is required for this adapter"))
+	if len(session.SourceRecord) == 0 {
+		writeJSON(w, http.StatusOK, migration.PrepareResult{
+			TransferSupported: false,
+			Reason:            "session carries no sourceRecord; the source kairon-node must be upgraded to send its FluxVM record",
+		})
 		return
 	}
 	backend := session.Backend
@@ -252,7 +327,7 @@ func (a *adapter) prepare(w http.ResponseWriter, r *http.Request) {
 		backend = "qemu"
 	}
 	advertiseHost := a.advertiseHost
-	bindAddress := ""
+	listenHost := ""
 	if session.MigrationNetwork != "" {
 		ip, ok := a.migrationNetworks[session.MigrationNetwork]
 		if !ok {
@@ -262,26 +337,16 @@ func (a *adapter) prepare(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		bindAddress = ip
+		listenHost = ip
 		advertiseHost = ip
 	}
 	receiverReq := receiverRequest{
-		Spec: createVMSpec{
-			Name:      session.Machine,
-			Backend:   backend,
-			Image:     session.DiskPath, // ignored by create_receiver's logic, but a required field
-			VCPUs:     session.VCPUs,
-			MemoryMiB: session.MemoryMiB,
-			Network: networkSpec{
-				Mode:   "tap",
-				Bridge: a.bridge,
-				MAC:    session.MAC,
-			},
-		},
-		DiskPath:             session.DiskPath,
-		ReceiverTTLSeconds:   a.receiverTTLSec,
-		MigrationBindAddress: bindAddress,
-		Tls:                  a.migrationTLSSpec(""),
+		Record:           session.SourceRecord,
+		ListenHost:       listenHost,
+		AdvertiseHost:    advertiseHost,
+		ExpiresInSeconds: a.receiverTTLSec,
+		Tls:              a.migrationTLSSpec(""),
+		Capabilities:     toStreamCapabilities(session.Stream),
 	}
 	var info receiverInfo
 	if _, err := a.flux.do(r.Context(), http.MethodPost, "/v1/migration/receivers", receiverReq, &info); err != nil {
@@ -289,45 +354,109 @@ func (a *adapter) prepare(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, migration.PrepareResult{TransferSupported: false, Reason: err.Error()})
 		return
 	}
+	// The receiver only listens once activated; the source dials right
+	// after prepare returns.
+	if _, err := a.flux.do(r.Context(), http.MethodPost, "/v1/migration/receivers/"+info.ID+"/activate", receiverToken{Token: info.Token}, nil); err != nil {
+		a.log.Error("fluxvm: activate receiver failed", "session", session.ID, "receiverID", info.ID, "error", err)
+		a.deleteReceiver(r.Context(), session.ID, info.ID)
+		writeJSON(w, http.StatusOK, migration.PrepareResult{TransferSupported: false, Reason: "activate receiver: " + err.Error()})
+		return
+	}
 	a.mu.Lock()
-	a.destByID[session.ID] = info.ID
+	a.destByID[session.ID] = &destReceiver{id: info.ID, token: info.Token}
 	a.mu.Unlock()
-	a.log.Info("fluxvm: receiver created", "session", session.ID, "receiverID", info.ID, "port", info.Port, "migrationNetwork", session.MigrationNetwork)
+	a.log.Info("fluxvm: receiver armed", "session", session.ID, "receiverID", info.ID, "uri", info.URI, "migrationNetwork", session.MigrationNetwork)
 	writeJSON(w, http.StatusOK, migration.PrepareResult{
-		TransferSupported:  true,
-		Endpoint:           fmt.Sprintf("tcp:%s:%d", advertiseHost, info.Port),
-		Backend:            backend,
-		DataPlaneEncrypted: a.tlsCA != "",
+		TransferSupported:    true,
+		Endpoint:             info.URI,
+		Backend:              backend,
+		DataPlaneEncrypted:   a.tlsCA != "",
+		DestinationRuntimeID: info.ID,
+		Stream:               fromStreamCapabilities(info.Capabilities),
 	})
 }
 
+func fromStreamCapabilities(s *streamCapabilities) *migration.StreamCapabilities {
+	if s == nil {
+		return nil
+	}
+	out := &migration.StreamCapabilities{MultifdChannels: s.MultifdChannels, PostCopy: s.PostCopy}
+	if s.Compression != nil {
+		out.Compression = &migration.Compression{Algorithm: s.Compression.Algorithm, Level: s.Compression.Level}
+	}
+	return out
+}
+
+func toStreamCapabilities(s *migration.StreamCapabilities) streamCapabilities {
+	if s == nil {
+		return streamCapabilities{}
+	}
+	out := streamCapabilities{MultifdChannels: s.MultifdChannels, PostCopy: s.PostCopy}
+	if s.Compression != nil {
+		out.Compression = &compression{Algorithm: s.Compression.Algorithm, Level: s.Compression.Level}
+	}
+	return out
+}
+
+func (a *adapter) deleteReceiver(ctx context.Context, sessionID, receiverID string) {
+	if _, err := a.flux.do(ctx, http.MethodDelete, "/v1/migration/receivers/"+receiverID, nil, nil); err != nil {
+		a.log.Warn("fluxvm: receiver delete failed", "session", sessionID, "receiverID", receiverID, "error", err)
+	}
+}
+
+// destCommit adopts the receiver: FluxVM turns it into a running VM under
+// the receiver's id. Idempotent; retries while the incoming side is still
+// finishing (409).
 func (a *adapter) destCommit(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	a.mu.Lock()
-	receiverID, ok := a.destByID[id]
+	recv, ok := a.destByID[id]
 	a.mu.Unlock()
 	if !ok {
 		writeError(w, http.StatusNotFound, fmt.Errorf("unknown destination session %q", id))
 		return
 	}
-	if _, err := a.flux.do(r.Context(), http.MethodPost, "/v1/migration/receivers/"+receiverID+"/activate", nil, nil); err != nil {
-		writeError(w, http.StatusBadGateway, err)
+	if recv.committed {
+		writeJSON(w, http.StatusOK, map[string]any{})
 		return
 	}
-	a.log.Info("fluxvm: receiver activated", "session", id, "receiverID", receiverID)
+	deadline := time.Now().Add(a.adoptWait)
+	for {
+		code, err := a.flux.do(r.Context(), http.MethodPost, "/v1/migration/receivers/"+recv.id+"/adopt", receiverToken{Token: recv.token}, nil)
+		if err == nil {
+			break
+		}
+		if code != http.StatusConflict || time.Now().After(deadline) {
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
+		select {
+		case <-r.Context().Done():
+			writeError(w, http.StatusBadGateway, r.Context().Err())
+			return
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	a.mu.Lock()
+	recv.committed = true
+	a.mu.Unlock()
+	a.log.Info("fluxvm: receiver adopted", "session", id, "runtimeID", recv.id)
 	writeJSON(w, http.StatusOK, map[string]any{})
 }
 
 func (a *adapter) destAbort(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	a.mu.Lock()
-	receiverID, ok := a.destByID[id]
+	recv, ok := a.destByID[id]
+	if ok && recv.committed {
+		a.mu.Unlock()
+		writeError(w, http.StatusConflict, fmt.Errorf("destination session %q is already committed", id))
+		return
+	}
 	delete(a.destByID, id)
 	a.mu.Unlock()
 	if ok {
-		if _, err := a.flux.do(r.Context(), http.MethodDelete, "/v1/migration/receivers/"+receiverID, nil, nil); err != nil {
-			a.log.Warn("fluxvm: receiver abort failed", "session", id, "receiverID", receiverID, "error", err)
-		}
+		a.deleteReceiver(r.Context(), id, recv.id)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{})
 }
@@ -353,6 +482,13 @@ func (a *adapter) sourceStart(w http.ResponseWriter, r *http.Request) {
 		MaxDowntimeMs:   req.Options.MaxDowntimeMs,
 		MultifdChannels: req.Options.MultifdChannels,
 		Tls:             a.migrationTLSSpec(endpointHost(req.Endpoint)),
+		PostCopy:        req.Options.PostCopy,
+	}
+	if ac := req.Options.AutoConverge; ac != nil {
+		startReq.AutoConverge = &autoConverge{InitialPct: ac.InitialPct, IncrementPct: ac.IncrementPct, MaxPct: ac.MaxPct}
+	}
+	if c := req.Options.Compression; c != nil {
+		startReq.Compression = &compression{Algorithm: c.Algorithm, Level: c.Level}
 	}
 	var status migrationStatus
 	if _, err := a.flux.do(r.Context(), http.MethodPost, "/v1/vms/"+req.RuntimeID+"/migration/start", startReq, &status); err != nil {
@@ -377,7 +513,13 @@ func (a *adapter) sourceStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var status migrationStatus
-	if _, err := a.flux.do(r.Context(), http.MethodGet, "/v1/vms/"+runtimeID+"/migration/status", nil, &status); err != nil {
+	if code, err := a.flux.do(r.Context(), http.MethodGet, "/v1/vms/"+runtimeID+"/migration/status", nil, &status); err != nil {
+		// A 4xx means FluxVM no longer has a running source VM; kairon-node
+		// treats that as a lost source once post-copy has started.
+		if code >= 400 && code < 500 {
+			writeError(w, http.StatusConflict, err)
+			return
+		}
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
@@ -395,6 +537,99 @@ func (a *adapter) sourceAbort(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{})
+}
+
+func (a *adapter) sourceRuntime(w http.ResponseWriter, r *http.Request) (string, bool) {
+	transferID := r.PathValue("transferID")
+	a.mu.Lock()
+	runtimeID, ok := a.sourceRTID[transferID]
+	a.mu.Unlock()
+	if !ok {
+		writeError(w, http.StatusNotFound, fmt.Errorf("unknown transfer %q", transferID))
+	}
+	return runtimeID, ok
+}
+
+func (a *adapter) sourceTune(w http.ResponseWriter, r *http.Request) {
+	runtimeID, ok := a.sourceRuntime(w, r)
+	if !ok {
+		return
+	}
+	var req migration.TuneRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if req.IsZero() {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("tune request sets nothing"))
+		return
+	}
+	var status migrationStatus
+	if _, err := a.flux.do(r.Context(), http.MethodPost, "/v1/vms/"+runtimeID+"/migration/tune", tuneRequest(req), &status); err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	a.log.Info("fluxvm: migration tuned", "runtimeID", runtimeID, "tune", req)
+	writeJSON(w, http.StatusOK, toTransferStatus(r.PathValue("transferID"), status))
+}
+
+func (a *adapter) sourcePostCopy(w http.ResponseWriter, r *http.Request) {
+	runtimeID, ok := a.sourceRuntime(w, r)
+	if !ok {
+		return
+	}
+	var status migrationStatus
+	if code, err := a.flux.do(r.Context(), http.MethodPost, "/v1/vms/"+runtimeID+"/migration/postcopy", map[string]any{}, &status); err != nil {
+		// A FluxVM 4xx means it refused before touching QEMU; anything else
+		// may have switched, and Kairon must assume it did.
+		if code >= 400 && code < 500 {
+			writeError(w, http.StatusConflict, err)
+			return
+		}
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	a.log.Info("fluxvm: migration switched to post-copy", "runtimeID", runtimeID)
+	writeJSON(w, http.StatusOK, toTransferStatus(r.PathValue("transferID"), status))
+}
+
+// sourceFinish stops the paused source QEMU and removes its FluxVM record
+// once the destination has committed. The shared disk stays.
+func (a *adapter) sourceFinish(w http.ResponseWriter, r *http.Request) {
+	runtimeID, ok := a.sourceRuntime(w, r)
+	if !ok {
+		return
+	}
+	code, err := a.flux.do(r.Context(), http.MethodPost, "/v1/vms/"+runtimeID+"/migration/finish", map[string]any{}, nil)
+	if err != nil && code != http.StatusNotFound {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	a.mu.Lock()
+	delete(a.sourceRTID, r.PathValue("transferID"))
+	a.mu.Unlock()
+	a.log.Info("fluxvm: source runtime finished", "runtimeID", runtimeID)
+	writeJSON(w, http.StatusOK, map[string]any{})
+}
+
+func (a *adapter) capabilities(w http.ResponseWriter, r *http.Request) {
+	var rc runtimeCapabilities
+	if _, err := a.flux.do(r.Context(), http.MethodGet, "/v1/runtime/capabilities", nil, &rc); err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	out := migration.Capabilities{Finish: true}
+	for _, m := range rc.Migration {
+		if m.Backend != "qemu" {
+			continue
+		}
+		out.Tune = m.LiveTune
+		out.PostCopySwitch = m.PostCopySwitch
+		out.AutoConverge = m.AutoConverge
+		out.Compression = m.Compression
+		out.PostCopyWithMultifd = m.PostCopyWithMultifd
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // endpointHost extracts the host from a "tcp:host:port" migration endpoint
@@ -460,7 +695,7 @@ func run() int {
 	fluxURL := flag.String("fluxvm-url", "http://127.0.0.1:8080", "local FluxVM REST API base URL")
 	fluxToken := flag.String("fluxvm-token", os.Getenv("FLUXVM_TOKEN"), "FluxVM admin Bearer token (default: $FLUXVM_TOKEN)")
 	advertiseHost := flag.String("advertise-host", "127.0.0.1", "address migration peers should use to reach this host's receivers")
-	bridge := flag.String("bridge", "virbr0", "host bridge for receiver tap devices")
+	bridge := flag.String("bridge", "virbr0", "ignored; receivers reuse the source VM's own network spec")
 	receiverTTL := flag.Uint64("receiver-ttl-seconds", 300, "how long an unclaimed receiver is kept before FluxVM reclaims it")
 	migrationNetworks := make(migrationNetworkFlag)
 	flag.Var(migrationNetworks, "migration-network", "name=ip mapping a MachineMigration's migrationNetwork to the address the receiver binds/advertises (repeatable)")

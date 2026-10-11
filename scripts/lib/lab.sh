@@ -121,13 +121,15 @@ migration_in() {
   return 1
 }
 
-# start_migration NS MACHINE TARGET STRATEGY PREFIX -- prints the migration name.
+# start_migration NS MACHINE TARGET STRATEGY PREFIX [MIGRATE_FLAGS...] --
+# prints the migration name. Extra flags go to `kaironctl migrate`.
 start_migration() {
   local ns="$1" machine="$2" target="$3" strategy="$4" prefix="$5"
+  shift 5
   local name
   name="$prefix-$machine-$(date -u +%Y%m%d-%H%M%S)"
   name="${name:0:63}"
-  "$KAIRONCTL" migrate "$machine" --namespace "$ns" --name="$name" --strategy="$strategy" --target-node="$target" >&2
+  "$KAIRONCTL" migrate "$machine" --namespace "$ns" --name="$name" --strategy="$strategy" --target-node="$target" "$@" >&2
   echo "$name"
 }
 
@@ -140,3 +142,42 @@ lab_ssh() {
   local target="$1"; shift
   ssh -o BatchMode=yes -o ConnectTimeout=15 "$target" "$@"
 }
+
+# guest_exec NS MACHINE SCRIPT [TIMEOUT] -- runs `/bin/sh -c SCRIPT` in the
+# guest through kairon-ui -> kairon-node -> qemu-guest-agent and prints the
+# JSON result. Needs KAIRON_UI_URL / KAIRON_UI_TOKEN and spec.guestAgent.enabled.
+guest_exec() {
+  local ns="$1" machine="$2" script="$3" timeout="${4:-30}" body url="${KAIRON_UI_URL:?set KAIRON_UI_URL}"
+  body="$(python3 -c 'import json,sys; print(json.dumps({"path":"/bin/sh","args":["-c",sys.argv[1]],"timeoutSeconds":int(sys.argv[2])}))' "$script" "$timeout")"
+  curl -fsS -X POST -H "Authorization: Bearer ${KAIRON_UI_TOKEN:?set KAIRON_UI_TOKEN}" -H "Content-Type: application/json" \
+    --data "$body" "${url%/}/api/v1/machines/${ns}/${machine}/exec"
+}
+
+# Dirties guest RAM continuously so a live migration has real work to
+# converge: stress-ng when the image has it, otherwise a tmpfs rewrite loop.
+# Detached, so the exec returns at once; stop_guest_load (or the duration
+# cap) ends it.
+# shellcheck disable=SC2016 # expanded by the guest's shell, not this one
+GUEST_LOAD_SCRIPT='
+dur="${KAIRON_LOAD_SECONDS:-900}"; mib="${KAIRON_LOAD_MIB:-256}"
+if command -v stress-ng >/dev/null 2>&1; then
+  nohup stress-ng --vm 1 --vm-bytes "${mib}M" --vm-keep --timeout "${dur}s" >/dev/null 2>&1 &
+else
+  dir=/dev/shm; [ -d "$dir" ] || dir=/tmp
+  nohup sh -c "end=\$((\$(date +%s)+$dur)); while [ \$(date +%s) -lt \$end ]; do dd if=/dev/urandom of=$dir/kairon-load bs=1M count=$mib conv=notrunc 2>/dev/null; done; rm -f $dir/kairon-load" >/dev/null 2>&1 &
+fi
+echo started'
+
+# start_guest_load NS MACHINE [MIB] [SECONDS]
+start_guest_load() {
+  local out
+  out="$(guest_exec "$1" "$2" "KAIRON_LOAD_MIB=${3:-256} KAIRON_LOAD_SECONDS=${4:-900}; export KAIRON_LOAD_MIB KAIRON_LOAD_SECONDS; ${GUEST_LOAD_SCRIPT}")" || return 1
+  python3 -c 'import json,sys; r=json.loads(sys.argv[1]); sys.exit(0 if r.get("exitCode")==0 and "started" in r.get("stdout","") else 1)' "$out"
+}
+
+stop_guest_load() {
+  guest_exec "$1" "$2" 'pkill -f "stress-ng --vm" 2>/dev/null; pkill -f kairon-load 2>/dev/null; rm -f /dev/shm/kairon-load /tmp/kairon-load; true' >/dev/null 2>&1 || true
+}
+
+# migration_field NS NAME EXPR
+migration_field() { kube_curl GET "$(migration_path "$1" "$2")" | json_eval "$3"; }

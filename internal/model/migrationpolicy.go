@@ -52,6 +52,81 @@ type MigrationPolicySpec struct {
 	// own global caps. 0 (the default) is unlimited within this policy's
 	// own scope (the global caps still apply regardless).
 	MaxConcurrent int `json:"maxConcurrent,omitempty"`
+
+	// Strategy is static (the default: start-time settings only) or
+	// adaptive (kairon-node's adaptive engine watches each transfer and
+	// throttles, relaxes downtime or switches to post-copy when it stalls).
+	// Experimental until the lab migration matrix runs green.
+	Strategy string `json:"strategy,omitempty"`
+	// MaxDowntimeMs becomes spec.maxDowntimeMs when a migration doesn't
+	// set one. Adaptive migrations may relax towards it, never beyond.
+	MaxDowntimeMs uint64 `json:"maxDowntimeMs,omitempty"`
+	// CompletionTimeoutPerGiB (a Go duration such as "120s") bounds an
+	// adaptive migration to guest RAM in GiB times this value before it is
+	// aborted with the source left running.
+	CompletionTimeoutPerGiB string `json:"completionTimeoutPerGiB,omitempty"`
+	// ProgressTimeout is how long remaining RAM may fail to shrink before
+	// an adaptive migration counts as stalled.
+	ProgressTimeout string                 `json:"progressTimeout,omitempty"`
+	AutoConverge    *MigrationAutoConverge `json:"autoConverge,omitempty"`
+	PostCopy        *MigrationPostCopy     `json:"postCopy,omitempty"`
+	Compression     *MigrationCompression  `json:"compression,omitempty"`
+	// Bandwidth supersedes BandwidthMbps, which stays as a deprecated alias
+	// for bandwidth.maxMbps.
+	Bandwidth *MigrationBandwidth `json:"bandwidth,omitempty"`
+}
+
+const (
+	MigrationTuningStatic   = "static"
+	MigrationTuningAdaptive = "adaptive"
+
+	MigrationCompressionNone = "none"
+	MigrationCompressionZlib = "zlib"
+	MigrationCompressionZstd = "zstd"
+)
+
+// MigrationAutoConverge lets the adaptive engine throttle guest vCPUs when
+// the guest dirties memory faster than the link drains it.
+type MigrationAutoConverge struct {
+	Enabled bool `json:"enabled,omitempty"`
+	// DirtyRateThresholdMbps starts throttling once the guest dirty rate
+	// reaches this, even before the progress timeout expires. 0 relies on
+	// stall detection alone.
+	DirtyRateThresholdMbps uint64 `json:"dirtyRateThresholdMbps,omitempty"`
+}
+
+// MigrationPostCopy lets the adaptive engine switch a stalled pre-copy
+// transfer to post-copy. After the switch the guest runs on the destination
+// while pages fault in over the network; losing either node then loses the
+// guest, so a failure goes to NeedsRecovery instead of resuming the source.
+type MigrationPostCopy struct {
+	Enabled bool `json:"enabled,omitempty"`
+	// TriggerAfter switches to post-copy once the transfer has run this
+	// long (a Go duration), even if other stall remedies are still left.
+	TriggerAfter string `json:"triggerAfter,omitempty"`
+}
+
+// MigrationCompression compresses multifd channels. Requires multifd.
+type MigrationCompression struct {
+	Algorithm string `json:"algorithm"`
+	// Level is 1-20 for zstd and 1-9 for zlib. 0 uses QEMU's default.
+	Level uint8 `json:"level,omitempty"`
+}
+
+type MigrationBandwidth struct {
+	MaxMbps uint64 `json:"maxMbps,omitempty"`
+	// Adaptive starts below MaxMbps and raises bandwidth while throughput
+	// keeps up, backing off when it stops.
+	Adaptive bool `json:"adaptive,omitempty"`
+}
+
+// MaxBandwidthMbps resolves bandwidth.maxMbps with the deprecated
+// bandwidthMbps alias as fallback.
+func (s MigrationPolicySpec) MaxBandwidthMbps() uint64 {
+	if s.Bandwidth != nil && s.Bandwidth.MaxMbps > 0 {
+		return s.Bandwidth.MaxMbps
+	}
+	return s.BandwidthMbps
 }
 
 // MigrationPolicyStatus mirrors MachineDisruptionBudget's own status

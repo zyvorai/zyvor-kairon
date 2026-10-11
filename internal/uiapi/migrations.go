@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/zyvorai/kairon/internal/controller"
 	"github.com/zyvorai/kairon/internal/model"
 )
 
@@ -25,6 +26,10 @@ type createMigrationRequest struct {
 	MaxDowntimeMs    uint64 `json:"maxDowntimeMs"`
 	MultifdChannels  uint8  `json:"multifdChannels"` // decoding already rejects >255 (json.UnmarshalTypeError), unlike cmdMigrate's uint flag
 	MigrationNetwork string `json:"migrationNetwork"`
+	// Adaptive overrides the matching MigrationPolicy's adaptive settings.
+	// Strategy "adaptive" is shorthand for a live migration with an empty
+	// adaptive block (policy values or engine defaults).
+	Adaptive *model.MachineMigrationAdaptiveSpec `json:"adaptive"`
 }
 
 type evacuateRequest struct {
@@ -100,6 +105,25 @@ func (s *Server) handleCreateMigration(w http.ResponseWriter, r *http.Request) {
 	if req.Mode == "" {
 		req.Mode = "pre-copy"
 	}
+	if req.Strategy == model.MigrationTuningAdaptive {
+		req.Strategy = "live"
+		if req.Adaptive == nil {
+			req.Adaptive = &model.MachineMigrationAdaptiveSpec{}
+		}
+	}
+	if req.Adaptive != nil {
+		if req.Strategy != "live" {
+			writeError(w, http.StatusBadRequest, "adaptive settings need strategy live or adaptive")
+			return
+		}
+		if err := controller.ValidateAdaptiveSpec(*req.Adaptive); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if c := req.Adaptive.Compression; c != nil && c.Algorithm != model.MigrationCompressionNone && req.MultifdChannels == 0 {
+			req.MultifdChannels = 2
+		}
+	}
 	ns := namespaceParam(r)
 	if req.Name == "" {
 		req.Name = resourceName("migration-" + req.Machine + "-" + time.Now().UTC().Format("20060102-150405"))
@@ -116,6 +140,7 @@ func (s *Server) handleCreateMigration(w http.ResponseWriter, r *http.Request) {
 			MaxDowntimeMs:    req.MaxDowntimeMs,
 			MultifdChannels:  req.MultifdChannels,
 			MigrationNetwork: req.MigrationNetwork,
+			Adaptive:         req.Adaptive,
 		},
 	}
 	out, err := s.Kube.CreateMachineMigration(r.Context(), ns, migration)
@@ -244,6 +269,10 @@ func (s *Server) handleCancelMigration(w http.ResponseWriter, r *http.Request) {
 	}
 	if current.Status.EffectiveStrategy != "live" {
 		writeError(w, http.StatusConflict, "machinemigration is a "+current.Status.EffectiveStrategy+"-strategy migration; cancel only applies to live migrations")
+		return
+	}
+	if a := current.Status.Adaptive; a != nil && a.PostCopyStarted {
+		writeError(w, http.StatusConflict, "machinemigration has started post-copy; the source can no longer take the guest back, so it can't be cancelled")
 		return
 	}
 	patch := map[string]any{"spec": map[string]any{"cancel": true}}
