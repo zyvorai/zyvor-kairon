@@ -113,6 +113,10 @@ Flags:
                           instead of the self-signed one this script otherwise
                           generates. Needs --ui-tls-key and --with-ui.
   --ui-tls-key=PATH       Private key for --ui-tls-cert.
+  --ui-regenerate-cert    Generate a new self-signed dashboard certificate even
+                          though one is already installed on the host (by
+                          default it is reused, so browsers do not warn again
+                          after every deploy).
   --ui-insecure-http      Serve the dashboard over plain HTTP. Logins and the
                           bearer token then cross the network in clear text;
                           only for a trusted loopback or a throwaway lab.
@@ -261,6 +265,8 @@ RESOLVED_CONSOLE_TOKEN=""
 WITH_CONSOLE_TLS=0
 UI_TLS=0
 UI_INSECURE_HTTP=0
+UI_TLS_REUSE=0
+UI_TLS_REGEN=0
 UI_TLS_CERT=""
 UI_TLS_KEY=""
 CONSOLE_TLS_CERT=""
@@ -345,6 +351,7 @@ while [[ $# -gt 0 ]]; do
     --console-tls) WITH_CONSOLE_TLS=1 ;;
     --ui-tls) UI_TLS=1 ;;   # HTTPS is already the default with --with-ui; kept for scripts
     --ui-insecure-http) UI_INSECURE_HTTP=1 ;;
+    --ui-regenerate-cert) UI_TLS_REGEN=1 ;;
     --ui-tls-cert=*) UI_TLS_CERT="${1#*=}"; UI_TLS=1 ;;
     --ui-tls-key=*) UI_TLS_KEY="${1#*=}"; UI_TLS=1 ;;
     --console-tls-cert=*) CONSOLE_TLS_CERT="${1#*=}" ;;
@@ -889,6 +896,9 @@ run_deploy() {
       cp "$UI_TLS_CERT" "$local_stage/ui-tls-cert.pem"
       cp "$UI_TLS_KEY" "$local_stage/ui-tls-key.pem"
       ok "using the provided dashboard TLS certificate (--ui-tls-cert/-key)"
+    elif [[ "$UI_TLS_REGEN" != "1" ]] && ssh_exec_privileged "$REMOTE" "${SUDO} test -s /etc/kairon/ui-tls/cert.pem -a -s /etc/kairon/ui-tls/key.pem" >/dev/null 2>&1; then
+      UI_TLS_REUSE=1
+      ok "reusing the dashboard certificate already installed on the host (--ui-regenerate-cert to replace it)"
     else
       command -v openssl >/dev/null 2>&1 || die "--ui-tls needs a certificate: install 'openssl' (used to generate a self-signed one), or pass --ui-tls-cert/-key"
       local ui_ips ui_sans ui_ip
@@ -967,6 +977,7 @@ run_deploy() {
     printf 'IMAGE_CACHE_DIR=%q\n' "$IMAGE_CACHE_DIR"
     printf 'UI_TLS=%q\n' "$UI_TLS"
     printf 'UI_INSECURE_HTTP=%q\n' "$UI_INSECURE_HTTP"
+    printf 'UI_TLS_REUSE=%q\n' "$UI_TLS_REUSE"
     printf 'CPU_PINNING=%q\n' "$CPU_PINNING"
   } > "$local_stage/params.env"
 
@@ -1343,13 +1354,19 @@ if [[ "$WITH_UI" == "1" ]]; then
     sed -i -E '/^(KAIRON_UI_TLS_CERT|KAIRON_UI_TLS_KEY)=/d' /etc/kairon/kairon-ui.env
     warn "dashboard served over plain HTTP (--ui-insecure-http): logins and tokens are clear text on the network"
   elif [[ "$UI_TLS" == "1" ]]; then
-    install -d -m 0750 -o root -g kairon /etc/kairon/ui-tls
-    install -m 0644 -o root -g kairon ./ui-tls-cert.pem /etc/kairon/ui-tls/cert.pem
-    install -m 0640 -o root -g kairon ./ui-tls-key.pem /etc/kairon/ui-tls/key.pem
+    if [[ "$UI_TLS_REUSE" != "1" ]]; then
+      install -d -m 0750 -o root -g kairon /etc/kairon/ui-tls
+      install -m 0644 -o root -g kairon ./ui-tls-cert.pem /etc/kairon/ui-tls/cert.pem
+      install -m 0640 -o root -g kairon ./ui-tls-key.pem /etc/kairon/ui-tls/key.pem
+    fi
     sed -i -E '/^KAIRON_UI_INSECURE_HTTP=/d' /etc/kairon/kairon-ui.env
     set_env_key /etc/kairon/kairon-ui.env KAIRON_UI_TLS_CERT /etc/kairon/ui-tls/cert.pem
     set_env_key /etc/kairon/kairon-ui.env KAIRON_UI_TLS_KEY /etc/kairon/ui-tls/key.pem
-    ok "dashboard TLS: certificate installed to /etc/kairon/ui-tls/ and wired into kairon-ui.env"
+    if [[ "$UI_TLS_REUSE" == "1" ]]; then
+      ok "dashboard TLS: existing certificate in /etc/kairon/ui-tls/ kept and wired into kairon-ui.env"
+    else
+      ok "dashboard TLS: certificate installed to /etc/kairon/ui-tls/ and wired into kairon-ui.env"
+    fi
   fi
 fi
 
@@ -1434,7 +1451,7 @@ INSTALL_EOF
       COPYFILE_DISABLE=1 tar "${tar_extra[@]}" -C "$REPO_ROOT/web/dist" -czf "$local_stage/kairon-ui-web.tar.gz" .
       scp_files+=("$local_stage/kairon-ui-web.tar.gz")
     fi
-    if [[ "$UI_TLS" == "1" ]]; then
+    if [[ "$UI_TLS" == "1" && "$UI_TLS_REUSE" != "1" ]]; then
       scp_files+=("$local_stage/ui-tls-cert.pem" "$local_stage/ui-tls-key.pem")
     fi
   fi
