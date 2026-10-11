@@ -157,9 +157,18 @@ export default function App() {
           setTimeout(() => window.dispatchEvent(new Event('kairon:new-machine')), 60);
         },
       },
+      // Kept as an action instead of a banner on every page.
+      {
+        key: 'action:change-password',
+        group: 'Actions',
+        label: 'Change password',
+        hint: weakPassword ? 'You are on the default lab password' : 'Account',
+        tone: 'rose',
+        run: () => setPage('account'),
+      },
     ];
     return [...actions, ...machineVerbEntries(machines, goMigrate, goSnapshot), ...pages, ...ms];
-  }, [machines, setPage]);
+  }, [machines, setPage, weakPassword]);
 
   function goMigrate(machine: string) {
     setPrefillMachine(machine);
@@ -231,12 +240,6 @@ export default function App() {
   return (
     <ToastProvider>
       <GlobalNav page={page} go={setPage} username={username()} health={health} onSearch={() => setPalette(true)} onSignOut={signOut} />
-      {weakPassword && page !== 'account' && (
-        <div className="pwbanner" role="alert">
-          <span>You signed in with the default lab password. Change it before exposing this dashboard.</span>
-          <button className="sm" onClick={() => setPage('account')}>Change password</button>
-        </div>
-      )}
       <main className="stage" key={ns}>
         <PageHero
           kicker={page === 'overview' ? 'VM orchestration on FluxVM' : group?.group ?? 'Account'}
