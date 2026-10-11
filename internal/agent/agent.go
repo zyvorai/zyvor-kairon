@@ -963,6 +963,11 @@ func (a *Agent) reconcileMigration(ctx context.Context, item model.MachineMigrat
 			session.NetworkSnapshot = snap
 		}
 		session.ConntrackSnapshot = a.exportConntrackSnapshot(ctx, machine, rec.ID())
+		if raw, err := a.Flux.GetRaw(ctx, rec.ID()); err != nil {
+			a.Log.Warn("reading source FluxVM record for the receiver failed; continuing without it", "runtimeID", rec.ID(), "error", err)
+		} else {
+			session.SourceRecord = raw
+		}
 		prepared, err := a.MigrationPeer.Prepare(ctx, targetURL, session)
 		if err != nil {
 			return fmt.Errorf("prepare target %s: %w", item.Status.TargetNode, err)
@@ -1054,6 +1059,7 @@ func (a *Agent) projectTransfer(ctx context.Context, item model.MachineMigration
 			status.Message = "source transfer completed but target commit failed; automatic cutover is stopped to avoid split brain: " + err.Error()
 			return a.Kube.PatchMachineMigrationStatus(ctx, item.Namespace(), item.Metadata.Name, status)
 		}
+		a.finishSourceRuntime(ctx, session, status.TransferID)
 		status.Phase = "Cutover"
 		status.Message = "source transfer completed and target committed; waiting for guarded target adoption"
 	case "failed", "cancelled", "canceled", "aborted":
@@ -1192,6 +1198,20 @@ func (a *Agent) reconcileNeedsRecovery(ctx context.Context, item model.MachineMi
 		status.Message = "recovery: operator forced abort; source runtime was left untouched -- verify its state before reuse"
 	}
 	return a.Kube.PatchMachineMigrationStatus(ctx, item.Namespace(), item.Metadata.Name, status)
+}
+
+// finishSourceRuntime releases the paused source runtime once the
+// destination has committed, when the adapter supports it. Best effort:
+// the guest already runs on the destination, so a failure only leaks the
+// paused source process, which is logged for the operator.
+func (a *Agent) finishSourceRuntime(ctx context.Context, session migration.Session, transferID string) {
+	f, ok := a.SourceMigrator.(migration.Finisher)
+	if !ok || transferID == "" {
+		return
+	}
+	if err := f.Finish(ctx, session, transferID); err != nil {
+		a.Log.Warn("releasing the paused source runtime failed; it keeps its memory until removed", "runtimeID", session.RuntimeID, "error", err)
+	}
 }
 
 // resumeSourceNetworkQuiesce best-effort un-quiesces runtimeID's own network

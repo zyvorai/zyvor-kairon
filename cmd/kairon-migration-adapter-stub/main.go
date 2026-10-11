@@ -61,6 +61,10 @@ func (s *stub) handler() http.Handler {
 	mux.HandleFunc("POST /v1/source/start", s.sourceStart)
 	mux.HandleFunc("GET /v1/source/{sessionID}/{transferID}", s.sourceStatus)
 	mux.HandleFunc("POST /v1/source/{sessionID}/{transferID}/abort", s.sourceAbort)
+	mux.HandleFunc("POST /v1/source/{sessionID}/{transferID}/tune", s.sourceTune)
+	mux.HandleFunc("POST /v1/source/{sessionID}/{transferID}/postcopy", s.sourcePostCopy)
+	mux.HandleFunc("POST /v1/source/{sessionID}/{transferID}/finish", s.sourceFinish)
+	mux.HandleFunc("GET /v1/capabilities", s.capabilities)
 	return http.MaxBytesHandler(mux, 1<<20)
 }
 
@@ -174,6 +178,65 @@ func (s *stub) sourceAbort(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 	s.log.Info("stub: source abort", "key", key)
 	writeJSON(w, http.StatusOK, map[string]any{})
+}
+
+func (s *stub) transferFor(w http.ResponseWriter, r *http.Request) (*transfer, bool) {
+	key := r.PathValue("sessionID") + "/" + r.PathValue("transferID")
+	s.mu.Lock()
+	t, ok := s.xfers[key]
+	s.mu.Unlock()
+	if !ok {
+		writeError(w, http.StatusNotFound, errors.New("unknown transfer"))
+	}
+	return t, ok
+}
+
+// sourceTune records the throttle the way QEMU reports it back, so callers
+// can see a tune land in the telemetry.
+func (s *stub) sourceTune(w http.ResponseWriter, r *http.Request) {
+	t, ok := s.transferFor(w, r)
+	if !ok {
+		return
+	}
+	var req migration.TuneRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	t.mu.Lock()
+	if t.status.Telemetry == nil {
+		t.status.Telemetry = &migration.Telemetry{}
+	}
+	if req.MaxCPUThrottlePct > 0 {
+		t.status.Telemetry.CPUThrottlePct = uint64(req.MaxCPUThrottlePct)
+	}
+	t.mu.Unlock()
+	s.log.Info("stub: source tune", "transferID", r.PathValue("transferID"), "tune", req)
+	writeJSON(w, http.StatusOK, t.snapshot())
+}
+
+func (s *stub) sourcePostCopy(w http.ResponseWriter, r *http.Request) {
+	t, ok := s.transferFor(w, r)
+	if !ok {
+		return
+	}
+	t.mu.Lock()
+	t.status.PostCopyActive = true
+	t.mu.Unlock()
+	s.log.Info("stub: source post-copy", "transferID", r.PathValue("transferID"))
+	writeJSON(w, http.StatusOK, t.snapshot())
+}
+
+func (s *stub) sourceFinish(w http.ResponseWriter, r *http.Request) {
+	s.log.Info("stub: source finish", "transferID", r.PathValue("transferID"))
+	writeJSON(w, http.StatusOK, map[string]any{})
+}
+
+func (s *stub) capabilities(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, migration.Capabilities{
+		Tune: true, PostCopySwitch: true, AutoConverge: true,
+		Compression: []string{"zlib", "zstd"}, Finish: true,
+	})
 }
 
 func randomID() string {

@@ -100,3 +100,42 @@ func TestNetworkAwareDestinationDiagnoseReportsNotFound(t *testing.T) {
 		t.Fatalf("expected DestinationRuntimeFound=false, got %+v", result)
 	}
 }
+
+type adoptingDest struct{ countingDest }
+
+func (a *adoptingDest) Prepare(context.Context, Session) (PrepareResult, error) {
+	a.prepareN++
+	return PrepareResult{TransferSupported: true, Endpoint: "tcp:10.0.0.9:1", Backend: "qemu", DestinationRuntimeID: "recv-1"}, nil
+}
+
+func TestNetworkAwareDestinationRestoresOnTheDestinationRuntimeAfterCommit(t *testing.T) {
+	var calls []string
+	fs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.URL.Path)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer fs.Close()
+	fc := fluxvm.New(fs.URL, "")
+	fc.HTTP = fs.Client()
+	inner := &adoptingDest{}
+	d := NetworkAwareDestination{Inner: inner, Flux: fc}
+	session := Session{ID: "s1", Namespace: "ns", Machine: "m", SourceNode: "a", TargetNode: "b", RuntimeID: "src-1", NetworkSnapshot: json.RawMessage(`{"v":1}`)}
+	res, err := d.Prepare(context.Background(), session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 0 {
+		t.Fatalf("network touched before commit: %v", calls)
+	}
+	session.DestinationRuntimeID = res.DestinationRuntimeID
+	if err := d.Commit(context.Background(), session); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"/v1/vms/recv-1/network/migration/restore", "/v1/vms/recv-1/network/migration/resume"}
+	if len(calls) != 2 || calls[0] != want[0] || calls[1] != want[1] {
+		t.Fatalf("calls = %v, want %v", calls, want)
+	}
+	if inner.commitN != 1 {
+		t.Fatalf("inner commit = %d", inner.commitN)
+	}
+}

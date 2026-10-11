@@ -140,6 +140,7 @@ func (s *Server) prepare(w http.ResponseWriter, r *http.Request) {
 	session.Backend = result.Backend
 	session.Reason = result.Reason
 	session.DataPlaneEncrypted = result.DataPlaneEncrypted
+	session.DestinationRuntimeID = result.DestinationRuntimeID
 	if result.TransferSupported {
 		session.Phase = "Prepared"
 	} else {

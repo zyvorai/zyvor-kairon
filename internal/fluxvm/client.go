@@ -403,6 +403,20 @@ func (c *Client) Get(ctx context.Context, id string) (*Record, error) {
 	return &r, nil
 }
 
+// GetRaw returns FluxVM's VM record exactly as served, for handing to
+// another FluxVM (a migration receiver launched from it) without dropping
+// fields Record doesn't model.
+func (c *Client) GetRaw(ctx context.Context, id string) (json.RawMessage, error) {
+	data, err := c.do(ctx, http.MethodGet, "/v1/vms/"+url.PathEscape(id), nil)
+	if err != nil {
+		return nil, err
+	}
+	if !json.Valid(data) {
+		return nil, fmt.Errorf("fluxvm returned an invalid VM record for %s", id)
+	}
+	return json.RawMessage(data), nil
+}
+
 // buildCreateRequest maps a Machine spec onto FluxVM's own CreateVmRequest
 // wire shape -- the one place this translation happens, shared by
 // CreateWithVFIO (POST /v1/vms) and CreateSandboxForMachine

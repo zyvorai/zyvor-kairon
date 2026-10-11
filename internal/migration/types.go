@@ -60,9 +60,34 @@ type Session struct {
 	// destination node's adapter, used to pick which address the transfer
 	// binds/advertises instead of the adapter's default. Empty is fully
 	// backward compatible -- the adapter falls back to today's behavior.
-	MigrationNetwork string    `json:"migrationNetwork,omitempty"`
-	CreatedAt        time.Time `json:"createdAt"`
-	UpdatedAt        time.Time `json:"updatedAt"`
+	MigrationNetwork string `json:"migrationNetwork,omitempty"`
+	// SourceRecord is the source runtime's FluxVM record (GET /v1/vms/{id}
+	// on the source node), so the destination can launch a receiver with
+	// the identical device model and adopt it as a real VM afterwards.
+	SourceRecord json.RawMessage `json:"sourceRecord,omitempty"`
+	// Stream lists the stream capabilities the source will use. QEMU
+	// refuses a stream whose capabilities differ between the two ends, so
+	// the receiver must enable the same ones before it starts listening.
+	Stream *StreamCapabilities `json:"stream,omitempty"`
+	// DestinationRuntimeID is the destination runtime the adapter created
+	// for this session (set by the destination from PrepareResult). Network
+	// state is restored there after commit.
+	DestinationRuntimeID string    `json:"destinationRuntimeID,omitempty"`
+	CreatedAt            time.Time `json:"createdAt"`
+	UpdatedAt            time.Time `json:"updatedAt"`
+}
+
+// StreamCapabilities must match on both ends of a QEMU migration stream.
+type StreamCapabilities struct {
+	MultifdChannels uint8        `json:"multifdChannels,omitempty"`
+	Compression     *Compression `json:"compression,omitempty"`
+	PostCopy        bool         `json:"postCopy,omitempty"`
+}
+
+// Compression is multifd stream compression: algorithm none|zlib|zstd.
+type Compression struct {
+	Algorithm string `json:"algorithm"`
+	Level     *uint8 `json:"level,omitempty"`
 }
 
 func (s Session) Validate() error {
@@ -105,6 +130,10 @@ type PrepareResult struct {
 	// RPC's own always-on mTLS). See model.MachineMigrationStatus's field
 	// of the same name for the full contract.
 	DataPlaneEncrypted bool `json:"dataPlaneEncrypted,omitempty"`
+	// DestinationRuntimeID names the runtime the receiver becomes once
+	// committed. Empty for adapters whose destination runtime keeps the
+	// source's ID; network restore then targets session.RuntimeID.
+	DestinationRuntimeID string `json:"destinationRuntimeID,omitempty"`
 }
 
 type PrepareResponse struct {
@@ -167,6 +196,83 @@ type SourceOptions struct {
 	BandwidthMbps   uint64 `json:"bandwidthMbps,omitempty"`
 	MaxDowntimeMs   uint64 `json:"maxDowntimeMs,omitempty"`
 	MultifdChannels uint8  `json:"multifdChannels,omitempty"`
+	// AutoConverge enables QEMU auto-converge with these throttle
+	// percentages; Tune raises them later.
+	AutoConverge *AutoConverge `json:"autoConverge,omitempty"`
+	Compression  *Compression  `json:"compression,omitempty"`
+	// PostCopy is disabled|immediate|armed. Empty keeps Mode's meaning
+	// (post-copy = immediate).
+	PostCopy string `json:"postCopy,omitempty"`
+}
+
+const (
+	PostCopyDisabled  = "disabled"
+	PostCopyImmediate = "immediate"
+	PostCopyArmed     = "armed"
+)
+
+// AutoConverge throttle, in percent of guest vCPU time (1-99).
+type AutoConverge struct {
+	InitialPct   uint8 `json:"initialPct,omitempty"`
+	IncrementPct uint8 `json:"incrementPct,omitempty"`
+	MaxPct       uint8 `json:"maxPct,omitempty"`
+}
+
+// TuneRequest changes an in-flight transfer; zero fields are left alone.
+type TuneRequest struct {
+	BandwidthMbps           uint64 `json:"bandwidthMbps,omitempty"`
+	MaxDowntimeMs           uint64 `json:"maxDowntimeMs,omitempty"`
+	CPUThrottleInitialPct   uint8  `json:"cpuThrottleInitialPct,omitempty"`
+	CPUThrottleIncrementPct uint8  `json:"cpuThrottleIncrementPct,omitempty"`
+	MaxCPUThrottlePct       uint8  `json:"maxCPUThrottlePct,omitempty"`
+}
+
+func (t TuneRequest) IsZero() bool { return t == TuneRequest{} }
+
+// Capabilities is what the local adapter can do beyond start/status/abort.
+// The zero value (an adapter without GET /v1/capabilities) means none.
+type Capabilities struct {
+	Tune                bool     `json:"tune,omitempty"`
+	PostCopySwitch      bool     `json:"postCopySwitch,omitempty"`
+	AutoConverge        bool     `json:"autoConverge,omitempty"`
+	Compression         []string `json:"compression,omitempty"`
+	PostCopyWithMultifd bool     `json:"postCopyWithMultifd,omitempty"`
+	Finish              bool     `json:"finish,omitempty"`
+}
+
+func (c Capabilities) SupportsCompression(algorithm string) bool {
+	if algorithm == "" || algorithm == "none" {
+		return true
+	}
+	for _, a := range c.Compression {
+		if a == algorithm {
+			return true
+		}
+	}
+	return false
+}
+
+// Telemetry is optional transfer detail; adapters report what they have.
+type Telemetry struct {
+	DirtyPagesRate     uint64  `json:"dirtyPagesRate,omitempty"`
+	DirtySyncCount     uint64  `json:"dirtySyncCount,omitempty"`
+	PageSize           uint64  `json:"pageSize,omitempty"`
+	DuplicatePages     uint64  `json:"duplicatePages,omitempty"`
+	NormalBytes        uint64  `json:"normalBytes,omitempty"`
+	Mbps               float64 `json:"mbps,omitempty"`
+	ExpectedDowntimeMs uint64  `json:"expectedDowntimeMs,omitempty"`
+	CPUThrottlePct     uint64  `json:"cpuThrottlePct,omitempty"`
+	SetupTimeMs        uint64  `json:"setupTimeMs,omitempty"`
+	PostcopyRequests   uint64  `json:"postcopyRequests,omitempty"`
+}
+
+// DirtyRateMbps converts the dirty page rate to megabits per second, the
+// unit the transfer rate is reported in. 0 when either input is unknown.
+func (t Telemetry) DirtyRateMbps() float64 {
+	if t.DirtyPagesRate == 0 || t.PageSize == 0 {
+		return 0
+	}
+	return float64(t.DirtyPagesRate*t.PageSize) * 8 / 1e6
 }
 
 type SourceRequest struct {
@@ -185,12 +291,31 @@ type TransferStatus struct {
 	RAMTotal       uint64 `json:"ramTotal,omitempty"`
 	TotalTimeMs    uint64 `json:"totalTimeMs,omitempty"`
 	DowntimeMs     uint64 `json:"downtimeMs,omitempty"`
+	// PostCopyActive is true once the transfer has switched to post-copy:
+	// from then on the destination owns guest memory.
+	PostCopyActive bool       `json:"postCopyActive,omitempty"`
+	Telemetry      *Telemetry `json:"telemetry,omitempty"`
 }
 
 type SourceDriver interface {
 	Start(context.Context, SourceRequest) (TransferStatus, error)
 	Status(context.Context, Session, string) (TransferStatus, error)
 	Abort(context.Context, Session, string) error
+}
+
+// Tuner is implemented by source drivers that can steer an in-flight
+// transfer. Callers type-assert for it and check Capabilities first, the
+// same way Diagnosable is optional.
+type Tuner interface {
+	Capabilities(context.Context) (Capabilities, error)
+	Tune(context.Context, Session, string, TuneRequest) (TransferStatus, error)
+	StartPostCopy(context.Context, Session, string) (TransferStatus, error)
+}
+
+// Finisher is implemented by source drivers that must release the paused
+// source runtime once the destination has committed.
+type Finisher interface {
+	Finish(context.Context, Session, string) error
 }
 
 type UnsupportedSourceDriver struct{ Reason string }
