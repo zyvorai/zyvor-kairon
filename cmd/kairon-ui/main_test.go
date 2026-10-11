@@ -442,3 +442,26 @@ func TestNewServerTLSFailsOnABadPair(t *testing.T) {
 		t.Error("a missing key must be a startup failure")
 	}
 }
+
+func TestEphemeralSANsAreDeduplicated(t *testing.T) {
+	dns, ips := ephemeralSANs("localhost,127.0.0.1,::1,extra.test,extra.test")
+	count := func(want string) int {
+		n := 0
+		for _, d := range dns {
+			if d == want {
+				n++
+			}
+		}
+		for _, ip := range ips {
+			if ip.String() == want {
+				n++
+			}
+		}
+		return n
+	}
+	for _, name := range []string{"localhost", "127.0.0.1", "::1", "extra.test"} {
+		if got := count(name); got != 1 {
+			t.Errorf("%s appears %d times, want 1 (dns=%v ips=%v)", name, got, dns, ips)
+		}
+	}
+}
