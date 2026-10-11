@@ -21,6 +21,20 @@ real one. What to change:
   `ui.insecureHttp: true`, or `deploy-remote.sh --ui-insecure-http`; it conflicts
   with a certificate and logs a warning.
 
+## Breaking: the console relay hop is TLS by default
+
+With `console.enabled` (or `deploy-remote.sh --with-console`) the
+kairon-ui to kairon-node hop now uses one-way TLS by default. Helm generates a
+private CA and a server certificate for the fixed name `kairon-node`
+(Secret `kairon-console-tls`, kept across upgrades) and kairon-ui verifies that
+name, so it works for every node address. `console.tls.secretName` brings your
+own; `console.tls.serverName` sets the verified name for it;
+`console.tls.enabled: false` (or `--console-insecure-http`) keeps plain HTTP.
+`deploy-remote.sh` now applies the TLS keys to existing env files too instead of
+only warning. kairon-node and kairon-ui must be upgraded together: a new ui
+dialling an old plaintext node (or the reverse) fails the console hop until both
+match.
+
 Also new: `kaironctl selftest` and the dashboard Self-test page,
 `deploy-remote.sh --remote-build`, `--image-cache-dir`, `--self-test`.
 

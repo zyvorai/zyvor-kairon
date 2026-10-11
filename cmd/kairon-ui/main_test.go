@@ -192,7 +192,7 @@ func writeSelfSignedCAPEM(t *testing.T) string {
 }
 
 func TestConsoleTLSConfigEmptyPathMeansNoTLS(t *testing.T) {
-	cfg, err := consoleTLSConfig("")
+	cfg, err := consoleTLSConfig("", "")
 	if err != nil {
 		t.Fatalf("expected no error for an empty path, got %v", err)
 	}
@@ -203,7 +203,7 @@ func TestConsoleTLSConfigEmptyPathMeansNoTLS(t *testing.T) {
 
 func TestConsoleTLSConfigLoadsARealCA(t *testing.T) {
 	path := writeSelfSignedCAPEM(t)
-	cfg, err := consoleTLSConfig(path)
+	cfg, err := consoleTLSConfig(path, "")
 	if err != nil {
 		t.Fatalf("consoleTLSConfig: %v", err)
 	}
@@ -213,14 +213,14 @@ func TestConsoleTLSConfigLoadsARealCA(t *testing.T) {
 }
 
 func TestConsoleTLSConfigRejectsMissingOrInvalidFile(t *testing.T) {
-	if _, err := consoleTLSConfig("/nonexistent/ca.pem"); err == nil {
+	if _, err := consoleTLSConfig("/nonexistent/ca.pem", ""); err == nil {
 		t.Fatal("expected an error for a nonexistent CA file")
 	}
 	garbage := filepath.Join(t.TempDir(), "garbage.pem")
 	if err := os.WriteFile(garbage, []byte("not a certificate"), 0o600); err != nil {
 		t.Fatalf("write garbage file: %v", err)
 	}
-	if _, err := consoleTLSConfig(garbage); err == nil {
+	if _, err := consoleTLSConfig(garbage, ""); err == nil {
 		t.Fatal("expected an error for a CA file with no real certificates")
 	}
 }
@@ -463,5 +463,23 @@ func TestEphemeralSANsAreDeduplicated(t *testing.T) {
 		if got := count(name); got != 1 {
 			t.Errorf("%s appears %d times, want 1 (dns=%v ips=%v)", name, got, dns, ips)
 		}
+	}
+}
+
+func TestConsoleTLSConfigPinsTheServerName(t *testing.T) {
+	path := writeSelfSignedCAPEM(t)
+	cfg, err := consoleTLSConfig(path, "kairon-node")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ServerName != "kairon-node" {
+		t.Errorf("ServerName = %q; a fixed name lets one certificate serve every node IP", cfg.ServerName)
+	}
+	if cfg.MinVersion < tls.VersionTLS12 || cfg.RootCAs == nil {
+		t.Errorf("config must verify against the CA with TLS 1.2+: %+v", cfg)
+	}
+	cfg, err = consoleTLSConfig(path, "")
+	if err != nil || cfg.ServerName != "" {
+		t.Errorf("an empty name verifies the dialled host: %+v %v", cfg, err)
 	}
 }

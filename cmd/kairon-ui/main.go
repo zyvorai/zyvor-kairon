@@ -134,7 +134,7 @@ func run() int {
 	rec := metrics.NewUIRecorder()
 	kc.Observe = rec.ObserveAPIRequest
 
-	consoleTLS, err := consoleTLSConfig(os.Getenv("KAIRON_NODE_CONSOLE_CA"))
+	consoleTLS, err := consoleTLSConfig(os.Getenv("KAIRON_NODE_CONSOLE_CA"), os.Getenv("KAIRON_NODE_CONSOLE_SERVER_NAME"))
 	if err != nil {
 		log.Error("console TLS", "error", err)
 		return 1
@@ -304,11 +304,12 @@ func run() int {
 // consoleTLSConfig builds the TLS config kairon-ui uses to verify a
 // kairon-node's console-relay server certificate, from a CA PEM file path
 // ($KAIRON_NODE_CONSOLE_CA). Empty caPath means every kairon-node's
-// console listener is plaintext (ws://) -- the default, backward-compatible
-// posture. One-way TLS only: the shared KAIRON_NODE_CONSOLE_TOKEN already
+// console listener is plaintext (ws://), which the chart and
+// deploy-remote.sh only do when TLS is switched off by name. One-way TLS
+// only: the shared KAIRON_NODE_CONSOLE_TOKEN already
 // authenticates kairon-ui to kairon-node, so no client certificate is
 // needed here.
-func consoleTLSConfig(caPath string) (*tls.Config, error) {
+func consoleTLSConfig(caPath, serverName string) (*tls.Config, error) {
 	if caPath == "" {
 		return nil, nil
 	}
@@ -320,7 +321,12 @@ func consoleTLSConfig(caPath string) (*tls.Config, error) {
 	if !pool.AppendCertsFromPEM(caPEM) {
 		return nil, fmt.Errorf("console CA %s contains no certificates", caPath)
 	}
-	return &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: pool}, nil
+	// serverName, when set, is the name the node certificate is verified
+	// against instead of the address being dialled. A fixed name lets one
+	// certificate (the chart's generated one) serve every node, whatever its
+	// IP, the same way migration.tlsServerName does. Empty verifies against
+	// the dialled host, which needs the node's address in the certificate.
+	return &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: pool, ServerName: serverName}, nil
 }
 
 // newOIDCAuth resolves an OIDC provider's discovery document
