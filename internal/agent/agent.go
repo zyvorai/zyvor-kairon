@@ -169,6 +169,9 @@ type Agent struct {
 	backups  backupJobs
 	cbt      cbtState
 	topology topologyState
+	// MemoryReclaim tunes the elastic-memory reclaim loop (memory.go).
+	MemoryReclaim MemoryReclaimConfig
+	memory        memoryState
 }
 
 func (a *Agent) Reconcile(ctx context.Context) error {
@@ -177,6 +180,7 @@ func (a *Agent) Reconcile(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	a.memory.setMachines(machines)
 	activeEdgePrefixes := make(map[string]bool, len(machines))
 	for _, m := range machines {
 		if m.Spec.NodeName == a.NodeName {
@@ -1482,6 +1486,7 @@ func (a *Agent) Run(ctx context.Context, interval time.Duration) error {
 	kick() // initial sync
 
 	go a.watchAssigned(ctx, kick)
+	go a.runMemoryReclaim(ctx)
 
 	t := time.NewTicker(interval)
 	defer t.Stop()

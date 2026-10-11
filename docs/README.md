@@ -64,6 +64,7 @@ The root [README](https://github.com/zyvorai/zyvor-kairon/blob/main/README.md) i
 | [`guides/machine-pools.md`](guides/machine-pools.md) | `MachinePool` / `MachineClaim`: warm, pre-booted Machines claimed in one reconcile tick |
 | [`guides/machine-instance-types.md`](guides/machine-instance-types.md) | `MachineInstanceType`: a reusable named CPU/memory shape resolved into `spec.resources` once |
 | [`guides/machine-cpu-numa.md`](guides/machine-cpu-numa.md) | `spec.resources.numaNode`/`.cpuSet`/`.hugepages`: qemu-only NUMA/hugepage passthroughs, and what they don't guarantee (no real host-core pinning) |
+| [`guides/machine-elastic-memory.md`](guides/machine-elastic-memory.md) | `spec.resources.elasticMemory`: virtio-balloon reclaim under host memory pressure, a node memory overcommit ratio, the `KaironMemoryPressure` condition and opt-in evacuation (experimental) |
 | [`guides/machine-topology.md`](guides/machine-topology.md) | `spec.topology` + `spec.devices` + `NodeTopology`: NUMA, GPU, NIC and NVMe locality with hard placement policies and bound guest NUMA memory (experimental) |
 | [`guides/machine-cpu-pinning.md`](guides/machine-cpu-pinning.md) | `spec.resources.cpuPinning`: real exclusive host-core allocation, and the `pinnable-cpus` node label it depends on (operator-set or discovered by kairon-node) |
 | [`guides/machine-windows-guests.md`](guides/machine-windows-guests.md) | What Windows guest support covers today (legacy-BIOS + cloudbase-init, and now UEFI Secure Boot/vTPM for Windows 11 given a node-configured OVMF vars template) |

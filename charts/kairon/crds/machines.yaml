@@ -56,6 +56,12 @@ spec:
               message: "spec.devices needs the qemu backend"
             - rule: "!has(oldSelf.nodeName) || oldSelf.nodeName == '' || (has(self.topology) == has(oldSelf.topology) && (!has(self.topology) || self.topology == oldSelf.topology) && has(self.devices) == has(oldSelf.devices) && (!has(self.devices) || self.devices == oldSelf.devices))"
               message: "spec.topology and spec.devices cannot change after the Machine is scheduled"
+            - rule: "!has(self.resources) || !has(self.resources.elasticMemory) || ((!has(self.resources.hugepages) || !self.resources.hugepages) && (!has(self.devices) || size(self.devices) == 0) && (!has(self.deviceClaims) || size(self.deviceClaims) == 0))"
+              message: "spec.resources.elasticMemory cannot be combined with hugepages or passthrough devices"
+            - rule: "!has(self.resources) || !has(self.resources.elasticMemory) || !has(self.runtime) || !has(self.runtime.backend) || self.runtime.backend in ['auto', 'qemu']"
+              message: "spec.resources.elasticMemory needs the qemu backend"
+            - rule: "(has(self.resources) && has(self.resources.elasticMemory)) == (has(oldSelf.resources) && has(oldSelf.resources.elasticMemory))"
+              message: "spec.resources.elasticMemory cannot be added or removed after creation"
             properties:
               nodeName:
                 type: string
@@ -176,6 +182,23 @@ spec:
                         items:
                           type: integer
                           minimum: 0
+                  elasticMemory:
+                    type: object
+                    description: Reclaimable memory. kairon-node inflates a
+                      virtio-balloon under host memory pressure, never below
+                      min. See docs/guides/machine-elastic-memory.md.
+                    required:
+                    - min
+                    properties:
+                      min:
+                        type: string
+                        minLength: 1
+                        description: Memory the guest always keeps (e.g. 1Gi);
+                          at most spec.resources.memory.
+                      freePageReporting:
+                        type: boolean
+                        description: Guest hands freed pages back to the host
+                          (guest kernel 5.8+). Defaults to true.
               runtime:
                 type: object
                 properties:
@@ -790,6 +813,29 @@ spec:
                     format: date-time
                   message:
                     type: string
+              memory:
+                type: object
+                properties:
+                  currentMiB:
+                    type: integer
+                    format: int64
+                  minMiB:
+                    type: integer
+                    format: int64
+                  balloonTargetMiB:
+                    type: integer
+                    format: int64
+                  balloonActualMiB:
+                    type: integer
+                    format: int64
+                  guestAvailableMiB:
+                    type: integer
+                    format: int64
+                  reason:
+                    type: string
+                  lastChangeTime:
+                    type: string
+                    format: date-time
               resourceUsage:
                 type: object
                 properties:

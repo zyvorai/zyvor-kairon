@@ -583,6 +583,9 @@ func describeMachine(ctx context.Context, kc *kube.Client, ns, name string) {
 	b, _ := json.MarshalIndent(m, "", "  ")
 	fmt.Println(string(b))
 
+	if line := elasticMemorySummary(m); line != "" {
+		fmt.Println(line)
+	}
 	if m.Spec.Tenant != "" {
 		fence := "off"
 		if m.Metadata.Annotations["kairon.zyvor.dev/tenant-fence"] == "true" {
@@ -600,3 +603,29 @@ func describeMachine(ctx context.Context, kc *kube.Client, ns, name string) {
 // thing now" rather than "change this object's configuration." Only
 // snapshotschedule supports it today -- MigrationPolicy/
 // MachineDisruptionBudget/etc. have nothing analogous to "run this right
+
+// elasticMemorySummary is the one-line reading of status.memory: how much
+// of the guest's memory kairon-node has ballooned away and why.
+func elasticMemorySummary(m model.Machine) string {
+	em := m.Spec.Resources.ElasticMemory
+	if em == nil {
+		return ""
+	}
+	st := m.Status.Memory
+	if st == nil {
+		return fmt.Sprintf("elastic memory: min %s, no reclaim status yet (kairon-node writes it once the Machine runs)", em.Min)
+	}
+	inGuest := st.CurrentMiB
+	if st.BalloonActualMiB < inGuest {
+		inGuest -= st.BalloonActualMiB
+	}
+	line := fmt.Sprintf("elastic memory: %dMi of %dMi in guest (min %dMi), balloon target %dMi, actual %dMi",
+		inGuest, st.CurrentMiB, st.MinMiB, st.BalloonTargetMiB, st.BalloonActualMiB)
+	if st.GuestAvailableMiB != nil {
+		line += fmt.Sprintf(", guest available %dMi", *st.GuestAvailableMiB)
+	}
+	if st.Reason != "" {
+		line += fmt.Sprintf(" (%s at %s)", st.Reason, st.LastChangeTime)
+	}
+	return line
+}

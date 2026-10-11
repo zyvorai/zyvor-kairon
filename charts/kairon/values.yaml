@@ -39,6 +39,17 @@ controller:
     enabled: false
     strategy: cold # cold|auto -- never live, see CordonEvacuation's own doc comment
     minRetryInterval: 2m
+  memoryPressureEvacuation:
+    # Migrates Machines off a Node whose KaironMemoryPressure condition
+    # (kairon-node: host memory stays under pressure with every
+    # elastic-memory Machine ballooned to its minimum) stays True for
+    # grace -- one Machine per node at a time, lowest priority and
+    # largest first, respecting MachineDisruptionBudgets. Off by default.
+    # See docs/guides/machine-elastic-memory.md.
+    enabled: false
+    strategy: live # live|auto|cold
+    grace: 2m
+    minRetryInterval: 5m
   staleEvacuation:
     # Fences Machines annotated kairon.zyvor.dev/evacuate=true off a
     # NotReady Node an operator attested dead with
@@ -185,6 +196,17 @@ node:
     stateFile: /var/lib/kubelet/cpu_manager_state
     copyIntervalSeconds: 10
     copierImage: busybox:1.36
+  # memoryReclaim: kairon-node balloons spec.resources.elasticMemory
+  # Machines toward their minimum under host memory pressure and sets the
+  # KaironMemoryPressure Node condition (the scheduler then skips the node)
+  # when nothing is left to reclaim. 0 keeps a default: low watermark 10%
+  # and high watermark 20% of MemTotal, PSI some avg10 10.
+  # See docs/guides/machine-elastic-memory.md.
+  memoryReclaim:
+    enabled: true
+    lowWatermarkMiB: 0
+    highWatermarkMiB: 0
+    psiSomeAvg10: 0
 
 # Cilium cluster-network integration (all off by default). Requires a
 # cluster CNI that exposes cilium.io ExternalWorkload / CiliumNetworkPolicy.

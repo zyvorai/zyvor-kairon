@@ -40,6 +40,12 @@ stuck `Machine` doesn't require guessing which of `architecture`/
 `nodeSelector`/affinity/anti-affinity/`cpuPinning` capacity is the actual
 blocker.
 
+Two node-level checks sit alongside these: a node whose
+`KaironMemoryPressure` condition is True is never a candidate, and a node
+annotated `kairon.zyvor.dev/memory-overcommit-ratio` admits elastic-memory
+Machines by their guaranteed minimum. See
+[elastic memory](machine-elastic-memory.md).
+
 ## Affinity and anti-affinity
 
 ```yaml

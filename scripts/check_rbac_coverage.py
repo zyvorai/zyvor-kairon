@@ -78,6 +78,7 @@ HELM_SET_FLAGS = [
     "ui.enabled=true",
     "ui.token=test-token",
     "controller.cordonEvacuation.enabled=true",
+    "controller.memoryPressureEvacuation.enabled=true",
     "node.livenessLease.enabled=true",
     "node.csi.chap.enabled=true",
     "node.cbtBackup.enabled=true",

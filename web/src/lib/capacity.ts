@@ -12,6 +12,9 @@ export interface NodeCapacity {
   requestedCpuMilli: number;
   requestedMemoryMiB: number;
   knownAllocatable: boolean;
+  guaranteedMemoryMiB?: number;
+  memoryOvercommitRatio?: number;
+  memoryPressure?: boolean;
   whatIf?: { fits: boolean; reason?: string };
 }
 
@@ -37,4 +40,20 @@ export function formatCores(milli: number): string {
 
 export function formatMiB(mib: number): string {
   return mib >= 1024 ? `${(mib / 1024).toFixed(mib % 1024 === 0 ? 0 : 1)} GiB` : `${mib} MiB`;
+}
+
+// memoryLimitMiB is how much full-size Machine memory the scheduler lets
+// onto a node: allocatable times the node's overcommit ratio (1 when the
+// kairon.zyvor.dev/memory-overcommit-ratio annotation is absent).
+export function memoryLimitMiB(c: NodeCapacity): number {
+  const ratio = c.memoryOvercommitRatio && c.memoryOvercommitRatio > 1 ? c.memoryOvercommitRatio : 1;
+  return Math.floor(c.allocatableMemoryMiB * ratio);
+}
+
+// formatBalloon reads a Machine's status.memory as "in guest / size".
+export function formatBalloon(m: { currentMiB?: number; balloonActualMiB: number; minMiB?: number }): string {
+  const cur = m.currentMiB ?? 0;
+  const inGuest = m.balloonActualMiB < cur ? cur - m.balloonActualMiB : cur;
+  const min = m.minMiB ? `, min ${formatMiB(m.minMiB)}` : '';
+  return `${formatMiB(inGuest)} of ${formatMiB(cur)}${min}`;
 }

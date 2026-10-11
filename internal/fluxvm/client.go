@@ -156,6 +156,9 @@ type CreateRequest struct {
 	// Cdroms are read-only install media (spec.cdroms), QEMU only. Needs a
 	// FluxVM that knows the field; an older one ignores it.
 	Cdroms []Cdrom `json:"cdroms,omitempty"`
+	// Balloon adds a virtio-balloon (spec.resources.elasticMemory), QEMU
+	// only.
+	Balloon *BalloonSpec `json:"balloon,omitempty"`
 }
 
 // Cdrom is one FluxVM CreateVmRequest.cdroms entry.
@@ -478,6 +481,16 @@ func buildCreateRequest(m model.Machine, defaultBackend string, vfioDevices []st
 	if (len(numa) > 0 || len(m.Spec.Devices) > 0) && backend != "qemu" {
 		return CreateRequest{}, fmt.Errorf("spec.topology and spec.devices require the qemu backend; Machine resolves to backend %q", backend)
 	}
+	var balloon *BalloonSpec
+	if e := m.Spec.Resources.ElasticMemory; e != nil {
+		if backend != "qemu" {
+			return CreateRequest{}, fmt.Errorf("spec.resources.elasticMemory requires the qemu backend; Machine resolves to backend %q", backend)
+		}
+		if len(vfioDevices) > 0 || m.Spec.Resources.Hugepages {
+			return CreateRequest{}, fmt.Errorf("spec.resources.elasticMemory cannot be combined with VFIO devices or hugepages: their guest memory is pinned")
+		}
+		balloon = &BalloonSpec{FreePageReporting: e.FreePageReportingEnabled(), DeflateOnOOM: true}
+	}
 	if len(sharedFolders) > 0 && backend != "qemu" {
 		return CreateRequest{}, fmt.Errorf("spec.volumes beyond [0] (virtiofs data volumes) require the qemu backend; Machine resolves to backend %q", backend)
 	}
@@ -529,6 +542,7 @@ func buildCreateRequest(m model.Machine, defaultBackend string, vfioDevices []st
 		SecureBoot:    m.Spec.Security.SecureBoot,
 		TPM:           m.Spec.Security.TPM,
 		SharedFolders: sharedFolders,
+		Balloon:       balloon,
 	}
 	if m.Spec.Image.DiskSize != "" {
 		gib, err := model.ParseDiskSizeGiB(m.Spec.Image.DiskSize)

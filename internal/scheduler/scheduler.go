@@ -328,6 +328,9 @@ func (s Scheduler) eligible(m model.Machine, n model.Node, nodes []model.Node, m
 			return false, fmt.Sprintf("untolerated %s taint %s", taint.Effect, taintKV(taint))
 		}
 	}
+	if MemoryPressure(n) {
+		return false, "node reports " + model.NodeConditionKaironMemoryPressure
+	}
 	if ok, reason := capacityFits(n, m, load); !ok {
 		return false, reason
 	}
@@ -524,6 +527,17 @@ func SortByPriorityDesc(pending []model.Machine) {
 	sort.SliceStable(pending, func(i, j int) bool {
 		return pending[i].Spec.Priority > pending[j].Spec.Priority
 	})
+}
+
+// MemoryPressure reports whether kairon-node has set the
+// model.NodeConditionKaironMemoryPressure condition True on n.
+func MemoryPressure(n model.Node) bool {
+	for _, c := range n.Status.Conditions {
+		if c.Type == model.NodeConditionKaironMemoryPressure {
+			return c.Status == "True"
+		}
+	}
+	return false
 }
 
 func ready(n model.Node) bool {

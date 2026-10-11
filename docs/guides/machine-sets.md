@@ -179,8 +179,8 @@ replaced (not edited in place) by the rollout logic above.
   that boots fine but is application-broken is not caught here.
 - **No `maxSurge`.** A rollout never temporarily exceeds `spec.replicas`
   -- only `maxUnavailable` (a dip below, never a surge above) is offered,
-  since Kairon's scheduler (`internal/scheduler`) has no capacity/
-  overcommit model to safely reason about a temporary surge against yet.
+  since Kairon's scheduler (`internal/scheduler`) has no surge budget to
+  reason about a temporary extra replica against.
 - **No autoscaling.** `spec.replicas` is only ever changed by you (or your
   own tooling) editing the object -- there's no `MachineHorizontalAutoscaler`
   or similar reacting to load.

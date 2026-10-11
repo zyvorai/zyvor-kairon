@@ -56,6 +56,9 @@ type Controller struct {
 	// today's unchanged behavior: cordoning a node does nothing to
 	// already-running Machines.
 	CordonEvacuation CordonEvacuation
+	// MemoryEvacuation, when Enabled, migrates Machines off nodes whose
+	// KaironMemoryPressure condition stays True -- see memoryevac.go.
+	MemoryEvacuation MemoryPressureEvacuation
 	// StaleEvacuation, when Enabled, fences opted-in Machines off nodes
 	// attested dead -- see internal/controller/staleevac.go.
 	StaleEvacuation StaleEvacuation
@@ -445,6 +448,7 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 	c.reconcileAttestation(ctx, machines, nodes)
 	c.reconcileAgentStatus(ctx, machines, nodes)
 	c.reconcileCordonEvacuation(ctx, machines, nodes, migrations)
+	c.reconcileMemoryPressureEvacuation(ctx, machines, nodes, migrations)
 	c.detectUnreachableNodes(ctx, machines, nodes)
 	c.reconcileStaleEvacuation(ctx, machines, nodes, migrations)
 	if err := c.reconcileFleet(ctx, machines, nodes, migrations); err != nil {

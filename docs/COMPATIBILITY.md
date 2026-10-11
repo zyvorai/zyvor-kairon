@@ -157,6 +157,24 @@ the memory backend's `policy=bind` and vCPU thread affinity without Kairon.
 | Topology: gpu-nic | not run | 2026-10-11 | No allowlisted GPU and NIC under one PCIe root in the lab |
 | Topology: sriov | not run | 2026-10-11 | No SR-IOV VF in the lab |
 
+## Elastic memory
+
+Driven by [`scripts/lab-elastic-memory.sh`](../scripts/lab-elastic-memory.sh)
+against one node with a FluxVM that reports `host.balloon`. Pressure is
+forced by setting `KAIRON_MEMORY_LOW_WATERMARK_MIB` above the host's
+MemAvailable and restarting kairon-node; relief removes it. Elastic memory
+stays Experimental until it has run under real (not forced) memory
+pressure and on more than one node, including evacuation, which is not
+covered here.
+
+| Case | Last result | Date | Notes |
+|---|---|---|---|
+| Elastic memory: balloon-device | pass | 2026-10-11 | Single node (31424MiB, QEMU 10.2.1, k3s 1.35, Ubuntu 24.04 guest): 2Gi Machine with min 1Gi; `status.memory` written; QEMU has `virtio-balloon-pci,deflate-on-oom=on,free-page-reporting=on` |
+| Elastic memory: inflate | pass | 2026-10-11 | Same node: forced pressure moved the balloon target to 256MiB in the first pass, reason `HostPressure` |
+| Elastic memory: exhausted | pass | 2026-10-11 | Same node: target and guest actual 1024MiB (at min), `KaironMemoryPressure=True`; a new Machine pinned to the node stayed unscheduled: "node reports KaironMemoryPressure" |
+| Elastic memory: relief | pass | 2026-10-11 | Same node: target back to 0, reason `Relief`, `KaironMemoryPressure=False`; the guest was still deflating (255MiB actual) when the case ended |
+| Elastic memory: overcommit | pass | 2026-10-11 | Same node: two 18854Mi Machines (min 512Mi) on 31424Mi allocatable; the second stayed unscheduled ("insufficient memory") until the node got `memory-overcommit-ratio: 1.5`, then scheduled |
+
 ## Component versions (fill per run)
 
 | Piece | Version |

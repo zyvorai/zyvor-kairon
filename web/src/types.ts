@@ -17,7 +17,7 @@ export interface Machine {
   spec: {
     nodeName?: string;
     image: { path: string };
-    resources: { cpu: string; memory: string };
+    resources: { cpu: string; memory: string; elasticMemory?: { min: string; freePageReporting?: boolean } };
     runtime?: { backend?: string };
     network?: { mode?: string; netns?: boolean };
     powerState?: string;
@@ -32,7 +32,20 @@ export interface Machine {
     resourceUsage?: { cpuPercent?: number; memoryBytes?: number; diskReadBytes?: number; diskWriteBytes?: number };
     guestIPs?: string[];
     network?: MachineNetworkStatus;
+    memory?: MachineMemoryStatus;
   };
+}
+
+// Mirrors internal/model/types.go's MemoryStatus, written by kairon-node's
+// reclaim loop for spec.resources.elasticMemory Machines.
+export interface MachineMemoryStatus {
+  currentMiB?: number;
+  minMiB?: number;
+  balloonTargetMiB: number;
+  balloonActualMiB: number;
+  guestAvailableMiB?: number;
+  reason?: string;
+  lastChangeTime?: string;
 }
 
 // Mirrors internal/model/network.go's MachineNetworkStatus.
