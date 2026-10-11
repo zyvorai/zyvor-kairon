@@ -12,7 +12,7 @@ export default function SecurityGroups() {
   const [msg, setMsg] = useState('');
 
   const refresh = () =>
-    api<NetworkSecurityGroup[]>('/api/v1/security-groups').then(setItems).catch((e) => setMsg(String(e)));
+    api<NetworkSecurityGroup[]>('/api/v1/security-groups').then((r) => setItems(r ?? [])).catch((e) => setMsg(String(e)));
 
   useEffect(() => {
     refresh();

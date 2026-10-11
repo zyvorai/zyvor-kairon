@@ -37,7 +37,7 @@ export default function Images() {
 
   const refresh = () =>
     api<UploadedImage[]>('/api/v1/images')
-      .then((r) => setItems(r))
+      .then((r) => setItems(r ?? []))
       .catch((e) => {
         const t = apiErrorText(e);
         if (t.includes('not enabled')) setDisabled(true);

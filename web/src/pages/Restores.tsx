@@ -29,7 +29,7 @@ export default function Restores({ prefillSnapshot }: { prefillSnapshot: string 
   useEffect(() => setSnapshotName(prefillSnapshot), [prefillSnapshot]);
 
   const refresh = () =>
-    api<MachineSnapshotRestore[]>('/api/v1/restores').then(setItems).catch((e) => setMsg(String(e)));
+    api<MachineSnapshotRestore[]>('/api/v1/restores').then((r) => setItems(r ?? [])).catch((e) => setMsg(String(e)));
 
   useEffect(() => {
     refresh();

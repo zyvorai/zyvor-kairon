@@ -34,7 +34,7 @@ export default function Migrations({ prefillMachine }: { prefillMachine: string 
   }, [prefillMachine]);
 
   const refresh = () =>
-    api<MachineMigration[]>('/api/v1/migrations').then(setItems).catch((e) => setMsg(String(e)));
+    api<MachineMigration[]>('/api/v1/migrations').then((r) => setItems(r ?? [])).catch((e) => setMsg(String(e)));
 
   useEffect(() => {
     refresh();

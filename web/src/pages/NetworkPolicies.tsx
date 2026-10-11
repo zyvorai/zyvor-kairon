@@ -23,7 +23,7 @@ export default function NetworkPolicies() {
   const [msg, setMsg] = useState('');
 
   const refresh = () =>
-    api<MachineNetworkPolicy[]>('/api/v1/network-policies').then(setItems).catch((e) => setMsg(String(e)));
+    api<MachineNetworkPolicy[]>('/api/v1/network-policies').then((r) => setItems(r ?? [])).catch((e) => setMsg(String(e)));
 
   useEffect(() => {
     refresh();

@@ -31,7 +31,7 @@ export default function SnapshotSchedules() {
   const [msg, setMsg] = useState('');
 
   const refresh = () =>
-    api<MachineSnapshotSchedule[]>('/api/v1/snapshot-schedules').then(setItems).catch((e) => setMsg(String(e)));
+    api<MachineSnapshotSchedule[]>('/api/v1/snapshot-schedules').then((r) => setItems(r ?? [])).catch((e) => setMsg(String(e)));
 
   useEffect(() => {
     refresh();

@@ -16,7 +16,7 @@ export default function Snapshots({ prefillMachine, onRestore }: { prefillMachin
   useEffect(() => setMachine(prefillMachine), [prefillMachine]);
 
   const refresh = () =>
-    api<MachineSnapshot[]>('/api/v1/snapshots').then(setItems).catch((e) => setMsg(String(e)));
+    api<MachineSnapshot[]>('/api/v1/snapshots').then((r) => setItems(r ?? [])).catch((e) => setMsg(String(e)));
 
   useEffect(() => {
     refresh();

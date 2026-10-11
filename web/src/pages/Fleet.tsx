@@ -24,10 +24,10 @@ export default function Fleet() {
   const [request, setRequest] = useState('');
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
-  useEffect(() => { let active = true; api<string[]>('/api/v1/namespaces').then(ns => { if (!active) return; setNamespaces(ns); if (ns.length) setNamespace(ns[0]); }).catch(e => { if (active) setError(String(e)); }); return () => { active = false; }; }, []);
+  useEffect(() => { let active = true; api<string[]>('/api/v1/namespaces').then(ns => { if (!active) return; ns = ns ?? []; setNamespaces(ns); if (ns.length) setNamespace(ns[0]); }).catch(e => { if (active) setError(String(e)); }); return () => { active = false; }; }, []);
   useEffect(() => {
     let active = true; setError(''); setItems([]);
-    api<FleetObject[]>(`/api/v1/fleet/${resource}?namespace=${encodeURIComponent(namespace)}`).then(rows => { if (active) setItems(rows); }).catch(e => { if (active) setError(String(e)); });
+    api<FleetObject[]>(`/api/v1/fleet/${resource}?namespace=${encodeURIComponent(namespace)}`).then(rows => { if (active) setItems(rows ?? []); }).catch(e => { if (active) setError(String(e)); });
     return () => { active = false; };
   }, [namespace, resource, revision]);
   async function create() {

@@ -11,7 +11,7 @@ export default function Quotas() {
   const [items, setItems] = useState<MachineQuota[]>([]);
   const [msg, setMsg] = useState('');
 
-  const refresh = () => api<MachineQuota[]>('/api/v1/quotas').then(setItems).catch((e) => setMsg(String(e)));
+  const refresh = () => api<MachineQuota[]>('/api/v1/quotas').then((r) => setItems(r ?? [])).catch((e) => setMsg(String(e)));
 
   useEffect(() => {
     refresh();

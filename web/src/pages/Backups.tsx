@@ -34,8 +34,8 @@ export default function Backups() {
 
   useEffect(() => {
     const load = () => {
-      api<Backup[]>('/api/v1/machinebackups').then(setBackups).catch((e) => setMsg(apiErrorText(e)));
-      api<BackupRestore[]>('/api/v1/machinebackuprestores').then(setRestores).catch((e) => setMsg(apiErrorText(e)));
+      api<Backup[]>('/api/v1/machinebackups').then((r) => setBackups(r ?? [])).catch((e) => setMsg(apiErrorText(e)));
+      api<BackupRestore[]>('/api/v1/machinebackuprestores').then((r) => setRestores(r ?? [])).catch((e) => setMsg(apiErrorText(e)));
     };
     load();
     const t = setInterval(load, 5000);
