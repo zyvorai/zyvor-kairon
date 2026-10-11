@@ -52,7 +52,7 @@ export default function ResourceTable<T>({
   items: T[];
   columns: Column<T>[];
   keyFn: (item: T) => string;
-  emptyText: string;
+  emptyText: ReactNode;
   onRowClick?: (item: T) => void;
   selectedKey?: string;
   csvName?: string;

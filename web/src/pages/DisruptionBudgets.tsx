@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { MachineDisruptionBudget } from '../types';
 import ResourceTable from '../components/ResourceTable';
+import EmptyHint from '../components/EmptyHint';
 
 function formatSelector(selector: Record<string, string>): string {
   const entries = Object.entries(selector || {});
@@ -33,7 +34,7 @@ export default function DisruptionBudgets() {
         <ResourceTable
           items={items}
           keyFn={(b) => b.metadata.name}
-          emptyText="No MachineDisruptionBudgets yet."
+          emptyText={<EmptyHint what="MachineDisruptionBudgets" hint="Budgets limit concurrent voluntary disruptions; see docs/guides/machine-disruption-budgets.md." />}
           columns={[
             { header: 'Name', render: (b) => b.metadata.name },
             { header: 'Selector', render: (b) => formatSelector(b.spec.selector) },

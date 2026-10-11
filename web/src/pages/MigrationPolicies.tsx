@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { MigrationPolicy } from '../types';
 import ResourceTable from '../components/ResourceTable';
+import EmptyHint from '../components/EmptyHint';
 
 function formatSelector(selector: Record<string, string>): string {
   const entries = Object.entries(selector || {});
@@ -33,7 +34,7 @@ export default function MigrationPolicies() {
         <ResourceTable
           items={items}
           keyFn={(p) => p.metadata.name}
-          emptyText="No MigrationPolicies yet."
+          emptyText={<EmptyHint what="migration policies" hint="See docs/guides/migration-policies.md." command="kaironctl create migrationpolicy NAME …" />}
           columns={[
             { header: 'Name', render: (p) => p.metadata.name },
             { header: 'Selector', render: (p) => formatSelector(p.spec.selector) },

@@ -7,6 +7,7 @@ import { MachineSnapshotSchedule } from '../types';
 import ResourceTable from '../components/ResourceTable';
 import { badgeClass } from '../lib/phase';
 import { currentNamespace } from '../lib/namespace';
+import EmptyHint from '../components/EmptyHint';
 
 function formatSelector(selector: Record<string, string>): string {
   const entries = Object.entries(selector || {});
@@ -57,7 +58,7 @@ export default function SnapshotSchedules() {
         <ResourceTable
           items={items}
           keyFn={(s) => s.metadata.name}
-          emptyText="No MachineSnapshotSchedules yet."
+          emptyText={<EmptyHint what="snapshot schedules" command="kaironctl create snapshotschedule NAME --selector k=v --daily-at 02:30" />}
           columns={[
             { header: 'Name', render: (s) => s.metadata.name },
             { header: 'Selector', render: (s) => formatSelector(s.spec.selector) },

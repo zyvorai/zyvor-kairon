@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { NetworkSecurityGroup } from '../types';
 import ResourceTable from '../components/ResourceTable';
+import EmptyHint from '../components/EmptyHint';
 
 export default function SecurityGroups() {
   const [items, setItems] = useState<NetworkSecurityGroup[]>([]);
@@ -27,7 +28,7 @@ export default function SecurityGroups() {
         <ResourceTable
           items={items}
           keyFn={(g) => g.metadata.name}
-          emptyText="No NetworkSecurityGroups yet."
+          emptyText={<EmptyHint what="security groups" command="kaironctl create securitygroup NAME …" />}
           columns={[
             { header: 'Name', render: (g) => g.metadata.name },
             { header: 'Group name', render: (g) => g.spec.groupName || g.metadata.name },

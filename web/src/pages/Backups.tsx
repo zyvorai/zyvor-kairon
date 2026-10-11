@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { api, apiErrorText } from '../api';
 import { badgeClass } from '../lib/phase';
 import ResourceTable from '../components/ResourceTable';
+import EmptyHint from '../components/EmptyHint';
 
 interface Meta {
   name: string;
@@ -49,7 +50,7 @@ export default function Backups() {
         <ResourceTable
           items={backups}
           keyFn={(b) => b.metadata.name}
-          emptyText="No MachineBackups yet."
+          emptyText={<EmptyHint what="MachineBackups" hint="Off-cluster backups; see docs/guides/machine-backup.md." />}
           columns={[
             { header: 'Name', render: (b) => b.metadata.name },
             { header: 'Machine', render: (b) => b.spec.machineName },

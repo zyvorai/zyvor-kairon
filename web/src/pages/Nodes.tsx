@@ -8,6 +8,7 @@ import { badgeClass, formatBytes, formatCPUPercent, nodeReadyStatus, nodeTaintsS
 import ResourceTable from '../components/ResourceTable';
 import Inspector, { KV } from '../components/Inspector';
 import NodeTools from '../components/NodeTools';
+import EmptyHint from '../components/EmptyHint';
 
 function formatAddresses(node: KaironNode): string {
   const addrs = node.status?.addresses || [];
@@ -66,7 +67,7 @@ export default function Nodes() {
           keyFn={(n) => n.metadata.name}
           onRowClick={(n) => setSelected(n.metadata.name)}
           selectedKey={selected ?? undefined}
-          emptyText="No nodes visible to this cluster."
+          emptyText={<EmptyHint what="nodes visible to this cluster" namespaced={false} hint="Label a node to make it eligible: kubectl label node NAME kairon.zyvor.dev/capable=true. kaironctl doctor lists what is missing." />}
           columns={[
             { header: 'Name', render: (n) => n.metadata.name },
             { header: 'Ready', render: (n) => <span className={badgeClass(nodeReadyStatus(n))}>{nodeReadyStatus(n)}</span> },

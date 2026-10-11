@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { MachineQuota } from '../types';
 import ResourceTable from '../components/ResourceTable';
+import EmptyHint from '../components/EmptyHint';
 
 export default function Quotas() {
   const [items, setItems] = useState<MachineQuota[]>([]);
@@ -26,7 +27,7 @@ export default function Quotas() {
         <ResourceTable
           items={items}
           keyFn={(q) => q.metadata.name}
-          emptyText="No MachineQuotas yet."
+          emptyText={<EmptyHint what="MachineQuotas" hint="Quotas cap CPU, memory and Machine count per namespace; see docs/guides/machine-quotas.md." command="kaironctl create quota NAME …" />}
           columns={[
             { header: 'Name', render: (q) => q.metadata.name },
             { header: 'Max machines', render: (q) => q.spec.maxMachines ?? '-' },

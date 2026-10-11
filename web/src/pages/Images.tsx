@@ -7,6 +7,7 @@ import { formatBytes } from '../lib/phase';
 import ResourceTable from '../components/ResourceTable';
 import { EmptyState } from '../components/ui';
 import { Field } from '../components/JsonTerminal';
+import EmptyHint from '../components/EmptyHint';
 
 interface UploadedImage {
   name: string;
@@ -118,7 +119,7 @@ export default function Images() {
         <ResourceTable
           items={items}
           keyFn={(i) => i.name}
-          emptyText="No uploaded images yet."
+          emptyText={<EmptyHint what="uploaded images" namespaced={false} command="kaironctl image upload FILE --name NAME" />}
           columns={[
             { header: 'Name', render: (i) => i.name },
             { header: 'Format', render: (i) => i.format || '-' },
