@@ -23,7 +23,10 @@ kubectl label node worker-1 kairon.zyvor.dev/capable=true
 kubectl label node worker-2 kairon.zyvor.dev/capable=true
 kaironctl status
 kaironctl doctor     # health checks with a hint for every problem
+kaironctl selftest   # boots a tiny CirrOS VM and checks that it all works
 ```
+
+See [Self-test](guides/selftest.md) for what it checks and how to read the result.
 
 ### Evaluation vs production
 

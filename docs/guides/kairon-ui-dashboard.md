@@ -175,6 +175,13 @@ when namespace scoping is on.
 - **Nodes** gains requested-versus-allocatable bars and a "Will it fit?"
   what-if for a given vCPU and memory size.
 
+## Self-test
+
+**Operations › Self-test** boots a CirrOS VM from the server and shows a
+coloured log in a terminal-style panel, with a live checklist beside it, a
+Cancel button and a JSON report download. It needs an administrator account and
+runs one test at a time. See [Self-test](selftest.md).
+
 ## Not in the dashboard
 
 Fencing a Machine off a dead node stays in `kaironctl fence`: it records
