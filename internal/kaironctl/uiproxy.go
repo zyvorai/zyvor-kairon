@@ -104,8 +104,9 @@ func startUIProxy(ctx context.Context, kc *kube.Client, o *uiOpts) (string, func
 	_, port, _ := net.SplitHostPort(addr)
 
 	rp := &httputil.ReverseProxy{
-		Director: func(r *http.Request) {
-			clean := path.Clean("/" + strings.TrimPrefix(r.URL.Path, "/"))
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			r := pr.Out
+			clean := path.Clean("/" + strings.TrimPrefix(pr.In.URL.Path, "/"))
 			r.URL.Scheme = target.Scheme
 			r.URL.Host = target.Host
 			r.URL.Path = strings.TrimRight(target.Path, "/") + prefix + clean

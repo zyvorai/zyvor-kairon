@@ -41,7 +41,7 @@ func newFakeCluster() *fakeCluster {
 }
 
 func podsJSON(names ...string) string {
-	var items []string
+	items := make([]string, 0, len(names))
 	for _, n := range names {
 		port := 32302
 		if strings.Contains(n, "controller") {
