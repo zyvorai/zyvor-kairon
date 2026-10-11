@@ -1415,19 +1415,23 @@ INSTALL_EOF
 # usage checks.
 run_selftest_remote() {
   local profile="$1" ui_port="${2:-}" script
-  script='set -a; [ -r /etc/kairon/kairon-node.env ] && . /etc/kairon/kairon-node.env; set +a;'
-  script+=' if [ -z "${KAIRON_KUBE_URL:-}" ] && [ -r /etc/rancher/k3s/k3s.yaml ]; then export KUBECONFIG=/etc/rancher/k3s/k3s.yaml; fi;'
+  # The self-test creates and deletes Machines, which the kairon-node
+  # service account may not do, so prefer an admin kubeconfig (k3s) and fall
+  # back to the connection kairon-node itself uses.
+  script='kc=;'
+  script+=' if [ -r /etc/rancher/k3s/k3s.yaml ]; then kc="--kubeconfig /etc/rancher/k3s/k3s.yaml";'
+  script+=' elif [ -r /etc/kairon/kairon-node.env ]; then set -a; . /etc/kairon/kairon-node.env; set +a; fi;'
   if [[ -n "$ui_port" ]]; then
     script+=" export KAIRON_UI_URL=http://127.0.0.1:${ui_port};"
     script+=' t=$(sed -n "s/^KAIRON_UI_TOKEN=//p" /etc/kairon/kairon-ui.env 2>/dev/null | head -1); [ -n "$t" ] && export KAIRON_UI_TOKEN="$t";'
   fi
-  script+=" exec kaironctl selftest --profile ${profile}"
+  script+=" exec kaironctl \$kc selftest --profile ${profile}"
   info "running kaironctl selftest --profile ${profile} on ${REMOTE}"
   local rc=0
   if [[ -n "${SSHPASS:-}" ]] && command -v sshpass >/dev/null 2>&1; then
-    sshpass -e ssh -t "${SSH_OPTS[@]}" "$REMOTE" "${SUDO} sh -c '${script}'" || rc=$?
+    sshpass -e ssh -tt "${SSH_OPTS[@]}" "$REMOTE" "${SUDO} sh -c '${script}'" || rc=$?
   else
-    ssh -t "${SSH_OPTS[@]}" "$REMOTE" "${SUDO} sh -c '${script}'" || rc=$?
+    ssh -tt "${SSH_OPTS[@]}" "$REMOTE" "${SUDO} sh -c '${script}'" || rc=$?
   fi
   return "$rc"
 }

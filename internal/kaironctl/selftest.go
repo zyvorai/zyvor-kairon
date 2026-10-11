@@ -228,6 +228,14 @@ func doctorAsChecks(rep doctorReport) []selftest.Check {
 		switch c.Status {
 		case checkFail:
 			sc.Status = selftest.Fail
+			// A 403 is the limit of the identity in use (for example the
+			// kairon-node service account on a systemd host), not evidence
+			// that Kairon is broken; report it as not checked.
+			if isForbidden(c.Detail) {
+				sc.Status = selftest.Skip
+				sc.Detail = "not checked: the identity in use may not read this (HTTP 403); use an admin kubeconfig for the full check"
+				sc.Hint = ""
+			}
 		case checkWarn:
 			sc.Warn = true
 		case checkSkip:
@@ -236,6 +244,10 @@ func doctorAsChecks(rep doctorReport) []selftest.Check {
 		out = append(out, sc)
 	}
 	return out
+}
+
+func isForbidden(detail string) bool {
+	return strings.Contains(detail, "HTTP 403") || strings.Contains(strings.ToLower(detail), "is forbidden")
 }
 
 func cleanupSelftest(ctx context.Context, kc *kube.Client, w io.Writer) error {

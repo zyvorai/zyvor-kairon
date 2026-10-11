@@ -107,3 +107,17 @@ func TestListSelftestShowsEveryScenario(t *testing.T) {
 		}
 	}
 }
+
+func TestDoctorAsChecksTreats403AsNotChecked(t *testing.T) {
+	rep := doctorReport{Checks: []doctorCheck{
+		{Name: "Controller", Status: checkFail, Detail: `kubernetes GET /apis/apps/v1/...: HTTP 403: {"message":"deployments.apps \"x\" is forbidden"}`, Hint: "x"},
+		{Name: "Capable nodes", Status: checkFail, Detail: "no node carries the capable label"},
+	}}
+	got := doctorAsChecks(rep)
+	if got[0].Status != selftest.Skip || !strings.Contains(got[0].Detail, "not checked") {
+		t.Errorf("403 should be skipped, got %+v", got[0])
+	}
+	if got[1].Status != selftest.Fail {
+		t.Errorf("a real failure must stay a failure, got %+v", got[1])
+	}
+}

@@ -23,7 +23,9 @@ var scenarios = []Scenario{
 			}
 			return ""
 		}},
-	{ID: "boot", Title: "Boot a CirrOS VM", Profile: ProfileQuick, DependsOn: "control-plane", Run: runBoot},
+	// boot does not depend on control-plane: a doctor warning (or a 403 for the
+	// identity in use) must not hide whether a VM really boots.
+	{ID: "boot", Title: "Boot a CirrOS VM", Profile: ProfileQuick, Run: runBoot},
 	{ID: "console-log", Title: "Serial console is readable", Profile: ProfileQuick, DependsOn: "boot", Run: runConsoleLog,
 		Needs: func(s *session) string {
 			if s.env.SerialLog == nil {
@@ -98,6 +100,10 @@ func runBoot(ctx context.Context, s *session) error {
 	if err != nil {
 		return err
 	}
+	if nodes, err := s.capableNodes(ctx); err == nil && len(nodes) == 0 {
+		s.logf(LevelWarn, "no Ready node carries %s=true; the scheduler may leave the Machine Pending", model.CapableLabel)
+		s.hint = "kubectl label node <name> " + model.CapableLabel + "=true"
+	}
 	m := s.newMachine("vm", img)
 	s.hostPort = randomPort()
 	m.Spec.Network.Forwards = []model.PortForward{{HostPort: uint16(s.hostPort), GuestPort: 22, Protocol: "tcp"}}
@@ -109,7 +115,7 @@ func runBoot(ctx context.Context, s *session) error {
 	}
 	s.logf(LevelInfo, "creating %s/%s (1 vCPU, 256Mi, arch %s, forward :%d→22)", m.Metadata.Namespace, m.Metadata.Name, s.arch, s.hostPort)
 	if err := s.create(ctx, m); err != nil {
-		s.hint = "check quotas and admission decisions: kaironctl events -n " + s.env.Namespace + " --warnings"
+		s.hint = "check quotas, RBAC for this identity and admission decisions: kaironctl events -n " + s.env.Namespace + " --warnings"
 		return fmt.Errorf("create Machine: %w", err)
 	}
 	s.vm = m.Metadata.Name
@@ -117,10 +123,13 @@ func runBoot(ctx context.Context, s *session) error {
 	started := s.env.Now()
 	cur, err := s.waitPhase(ctx, s.vm, "Running", s.env.BootTimeout)
 	if err != nil {
-		s.hint = "kaironctl describe machine " + s.vm + " -n " + s.env.Namespace + "; kaironctl logs node"
+		if s.hint == "" {
+			s.hint = "kaironctl describe machine " + s.vm + " -n " + s.env.Namespace + "; kaironctl logs node"
+		}
 		s.dumpEvidence(ctx)
 		return err
 	}
+	s.hint = ""
 	s.node = cur.Status.NodeName
 	s.logf(LevelOK, "Running on node %s after %s", dashIfEmpty(s.node), s.env.Now().Sub(started).Round(time.Second))
 	if ip := cur.Status.GuestIP; ip != "" {
