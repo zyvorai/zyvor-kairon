@@ -44,7 +44,7 @@ function LoginChrome({ children, hint, stats }: { children: React.ReactNode; hin
               <span className="chip">FluxVM</span>
             </div>
             <h1 className="login-title">Real VMs.<br />One console.</h1>
-            <p className="loginbrand-tagline">VM orchestration on FluxVM &mdash; no KubeVirt, no libvirt.</p>
+            <p className="loginbrand-tagline">VM orchestration on FluxVM.</p>
             <div className="login-pills">
               <span data-tone="sky">Machines</span>
               <span data-tone="violet">Migrations</span>

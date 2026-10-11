@@ -54,7 +54,11 @@ ever copied to or required on the remote host.
 Target:
   USER@HOST, or USER HOST, or HOST USER (IPv4-vs-non-IPv4 auto swap).
   An optional trailing bare token after the target is treated as an SSH
-  password (exported as SSHPASS; requires the 'sshpass' tool).
+  password (exported as SSHPASS; requires the 'sshpass' tool). At most one
+  such token is accepted; anything more is an error, not silently ignored.
+  Prefer the SSHPASS environment variable (SSHPASS=... $SCRIPT_NAME ...) so the
+  password stays out of the process list and your shell history.
+  With a working SSH key none of this is needed.
 
 Flags:
   --with-controller       Also build/install/enable kairon-controller
@@ -75,11 +79,11 @@ Flags:
                           KAIRON_UI_SESSION_SECRET. CHANGE IT for anything
                           reachable beyond a lab network. No whitespace,
                           quotes, '$' or backslash (systemd EnvironmentFile).
-  --apply-crds            Also `kubectl apply --server-side` deploy/crd.yaml and
+  --apply-crds            Also 'kubectl apply --server-side' deploy/crd.yaml and
                           deploy/fleet-crds.yaml on the host (CRDs are never
                           installed by this script otherwise).
   --apply-rbac            Also apply deploy/rbac.yaml (generated from the Helm
-                          chart: `make rbac-bundle`) so the node/controller/UI
+                          chart: 'make rbac-bundle') so the node/controller/UI
                           service accounts carry the chart's current grants.
   --reseed-ui-auth        Also (re)apply the admin password and, if missing, a
                           session secret to an EXISTING kairon-ui.env, then
@@ -89,6 +93,9 @@ Flags:
                           open to anyone who can reach the port).
   --ui-port=N             kairon-ui listen port (default 18082), same
                           auto-fallback-if-busy behavior as --node-port.
+                          On a re-deploy without this flag, the port already
+                          in the installed unit is kept, so the dashboard URL
+                          does not change from one deploy to the next.
   --with-console          Also enable the graphical VNC console relay
                           (kairon-ui's "Console" button per Machine).
                           Requires --with-ui (the browser only ever talks
@@ -137,9 +144,11 @@ Flags:
   --node-name=NAME        Seed NODE_NAME (default: the remote's own hostname).
                           Must match the Node object name in your cluster.
   --interval=DURATION     Reconciliation interval baked into the unit (default 3s).
-  --node-port=N           kairon-node health port (default 32302). If busy on
-                          the remote host and not explicitly set, a random
-                          free port is chosen automatically and reported.
+  --node-port=N           kairon-node health port (default 32302). On a
+                          re-deploy without this flag, the port already in the
+                          installed unit is kept. Otherwise, if the default is
+                          busy on the remote host, a random free port is
+                          chosen automatically and reported.
   --controller-port=N     kairon-controller health port (default 32301), same
                           auto-fallback-if-busy behavior as --node-port.
   --reserved-cpus=LIST    Set KAIRON_RESERVED_CPUS (kubelet's reserved CPUs,
@@ -375,6 +384,17 @@ if [[ "$console_tls_paths_given" -eq 3 ]]; then
 fi
 if [[ "$WITH_CONSOLE_TLS" == "1" && "$WITH_CONSOLE" != "1" ]]; then
   die "--console-tls requires --with-console"
+fi
+
+# USER@HOST [PASSWORD] is at most 2 bare tokens; USER HOST [PASSWORD] and
+# HOST USER [PASSWORD] at most 3. Extra tokens used to be dropped silently,
+# which hides typos like a stray word after the target.
+if [[ ${#POSITIONAL[@]} -ge 1 ]]; then
+  _max_positional=3
+  [[ "${POSITIONAL[0]}" == *@* ]] && _max_positional=2
+  if [[ ${#POSITIONAL[@]} -gt $_max_positional ]]; then
+    die "unexpected extra argument(s): ${POSITIONAL[*]:$_max_positional} (a target is USER@HOST or USER HOST, plus at most one SSH password; flags start with --)"
+  fi
 fi
 
 if [[ ${#POSITIONAL[@]} -ge 1 ]]; then
@@ -773,6 +793,9 @@ run_deploy() {
     printf 'WITH_UI=%q\n' "$WITH_UI"
     printf 'UI_ALLOW_UNAUTHENTICATED=%q\n' "$UI_ALLOW_UNAUTHENTICATED"
     printf 'UI_TOKEN=%q\n' "$RESOLVED_UI_TOKEN"
+    # UI_TOKEN above may be auto-generated; this records whether the operator
+    # actually passed --ui-token, so "flag ignored" warnings are truthful.
+    printf 'UI_TOKEN_EXPLICIT=%q\n' "$([[ -n "$UI_TOKEN" ]] && echo 1 || echo 0)"
     printf 'UI_ADMIN_PASSWORD=%q\n' "$UI_ADMIN_PASSWORD"
     printf 'UI_SESSION_SECRET=%q\n' "$RESOLVED_UI_SESSION_SECRET"
     printf 'RESEED_UI_AUTH=%q\n' "$RESEED_UI_AUTH"
@@ -810,6 +833,14 @@ port_in_use() {
   grep -qvF "((\"${owner:0:15}\"," <<<"$listeners"
 }
 
+# Port a flag (--listen / --health-addr) carries in an installed unit, or
+# nothing when the unit is absent or has no such flag.
+unit_port() {
+  local unit="$1" flag="$2"
+  [[ -f "$unit" ]] || return 0
+  grep -oE -- "--${flag}=:[0-9]+" "$unit" | head -1 | cut -d: -f2 || true
+}
+
 port_owner() {
   case "$1" in
     node|console|migration) echo kairon-node ;;
@@ -824,7 +855,15 @@ port_owner() {
 # the default is busy (common: some unrelated service already on it), a
 # random free port in the ephemeral range is picked automatically.
 resolve_port() {
-  local desired="$1" explicit="$2" name="$3"
+  local desired="$1" explicit="$2" name="$3" current="${4:-}"
+  # Re-deploy: keep the port the installed unit already uses, so the URL
+  # does not change every time the default happens to be taken. Written to
+  # stderr because stdout is captured as the result.
+  if [[ "$explicit" != "1" && -n "$current" && "$current" != "$desired" ]] && ! port_in_use "$current" "$(port_owner "$name")"; then
+    echo "[*] keeping port $current from the installed $name unit (default $desired not used)" >&2
+    echo "$current"
+    return 0
+  fi
   if ! port_in_use "$desired" "$(port_owner "$name")"; then
     echo "$desired"
     return 0
@@ -1072,7 +1111,7 @@ if [[ "$WITH_UI" == "1" ]]; then
     if [[ -n "$UI_SESSION_SECRET" ]]; then
       warn "username/password login keys were NOT applied; re-run with --reseed-ui-auth to add KAIRON_UI_DEFAULT_ADMIN_PASSWORD + KAIRON_UI_SESSION_SECRET"
     fi
-    if [[ -n "$UI_TOKEN$KUBE_URL$KUBE_TOKEN$KUBE_CA" || "$UI_ALLOW_UNAUTHENTICATED" == "1" || "$KUBE_INSECURE" == "1" ]]; then
+    if [[ "$UI_TOKEN_EXPLICIT" == "1" || -n "$KUBE_URL$KUBE_TOKEN$KUBE_CA" || "$UI_ALLOW_UNAUTHENTICATED" == "1" || "$KUBE_INSECURE" == "1" ]]; then
       warn "--ui-token/--ui-allow-unauthenticated/--kube-* flags were given but ignored because the env file already exists"
       warn "edit /etc/kairon/kairon-ui.env by hand, then: systemctl restart kairon-ui"
     fi
@@ -1095,7 +1134,7 @@ if [[ "$WITH_MIGRATION_ADAPTER_STUB" == "1" ]]; then
   ok "installed kairon-migration-adapter-stub (TEST DOUBLE -- simulates transfers, does not move real VM memory)"
 fi
 
-RESOLVED_NODE_PORT="$(resolve_port "$NODE_PORT" "$NODE_PORT_EXPLICIT" "node")" || exit 1
+RESOLVED_NODE_PORT="$(resolve_port "$NODE_PORT" "$NODE_PORT_EXPLICIT" "node" "$(unit_port /etc/systemd/system/kairon-node.service health-addr)")" || exit 1
 NODE_EXEC_ARGS="--interval=$INTERVAL --health-addr=:$RESOLVED_NODE_PORT --edge-baseline-file=/var/lib/kairon-node/edge-baseline.json"
 if [[ "$MIGRATION_CONFIGURED" == "1" ]]; then
   RESOLVED_MIGRATION_PORT="$(resolve_port "$MIGRATION_PORT" "$MIGRATION_PORT_EXPLICIT" "migration")" || exit 1
@@ -1107,7 +1146,7 @@ fi
 install -m 0644 -o root -g root ./kairon-node.service /etc/systemd/system/kairon-node.service
 sed -i "s#^ExecStart=.*#ExecStart=/usr/bin/kairon-node $NODE_EXEC_ARGS#" /etc/systemd/system/kairon-node.service
 if [[ "$WITH_CONTROLLER" == "1" ]]; then
-  RESOLVED_CONTROLLER_PORT="$(resolve_port "$CONTROLLER_PORT" "$CONTROLLER_PORT_EXPLICIT" "controller")" || exit 1
+  RESOLVED_CONTROLLER_PORT="$(resolve_port "$CONTROLLER_PORT" "$CONTROLLER_PORT_EXPLICIT" "controller" "$(unit_port /etc/systemd/system/kairon-controller.service health-addr)")" || exit 1
   install -m 0644 -o root -g root ./kairon-controller.service /etc/systemd/system/kairon-controller.service
   sed -i "s#^ExecStart=.*#ExecStart=/usr/bin/kairon-controller --interval=5s --health-addr=:$RESOLVED_CONTROLLER_PORT#" /etc/systemd/system/kairon-controller.service
   if [[ ! -f /etc/kairon/kairon-controller.env ]]; then
@@ -1122,7 +1161,7 @@ if [[ "$WITH_CONTROLLER" == "1" ]]; then
   fi
 fi
 if [[ "$WITH_UI" == "1" ]]; then
-  RESOLVED_UI_PORT="$(resolve_port "$UI_PORT" "$UI_PORT_EXPLICIT" "ui")" || exit 1
+  RESOLVED_UI_PORT="$(resolve_port "$UI_PORT" "$UI_PORT_EXPLICIT" "ui" "$(unit_port /etc/systemd/system/kairon-ui.service listen)")" || exit 1
   install -m 0644 -o root -g root ./kairon-ui.service /etc/systemd/system/kairon-ui.service
   sed -i "s#^ExecStart=.*#ExecStart=/usr/bin/kairon-ui --listen=:$RESOLVED_UI_PORT --web-dir=/etc/kairon/ui-web#" /etc/systemd/system/kairon-ui.service
 fi
@@ -1191,7 +1230,12 @@ INSTALL_EOF
   fi
   if [[ "$WITH_UI" == "1" ]]; then
     scp_files+=("$build_dir/kairon-ui" "$REPO_ROOT/systemd/kairon-ui.service")
-    tar -C "$REPO_ROOT/web/dist" -czf "$local_stage/kairon-ui-web.tar.gz" .
+    # bsdtar on macOS otherwise stores com.apple.* xattrs that GNU tar on the
+    # remote host warns about once per file.
+    tar_extra=()
+    # Probe by trying it: bsdtar's --help does not list --no-xattrs even though it accepts it.
+    if tar --no-xattrs -cf /dev/null -T /dev/null 2>/dev/null; then tar_extra+=(--no-xattrs); fi
+    COPYFILE_DISABLE=1 tar "${tar_extra[@]}" -C "$REPO_ROOT/web/dist" -czf "$local_stage/kairon-ui-web.tar.gz" .
     scp_files+=("$local_stage/kairon-ui-web.tar.gz")
   fi
   if [[ "$APPLY_CRDS" == "1" ]]; then
