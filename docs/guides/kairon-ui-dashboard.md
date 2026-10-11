@@ -4,9 +4,9 @@ title: kairon-ui dashboard
 
 # kairon-ui dashboard
 
-`kairon-ui` serves a single-page web console on its HTTP port (default
+`kairon-ui` serves a single-page web console over **HTTPS** (default port
 `:18082`; change with `--ui-port=N`, `KAIRON_UI_LISTEN`, or the chart's
-`ui.service.port`). It is a client of the [kairon-ui API](kairon-ui-api.md) and
+`ui.service.port`; see [HTTPS](#https)). It is a client of the [kairon-ui API](kairon-ui-api.md) and
 adds no privileged side channel: every button maps onto an existing route, and
 the server enforces the real gates (role, namespace, administrator access,
 guest agent, Machine phase).
@@ -177,31 +177,50 @@ when namespace scoping is on.
 
 ## HTTPS
 
-kairon-ui serves plain HTTP unless it is given a certificate. On Kubernetes the
-usual answer is an Ingress that terminates TLS (`ui.ingress` in the chart). For a
-host deployed with `scripts/deploy-remote.sh`, or anywhere you run the binary
-directly, kairon-ui can serve HTTPS itself:
+The dashboard carries logins and bearer tokens, so it serves HTTPS by default
+everywhere, with no flag to remember:
+
+| How it runs | Certificate |
+|---|---|
+| Binary or systemd with no certificate set | a self-signed ECDSA certificate generated at startup (names: localhost, loopback, the hostname, every interface address, and `KAIRON_UI_TLS_SANS`); it changes on every restart |
+| `-tls-cert`/`-tls-key` (or `KAIRON_UI_TLS_CERT`/`KAIRON_UI_TLS_KEY`) | yours, reloaded when the files change; TLS 1.2 and later |
+| Helm | per-pod self-signed by default; `ui.tls.secretName` mounts a `kubernetes.io/tls` Secret (cert-manager, for example); `ui.tls.sans` extends the generated certificate |
+| `scripts/deploy-remote.sh --with-ui` | a certificate generated with openssl for the host's names and addresses, installed to `/etc/kairon/ui-tls/`; `--ui-tls-cert`/`--ui-tls-key` bring your own |
 
 ```bash
 kairon-ui -tls-cert /etc/kairon/ui-tls/cert.pem -tls-key /etc/kairon/ui-tls/key.pem
-# or KAIRON_UI_TLS_CERT / KAIRON_UI_TLS_KEY in the environment
 
-scripts/deploy-remote.sh HOST USER --with-ui --ui-tls                    # self-signed
+scripts/deploy-remote.sh HOST USER --with-ui                              # self-signed
 scripts/deploy-remote.sh HOST USER --with-ui --ui-tls-cert=c.pem --ui-tls-key=k.pem
+
+helm upgrade --install kairon ./charts/kairon -n kairon-system \
+  --set ui.enabled=true --set ui.tls.secretName=dashboard-tls
 ```
 
-- Both flags are required together; kairon-ui refuses to start with only one,
-  rather than quietly falling back to HTTP.
-- TLS 1.2 and later. The pair is reloaded when the files change, so renewing a
-  certificate needs no restart.
-- `--ui-tls` generates a self-signed certificate whose names cover the host, so a
-  browser shows one warning; use your own certificate to avoid it.
-- `kaironctl` reaches an HTTPS dashboard with `KAIRON_UI_URL=https://...`. For a
-  self-signed certificate set `KAIRON_UI_CA=/path/to/cert.pem` to trust it without
-  disabling verification. `KAIRON_UI_INSECURE=true` skips verification and is for
-  throwaway labs only.
-- Over plain HTTP the session token and any login password cross the network in
-  clear text, so do not expose a plain-HTTP dashboard beyond a trusted network.
+- A certificate without its key (or the reverse) is a startup error, never a
+  quiet fall back to HTTP.
+- Behind an Ingress the chart annotates the backend as HTTPS
+  (`ui.ingress.backendProtocol`, nginx's annotation by default; set your
+  controller's equivalent in `ui.ingress.annotations` otherwise) and
+  `ui.ingress.tls` terminates TLS for browsers.
+- `kaironctl` reaches the dashboard with `KAIRON_UI_URL=https://...`. For a
+  self-signed certificate set `KAIRON_UI_CA=/path/to/cert.pem` to trust it
+  without disabling verification. `KAIRON_UI_INSECURE=true` skips verification
+  and is for throwaway labs only.
+- `kaironctl ui` and the connectivity probe reach the dashboard over HTTPS
+  through the API server. Its loopback listener (`127.0.0.1`) is the one plain
+  HTTP hop that remains: it never leaves your machine, like `kubectl proxy`.
+
+### Opting out
+
+Plain HTTP is something you ask for by name: `-insecure-http` (or
+`KAIRON_UI_INSECURE_HTTP=true`), `ui.insecureHttp: true` in Helm,
+`--ui-insecure-http` for `deploy-remote.sh`. It is for a mesh or sidecar that
+terminates TLS in front of the pod, or a trusted loopback. Logins and tokens are
+clear text on that network, startup logs a warning, and `kaironctl connectivity
+test` reports an HTTP-only dashboard as a warning. It cannot be combined with a
+certificate: that contradiction is refused at startup. Use `kaironctl ui
+--backend-http` to reach such an install.
 
 ## Self-test
 

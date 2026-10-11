@@ -176,8 +176,9 @@ kaironctl image upload ./noble-server-cloudimg-amd64.qcow2 --name ubuntu-24.04
 ```yaml
 image:
   source:
-    httpURL: http://kairon-ui.kairon-system.svc:18082/images/sha256/8f43...
+    httpURL: https://kairon-ui.kairon-system.svc:18082/images/sha256/8f43...
     format: qcow2
+    insecureSkipTLSVerify: true   # only when kairon-ui serves a self-signed certificate
   digest: sha256:8f43...
 ```
 
@@ -192,8 +193,14 @@ image:
   Anyone who can reach kairon-ui and knows a digest can download that
   image; keep secrets out of uploaded images or restrict network access.
 - `ui.imageStore.publicURL` sets the URL nodes download from. The default
-  `http://kairon-ui.<namespace>.svc:<port>` needs cluster DNS from the node
-  host (kairon-node runs with `hostNetwork`).
+  `https://kairon-ui.<namespace>.svc:<port>` needs cluster DNS from the node
+  host (kairon-node runs with `hostNetwork`). kairon-ui serves HTTPS, usually
+  with a self-signed certificate, so `kaironctl image upload` prints
+  `insecureSkipTLSVerify: true` in the snippet whenever the dashboard's
+  certificate is self-signed: the transfer is still encrypted and the pinned
+  `sha256` still guarantees the bytes, only the server's identity is not
+  verified. Give the dashboard a certificate your nodes trust
+  (`ui.tls.secretName`) and the flag disappears.
 - One upload is capped at `ui.imageStore.maxBytes` (64Gi by default).
 
 ## Real limits today (v1 of this feature)

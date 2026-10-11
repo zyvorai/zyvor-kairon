@@ -84,8 +84,9 @@ check.
 ## Serial console and usage samples
 
 Reading the guest's serial console and the dashboard's usage history goes
-through kairon-ui. Set `KAIRON_UI_URL` and `KAIRON_UI_TOKEN` (or `--ui-url`,
-`--ui-token`). Without them the run still proves the VM is `Running`; it just
+through kairon-ui. Set `KAIRON_UI_URL` (an `https://` URL) and `KAIRON_UI_TOKEN`
+(or `--ui-url`, `--ui-token`); for a self-signed dashboard certificate also set
+`KAIRON_UI_CA` to the certificate file. Without them the run still proves the VM is `Running`; it just
 cannot confirm the login prompt.
 
 ## When something fails

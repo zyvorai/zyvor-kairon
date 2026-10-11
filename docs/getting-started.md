@@ -114,6 +114,14 @@ helm upgrade --install kairon ./charts/kairon -n kairon-system --set ui.enabled=
 kubectl -n kairon-system port-forward svc/kairon-ui 18082:18082
 ```
 
+The dashboard serves **HTTPS** by default. With nothing configured each pod
+generates a self-signed certificate at startup, so your browser warns once and
+the certificate changes on every restart: fine to evaluate. For a stable
+certificate set `ui.tls.secretName` to a `kubernetes.io/tls` Secret (for
+example from cert-manager), or `ui.tls.sans` to add the names it should cover.
+Plain HTTP is an explicit opt-out (`ui.insecureHttp: true`, only behind a
+proxy that terminates TLS); see the [dashboard guide](guides/kairon-ui-dashboard.md#https).
+
 No `ui.*` auth values needed: with nothing else configured, a fresh install
 seeds a default `admin` account with the documented lab password
 **`Admin@321`** (change it before exposing the dashboard; the production
@@ -124,7 +132,7 @@ password any time with:
 kubectl -n kairon-system get secret kairon-ui-session -o jsonpath='{.data.defaultAdminPassword}' | base64 -d; echo
 ```
 
-Open `http://127.0.0.1:18082` and sign in as `admin` with that password. Or skip the port-forward: `kaironctl ui` opens the dashboard through the API server.
+Open `https://127.0.0.1:18082` (accept the self-signed certificate warning) and sign in as `admin` with that password. Or skip the port-forward: `kaironctl ui` opens the dashboard through the API server.
 
 | Page | What it shows |
 |---|---|

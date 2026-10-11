@@ -9,6 +9,16 @@ Every route `kairon-ui` serves, generated from the router in
 UI-backed commands) are clients of this API; it adds no privileged side channel
 over the Kubernetes API.
 
+## Transport
+
+Every route below is served over HTTPS by default, on the dashboard's port
+(18082 unless configured). With no certificate configured the server generates a
+self-signed one, so a client either trusts it (`curl --cacert cert.pem`,
+`KAIRON_UI_CA` for `kaironctl`) or is given a real certificate
+(`ui.tls.secretName`). Plain HTTP exists only as the explicit `-insecure-http`
+opt-out; see [HTTPS](kairon-ui-dashboard.md#https). The examples in this guide
+omit the scheme and host for that reason.
+
 ## Access model
 
 | Access | Meaning |

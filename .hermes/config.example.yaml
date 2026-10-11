@@ -8,7 +8,10 @@ mcp_servers:
     env:
       KAIRON_KUBE_URL: "https://127.0.0.1:6443"
       KAIRON_KUBE_TOKEN: ""
-      KAIRON_UI_URL: "http://127.0.0.1:18082"
+      KAIRON_UI_URL: "https://127.0.0.1:18082"
+      # The dashboard serves HTTPS; trust its certificate (a self-signed one
+      # works) instead of disabling verification.
+      KAIRON_UI_CA: ""
       KAIRON_UI_TOKEN: ""
     timeout: 120
 
