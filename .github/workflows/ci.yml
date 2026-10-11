@@ -180,6 +180,49 @@ jobs:
           print("helm render YAML: OK (kairon-ui HTTPS by default)")
           PY
 
+      - name: Helm render -- console relay TLS by default
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import subprocess, yaml
+
+          def render(*args):
+              return subprocess.run(
+                  ["helm", "template", "kairon", "charts/kairon", "--namespace", "kairon-system",
+                   "--set", "ui.enabled=true", "--set", "console.enabled=true", *args],
+                  capture_output=True, text=True,
+              )
+
+          def parts(out):
+              docs = [d for d in yaml.safe_load_all(out.stdout) if d]
+              node = next(d for d in docs if d["kind"] == "DaemonSet" and d["metadata"]["name"] == "kairon-node")
+              ui = next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] == "kairon-ui")
+              args = node["spec"]["template"]["spec"]["containers"][0]["args"]
+              env = {e["name"]: e.get("value") for e in ui["spec"]["template"]["spec"]["containers"][0]["env"]}
+              secrets = {d["metadata"]["name"]: d for d in docs if d.get("kind") == "Secret"}
+              return args, env, secrets
+
+          # Default: TLS on, a generated Secret with a CA, the name pinned.
+          out = render()
+          assert out.returncode == 0, out.stderr
+          args, env, secrets = parts(out)
+          assert "--console-tls-cert=/etc/kairon/console-tls/tls.crt" in args, args
+          assert env["KAIRON_NODE_CONSOLE_CA"] == "/etc/kairon/console-tls/ca.crt"
+          assert env["KAIRON_NODE_CONSOLE_SERVER_NAME"] == "kairon-node"
+          assert set(secrets["kairon-console-tls"]["stringData"]) == {"tls.crt", "tls.key", "ca.crt"}
+
+          # Your own Secret: nothing generated, name left to the dialled host.
+          args, env, secrets = parts(render("--set", "console.tls.secretName=mine"))
+          assert "kairon-console-tls" not in secrets
+          assert "KAIRON_NODE_CONSOLE_SERVER_NAME" not in env
+
+          # The opt-out is explicit and removes every TLS wire.
+          args, env, secrets = parts(render("--set", "console.tls.enabled=false"))
+          assert not any("console-tls" in a for a in args)
+          assert "KAIRON_NODE_CONSOLE_CA" not in env and "kairon-console-tls" not in secrets
+          print("helm render YAML: OK (console relay TLS by default)")
+          PY
+
       - name: Helm render -- Cilium flags
         run: |
           helm template kairon charts/kairon --namespace kairon-system \
