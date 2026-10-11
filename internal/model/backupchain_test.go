@@ -40,7 +40,7 @@ func TestBackupChainsGroupsAndIndents(t *testing.T) {
 	if c1.StoredBytes != 27 {
 		t.Fatalf("stored = %d, want 27", c1.StoredBytes)
 	}
-	var got []string
+	got := make([]string, 0, len(c1.Points))
 	depth := map[string]int{}
 	for _, p := range c1.Points {
 		got = append(got, p.Name)

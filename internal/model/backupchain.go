@@ -41,7 +41,7 @@ func BackupChains(backups []MachineBackup, machine string) []BackupChainView {
 		}
 		byChain[b.Status.Chain.ID] = append(byChain[b.Status.Chain.ID], b)
 	}
-	var out []BackupChainView
+	out := make([]BackupChainView, 0, len(byChain))
 	for id, items := range byChain {
 		sort.Slice(items, func(i, j int) bool {
 			a, b := items[i], items[j]

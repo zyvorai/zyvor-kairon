@@ -99,7 +99,7 @@ func TestGFSKeepsNewestPerBucket(t *testing.T) {
 		points[time.Duration(i).String()] = t0.Add(time.Duration(i) * 20 * time.Minute)
 	}
 	keep := GFSKeep(points, BackupRetention{Hourly: 3, Daily: 2})
-	var kept []time.Time
+	kept := make([]time.Time, 0, len(keep))
 	for n := range keep {
 		kept = append(kept, points[n])
 	}
@@ -124,12 +124,12 @@ func TestGFSKeepsNewestPerBucket(t *testing.T) {
 func TestRetentionKeepsDependenciesAndAsksForASyntheticFull(t *testing.T) {
 	ok := BackupSucceeded
 	day := 24 * time.Hour
-	backups := []MachineBackup{
+	backups := append(make([]MachineBackup, 0, 5),
 		cbt("f0", BackupModeFull, "", "c1", 0, ok),
 		cbt("i1", BackupModeIncremental, "f0", "c1", day, ok),
 		cbt("i2", BackupModeIncremental, "i1", "c1", 2*day, ok),
 		cbt("i3", BackupModeIncremental, "i2", "c1", 3*day, ok),
-	}
+	)
 	r := BackupRetention{Daily: 2}
 	plan := PlanRetention(backups, r, t0.Add(4*day))
 	// i3 and i2 are kept and need i1 and f0; nothing goes yet, and the

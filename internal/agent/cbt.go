@@ -78,7 +78,7 @@ func (a *Agent) backupSecret(ctx context.Context, ns, name string) (model.Secret
 		return model.Secret{}, fmt.Errorf("read Secret %s/%s: %w", ns, name, err)
 	}
 	if s.Metadata.Labels[model.BackupCredentialsLabel] != "true" {
-		return model.Secret{}, fmt.Errorf("Secret %s/%s is not labelled %s=true", ns, name, model.BackupCredentialsLabel)
+		return model.Secret{}, fmt.Errorf("secret %s/%s is not labelled %s=true", ns, name, model.BackupCredentialsLabel)
 	}
 	return s, nil
 }
@@ -104,7 +104,7 @@ func (a *Agent) cbtTarget(ctx context.Context, b model.MachineBackup) (fluxvm.CB
 		PathStyle:       t.PathStyle == nil || *t.PathStyle,
 	}
 	if target.AccessKeyID == "" || target.SecretAccessKey == "" {
-		return fluxvm.CBTTarget{}, nil, fmt.Errorf("Secret %s/%s needs accessKeyId and secretAccessKey", b.Namespace(), t.CredentialsSecretRef)
+		return fluxvm.CBTTarget{}, nil, fmt.Errorf("secret %s/%s needs accessKeyId and secretAccessKey", b.Namespace(), t.CredentialsSecretRef)
 	}
 	if b.Spec.Encryption == nil {
 		return target, nil, nil
@@ -115,7 +115,7 @@ func (a *Agent) cbtTarget(ctx context.Context, b model.MachineBackup) (fluxvm.CB
 	}
 	key, err := encryptionKey(ks.Data["key"])
 	if err != nil {
-		return fluxvm.CBTTarget{}, nil, fmt.Errorf("Secret %s/%s: %w", b.Namespace(), b.Spec.Encryption.KeySecretRef, err)
+		return fluxvm.CBTTarget{}, nil, fmt.Errorf("secret %s/%s: %w", b.Namespace(), b.Spec.Encryption.KeySecretRef, err)
 	}
 	keyID := strings.TrimSpace(string(ks.Data["keyId"]))
 	if keyID == "" {

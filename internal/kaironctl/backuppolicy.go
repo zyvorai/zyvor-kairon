@@ -130,14 +130,14 @@ func cmdBackupPolicy(ctx context.Context, kc *kube.Client, args []string) {
 }
 
 func printBackupPolicies(w io.Writer, items []model.MachineBackupPolicy) {
-	fmt.Fprintf(w, "NAME\tMODE\tINCREMENTAL\tFULL\tRETENTION\tSUSPEND\tMACHINES\n")
+	_, _ = fmt.Fprintf(w, "NAME\tMODE\tINCREMENTAL\tFULL\tRETENTION\tSUSPEND\tMACHINES\n")
 	for _, p := range items {
 		mode := p.Spec.Mode
 		if mode == "" {
 			mode = model.BackupModeIncremental
 		}
 		r := p.Spec.Retention
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%dh/%dd/%dm\t%v\t%d\n", p.Metadata.Name, mode, dash(p.Spec.IncrementalEvery), dash(p.Spec.FullEvery),
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%dh/%dd/%dm\t%v\t%d\n", p.Metadata.Name, mode, dash(p.Spec.IncrementalEvery), dash(p.Spec.FullEvery),
 			r.Hourly, r.Daily, r.Monthly, p.Spec.Suspend, len(p.Status.Machines))
 	}
 }
@@ -156,9 +156,9 @@ func describeBackupPolicy(ctx context.Context, kc *kube.Client, ns, name string)
 }
 
 func printPolicyMachines(w io.Writer, machines []model.PolicyMachineStatus) {
-	fmt.Fprintln(w, "\nMachines:")
+	_, _ = fmt.Fprintln(w, "\nMachines:")
 	if len(machines) == 0 {
-		fmt.Fprintln(w, "  (none selected yet)")
+		_, _ = fmt.Fprintln(w, "  (none selected yet)")
 		return
 	}
 	ts := func(t *time.Time) string {
@@ -167,7 +167,7 @@ func printPolicyMachines(w io.Writer, machines []model.PolicyMachineStatus) {
 		}
 		return t.UTC().Format(time.RFC3339)
 	}
-	fmt.Fprintf(w, "  MACHINE\tCHAIN\tLASTFULL\tLASTINCREMENTAL\tNEXTRUN\tNOTE\n")
+	_, _ = fmt.Fprintf(w, "  MACHINE\tCHAIN\tLASTFULL\tLASTINCREMENTAL\tNEXTRUN\tNOTE\n")
 	for _, m := range machines {
 		note := m.Skipped
 		if m.LastError != "" {
@@ -176,6 +176,6 @@ func printPolicyMachines(w io.Writer, machines []model.PolicyMachineStatus) {
 		if len(m.RetentionHeld) > 0 {
 			note = fmt.Sprintf("%s held by Object Lock: %v", note, m.RetentionHeld)
 		}
-		fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\t%s\n", m.MachineName, dash(m.ChainID), ts(m.LastFull), ts(m.LastIncremental), ts(m.NextRun), dash(note))
+		_, _ = fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\t%s\n", m.MachineName, dash(m.ChainID), ts(m.LastFull), ts(m.LastIncremental), ts(m.NextRun), dash(note))
 	}
 }

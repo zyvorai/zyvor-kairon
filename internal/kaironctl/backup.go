@@ -138,14 +138,14 @@ func printBackups(items []model.MachineBackup) {
 // their parent; "=" marks a synthetic full standing in for a point.
 func printBackupChains(w io.Writer, chains []model.BackupChainView) {
 	if len(chains) == 0 {
-		fmt.Fprintln(w, "no S3 backups")
+		_, _ = fmt.Fprintln(w, "no S3 backups")
 		return
 	}
 	for i, c := range chains {
 		if i > 0 {
-			fmt.Fprintln(w)
+			_, _ = fmt.Fprintln(w)
 		}
-		fmt.Fprintf(w, "chain %s (%d backups, %s stored)\n", c.ID, len(c.Points), mib(c.StoredBytes))
+		_, _ = fmt.Fprintf(w, "chain %s (%d backups, %s stored)\n", c.ID, len(c.Points), mib(c.StoredBytes))
 		for _, p := range c.Points {
 			mark := "+"
 			switch p.Kind {
@@ -165,7 +165,7 @@ func printBackupChains(w io.Writer, chains []model.BackupChainView) {
 			if p.Deleting {
 				extra += " deleting"
 			}
-			fmt.Fprintf(w, "%s%s %s  #%d %s %s  %s  stored=%s changed=%s%s\n", strings.Repeat("  ", p.Depth), mark, p.Name, p.Sequence, p.Kind, dash(p.Phase), at, mib(p.StoredBytes), mib(p.ChangedBytes), extra)
+			_, _ = fmt.Fprintf(w, "%s%s %s  #%d %s %s  %s  stored=%s changed=%s%s\n", strings.Repeat("  ", p.Depth), mark, p.Name, p.Sequence, p.Kind, dash(p.Phase), at, mib(p.StoredBytes), mib(p.ChangedBytes), extra)
 		}
 	}
 }
