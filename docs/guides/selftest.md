@@ -128,7 +128,8 @@ Exit status is 0 when nothing failed and 1 otherwise.
 `scripts/deploy-remote.sh HOST USER --with-ui --self-test[=quick|standard|full]`
 runs the self-test on the host over an SSH terminal after the deploy, using the
 host's admin kubeconfig (k3s) or the node's own connection, and the dashboard
-when it was deployed. The result becomes the script's exit code.
+when it was deployed, over HTTPS when the dashboard uses it. The result becomes
+the script's exit code.
 
 ## From the dashboard
 
