@@ -1233,7 +1233,8 @@ INSTALL_EOF
     # bsdtar on macOS otherwise stores com.apple.* xattrs that GNU tar on the
     # remote host warns about once per file.
     tar_extra=()
-    if tar --help 2>&1 | grep -q -- '--no-xattrs'; then tar_extra+=(--no-xattrs); fi
+    # Probe by trying it: bsdtar's --help does not list --no-xattrs even though it accepts it.
+    if tar --no-xattrs -cf /dev/null -T /dev/null 2>/dev/null; then tar_extra+=(--no-xattrs); fi
     COPYFILE_DISABLE=1 tar "${tar_extra[@]}" -C "$REPO_ROOT/web/dist" -czf "$local_stage/kairon-ui-web.tar.gz" .
     scp_files+=("$local_stage/kairon-ui-web.tar.gz")
   fi

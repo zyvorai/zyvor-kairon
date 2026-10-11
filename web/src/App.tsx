@@ -239,7 +239,7 @@ export default function App() {
       )}
       <main className="stage" key={ns}>
         <PageHero
-          kicker={page === 'overview' ? 'VM orchestration · no KubeVirt · no libvirt' : group?.group ?? 'Account'}
+          kicker={page === 'overview' ? 'VM orchestration on FluxVM' : group?.group ?? 'Account'}
           title={page === 'overview' ? 'Run, migrate, and snapshot VMs on FluxVM.' : title}
           lede={page === 'overview' ? 'Kairon orchestrates FluxVM hosts as Kubernetes-native Machines, with secure peer live migration and operator-attested recovery.' : lede}
           glow={page === 'overview'}
