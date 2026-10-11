@@ -1142,8 +1142,9 @@ type MachineMigrationStatus struct {
 	Recovery *MachineMigrationRecoveryStatus `json:"recovery,omitempty"`
 	// Progress is the transfer telemetry from the latest adapter poll.
 	Progress *MachineMigrationProgress `json:"progress,omitempty"`
-	// Adaptive is the adaptive engine's state; set only for migrations
-	// with spec.adaptive.
+	// Adaptive is the adaptive engine's state for migrations with
+	// spec.adaptive. Any live migration also gets it once post-copy starts,
+	// to carry the PostCopyStarted latch.
 	Adaptive *MachineMigrationAdaptiveStatus `json:"adaptive,omitempty"`
 }
 
@@ -1191,6 +1192,9 @@ type MachineMigrationAdaptiveStatus struct {
 	// PostCopyStarted latches once the transfer entered post-copy. From
 	// then on the source can't be resumed.
 	PostCopyStarted bool `json:"postCopyStarted,omitempty"`
+	// PostCopyArmed records that both ends enabled post-copy at stream
+	// start, the precondition for switching to it later.
+	PostCopyArmed bool `json:"postCopyArmed,omitempty"`
 	// Currently applied settings.
 	BandwidthMbps   uint64 `json:"bandwidthMbps,omitempty"`
 	DowntimeLimitMs uint64 `json:"downtimeLimitMs,omitempty"`

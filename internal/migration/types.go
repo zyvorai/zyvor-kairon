@@ -72,9 +72,12 @@ type Session struct {
 	// DestinationRuntimeID is the destination runtime the adapter created
 	// for this session (set by the destination from PrepareResult). Network
 	// state is restored there after commit.
-	DestinationRuntimeID string    `json:"destinationRuntimeID,omitempty"`
-	CreatedAt            time.Time `json:"createdAt"`
-	UpdatedAt            time.Time `json:"updatedAt"`
+	DestinationRuntimeID string `json:"destinationRuntimeID,omitempty"`
+	// AcceptedStream is PrepareResult.Stream, persisted for idempotent
+	// prepare replies. Set by the destination.
+	AcceptedStream *StreamCapabilities `json:"acceptedStream,omitempty"`
+	CreatedAt      time.Time           `json:"createdAt"`
+	UpdatedAt      time.Time           `json:"updatedAt"`
 }
 
 // StreamCapabilities must match on both ends of a QEMU migration stream.
@@ -134,6 +137,10 @@ type PrepareResult struct {
 	// committed. Empty for adapters whose destination runtime keeps the
 	// source's ID; network restore then targets session.RuntimeID.
 	DestinationRuntimeID string `json:"destinationRuntimeID,omitempty"`
+	// Stream is what the receiver actually enabled; the source must start
+	// with exactly these. Nil from adapters that predate stream
+	// negotiation, which only ever honored multifd and the mode.
+	Stream *StreamCapabilities `json:"stream,omitempty"`
 }
 
 type PrepareResponse struct {
@@ -144,6 +151,8 @@ type PrepareResponse struct {
 	Backend            string `json:"backend,omitempty"`
 	Reason             string `json:"reason,omitempty"`
 	DataPlaneEncrypted bool   `json:"dataPlaneEncrypted,omitempty"`
+	// Stream echoes PrepareResult.Stream.
+	Stream *StreamCapabilities `json:"stream,omitempty"`
 }
 
 type DestinationDriver interface {

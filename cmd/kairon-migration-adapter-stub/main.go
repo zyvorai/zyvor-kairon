@@ -82,7 +82,17 @@ func (s *stub) prepare(w http.ResponseWriter, r *http.Request) {
 		TransferSupported: true,
 		Endpoint:          "stub://" + req.Session.ID,
 		Backend:           req.Session.Backend,
+		Stream:            acceptedStream(req.Session.Stream),
 	})
+}
+
+// acceptedStream accepts every requested stream capability.
+func acceptedStream(requested *migration.StreamCapabilities) *migration.StreamCapabilities {
+	if requested == nil {
+		return &migration.StreamCapabilities{}
+	}
+	out := *requested
+	return &out
 }
 
 func (s *stub) destCommit(w http.ResponseWriter, r *http.Request) {

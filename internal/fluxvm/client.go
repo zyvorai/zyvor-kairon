@@ -62,6 +62,8 @@ type Record struct {
 		// Cdroms are the VM's CD-ROM drives; an empty Path is an ejected
 		// drive (the device stays so the guest's layout doesn't change).
 		Cdroms []Cdrom `json:"cdroms,omitempty"`
+		// VFIODevices are host PCI devices passed through to the guest.
+		VFIODevices []string `json:"vfio_devices,omitempty"`
 	} `json:"request,omitempty"`
 }
 

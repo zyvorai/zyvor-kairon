@@ -299,7 +299,8 @@ spec:
                     format: date-time
               adaptive:
                 type: object
-                description: Adaptive engine state, set only with spec.adaptive.
+                description: Adaptive engine state for spec.adaptive migrations; any
+                  live migration gets it once post-copy starts, to latch postCopyStarted.
                 properties:
                   stage:
                     type: string
@@ -312,6 +313,8 @@ spec:
                   bestRAMRemaining: *u64
                   bestProgressAt: *ts
                   postCopyStarted:
+                    type: boolean
+                  postCopyArmed:
                     type: boolean
                   bandwidthMbps: *u64
                   downtimeLimitMs: *u64

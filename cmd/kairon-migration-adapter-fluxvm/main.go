@@ -111,6 +111,9 @@ type receiverInfo struct {
 	ID    string `json:"id"`
 	URI   string `json:"uri"`
 	Token string `json:"token"`
+	// Capabilities is absent from FluxVM releases that predate stream
+	// negotiation.
+	Capabilities *streamCapabilities `json:"capabilities"`
 }
 
 type receiverToken struct {
@@ -369,7 +372,19 @@ func (a *adapter) prepare(w http.ResponseWriter, r *http.Request) {
 		Backend:              backend,
 		DataPlaneEncrypted:   a.tlsCA != "",
 		DestinationRuntimeID: info.ID,
+		Stream:               fromStreamCapabilities(info.Capabilities),
 	})
+}
+
+func fromStreamCapabilities(s *streamCapabilities) *migration.StreamCapabilities {
+	if s == nil {
+		return nil
+	}
+	out := &migration.StreamCapabilities{MultifdChannels: s.MultifdChannels, PostCopy: s.PostCopy}
+	if s.Compression != nil {
+		out.Compression = &migration.Compression{Algorithm: s.Compression.Algorithm, Level: s.Compression.Level}
+	}
+	return out
 }
 
 func toStreamCapabilities(s *migration.StreamCapabilities) streamCapabilities {
@@ -558,7 +573,13 @@ func (a *adapter) sourcePostCopy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var status migrationStatus
-	if _, err := a.flux.do(r.Context(), http.MethodPost, "/v1/vms/"+runtimeID+"/migration/postcopy", map[string]any{}, &status); err != nil {
+	if code, err := a.flux.do(r.Context(), http.MethodPost, "/v1/vms/"+runtimeID+"/migration/postcopy", map[string]any{}, &status); err != nil {
+		// A FluxVM 4xx means it refused before touching QEMU; anything else
+		// may have switched, and Kairon must assume it did.
+		if code >= 400 && code < 500 {
+			writeError(w, http.StatusConflict, err)
+			return
+		}
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}

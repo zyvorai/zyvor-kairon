@@ -962,6 +962,21 @@ func (a *Agent) reconcileMigration(ctx context.Context, item model.MachineMigrat
 		} else {
 			session.NetworkSnapshot = snap
 		}
+		mode := item.Spec.Mode
+		if mode == "" {
+			mode = "pre-copy"
+		}
+		if mode != "pre-copy" && mode != "post-copy" {
+			a.resumeSourceNetworkQuiesce(ctx, rec.ID())
+			return fmt.Errorf("unsupported migration mode %q", mode)
+		}
+		caps, tuner := a.sourceCapabilities(ctx)
+		plan, err := planLiveStream(item, machine, rec, caps, mode)
+		if err != nil {
+			a.resumeSourceNetworkQuiesce(ctx, rec.ID())
+			return a.blockLiveMigration(ctx, item, err.Error()+"; source runtime was left untouched")
+		}
+		session.Stream = &plan.stream
 		session.ConntrackSnapshot = a.exportConntrackSnapshot(ctx, machine, rec.ID())
 		if raw, err := a.Flux.GetRaw(ctx, rec.ID()); err != nil {
 			a.Log.Warn("reading source FluxVM record for the receiver failed; continuing without it", "runtimeID", rec.ID(), "error", err)
@@ -988,25 +1003,17 @@ func (a *Agent) reconcileMigration(ctx context.Context, item model.MachineMigrat
 			a.resumeSourceNetworkQuiesce(ctx, rec.ID())
 			return a.blockLiveMigrationWithStatus(ctx, item, status, message+"; source runtime was left untouched")
 		}
-		mode := item.Spec.Mode
-		if mode == "" {
-			mode = "pre-copy"
-		}
-		if mode != "pre-copy" && mode != "post-copy" {
+		opts, notes, err := sourceStartOptions(item, mode, plan, prepared.Stream, caps)
+		if err != nil {
 			_ = a.MigrationPeer.Abort(ctx, targetURL, session.ID)
 			a.resumeSourceNetworkQuiesce(ctx, rec.ID())
-			return fmt.Errorf("unsupported migration mode %q", mode)
+			return a.blockLiveMigrationWithStatus(ctx, item, status, err.Error()+"; prepared target was aborted and source runtime was left untouched")
 		}
 		transfer, err := a.SourceMigrator.Start(ctx, migration.SourceRequest{
 			Session:   session,
 			RuntimeID: rec.ID(),
 			Endpoint:  prepared.Endpoint,
-			Options: migration.SourceOptions{
-				Mode:            mode,
-				BandwidthMbps:   item.Spec.BandwidthMbps,
-				MaxDowntimeMs:   item.Spec.MaxDowntimeMs,
-				MultifdChannels: item.Spec.MultifdChannels,
-			},
+			Options:   opts,
 		})
 		if err != nil {
 			_ = a.MigrationPeer.Abort(ctx, targetURL, session.ID)
@@ -1020,6 +1027,7 @@ func (a *Agent) reconcileMigration(ctx context.Context, item model.MachineMigrat
 			return a.Kube.PatchMachineMigrationStatus(ctx, item.Namespace(), item.Metadata.Name, status)
 		}
 		status.TransferID = transfer.TransferID
+		status.Adaptive = adaptiveStart(item, opts, caps, tuner, notes, time.Now())
 		return a.projectTransfer(ctx, item, status, session, targetURL, transfer)
 	}
 
@@ -1052,6 +1060,12 @@ func (a *Agent) projectTransfer(ctx context.Context, item model.MachineMigration
 	if transfer.TransferID != "" {
 		status.TransferID = transfer.TransferID
 	}
+	if p := transferProgress(transfer, item.Spec.Adaptive != nil && item.Spec.Adaptive.Compression != nil && item.Spec.Adaptive.Compression.Algorithm != model.MigrationCompressionNone, time.Now()); p != nil {
+		status.Progress = p
+	}
+	if transfer.PostCopyActive {
+		status.Adaptive = postCopyLatched(status.Adaptive, time.Now())
+	}
 	switch phase {
 	case "completed", "transferred":
 		if err := a.MigrationPeer.Commit(ctx, targetURL, session.ID); err != nil {
@@ -1063,6 +1077,18 @@ func (a *Agent) projectTransfer(ctx context.Context, item model.MachineMigration
 		status.Phase = "Cutover"
 		status.Message = "source transfer completed and target committed; waiting for guarded target adoption"
 	case "failed", "cancelled", "canceled", "aborted":
+		if postCopyStarted(status) {
+			// After the switch the guest's newest memory lives on the
+			// destination and the rest on the source. Resuming the source
+			// would run a stale guest; aborting the destination would lose
+			// the live one.
+			status.Phase = "NeedsRecovery"
+			status.Message = "source transfer " + phase + " after post-copy started; the source was not resumed and the destination was not aborted -- inspect both nodes before choosing a recovery action"
+			if transfer.Message != "" {
+				status.Message += ": " + transfer.Message
+			}
+			break
+		}
 		_ = a.MigrationPeer.Abort(ctx, targetURL, session.ID)
 		a.resumeSourceNetworkQuiesce(ctx, session.RuntimeID)
 		status.Phase = "Failed"
@@ -1073,6 +1099,18 @@ func (a *Agent) projectTransfer(ctx context.Context, item model.MachineMigration
 	default:
 		status.Phase = "Running"
 		status.Message = "live migration transfer in progress"
+		if abort, reason := a.applyAdaptive(ctx, item, &status, session, transfer); abort {
+			if err := a.SourceMigrator.Abort(ctx, session, status.TransferID); err != nil {
+				a.Log.Warn("adaptive abort: source transfer abort failed", "migration", item.Metadata.Name, "namespace", item.Namespace(), "error", err)
+			}
+			_ = a.MigrationPeer.Abort(ctx, targetURL, session.ID)
+			a.resumeSourceNetworkQuiesce(ctx, session.RuntimeID)
+			status.Phase = "Failed"
+			status.TransferPhase = "aborted"
+			status.Message = "adaptive engine aborted the transfer: " + reason + "; prepared target aborted and source runtime left running"
+		} else if status.Adaptive != nil && status.Adaptive.Stage != "" {
+			status.Message = "live migration transfer in progress (" + status.Adaptive.Stage + ")"
+		}
 	}
 	return a.Kube.PatchMachineMigrationStatus(ctx, item.Namespace(), item.Metadata.Name, status)
 }
@@ -1257,6 +1295,13 @@ func (a *Agent) resumeSourceNetworkQuiesce(ctx context.Context, runtimeID string
 // function from ever being reached for a migration that already moved on.
 func (a *Agent) cancelLiveMigration(ctx context.Context, item model.MachineMigration) error {
 	status := item.Status
+	if postCopyStarted(status) {
+		if strings.HasPrefix(status.Message, "cancel ignored") {
+			return nil
+		}
+		status.Message = "cancel ignored: post-copy has started, so the source can no longer take the guest back; the migration continues"
+		return a.Kube.PatchMachineMigrationStatus(ctx, item.Namespace(), item.Metadata.Name, status)
+	}
 	sessionID := status.SessionID
 	if sessionID == "" {
 		sessionID = migrationSessionID(item)

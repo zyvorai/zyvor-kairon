@@ -141,6 +141,8 @@ func (s *Server) prepare(w http.ResponseWriter, r *http.Request) {
 	session.Reason = result.Reason
 	session.DataPlaneEncrypted = result.DataPlaneEncrypted
 	session.DestinationRuntimeID = result.DestinationRuntimeID
+	session.AcceptedStream = result.Stream
+	session.SourceRecord = nil
 	if result.TransferSupported {
 		session.Phase = "Prepared"
 	} else {
@@ -353,7 +355,7 @@ func (s *Server) diagnosis(w http.ResponseWriter, r *http.Request) {
 }
 
 func response(session Session) PrepareResponse {
-	return PrepareResponse{SessionID: session.ID, Phase: session.Phase, TransferSupported: session.TransferSupported, Endpoint: session.Endpoint, Backend: session.Backend, Reason: session.Reason, DataPlaneEncrypted: session.DataPlaneEncrypted}
+	return PrepareResponse{SessionID: session.ID, Phase: session.Phase, TransferSupported: session.TransferSupported, Endpoint: session.Endpoint, Backend: session.Backend, Reason: session.Reason, DataPlaneEncrypted: session.DataPlaneEncrypted, Stream: session.AcceptedStream}
 }
 
 func ensureEOF(dec *json.Decoder) error {

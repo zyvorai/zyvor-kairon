@@ -119,6 +119,14 @@ func (a SourceAdapter) Finish(ctx context.Context, s Session, id string) error {
 	return a.Adapter.Finish(ctx, s, id)
 }
 
+// IsRejected reports whether err is the adapter definitively refusing a
+// request (HTTP 4xx) rather than a transport failure or a backend error
+// that may have taken partial effect.
+func IsRejected(err error) bool {
+	var se *adapterStatusError
+	return errors.As(err, &se) && se.code >= 400 && se.code < 500
+}
+
 type adapterStatusError struct {
 	path string
 	code int
