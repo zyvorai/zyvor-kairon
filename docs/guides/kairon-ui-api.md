@@ -137,6 +137,11 @@ user exists).
 | POST | `/api/v1/machines/{namespace}/{name}/network-capture` | namespace |
 | GET | `/api/v1/machines/{namespace}/{name}/network-capture/{token}` | namespace |
 | GET | `/api/v1/machines/{namespace}/{name}/network-drop-reasons` | namespace |
+| GET | `/api/v1/machines/{namespace}/{name}/timeline` | namespace |
+| GET | `/api/v1/machines/{namespace}/{name}/metrics` | namespace |
+| POST | `/api/v1/machines/{namespace}/{name}/fork` | namespace |
+| POST | `/api/v1/machines/{namespace}/{name}/disks` | namespace |
+| POST | `/api/v1/machines/{namespace}/{name}/nics` | namespace |
 | GET | `/api/v1/machines/{namespace}/{name}/network-drops` | namespace |
 | GET | `/api/v1/machines/{namespace}/{name}/network-effective` | namespace |
 | GET | `/api/v1/machines/{namespace}/{name}/network-flows` | namespace |
@@ -228,6 +233,7 @@ identity gets `403`, and everyone else is filtered per namespace
 |---|---|---|
 | GET | `/api/v1/nodes` | session |
 | GET | `/api/v1/nodes/usage` | session |
+| GET | `/api/v1/nodes/capacity` | session |
 | GET | `/api/v1/nodes/{node}/capabilities` | session |
 | GET | `/api/v1/nodes/{node}/catalog` | session |
 | POST | `/api/v1/nodes/{node}/catalog` | session |
@@ -252,6 +258,9 @@ identity gets `403`, and everyone else is filtered per namespace
 | Method | Path | Access |
 |---|---|---|
 | GET | `/api/v1/overview` | session |
+| GET | `/api/v1/pods` | session |
+| GET | `/api/v1/health` | session |
+| GET | `/api/v1/stream` | session |
 
 ### quotas
 
@@ -279,6 +288,7 @@ identity gets `403`, and everyone else is filtered per namespace
 |---|---|---|
 | GET | `/api/v1/snapshot-schedules` | namespace |
 | PATCH | `/api/v1/snapshot-schedules/{namespace}/{name}/suspend` | namespace |
+| POST | `/api/v1/snapshot-schedules/{namespace}/{name}/trigger` | namespace |
 
 ### snapshots
 
@@ -306,3 +316,17 @@ identity gets `403`, and everyone else is filtered per namespace
 - [kairon-ui high availability](kairon-ui-ha.md), [OIDC](kairon-ui-oidc.md).
 - [VM edge](../ebpf-edge.md): `network-*` routes, packet capture.
 - [Enterprise fleet reference](enterprise-fleet-reference.md): `/api/v1/fleet/*`.
+
+## Live data and history
+
+- **`GET /api/v1/stream`** is a Server-Sent Events feed of Machine and MachineMigration changes the caller may see. Each `change` event carries `type` (`ADDED`, `MODIFIED`, `DELETED`), `kind`, `namespace`, `name` and, when known, `phase`, `nodeName` and `message`. A `: ping` comment arrives every 20 s. Read it with `fetch` streaming, because it needs the `Authorization` header.
+- **`GET .../timeline`** merges the Machine's Kubernetes Events with its status conditions, newest first.
+- **`GET .../metrics?range=15m`** returns the usage samples (CPU percent, memory, disk read and write) kairon-ui recorded every 15 s, up to one hour. The history is in memory, per replica, and lost on restart; `cpuPercent` is the lifetime average `status.resourceUsage` reports.
+- **`GET /api/v1/nodes/capacity`** reports allocatable against requested CPU and memory per node using the scheduler's own accounting. With `?cpu=4&memory=8Gi` each row also says whether a Machine of that size would fit.
+- **`GET /api/v1/pods`** lists Kairon's own pods (`app.kubernetes.io/name=kairon-*`); add `scope=all` for every pod the caller may see and `node=NAME` to filter. **`GET /api/v1/health`** rolls those pods up per component. Both need the `kairon-ui` ClusterRole's `pods` and `events` read rules, which the chart and `deploy/rbac.yaml` now grant.
+
+## Actions
+
+- **`POST .../fork`** with `{"count": 1-32, "prefix": "..."}` forks a Running Machine without volumes, disks or device claims, as `kaironctl fork` does (without waiting).
+- **`POST .../disks`** with `{"action": "attach"|"detach", "name": "...", "claim": "pvc"}` and **`POST .../nics`** with `{"action": "add"|"remove", "name": "...", "bridge": "br0"}` edit `spec.disks` and `spec.network.extraInterfaces`; kairon-node applies them live. NICs need `spec.network.mode: tap`.
+- **`POST .../snapshot-schedules/.../trigger`** requests an immediate run, bypassing `spec.suspend`, as `kaironctl trigger` does.

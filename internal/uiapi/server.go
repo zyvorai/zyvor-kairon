@@ -255,6 +255,9 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/resume", s.requireNamespace(namespaceFromPath, s.handlePowerMachine("Running")))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/halt", s.requireNamespace(namespaceFromPath, s.handlePowerMachine("Halted")))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/priority", s.requireNamespace(namespaceFromPath, s.handleSetMachinePriority))
+	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/fork", s.requireNamespace(namespaceFromPath, s.handleForkMachine))
+	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/disks", s.requireNamespace(namespaceFromPath, s.handleHotplugDisk))
+	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/nics", s.requireNamespace(namespaceFromPath, s.handleHotplugNIC))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/console/ticket", s.requireNamespace(namespaceFromPath, s.handleConsoleTicket))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/exec", s.requireNamespace(namespaceFromPath, s.handleExec))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/agent-file/put", s.requireNamespace(namespaceFromPath, s.handleAgentPutFile))
@@ -296,6 +299,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/v1/migration-policies", s.requireNamespace(namespaceParam, s.handleListMigrationPolicies))
 	api.HandleFunc("GET /api/v1/snapshot-schedules", s.requireNamespace(namespaceParam, s.handleListMachineSnapshotSchedules))
 	api.HandleFunc("PATCH /api/v1/snapshot-schedules/{namespace}/{name}/suspend", s.requireNamespace(namespaceFromPath, s.handleSuspendMachineSnapshotSchedule))
+	api.HandleFunc("POST /api/v1/snapshot-schedules/{namespace}/{name}/trigger", s.requireNamespace(namespaceFromPath, s.handleTriggerSnapshotSchedule))
 	api.HandleFunc("GET /api/v1/network-policies", s.requireNamespace(namespaceParam, s.handleListNetworkPolicies))
 	api.HandleFunc("GET /api/v1/security-groups", s.requireNamespace(namespaceParam, s.handleListSecurityGroups))
 

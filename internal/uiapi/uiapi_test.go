@@ -6,6 +6,7 @@ package uiapi
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -43,7 +44,9 @@ type fakeKube struct {
 	securityGroups    map[string]model.NetworkSecurityGroup
 	nodes             []model.Node
 	events            []model.Event
-	podsJSON          []map[string]any
+	// patches records every raw merge-patch body, keyed by object path.
+	patches  map[string][]string
+	podsJSON []map[string]any
 	// secrets holds only stringData, keyed by "namespace/name" -- enough
 	// to exercise Client.PatchSecretStringData (see
 	// uiapi.Server.persistUsers) without modeling a full core/v1 Secret.
@@ -115,6 +118,13 @@ func (f *fakeKube) handler() http.Handler {
 			f.machines[m.Metadata.Name] = m
 			_ = json.NewEncoder(w).Encode(m)
 		case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/apis/kairon.zyvor.dev/v1/namespaces/default/machines/"):
+			if raw, err := io.ReadAll(r.Body); err == nil {
+				if f.patches == nil {
+					f.patches = map[string][]string{}
+				}
+				f.patches[r.URL.Path] = append(f.patches[r.URL.Path], string(raw))
+				r.Body = io.NopCloser(bytes.NewReader(raw))
+			}
 			name := strings.TrimPrefix(r.URL.Path, "/apis/kairon.zyvor.dev/v1/namespaces/default/machines/")
 			m, ok := f.machines[name]
 			if !ok {
@@ -292,6 +302,13 @@ func (f *fakeKube) handler() http.Handler {
 			}
 			_ = json.NewEncoder(w).Encode(model.MachineSnapshotScheduleList{Items: items})
 		case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/apis/kairon.zyvor.dev/v1/namespaces/default/machinesnapshotschedules/"):
+			if raw, err := io.ReadAll(r.Body); err == nil {
+				if f.patches == nil {
+					f.patches = map[string][]string{}
+				}
+				f.patches[r.URL.Path] = append(f.patches[r.URL.Path], string(raw))
+				r.Body = io.NopCloser(bytes.NewReader(raw))
+			}
 			name := strings.TrimPrefix(r.URL.Path, "/apis/kairon.zyvor.dev/v1/namespaces/default/machinesnapshotschedules/")
 			s, ok := f.snapshotSchedules[name]
 			if !ok {

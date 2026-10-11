@@ -13,6 +13,7 @@ import Inspector, { KV } from '../components/Inspector';
 import MachineOps from '../components/MachineOps';
 import MachineTimeline from '../components/MachineTimeline';
 import MachineMetrics from '../components/MachineMetrics';
+import MachineActions from '../components/MachineActions';
 import Sheet from '../components/Sheet';
 import { EmptyState, Status } from '../components/ui';
 import { useToast } from '../components/Toast';
@@ -476,6 +477,7 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
               <button className="sm" onClick={() => setPriority(refOf(m))}>Set</button>
             )}
           </div>
+          <MachineActions namespace={nsOf(m)} name={m.metadata.name} running={m.status?.phase === 'Running'} onChanged={refresh} />
           <h4>Tools</h4>
           <div className="rowactions" style={{ justifyContent: 'flex-start', padding: '8px 0' }}>
             {consoleEnabled && consoleEligible(m) && <button onClick={() => setConsoleFor(refOf(m))}>Console</button>}
