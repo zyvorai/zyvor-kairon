@@ -25,6 +25,7 @@ import NetworkPolicies from './pages/NetworkPolicies';
 import SecurityGroups from './pages/SecurityGroups';
 import Nodes from './pages/Nodes';
 import System from './pages/System';
+import SelfTest from './pages/SelfTest';
 import Topology from './pages/Topology';
 import NetworkOverview from './pages/NetworkOverview';
 import Account from './pages/Account';
@@ -222,6 +223,7 @@ export default function App() {
     nodes: <Nodes />,
     topology: <Topology />,
     system: <System />,
+    selftest: <SelfTest />,
     network: <NetworkOverview />,
     storage: <Storage />,
     pools: <Pools />,

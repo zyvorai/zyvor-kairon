@@ -69,6 +69,7 @@ export const NAV = [
     items: [
       { id: 'fleet', label: 'Fleet operations', blurb: 'Bulk actions across many machines' },
       { id: 'system', label: 'System', blurb: 'Kairon components and pods' },
+      { id: 'selftest', label: 'Self-test', blurb: 'Boot a test VM and check that everything works' },
     ],
   },
   {

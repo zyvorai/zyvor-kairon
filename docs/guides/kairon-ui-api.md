@@ -262,6 +262,11 @@ identity gets `403`, and everyone else is filtered per namespace
 |---|---|---|
 | GET | `/api/v1/overview` | session |
 | GET | `/api/v1/insights` | session |
+| GET | `/api/v1/selftest` | session |
+| POST | `/api/v1/selftest` | session |
+| GET | `/api/v1/selftest/scenarios` | session |
+| GET | `/api/v1/selftest/{id}` | session |
+| DELETE | `/api/v1/selftest/{id}` | session |
 | GET | `/api/v1/pods` | session |
 | GET | `/api/v1/health` | session |
 | GET | `/api/v1/stream` | session |
@@ -336,3 +341,13 @@ identity gets `403`, and everyone else is filtered per namespace
 - **`POST .../disks`** with `{"action": "attach"|"detach", "name": "...", "claim": "pvc"}` and **`POST .../nics`** with `{"action": "add"|"remove", "name": "...", "bridge": "br0"}` edit `spec.disks` and `spec.network.extraInterfaces`; kairon-node applies them live. NICs need `spec.network.mode: tap`.
 - **`POST .../snapshot-schedules/.../trigger`** requests an immediate run, bypassing `spec.suspend`, as `kaironctl trigger` does.
 - **`POST .../machines/{ns}/{name}/backups`** with `{"quiesce": "auto"|"required"|"never", "name": "..."}` creates a `MachineBackup` (Atlas options stay in `kaironctl backup` and YAML). **`POST .../machinebackups/{ns}/{name}/restore`** with `{"machine": "...", "storageClass": "..."}` creates a `MachineBackupRestore`; its disk half waits until the target Machine is halted. **`DELETE .../machinebackups/{ns}/{name}`** removes a backup. These need the `create`/`delete` rules the chart and `deploy/rbac.yaml` now grant on `machinebackups` and `machinebackuprestores`.
+
+## Self-test
+
+The dashboard's self-test is a job API over the same engine as `kaironctl selftest` (see [Self-test](selftest.md)). Starting, listing, polling and cancelling need a named **administrator** account, because a run creates and deletes real Machines; the scenario catalogue is readable by any session.
+
+- **`POST /api/v1/selftest`** with `{"profile": "quick|standard|full", "only": [...], "skip": [...], "noVm": false, "keep": false}` returns `202` and `{"id": "..."}`. Only one run executes at a time (`409` otherwise). A run is limited to 25 minutes.
+- **`GET /api/v1/selftest/{id}?after=N`** returns `state` (`running`, `passed`, `failed`, `cancelled`), the `steps` with their status, reason and hint, the log `lines` from index `N`, `next` (use it as the next `after`) and, once finished, a `summary`.
+- **`DELETE /api/v1/selftest/{id}`** cancels a run; the engine still deletes the Machines it created.
+- **`GET /api/v1/selftest`** lists the last five runs without their lines.
+- Runs are kept in memory, per replica, and are lost when kairon-ui restarts.
