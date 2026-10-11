@@ -100,7 +100,31 @@ func ephemeralSANs(extra string) ([]string, []net.IP) {
 			dns = append(dns, s)
 		}
 	}
-	return dns, ips
+	return uniqueStrings(dns), uniqueIPs(ips)
+}
+
+func uniqueStrings(in []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, s := range in {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func uniqueIPs(in []net.IP) []net.IP {
+	seen := map[string]bool{}
+	var out []net.IP
+	for _, ip := range in {
+		if k := ip.String(); !seen[k] {
+			seen[k] = true
+			out = append(out, ip)
+		}
+	}
+	return out
 }
 
 // newEphemeralTLS generates an in-memory ECDSA P-256 self-signed certificate
