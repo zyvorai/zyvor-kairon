@@ -449,6 +449,21 @@ func runSnapshotRestore(ctx context.Context, s *session) error {
 	}
 	s.onCleanup(func(c context.Context) { s.deleteClaim(c, srcPVC) })
 
+	// Snapshotting an unbound claim fails for good (the controller does not
+	// retry a Failed snapshot), so wait for the provisioner to bind it first.
+	err = s.waitFor(ctx, "the test claim to bind", 90*time.Second, func() (bool, error) {
+		cur, err := s.env.Kube.GetPersistentVolumeClaim(ctx, ns, srcPVC)
+		if err != nil {
+			return false, nil
+		}
+		return cur.Status.Phase == "Bound", nil
+	})
+	if err != nil {
+		s.skipReason = fmt.Sprintf("StorageClass %s did not bind a 1Gi test claim in 90s, so snapshots cannot be tested (is its CSI provisioner healthy? kubectl describe pvc %s -n %s)", t.StorageClass, srcPVC, ns)
+		return nil
+	}
+	s.logf(LevelOK, "test claim %s is Bound", srcPVC)
+
 	m := s.newMachine("snap", img)
 	m.Spec.Network.Forwards = nil
 	m.Spec.Volumes = []model.MachineVolume{{Name: "root", ClaimName: srcPVC}}
@@ -538,7 +553,9 @@ func runFork(ctx context.Context, s *session) error {
 	}
 	parent := s.newMachine("fork", img)
 	parent.Spec.Runtime.Backend = "flux-vm"
-	parent.Spec.Network.Forwards = nil
+	// The flux-vm backend accepts only network.mode none or tap; none needs
+	// no host bridge and the fork does not depend on guest networking.
+	parent.Spec.Network = model.NetworkSpec{Mode: "none"}
 	if err := s.create(ctx, parent); err != nil {
 		s.skipReason = "the flux-vm backend was not accepted here: " + err.Error()
 		return nil

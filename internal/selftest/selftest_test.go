@@ -31,12 +31,15 @@ type fakeKube struct {
 	pendingForever bool
 
 	// snapshot support
-	snapTarget  kube.SnapshotTarget
-	pvcs        map[string]bool
-	snapshots   map[string]model.MachineSnapshot
-	restores    map[string]model.MachineSnapshotRestore
-	snapFails   bool
-	restoreFail bool
+	snapTarget    kube.SnapshotTarget
+	pvcs          map[string]bool
+	snapshots     map[string]model.MachineSnapshot
+	restores      map[string]model.MachineSnapshotRestore
+	snapFails     bool
+	restoreFail   bool
+	pvcNeverBinds bool
+	// createdSpecs records every Machine passed to CreateMachine.
+	createdSpecs []model.Machine
 }
 
 func newFakeKube() *fakeKube {
@@ -58,6 +61,7 @@ func (f *fakeKube) CreateMachine(_ context.Context, ns string, m model.Machine) 
 		return model.Machine{}, f.createErr
 	}
 	m.Metadata.Namespace = ns
+	f.createdSpecs = append(f.createdSpecs, m)
 	m.Status.NodeName = "n1"
 	m.Status.Phase = "Running"
 	if f.failBoot {
@@ -456,7 +460,11 @@ func (f *fakeKube) GetPersistentVolumeClaim(_ context.Context, _, name string) (
 	if !f.pvcs[name] {
 		return model.PersistentVolumeClaim{}, &kube.APIError{StatusCode: 404}
 	}
-	return model.PersistentVolumeClaim{Metadata: model.ObjectMeta{Name: name}}, nil
+	phase := "Bound"
+	if f.pvcNeverBinds {
+		phase = "Pending"
+	}
+	return model.PersistentVolumeClaim{Metadata: model.ObjectMeta{Name: name}, Status: model.PersistentVolumeClaimStatus{Phase: phase}}, nil
 }
 func (f *fakeKube) DeletePersistentVolumeClaim(_ context.Context, _, name string) error {
 	f.mu.Lock()
@@ -586,5 +594,44 @@ func TestSnapshotRestoreSkipsWithReasons(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSnapshotRestoreSkipsWhenTheClaimNeverBinds(t *testing.T) {
+	f := newFakeKube()
+	withSnapshots(f)
+	f.pvcNeverBinds = true
+	env := baseEnv(f)
+	clock := time.Now()
+	env.Now = func() time.Time { clock = clock.Add(10 * time.Second); return clock }
+	rec := &recorder{}
+	res := Run(context.Background(), env, rec, Options{Profile: ProfileFull, Only: []string{"control-plane", "boot", "snapshot-restore"}})
+	for _, r := range res {
+		if r.ID == "snapshot-restore" && (r.Status != Skip || !strings.Contains(r.Reason, "did not bind")) {
+			t.Errorf("result = %+v, want a skip saying the claim did not bind", r)
+		}
+	}
+	if len(f.pvcs) != 0 {
+		t.Errorf("claim left behind: %v", f.pvcs)
+	}
+}
+
+func TestForkParentIsFluxVMWithNetworkNone(t *testing.T) {
+	f := newFakeKube()
+	Run(context.Background(), baseEnv(f), &recorder{}, Options{Profile: ProfileFull, Only: []string{"control-plane", "boot", "fork"}})
+	var parent *model.Machine
+	for i := range f.createdSpecs {
+		if strings.HasSuffix(f.createdSpecs[i].Metadata.Name, "-fork") {
+			parent = &f.createdSpecs[i]
+		}
+	}
+	if parent == nil {
+		t.Fatal("the fork scenario never created its parent Machine")
+	}
+	if parent.Spec.Runtime.Backend != "flux-vm" {
+		t.Errorf("backend = %q", parent.Spec.Runtime.Backend)
+	}
+	if parent.Spec.Network.Mode != "none" {
+		t.Errorf("network mode = %q; the flux-vm backend accepts only none or tap", parent.Spec.Network.Mode)
 	}
 }
