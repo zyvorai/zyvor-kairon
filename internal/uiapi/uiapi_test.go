@@ -77,6 +77,13 @@ func (f *fakeKube) handler() http.Handler {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		switch {
+		case r.Method == http.MethodGet && r.URL.Query().Get("watch") == "true":
+			if r.URL.Path == "/apis/kairon.zyvor.dev/v1/machines" {
+				for _, m := range f.machines {
+					raw, _ := json.Marshal(m)
+					_ = json.NewEncoder(w).Encode(map[string]any{"type": "ADDED", "object": json.RawMessage(raw)})
+				}
+			}
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/namespaces/default/events":
 			_ = json.NewEncoder(w).Encode(map[string]any{"items": f.events})
 		case r.Method == http.MethodGet && r.URL.Path == "/apis/kairon.zyvor.dev/v1/machines":

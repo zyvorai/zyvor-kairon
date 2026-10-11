@@ -1,11 +1,12 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
 // SPDX-License-Identifier: Apache-2.0
 
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { api, apiJSON, getConfig, isAdmin } from '../api';
 import { Machine } from '../types';
 import { formatBytes } from '../lib/phase';
 import { parseHash } from '../lib/route';
+import { useLiveChanges } from '../lib/live';
 import { Plus } from 'lucide-react';
 import ResourceTable, { Column } from '../components/ResourceTable';
 import Inspector, { KV } from '../components/Inspector';
@@ -145,13 +146,26 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
   const refresh = () =>
     api<Machine[]>('/api/v1/machines').then((r) => setItems(r ?? [])).catch((e) => setMsg(String(e)));
 
+  // Live stream: a Machine change triggers a (debounced) refetch, so the
+  // table updates in about a second; polling then only backstops it.
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const live = useLiveChanges((c) => {
+    if (c.kind !== 'Machine') return;
+    clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(refresh, 250);
+  });
+  useEffect(() => () => clearTimeout(refreshTimer.current), []);
+
   useEffect(() => {
     refresh();
-    const t = setInterval(refresh, 5000);
+    const t = setInterval(refresh, live ? 30000 : 5000);
+    return () => clearInterval(t);
+  }, [live]);
+
+  useEffect(() => {
     getConfig()
       .then((cfg) => setConsoleEnabled(cfg.consoleEnabled))
       .catch(() => setConsoleEnabled(false));
-    return () => clearInterval(t);
   }, []);
 
   async function create(e: React.FormEvent) {
