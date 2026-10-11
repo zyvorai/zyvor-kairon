@@ -26,3 +26,9 @@ named per-operator accounts -- generate each passwordHash with:
   kairon-ui -hash-password 'the password'
 {{- end }}
 {{- end }}
+
+Check that it all works. This boots a tiny CirrOS VM, exercises power, network
+and more, prints a coloured log, then deletes the VM:
+
+  kaironctl selftest --profile quick
+  kaironctl selftest --list            # every check, and what it needs
