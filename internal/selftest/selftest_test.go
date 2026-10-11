@@ -29,6 +29,14 @@ type fakeKube struct {
 	createErr error
 	// pendingForever leaves created Machines in phase Pending.
 	pendingForever bool
+
+	// snapshot support
+	snapTarget  kube.SnapshotTarget
+	pvcs        map[string]bool
+	snapshots   map[string]model.MachineSnapshot
+	restores    map[string]model.MachineSnapshotRestore
+	snapFails   bool
+	restoreFail bool
 }
 
 func newFakeKube() *fakeKube {
@@ -39,7 +47,8 @@ func newFakeKube() *fakeKube {
 			Status:   model.NodeStatus{Conditions: ready, Addresses: []model.NodeAddress{{Type: "InternalIP", Address: "10.0.0." + name[len(name)-1:]}}},
 		}
 	}
-	return &fakeKube{machines: map[string]*model.Machine{}, nodes: []model.Node{node("n1")}}
+	return &fakeKube{machines: map[string]*model.Machine{}, nodes: []model.Node{node("n1")},
+		pvcs: map[string]bool{}, snapshots: map[string]model.MachineSnapshot{}, restores: map[string]model.MachineSnapshotRestore{}}
 }
 
 func (f *fakeKube) CreateMachine(_ context.Context, ns string, m model.Machine) (model.Machine, error) {
@@ -420,5 +429,162 @@ func TestNetworkExplainsAcceptedThenClosedConnection(t *testing.T) {
 	}
 	if net.Status != Skip || !strings.Contains(net.Reason, "accepted the connection") {
 		t.Errorf("network = %+v", net)
+	}
+}
+
+func (f *fakeKube) ListVolumeSnapshotClasses(context.Context) ([]kube.VolumeSnapshotClass, error) {
+	if f.snapTarget.SnapshotClass == "" {
+		return nil, nil
+	}
+	return []kube.VolumeSnapshotClass{{Name: f.snapTarget.SnapshotClass, Driver: f.snapTarget.Driver}}, nil
+}
+func (f *fakeKube) ListStorageClasses(context.Context) ([]kube.StorageClass, error) {
+	if f.snapTarget.StorageClass == "" {
+		return nil, nil
+	}
+	return []kube.StorageClass{{Name: f.snapTarget.StorageClass, Provisioner: f.snapTarget.Driver, Immediate: f.snapTarget.ImmediateBinding}}, nil
+}
+func (f *fakeKube) CreatePersistentVolumeClaim(_ context.Context, _ string, p model.PersistentVolumeClaim) (model.PersistentVolumeClaim, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.pvcs[p.Metadata.Name] = true
+	return p, nil
+}
+func (f *fakeKube) GetPersistentVolumeClaim(_ context.Context, _, name string) (model.PersistentVolumeClaim, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.pvcs[name] {
+		return model.PersistentVolumeClaim{}, &kube.APIError{StatusCode: 404}
+	}
+	return model.PersistentVolumeClaim{Metadata: model.ObjectMeta{Name: name}}, nil
+}
+func (f *fakeKube) DeletePersistentVolumeClaim(_ context.Context, _, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.pvcs[name] {
+		return &kube.APIError{StatusCode: 404}
+	}
+	delete(f.pvcs, name)
+	return nil
+}
+func (f *fakeKube) CreateMachineSnapshot(_ context.Context, _ string, sn model.MachineSnapshot) (model.MachineSnapshot, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	sn.Status = model.MachineSnapshotStatus{Phase: "Succeeded", ReadyToUse: true,
+		VolumeSnapshots: []model.VolumeSnapshotReference{{VolumeName: "root", VolumeSnapshotName: sn.Metadata.Name + "-root", ReadyToUse: true}}}
+	if f.snapFails {
+		sn.Status = model.MachineSnapshotStatus{Phase: "Failed", Message: "VolumeSnapshot creation failed"}
+	}
+	f.snapshots[sn.Metadata.Name] = sn
+	return sn, nil
+}
+func (f *fakeKube) GetMachineSnapshot(_ context.Context, _, name string) (model.MachineSnapshot, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	sn, ok := f.snapshots[name]
+	if !ok {
+		return model.MachineSnapshot{}, &kube.APIError{StatusCode: 404}
+	}
+	return sn, nil
+}
+func (f *fakeKube) DeleteMachineSnapshot(_ context.Context, _, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.snapshots, name)
+	return nil
+}
+func (f *fakeKube) CreateMachineSnapshotRestore(_ context.Context, _ string, r model.MachineSnapshotRestore) (model.MachineSnapshotRestore, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	r.Status = model.MachineSnapshotRestoreStatus{Phase: "Succeeded", RestoredClaimName: r.Spec.TargetClaimName}
+	if f.restoreFail {
+		r.Status = model.MachineSnapshotRestoreStatus{Phase: "Failed", Message: "PVC provisioning failed"}
+	} else {
+		f.pvcs[r.Spec.TargetClaimName] = true // the controller creates the claim
+	}
+	f.restores[r.Metadata.Name] = r
+	return r, nil
+}
+func (f *fakeKube) GetMachineSnapshotRestore(_ context.Context, _, name string) (model.MachineSnapshotRestore, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	r, ok := f.restores[name]
+	if !ok {
+		return model.MachineSnapshotRestore{}, &kube.APIError{StatusCode: 404}
+	}
+	return r, nil
+}
+func (f *fakeKube) DeleteMachineSnapshotRestore(_ context.Context, _, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.restores, name)
+	return nil
+}
+
+func withSnapshots(f *fakeKube) {
+	f.snapTarget = kube.SnapshotTarget{SnapshotClass: "csi-snap", StorageClass: "csi-sc", Driver: "hostpath.csi.k8s.io", ImmediateBinding: true}
+}
+
+func TestSnapshotRestorePassesAndCleansEverything(t *testing.T) {
+	f := newFakeKube()
+	withSnapshots(f)
+	rec := &recorder{}
+	Run(context.Background(), baseEnv(f), rec, Options{Profile: ProfileFull, Only: []string{"control-plane", "boot", "snapshot-restore"}})
+	if rec.status("snapshot-restore") != Pass {
+		t.Fatalf("snapshot-restore = %q\n%s", rec.status("snapshot-restore"), strings.Join(rec.logs, "\n"))
+	}
+	if len(f.machines) != 0 || len(f.pvcs) != 0 || len(f.snapshots) != 0 || len(f.restores) != 0 {
+		t.Errorf("left behind: machines=%d pvcs=%v snapshots=%d restores=%d", len(f.machines), f.pvcs, len(f.snapshots), len(f.restores))
+	}
+}
+
+func TestSnapshotRestoreFailuresAreReportedAndStillCleanUp(t *testing.T) {
+	for name, set := range map[string]func(*fakeKube){
+		"snapshot fails": func(f *fakeKube) { f.snapFails = true },
+		"restore fails":  func(f *fakeKube) { f.restoreFail = true },
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFakeKube()
+			withSnapshots(f)
+			set(f)
+			rec := &recorder{}
+			res := Run(context.Background(), baseEnv(f), rec, Options{Profile: ProfileFull, Only: []string{"control-plane", "boot", "snapshot-restore"}})
+			var r Result
+			for _, x := range res {
+				if x.ID == "snapshot-restore" {
+					r = x
+				}
+			}
+			if r.Status != Fail || r.Hint == "" {
+				t.Errorf("result = %+v", r)
+			}
+			if len(f.machines) != 0 || len(f.pvcs) != 0 || len(f.snapshots) != 0 || len(f.restores) != 0 {
+				t.Errorf("left behind: machines=%d pvcs=%v snapshots=%d restores=%d", len(f.machines), f.pvcs, len(f.snapshots), len(f.restores))
+			}
+		})
+	}
+}
+
+func TestSnapshotRestoreSkipsWithReasons(t *testing.T) {
+	cases := map[string]struct {
+		target kube.SnapshotTarget
+		want   string
+	}{
+		"no class":       {kube.SnapshotTarget{}, "no VolumeSnapshotClass"},
+		"no storage cls": {kube.SnapshotTarget{SnapshotClass: "c", Driver: "d"}, "no StorageClass"},
+		"waits":          {kube.SnapshotTarget{SnapshotClass: "c", StorageClass: "sc", Driver: "d"}, "waits for a consumer"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			f := newFakeKube()
+			f.snapTarget = tc.target
+			rec := &recorder{}
+			res := Run(context.Background(), baseEnv(f), rec, Options{Profile: ProfileFull, Only: []string{"control-plane", "boot", "snapshot-restore"}})
+			for _, r := range res {
+				if r.ID == "snapshot-restore" && (r.Status != Skip || !strings.Contains(r.Reason, tc.want)) {
+					t.Errorf("result = %+v, want skip mentioning %q", r, tc.want)
+				}
+			}
+		})
 	}
 }

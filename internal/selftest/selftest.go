@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zyvorai/kairon/internal/kube"
 	"github.com/zyvorai/kairon/internal/model"
 )
 
@@ -100,6 +101,19 @@ type Kube interface {
 	ListEventsFor(ctx context.Context, namespace, kind, name string) ([]model.Event, error)
 	CreateMachineMigration(ctx context.Context, ns string, m model.MachineMigration) (model.MachineMigration, error)
 	GetMachineMigration(ctx context.Context, ns, name string) (model.MachineMigration, error)
+
+	// Snapshot and restore.
+	ListVolumeSnapshotClasses(ctx context.Context) ([]kube.VolumeSnapshotClass, error)
+	ListStorageClasses(ctx context.Context) ([]kube.StorageClass, error)
+	CreatePersistentVolumeClaim(ctx context.Context, ns string, pvc model.PersistentVolumeClaim) (model.PersistentVolumeClaim, error)
+	GetPersistentVolumeClaim(ctx context.Context, ns, name string) (model.PersistentVolumeClaim, error)
+	DeletePersistentVolumeClaim(ctx context.Context, ns, name string) error
+	CreateMachineSnapshot(ctx context.Context, ns string, s model.MachineSnapshot) (model.MachineSnapshot, error)
+	GetMachineSnapshot(ctx context.Context, ns, name string) (model.MachineSnapshot, error)
+	DeleteMachineSnapshot(ctx context.Context, ns, name string) error
+	CreateMachineSnapshotRestore(ctx context.Context, ns string, r model.MachineSnapshotRestore) (model.MachineSnapshotRestore, error)
+	GetMachineSnapshotRestore(ctx context.Context, ns, name string) (model.MachineSnapshotRestore, error)
+	DeleteMachineSnapshotRestore(ctx context.Context, ns, name string) error
 }
 
 // Check is one control-plane probe result supplied by the caller.

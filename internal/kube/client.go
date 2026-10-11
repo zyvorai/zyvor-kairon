@@ -1103,3 +1103,128 @@ func (c *Client) ListPods(ctx context.Context, namespace string) ([]PodSummary, 
 	}
 	return out, nil
 }
+
+// DeletePersistentVolumeClaim deletes a PVC; a missing claim is reported as
+// a not-found error the caller can ignore with IsNotFound.
+func (c *Client) DeletePersistentVolumeClaim(ctx context.Context, ns, name string) error {
+	path := fmt.Sprintf("/api/v1/namespaces/%s/persistentvolumeclaims/%s", url.PathEscape(ns), url.PathEscape(name))
+	return c.request(ctx, http.MethodDelete, path, nil, nil, "")
+}
+
+// VolumeSnapshotClass is the part of a snapshot.storage.k8s.io class the
+// self-test needs.
+type VolumeSnapshotClass struct {
+	Name    string
+	Driver  string
+	Default bool
+}
+
+// StorageClass is the part of a storage.k8s.io class the self-test needs.
+type StorageClass struct {
+	Name        string
+	Provisioner string
+	Immediate   bool // false when volumeBindingMode is WaitForFirstConsumer
+	Default     bool
+}
+
+// ListVolumeSnapshotClasses lists the cluster's VolumeSnapshotClasses. A
+// cluster without the snapshot CRDs returns no classes and no error.
+func (c *Client) ListVolumeSnapshotClasses(ctx context.Context) ([]VolumeSnapshotClass, error) {
+	var list struct {
+		Items []struct {
+			Metadata struct {
+				Name        string            `json:"name"`
+				Annotations map[string]string `json:"annotations"`
+			} `json:"metadata"`
+			Driver string `json:"driver"`
+		} `json:"items"`
+	}
+	if err := c.request(ctx, http.MethodGet, "/apis/snapshot.storage.k8s.io/v1/volumesnapshotclasses", nil, &list, ""); err != nil {
+		if IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	out := make([]VolumeSnapshotClass, 0, len(list.Items))
+	for _, it := range list.Items {
+		out = append(out, VolumeSnapshotClass{
+			Name: it.Metadata.Name, Driver: it.Driver,
+			Default: it.Metadata.Annotations["snapshot.storage.kubernetes.io/is-default-class"] == "true",
+		})
+	}
+	return out, nil
+}
+
+// ListStorageClasses lists the cluster's StorageClasses.
+func (c *Client) ListStorageClasses(ctx context.Context) ([]StorageClass, error) {
+	var list struct {
+		Items []struct {
+			Metadata struct {
+				Name        string            `json:"name"`
+				Annotations map[string]string `json:"annotations"`
+			} `json:"metadata"`
+			Provisioner       string `json:"provisioner"`
+			VolumeBindingMode string `json:"volumeBindingMode"`
+		} `json:"items"`
+	}
+	if err := c.request(ctx, http.MethodGet, "/apis/storage.k8s.io/v1/storageclasses", nil, &list, ""); err != nil {
+		return nil, err
+	}
+	out := make([]StorageClass, 0, len(list.Items))
+	for _, it := range list.Items {
+		out = append(out, StorageClass{
+			Name: it.Metadata.Name, Provisioner: it.Provisioner,
+			Immediate: it.VolumeBindingMode != "WaitForFirstConsumer",
+			Default:   it.Metadata.Annotations["storageclass.kubernetes.io/is-default-class"] == "true",
+		})
+	}
+	return out, nil
+}
+
+// SnapshotTarget is a VolumeSnapshotClass together with a StorageClass
+// served by the same CSI driver, so a PVC provisioned from the StorageClass
+// can be snapshotted with the class. The zero value means "no snapshot
+// support".
+type SnapshotTarget struct {
+	SnapshotClass string
+	StorageClass  string
+	Driver        string
+	// ImmediateBinding is false when the StorageClass waits for a consumer,
+	// in which case an unattached test PVC would never bind.
+	ImmediateBinding bool
+}
+
+// PickSnapshotTarget chooses the best (class, StorageClass) pair: the same
+// driver, preferring Immediate binding (an unattached test PVC only binds
+// with it), then default classes.
+func PickSnapshotTarget(vcs []VolumeSnapshotClass, scs []StorageClass) SnapshotTarget {
+	var best SnapshotTarget
+	bestScore := -1
+	for _, vc := range vcs {
+		for _, sc := range scs {
+			if sc.Provisioner != vc.Driver {
+				continue
+			}
+			score := 0
+			if sc.Immediate {
+				score += 4
+			}
+			if sc.Default {
+				score += 2
+			}
+			if vc.Default {
+				score++
+			}
+			if score > bestScore {
+				bestScore = score
+				best = SnapshotTarget{SnapshotClass: vc.Name, StorageClass: sc.Name, Driver: vc.Driver, ImmediateBinding: sc.Immediate}
+			}
+		}
+	}
+	if best.SnapshotClass == "" && len(vcs) > 0 {
+		// A class exists but no StorageClass uses its driver: still report
+		// the class so the skip reason can name the driver.
+		best = SnapshotTarget{SnapshotClass: vcs[0].Name, Driver: vcs[0].Driver}
+	}
+	return best
+}
