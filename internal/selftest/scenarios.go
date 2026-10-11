@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"regexp"
 	"strings"
 	"time"
 
@@ -149,20 +150,39 @@ func runBoot(ctx context.Context, s *session) error {
 		s.logf(LevelWarn, "serial console unavailable here; boot is proven by phase only (pass --ui-url/--ui-token for the login-prompt check)")
 		return nil
 	}
-	err = s.waitFor(ctx, "the guest login prompt", s.env.BootTimeout, func() (bool, error) {
+	// CirrOS prints "login:" only after cloud-init has given up looking for a
+	// metadata service, which takes many minutes when none is configured. The
+	// DHCP lease it logs first is already proof that the guest OS booted and
+	// its NIC works, so either marker counts.
+	var marker string
+	err = s.waitFor(ctx, "the guest to finish booting", s.env.BootTimeout, func() (bool, error) {
 		out := s.serial(ctx, s.vm)
 		if bad := panicMarker(out); bad != "" {
 			return false, fmt.Errorf("guest crashed during boot: %q", bad)
 		}
-		return strings.Contains(out, "login:"), nil
+		marker = bootMarker(out)
+		return marker != "", nil
 	})
 	if err != nil {
-		s.hint = "the VM is Running but the guest never reached a login prompt; check the image and: kaironctl logs node"
+		s.hint = "the VM is Running but the guest never finished booting; check the image and: kaironctl logs node"
 		s.dumpEvidence(ctx)
 		return err
 	}
-	s.logf(LevelOK, "guest reached the login prompt")
+	s.logf(LevelOK, "%s", marker)
 	return nil
+}
+
+var leaseRE = regexp.MustCompile(`leased ([0-9]{1,3}(?:\.[0-9]{1,3}){3})`)
+
+// bootMarker reports how far a CirrOS guest has got, or "" if not far enough.
+func bootMarker(serial string) string {
+	if strings.Contains(serial, "login:") {
+		return "guest reached the login prompt"
+	}
+	if m := leaseRE.FindStringSubmatch(serial); m != nil {
+		return "guest booted and its NIC leased " + m[1] + " over DHCP (the login prompt follows once cloud-init stops waiting for a metadata service)"
+	}
+	return ""
 }
 
 func runConsoleLog(ctx context.Context, s *session) error {
