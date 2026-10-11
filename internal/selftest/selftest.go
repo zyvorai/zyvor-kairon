@@ -111,6 +111,7 @@ type Kube interface {
 	CreateMachineSnapshot(ctx context.Context, ns string, s model.MachineSnapshot) (model.MachineSnapshot, error)
 	GetMachineSnapshot(ctx context.Context, ns, name string) (model.MachineSnapshot, error)
 	DeleteMachineSnapshot(ctx context.Context, ns, name string) error
+	DeleteVolumeSnapshot(ctx context.Context, ns, name string) error
 	CreateMachineSnapshotRestore(ctx context.Context, ns string, r model.MachineSnapshotRestore) (model.MachineSnapshotRestore, error)
 	GetMachineSnapshotRestore(ctx context.Context, ns, name string) (model.MachineSnapshotRestore, error)
 	DeleteMachineSnapshotRestore(ctx context.Context, ns, name string) error

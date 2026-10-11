@@ -38,6 +38,8 @@ type fakeKube struct {
 	snapFails     bool
 	restoreFail   bool
 	pvcNeverBinds bool
+	// volumeSnapshots are the CSI snapshots the simulated controller made.
+	volumeSnapshots map[string]bool
 	// createdSpecs records every Machine passed to CreateMachine.
 	createdSpecs []model.Machine
 	// deviceErr, when set, is what kairon-node reports in status.message
@@ -54,7 +56,8 @@ func newFakeKube() *fakeKube {
 		}
 	}
 	return &fakeKube{machines: map[string]*model.Machine{}, nodes: []model.Node{node("n1")},
-		pvcs: map[string]bool{}, snapshots: map[string]model.MachineSnapshot{}, restores: map[string]model.MachineSnapshotRestore{}}
+		pvcs: map[string]bool{}, snapshots: map[string]model.MachineSnapshot{}, restores: map[string]model.MachineSnapshotRestore{},
+		volumeSnapshots: map[string]bool{}}
 }
 
 func (f *fakeKube) CreateMachine(_ context.Context, ns string, m model.Machine) (model.Machine, error) {
@@ -493,6 +496,9 @@ func (f *fakeKube) CreateMachineSnapshot(_ context.Context, _ string, sn model.M
 		sn.Status = model.MachineSnapshotStatus{Phase: "Failed", Message: "VolumeSnapshot creation failed"}
 	}
 	f.snapshots[sn.Metadata.Name] = sn
+	for _, vs := range sn.Status.VolumeSnapshots {
+		f.volumeSnapshots[vs.VolumeSnapshotName] = true // not owned by the MachineSnapshot
+	}
 	return sn, nil
 }
 func (f *fakeKube) GetMachineSnapshot(_ context.Context, _, name string) (model.MachineSnapshot, error) {
@@ -503,6 +509,15 @@ func (f *fakeKube) GetMachineSnapshot(_ context.Context, _, name string) (model.
 		return model.MachineSnapshot{}, &kube.APIError{StatusCode: 404}
 	}
 	return sn, nil
+}
+func (f *fakeKube) DeleteVolumeSnapshot(_ context.Context, _, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.volumeSnapshots[name] {
+		return &kube.APIError{StatusCode: 404}
+	}
+	delete(f.volumeSnapshots, name)
+	return nil
 }
 func (f *fakeKube) DeleteMachineSnapshot(_ context.Context, _, name string) error {
 	f.mu.Lock()
@@ -550,8 +565,8 @@ func TestSnapshotRestorePassesAndCleansEverything(t *testing.T) {
 	if rec.status("snapshot-restore") != Pass {
 		t.Fatalf("snapshot-restore = %q\n%s", rec.status("snapshot-restore"), strings.Join(rec.logs, "\n"))
 	}
-	if len(f.machines) != 0 || len(f.pvcs) != 0 || len(f.snapshots) != 0 || len(f.restores) != 0 {
-		t.Errorf("left behind: machines=%d pvcs=%v snapshots=%d restores=%d", len(f.machines), f.pvcs, len(f.snapshots), len(f.restores))
+	if len(f.machines) != 0 || len(f.pvcs) != 0 || len(f.snapshots) != 0 || len(f.restores) != 0 || len(f.volumeSnapshots) != 0 {
+		t.Errorf("left behind: machines=%d pvcs=%v snapshots=%d restores=%d volumeSnapshots=%v", len(f.machines), f.pvcs, len(f.snapshots), len(f.restores), f.volumeSnapshots)
 	}
 }
 
@@ -575,8 +590,8 @@ func TestSnapshotRestoreFailuresAreReportedAndStillCleanUp(t *testing.T) {
 			if r.Status != Fail || r.Hint == "" {
 				t.Errorf("result = %+v", r)
 			}
-			if len(f.machines) != 0 || len(f.pvcs) != 0 || len(f.snapshots) != 0 || len(f.restores) != 0 {
-				t.Errorf("left behind: machines=%d pvcs=%v snapshots=%d restores=%d", len(f.machines), f.pvcs, len(f.snapshots), len(f.restores))
+			if len(f.machines) != 0 || len(f.pvcs) != 0 || len(f.snapshots) != 0 || len(f.restores) != 0 || len(f.volumeSnapshots) != 0 {
+				t.Errorf("left behind: machines=%d pvcs=%v snapshots=%d restores=%d volumeSnapshots=%v", len(f.machines), f.pvcs, len(f.snapshots), len(f.restores), f.volumeSnapshots)
 			}
 		})
 	}

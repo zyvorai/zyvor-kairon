@@ -237,6 +237,11 @@ rules:
   - apiGroups: ["snapshot.storage.k8s.io"]
     resources: ["volumesnapshotclasses"]
     verbs: ["get", "list"]
+  # Removes the CSI VolumeSnapshots a self-test snapshot created: a
+  # MachineSnapshot does not own them (internal/selftest, snapshot-restore).
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshots"]
+    verbs: ["get", "delete"]
   - apiGroups: ["storage.k8s.io"]
     resources: ["storageclasses"]
     verbs: ["get", "list"]

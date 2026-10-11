@@ -451,6 +451,14 @@ func (c *Client) GetVolumeSnapshot(ctx context.Context, ns, name string) (model.
 	return snap, err
 }
 
+// DeleteVolumeSnapshot deletes a CSI VolumeSnapshot (and, with a Delete
+// deletion policy, its snapshot content). A MachineSnapshot does not own the
+// VolumeSnapshots it creates, so deleting it alone leaves them behind.
+func (c *Client) DeleteVolumeSnapshot(ctx context.Context, ns, name string) error {
+	path := fmt.Sprintf("/apis/snapshot.storage.k8s.io/v1/namespaces/%s/volumesnapshots/%s", url.PathEscape(ns), url.PathEscape(name))
+	return c.request(ctx, http.MethodDelete, path, nil, nil, "")
+}
+
 func (c *Client) CreateVolumeSnapshot(ctx context.Context, ns string, snap model.VolumeSnapshot) (model.VolumeSnapshot, error) {
 	var out model.VolumeSnapshot
 	path := fmt.Sprintf("/apis/snapshot.storage.k8s.io/v1/namespaces/%s/volumesnapshots", url.PathEscape(ns))

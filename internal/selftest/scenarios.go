@@ -523,7 +523,22 @@ func runSnapshotRestore(ctx context.Context, s *session) error {
 	if _, err := s.env.Kube.CreateMachineSnapshot(ctx, ns, snap); err != nil {
 		return fmt.Errorf("create MachineSnapshot: %w", err)
 	}
-	s.onCleanup(func(c context.Context) { _ = s.env.Kube.DeleteMachineSnapshot(c, ns, snapName) })
+	s.onCleanup(func(c context.Context) {
+		// The controller creates a CSI VolumeSnapshot per volume and does not
+		// tie it to the MachineSnapshot, so deleting the MachineSnapshot alone
+		// leaks the snapshot (and its data). Read the names first.
+		if cur, err := s.env.Kube.GetMachineSnapshot(c, ns, snapName); err == nil {
+			for _, vs := range cur.Status.VolumeSnapshots {
+				if vs.VolumeSnapshotName == "" {
+					continue
+				}
+				if err := s.env.Kube.DeleteVolumeSnapshot(c, ns, vs.VolumeSnapshotName); err != nil && !kube.IsNotFound(err) {
+					s.logf(LevelWarn, "could not delete VolumeSnapshot %s: %v (kubectl delete volumesnapshot %s -n %s)", vs.VolumeSnapshotName, err, vs.VolumeSnapshotName, ns)
+				}
+			}
+		}
+		_ = s.env.Kube.DeleteMachineSnapshot(c, ns, snapName)
+	})
 	var snapState model.MachineSnapshot
 	err = s.waitFor(ctx, "the snapshot to be ready", 2*time.Minute, func() (bool, error) {
 		cur, err := s.env.Kube.GetMachineSnapshot(ctx, ns, snapName)
