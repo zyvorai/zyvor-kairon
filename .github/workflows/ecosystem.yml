@@ -6,6 +6,10 @@ on:
     paths: ['sdk/**', 'ecosystem/**', '.github/actions/kairon-machine/**', '.github/workflows/ecosystem.yml', 'deploy/crd.yaml', 'internal/model/**', 'internal/uiapi/**']
   pull_request:
     paths: ['sdk/**', 'ecosystem/**', '.github/actions/kairon-machine/**', '.github/workflows/ecosystem.yml', 'deploy/crd.yaml', 'internal/model/**', 'internal/uiapi/**']
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 jobs:
