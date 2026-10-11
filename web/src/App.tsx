@@ -25,6 +25,7 @@ import NetworkPolicies from './pages/NetworkPolicies';
 import SecurityGroups from './pages/SecurityGroups';
 import Nodes from './pages/Nodes';
 import System from './pages/System';
+import Topology from './pages/Topology';
 import NetworkOverview from './pages/NetworkOverview';
 import Account from './pages/Account';
 import Assistant from './pages/Assistant';
@@ -210,6 +211,7 @@ export default function App() {
     'network-policies': <NetworkPolicies />,
     'security-groups': <SecurityGroups />,
     nodes: <Nodes />,
+    topology: <Topology />,
     system: <System />,
     network: <NetworkOverview />,
     storage: <Storage />,

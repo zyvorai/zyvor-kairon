@@ -34,6 +34,7 @@ export const NAV = [
       { id: 'machinesets', label: 'Machine sets', blurb: 'Scale groups of identical VMs' },
       { id: 'instancetypes', label: 'Instance types', blurb: 'Reusable CPU and memory shapes' },
       { id: 'nodes', label: 'Nodes', blurb: 'FluxVM hosts, capacity and usage' },
+      { id: 'topology', label: 'Topology', blurb: 'Where every VM and pod runs, live' },
       { id: 'storage', label: 'Storage', blurb: 'Atlas volumes, pools, backups and health' },
       { id: 'pools', label: 'Pools & claims', blurb: 'Warm machine pools and bound claims' },
       { id: 'images', label: 'Images', blurb: 'Upload and serve VM images to nodes' },

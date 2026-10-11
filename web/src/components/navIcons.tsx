@@ -3,7 +3,7 @@
 
 import {
   Activity, Archive, ArrowLeftRight, Box, Boxes, Disc3, Calendar, Camera, Cpu, Gauge, HardDrive, Layers, Network, RotateCcw, Route, Server,
-  Shield, ShieldCheck, Sparkles, Stethoscope, UserCog,
+  Shield, ShieldCheck, Sparkles, Stethoscope, UserCog, Waypoints,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 
@@ -13,6 +13,7 @@ const ICONS: Record<string, ReactNode> = {
   machinesets: <Layers size={18} />,
   instancetypes: <Cpu size={18} />,
   nodes: <Server size={18} />,
+  topology: <Waypoints size={18} />,
   storage: <HardDrive size={18} />,
   pools: <Boxes size={18} />,
   images: <Disc3 size={18} />,

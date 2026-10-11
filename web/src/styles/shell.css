@@ -331,3 +331,23 @@
 .insight.warning .insight-dot { background: var(--tone-amber); }
 .insight-body { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
 .insight-detail { color: var(--text-2); word-break: break-word; }
+
+/* Topology */
+.topo { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; margin: 8px 0 12px; }
+.topo-lane { padding: 14px; border-radius: 18px; background: var(--fill); border: 1px solid var(--hairline); transition: opacity 0.24s cubic-bezier(0.28, 0.11, 0.32, 1), box-shadow 0.24s cubic-bezier(0.28, 0.11, 0.32, 1); }
+.topo-lane header { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+.topo-lane.down { box-shadow: inset 0 0 0 1px var(--tone-rose); }
+.topo-lane.drop { box-shadow: 0 0 0 2px var(--tone-sky); }
+.topo-lane.dim { opacity: 0.55; }
+.topo-items { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.topo-vm { display: inline-flex; align-items: center; max-width: 100%; padding: 4px 10px; border-radius: 980px; font-size: 12px; text-decoration: none; color: var(--text); background: var(--hairline); border: 1px solid transparent; }
+.topo-vm[draggable="true"] { cursor: grab; }
+.topo-vm.ok { border-color: var(--tone-emerald); }
+.topo-vm.warn { border-color: var(--tone-amber); }
+.topo-vm.bad { border-color: var(--tone-rose); }
+.topo-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topo-pod { width: 10px; height: 10px; border-radius: 3px; background: var(--tone-graphite); }
+.topo-pod.ok { background: var(--tone-emerald); }
+.topo-pod.warn { background: var(--tone-amber); }
+.topo-confirm { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+@media (prefers-reduced-motion: reduce) { .topo-lane { transition: none; } }
