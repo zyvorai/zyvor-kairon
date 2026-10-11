@@ -148,9 +148,11 @@ function TrustBand() {
               Open, and honest about its limits
             </Heading>
             <p>
-              Apache-2.0. <strong>v0.9.0</strong> ships admission webhooks,
-              dashboard SSO, MachineSet, pause/halt, snapshot schedules, a
-              native macOS node, the developer ecosystem kit, and more — cold relocation, snapshots, DRA bridging, the secure
+              Apache-2.0. <strong>v0.9.0</strong> adds kaironctl lifecycle and
+              diagnostics commands and a namespace-aware dashboard, on top of
+              admission webhooks, dashboard SSO, MachineSet, pause/halt,
+              snapshot schedules, a native macOS node, the developer
+              ecosystem kit, and more — cold relocation, snapshots, DRA bridging, the secure
               live control plane, and a real FluxVM migration adapter are
               tested. Real two-host live migration has not yet been
               exercised against real hardware in this repo&apos;s own CI.

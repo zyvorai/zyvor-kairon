@@ -35,6 +35,7 @@ New since v0.6.0 (current: v0.9.0):
 
 | | |
 |---|---|
+| **Lifecycle, diagnostics and namespaces (v0.9)** | `kaironctl doctor`, `connectivity test`, `logs`, `events`, `sysdump`, `config`, `history`/`rollback`; `kaironctl upgrade` keeps your previous Helm values. The dashboard has a namespace selector, an all-namespaces Machines view and bulk Start/Stop. [Release notes →](RELEASE_NOTES.md) |
 | **`v1` API and new dashboard** | `kairon.zyvor.dev/v1` is the storage version (`v1beta1`/`v1alpha1` served, deprecated). The dashboard is redesigned and gains Storage (Atlas), Pools & claims, Images and Backups pages; `kairon-ui` now listens on `:18082`. [Guide →](docs/guides/kairon-ui-dashboard.md) |
 | **Native macOS node** | `kairon-node` registers an Apple silicon Mac as a Node and runs `backend: vz` Machines through FluxVM. Verified on an M4; multi-Mac clusters not yet. [Guide →](docs/macos.md) · [Mac cluster →](docs/macos-cluster.md) |
 | **Developer ecosystem kit** | Python and TypeScript SDKs, digest-pinned recipes, disposable-VM GitHub Actions, Terraform composition. [Kit →](ecosystem/README.md) |

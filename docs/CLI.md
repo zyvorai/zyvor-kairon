@@ -16,7 +16,7 @@ kaironctl --help
 kaironctl install --help
 ```
 
-Global flags: `-n/--namespace`, `--color=auto|always|never` (also respects `NO_COLOR`).
+Global flags: `-n/--namespace`, `--kubeconfig PATH`, `--context NAME` (see [Meta](#meta) for cluster selection) and `--color=auto|always|never` (also respects `NO_COLOR`). Helm-backed commands (`install`, `upgrade`, `uninstall`, `status`, `config`, `history`, `rollback`, `doctor`, `sysdump`) default `--namespace` to `kairon-system`.
 
 ## Install via Krew
 
@@ -47,11 +47,11 @@ kaironctl install [--chart embedded|PATH|oci://REF] [--version V] [--profile eva
 kaironctl upgrade  [same chart/profile/set/values/wait flags as install]
                  [--reset-values | --reuse-values] [--check]
 kaironctl config view [--all] [-o yaml|json]
-kaironctl config get KEY
-kaironctl config set KEY=VALUE [KEY=VALUE...] [--wait] [--dry-run]
-kaironctl config unset KEY [KEY...]
+kaironctl config get KEY [-o yaml|json]   # dotted path, e.g. ui.enabled
+kaironctl config set KEY=VALUE [KEY=VALUE...] [--chart PATH] [--wait] [--timeout 5m] [--dry-run] [--helm-cli]
+kaironctl config unset KEY [KEY...] [same flags as config set]
 kaironctl history [-o table|json|yaml]
-kaironctl rollback [REVISION] [--wait]
+kaironctl rollback [REVISION] [--wait] [--timeout 5m] [--dry-run]
 kaironctl uninstall [--namespace kairon-system] [--force] [--wait] [--timeout 5m] [--dry-run] [--helm-cli]
 kaironctl status [--namespace kairon-system] [--wait] [--timeout 5m] [--interactive] [-o json|yaml]
 kaironctl version [--server] [-o text|json|yaml]
@@ -62,6 +62,7 @@ kaironctl version [--server] [-o text|json|yaml]
 - **`--profile production`** layers the chart's `values-production.yaml` under your `-f` and `--set`. Rollback restores the chart and values of a revision; it does not downgrade CRDs already applied.
 - **`--chart oci://ghcr.io/zyvorai/charts/kairon --version 0.9.0`** installs the published chart. Apply CRDs from the same tag first when upgrading ([CRD versioning](guides/crd-versioning.md#upgrading-an-existing-cluster)).
 - **`upgrade --check`** compares the installed chart, the chart this kaironctl would apply and the latest published release (GitHub, or `KAIRON_RELEASE_API`), prints the CRD-first reminder when a minor version is crossed, and changes nothing.
+- **`config view`** prints the values you supplied; `--all` adds the chart defaults (computed values). **`config get`** reads one dotted path from the computed values. **`history`** lists the release revisions and **`rollback`** returns to `REVISION` (the previous one when omitted).
 - **`status`** shows the release and exits non-zero while the control plane is not ready (with `--wait`, until it is or the timeout expires). **`version`** prints only the client version; `--server` adds the Helm release and the controller, node and UI images.
 
 `uninstall` refuses while any Machine objects still exist unless `--force` is set. `--dry-run` on install renders manifests offline (no cluster needed).
@@ -70,7 +71,7 @@ kaironctl version [--server] [-o text|json|yaml]
 
 ```text
 kaironctl doctor [--pre-install] [--strict] [-o json|yaml]
-kaironctl connectivity test [-o json|yaml]
+kaironctl connectivity test [-n kairon-system] [--timeout 30s] [-o json|yaml]
 kaironctl connectivity test --machine --image PATH [--test-namespace default] [--cpu 1] [--memory 512Mi]
                  [--backend qemu] [--network user] [--machine-timeout 3m] [--keep]
 kaironctl logs controller|node|ui|csi-node|csi-controller [--node N] [--pod P] [-c C] [--tail N] [--since 15m] [--previous] [-f]
@@ -124,12 +125,12 @@ kaironctl network flows|drop-reasons|drops|stats|effective MACHINE [--limit N]
 kaironctl network identity MACHINE
 kaironctl network capture MACHINE [--seconds 1-30] [--filter EXPR] [--output FILE]
 kaironctl network captures MACHINE
-kaironctl network observe [-A] [--by reason|policy|machine] [--top N] [--follow] [-o json|yaml]
+kaironctl network observe [-A] [--by reason|policy|machine] [--top N] [--limit N] [--follow] [--interval 5s] [-o json|yaml]
 ```
 
 `get RESOURCE`, `describe RESOURCE NAME` and `top` accept `-o json|yaml` (`get` also `-o name`); without `-o` the output is unchanged. With `-o`, `describe` prints the stored object for every kind, including those whose default `describe` is a derived view.
 
-`network observe` ranks the attributed drops of every Running Machine (reason, policy or Machine) from kairon-ui; it needs `KAIRON_UI_URL`. The drop payload is FluxVM's: `reason`, `policy` and `count`/`packets` fields are recognised, anything else counts as one drop with an unknown reason. Use `network drops MACHINE` for the raw records.
+`network observe` ranks the attributed drops of every Running Machine (reason, policy or Machine) from kairon-ui; it needs `KAIRON_UI_URL` (and `KAIRON_UI_TOKEN` when kairon-ui authenticates). It defaults to `--by reason --top 10 --limit 200` (`--limit` is the drop records requested per Machine); `--follow` repeats every `--interval` until interrupted. The drop payload is FluxVM's: `reason`, `policy` and `count`/`packets` fields are recognised, anything else counts as one drop with an unknown reason. Use `network drops MACHINE` for the raw records.
 
 ### Network status
 

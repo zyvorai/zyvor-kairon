@@ -18,11 +18,14 @@ spec:
   shortDescription: Operate Kairon Machines on Kubernetes
   description: |
     kubectl kairon is the kubectl plugin twin of kaironctl: create and operate
-    Machines, migrations, snapshots, and install/uninstall the Kairon control
-    plane (embedded Helm chart + Helm SDK).
+    Machines, migrations, snapshots, and install, upgrade, roll back and
+    diagnose the Kairon control plane (embedded Helm chart + Helm SDK; doctor,
+    logs, events, sysdump, connectivity test, ui).
   caveats: |
-    Point at a cluster with KAIRON_KUBE_URL (e.g. after kubectl proxy), or use
-    a standard kubeconfig when talking to the API through the Helm SDK path.
+    Uses your kubeconfig like kubectl: pass --kubeconfig PATH and/or
+    --context NAME to pick a cluster. KAIRON_KUBE_URL (e.g. after kubectl
+    proxy) and the in-cluster service account are honoured when neither flag
+    is given.
   platforms:
   - selector:
       matchLabels:
