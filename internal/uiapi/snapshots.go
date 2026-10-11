@@ -27,6 +27,26 @@ func (s *Server) handleListSnapshots(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, items)
 }
 
+// handleListAllSnapshots serves GET /api/v1/snapshots?namespace=_all: every
+// MachineSnapshot in the namespaces the caller is authorized for.
+func (s *Server) handleListAllSnapshots(w http.ResponseWriter, r *http.Request) {
+	if !s.allNamespacesAllowed(w, r) {
+		return
+	}
+	items, err := s.Kube.ListMachineSnapshots(r.Context())
+	if err != nil {
+		writeUpstreamError(w, err)
+		return
+	}
+	visible := make([]model.MachineSnapshot, 0, len(items))
+	for _, sn := range items {
+		if s.authorizedForNamespace(r.Context(), sn.Metadata.Namespace) {
+			visible = append(visible, sn)
+		}
+	}
+	writeJSON(w, http.StatusOK, visible)
+}
+
 func (s *Server) handleCreateSnapshot(w http.ResponseWriter, r *http.Request) {
 	var req createSnapshotRequest
 	if err := decodeJSON(w, r, &req); err != nil {

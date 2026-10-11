@@ -34,10 +34,10 @@ export function setNamespace(ns: string) {
   window.dispatchEvent(new Event(NAMESPACE_EVENT));
 }
 
-// allNamespaces reports the "all namespaces" view. It only changes the Machines
-// list (GET /api/v1/machines?namespace=_all, which the server filters to the
-// namespaces the operator may see); every other page keeps working in the
-// concrete namespace from currentNamespace().
+// allNamespaces reports the "all namespaces" view. It changes the Machines,
+// Migrations and Snapshots lists (GET ...?namespace=_all, which the server
+// filters to the namespaces the operator may see); every other page keeps
+// working in the concrete namespace from currentNamespace().
 export function allNamespaces(): boolean {
   try {
     return localStorage.getItem(ALL_KEY) === 'true';
@@ -71,6 +71,9 @@ export function setAllNamespaces(on: boolean) {
 // namespace I may see" (internal/uiapi allNamespaces).
 const ALL_NAMESPACES = '_all';
 
+// The collections whose server route honours ?namespace=_all.
+const ALL_NAMESPACE_LISTS = new Set(['machines', 'migrations', 'snapshots']);
+
 const NAMESPACED_COLLECTIONS = new Set([
   'machines',
   'migrations',
@@ -98,10 +101,10 @@ export function withNamespace(path: string, ns: string = currentNamespace(), opt
   if (!m || !NAMESPACED_COLLECTIONS.has(m[1])) return path;
   const query = new URLSearchParams(m[2] ? m[2].slice(1) : '');
   if (query.has('namespace')) return path;
-  // The all-namespaces listing is read-only and Machines-only: creates and
-  // every other collection stay in the concrete namespace.
+  // The all-namespaces listing is read-only and limited to ALL_NAMESPACE_LISTS:
+  // creates and every other collection stay in the concrete namespace.
   const wantAll = opts.all ?? allNamespaces();
   const isGet = (opts.method ?? 'GET').toUpperCase() === 'GET';
-  query.set('namespace', wantAll && isGet && m[1] === 'machines' ? ALL_NAMESPACES : ns);
+  query.set('namespace', wantAll && isGet && ALL_NAMESPACE_LISTS.has(m[1]) ? ALL_NAMESPACES : ns);
   return `/api/v1/${m[1]}?${query.toString()}`;
 }

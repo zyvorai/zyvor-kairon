@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { api, apiJSON } from '../api';
 import { MachineSnapshot } from '../types';
 import { badgeClass } from '../lib/phase';
+import { allNamespaces, currentNamespace } from '../lib/namespace';
 
 export default function Snapshots({ prefillMachine, onRestore }: { prefillMachine: string; onRestore: (snapshot: string) => void }) {
   const [items, setItems] = useState<MachineSnapshot[]>([]);
@@ -12,6 +13,8 @@ export default function Snapshots({ prefillMachine, onRestore }: { prefillMachin
   const [volumeClass, setVolumeClass] = useState('');
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
+  const showNs = allNamespaces();
+  const here = currentNamespace();
 
   useEffect(() => setMachine(prefillMachine), [prefillMachine]);
 
@@ -71,6 +74,7 @@ export default function Snapshots({ prefillMachine, onRestore }: { prefillMachin
         <table className="datatable">
           <thead>
             <tr>
+              {showNs && <th>Namespace</th>}
               <th>Name</th>
               <th>Machine</th>
               <th>Phase</th>
@@ -80,7 +84,8 @@ export default function Snapshots({ prefillMachine, onRestore }: { prefillMachin
           </thead>
           <tbody>
             {items.map((s) => (
-              <tr key={s.metadata.name}>
+              <tr key={`${s.metadata.namespace || ''}/${s.metadata.name}`}>
+                {showNs && <td>{s.metadata.namespace}</td>}
                 <td>{s.metadata.name}</td>
                 <td>{s.spec.machineName}</td>
                 <td>
@@ -88,13 +93,13 @@ export default function Snapshots({ prefillMachine, onRestore }: { prefillMachin
                 </td>
                 <td>{s.status?.readyToUse ? 'true' : 'false'}</td>
                 <td>
-                  {s.status?.readyToUse && <button onClick={() => onRestore(s.metadata.name)}>Restore</button>}
+                  {s.status?.readyToUse && (!s.metadata.namespace || s.metadata.namespace === here) && <button onClick={() => onRestore(s.metadata.name)}>Restore</button>}
                 </td>
               </tr>
             ))}
             {items.length === 0 && (
               <tr>
-                <td colSpan={5} className="msg">
+                <td colSpan={showNs ? 6 : 5} className="msg">
                   No snapshots yet.
                 </td>
               </tr>

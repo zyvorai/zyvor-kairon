@@ -178,7 +178,7 @@ func (f *fakeKube) handler() http.Handler {
 			f.migrations[name] = m
 			w.WriteHeader(http.StatusOK)
 
-		case r.Method == http.MethodGet && r.URL.Path == "/apis/kairon.zyvor.dev/v1/namespaces/default/machinesnapshots":
+		case r.Method == http.MethodGet && (r.URL.Path == "/apis/kairon.zyvor.dev/v1/namespaces/default/machinesnapshots" || r.URL.Path == "/apis/kairon.zyvor.dev/v1/machinesnapshots"):
 			items := make([]model.MachineSnapshot, 0, len(f.snapshots))
 			for _, s := range f.snapshots {
 				items = append(items, s)

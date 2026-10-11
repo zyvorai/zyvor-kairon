@@ -71,16 +71,16 @@ stay selected. Works in the all-namespaces view too. Single-row **Stop** and **H
 ask for confirmation first (a Machine delete already did), and every power
 action reports its outcome in a toast.
 
-### All namespaces (Machines)
+### All namespaces (Machines, Migrations, Snapshots)
 
-Choose **All (Machines)** in the nav selector to list Machines from every
-namespace you may use in one table, with a Namespace column; row actions
-(power, delete, priority, console, logs, details) act on the row's own
-namespace. Only the Machines list has this view: every other page, and
-creating a Machine, keeps working in the concrete namespace last selected
-(Migrate and Snapshot are hidden for rows outside that namespace).
-The API form is `GET /api/v1/machines?namespace=_all` (see the
-[API reference](kairon-ui-api.md)).
+Choose **All namespaces** in the nav selector to list Machines, Migrations and
+Snapshots from every namespace you may use in one table, with a Namespace
+column; row actions (power, delete, priority, console, logs, details, cancel,
+recover) act on the row's own namespace. Every other page, and creating
+anything, keeps working in the concrete namespace last selected (Migrate and
+Snapshot are hidden for Machine rows, and Restore for Snapshot rows, outside
+that namespace). The API form is `GET /api/v1/{machines,migrations,snapshots}?namespace=_all`
+(see the [API reference](kairon-ui-api.md)).
 
 ## Navigation
 
