@@ -144,3 +144,37 @@ func TestImageStoreDisabled(t *testing.T) {
 		t.Fatalf("got %d, want 501", rr.Code)
 	}
 }
+
+// With kairon-ui serving a self-signed certificate, nodes download the blob
+// over that listener, so the upload response marks the source
+// insecureSkipTLSVerify (the pinned sha256 still guarantees the bytes).
+func TestImageStoreMarksSelfSignedHTTPSSources(t *testing.T) {
+	cases := []struct {
+		name       string
+		publicURL  string
+		selfSigned bool
+		want       bool
+	}{
+		{"https and self-signed", "https://kairon-ui.kairon-system.svc:18082", true, true},
+		{"https with a trusted certificate", "https://kairon-ui.example.com", false, false},
+		{"plain http (opt-out) is never marked", "http://kairon-ui.kairon-system.svc:18082", true, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s, h, admin, _ := imageStoreServer(t)
+			s.ImageStorePublicURL = c.publicURL
+			s.TLSSelfSigned = c.selfSigned
+			rr := putImage(h, "/api/v1/images/probe", admin, []byte("QFI\xfb x"), nil)
+			if rr.Code != http.StatusCreated {
+				t.Fatalf("upload: %d %s", rr.Code, rr.Body.String())
+			}
+			var img UploadedImage
+			if err := json.Unmarshal(rr.Body.Bytes(), &img); err != nil {
+				t.Fatal(err)
+			}
+			if img.InsecureSkipTLSVerify != c.want {
+				t.Errorf("InsecureSkipTLSVerify = %v, want %v (url %s)", img.InsecureSkipTLSVerify, c.want, img.URL)
+			}
+		})
+	}
+}

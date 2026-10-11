@@ -9,6 +9,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+# HTTPS by default: kairon-ui.env may set KAIRON_UI_TLS_CERT/KAIRON_UI_TLS_KEY
+# (deploy-remote.sh installs a certificate there); with neither it generates a
+# self-signed one at startup. KAIRON_UI_INSECURE_HTTP=true opts out.
 ExecStart=/usr/bin/kairon-ui --listen=:18082 --web-dir=/etc/kairon/ui-web
 Restart=on-failure
 RestartSec=5s

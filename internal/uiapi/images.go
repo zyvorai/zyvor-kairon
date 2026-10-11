@@ -25,13 +25,16 @@ import (
 // live content-addressed under <ImageStoreDir>/sha256/<hex>; names are
 // pointers kept under <ImageStoreDir>/names/<name>.json.
 type UploadedImage struct {
-	Name       string    `json:"name"`
-	Digest     string    `json:"digest"`
-	SizeBytes  int64     `json:"sizeBytes"`
-	Format     string    `json:"format,omitempty"`
-	URL        string    `json:"url"`
-	UploadedAt time.Time `json:"uploadedAt"`
-	UploadedBy string    `json:"uploadedBy,omitempty"`
+	Name      string `json:"name"`
+	Digest    string `json:"digest"`
+	SizeBytes int64  `json:"sizeBytes"`
+	Format    string `json:"format,omitempty"`
+	URL       string `json:"url"`
+	// InsecureSkipTLSVerify is set when URL is https and served with a
+	// self-signed certificate, so spec.image.source needs it too.
+	InsecureSkipTLSVerify bool      `json:"insecureSkipTLSVerify,omitempty"`
+	UploadedAt            time.Time `json:"uploadedAt"`
+	UploadedBy            string    `json:"uploadedBy,omitempty"`
 }
 
 var imageNameRE = regexp.MustCompile(`^[a-z0-9]([a-z0-9._-]{0,126}[a-z0-9])?$`)
@@ -141,6 +144,7 @@ func (s *Server) handleUploadImage(w http.ResponseWriter, r *http.Request) {
 		Name: name, Digest: model.ImageDigestPrefix + hexDigest, SizeBytes: size, Format: format,
 		URL: s.imageURL(r, hexDigest), UploadedAt: time.Now().UTC(), UploadedBy: username,
 	}
+	img.InsecureSkipTLSVerify = s.TLSSelfSigned && strings.HasPrefix(img.URL, "https://")
 	if err := s.writeImageEntry(img); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

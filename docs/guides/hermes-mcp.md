@@ -108,7 +108,8 @@ mcp_servers:
       KAIRON_KUBE_URL: "https://127.0.0.1:6443"
       KAIRON_KUBE_TOKEN: "..."
       KAIRON_KUBE_INSECURE: "true"    # lab only; prefer KAIRON_KUBE_CA
-      KAIRON_UI_URL: "http://127.0.0.1:18082"
+      KAIRON_UI_URL: "https://127.0.0.1:18082"
+      KAIRON_UI_CA: "/path/to/dashboard-cert.pem"   # a self-signed dashboard certificate
       KAIRON_UI_TOKEN: "..."
     timeout: 120
 ```

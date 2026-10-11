@@ -66,6 +66,12 @@ type Server struct {
 	// page's stat band.
 	Version string
 
+	// SelftestNamespace is where dashboard-started self-tests create their
+	// Machines; empty means "default".
+	SelftestNamespace string
+	selftestJobs      *selftestStore
+	selftestOnce      sync.Once
+
 	// history backs GET .../metrics; filled by RunMetricsSampler.
 	history     *metricsHistory
 	historyOnce sync.Once
@@ -206,6 +212,11 @@ type Server struct {
 	// ImageStorePublicURL is the base URL nodes download uploaded images
 	// from; empty means the upload request's own scheme and host.
 	ImageStorePublicURL string
+	// TLSSelfSigned records that kairon-ui itself serves a self-signed
+	// certificate. Nodes download uploaded images over that same listener, so
+	// the upload response marks the source insecureSkipTLSVerify (the pinned
+	// sha256 still guarantees the bytes).
+	TLSSelfSigned bool
 	// ImageStoreMaxBytes caps one upload; 0 means no limit.
 	ImageStoreMaxBytes int64
 }
@@ -238,6 +249,11 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/v1/namespaces", s.handleNamespaces)
 	api.HandleFunc("GET /api/v1/stream", s.handleStream)
 	api.HandleFunc("GET /api/v1/insights", s.handleInsights)
+	api.HandleFunc("GET /api/v1/selftest/scenarios", s.handleSelftestScenarios)
+	api.HandleFunc("GET /api/v1/selftest", s.handleSelftestList)
+	api.HandleFunc("POST /api/v1/selftest", s.handleSelftestStart)
+	api.HandleFunc("GET /api/v1/selftest/{id}", s.handleSelftestGet)
+	api.HandleFunc("DELETE /api/v1/selftest/{id}", s.handleSelftestCancel)
 	api.HandleFunc("GET /api/v1/pods", s.handlePods)
 	api.HandleFunc("GET /api/v1/health", s.handleHealth)
 	api.HandleFunc("GET /api/v1/fleet/{resource}", s.requireNamespace(namespaceParam, s.handleListFleet))

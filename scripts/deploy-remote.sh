@@ -46,10 +46,11 @@ kairon-ui web dashboard (--with-ui). --with-ui is the one component that
 needs a local Node.js/npm toolchain (to build web/dist) -- every other
 component and mode of this script stays Node-free.
 
-Everything is cross-compiled on your machine with
+By default everything is cross-compiled on your machine with
   CGO_ENABLED=0 GOOS=linux GOARCH=<arch> go build
-and shipped as a static binary. No Go toolchain and no source tree is
-ever copied to or required on the remote host.
+and shipped as a static binary; no Go toolchain and no source tree is then
+required on the remote host. With --remote-build the source is copied to the
+host and compiled there instead (for a machine with little disk space).
 
 Target:
   USER@HOST, or USER HOST, or HOST USER (IPv4-vs-non-IPv4 auto swap).
@@ -108,6 +109,23 @@ Flags:
                           FluxVM's own VNC socket has no auth of its own.
   --console-port=N        kairon-node's console relay port (default 8090),
                           same auto-fallback-if-busy behavior as --node-port.
+  --ui-tls-cert=PATH      Use your own dashboard certificate (PEM, local path)
+                          instead of the self-signed one this script otherwise
+                          generates. Needs --ui-tls-key and --with-ui.
+  --ui-tls-key=PATH       Private key for --ui-tls-cert.
+  --ui-regenerate-cert    Generate a new self-signed dashboard certificate even
+                          though one is already installed on the host (by
+                          default it is reused, so browsers do not warn again
+                          after every deploy).
+  --ui-insecure-http      Serve the dashboard over plain HTTP. Logins and the
+                          bearer token then cross the network in clear text;
+                          only for a trusted loopback or a throwaway lab.
+                          Without it the dashboard is HTTPS: a self-signed
+                          certificate (SAN: this host's names and addresses)
+                          is generated with openssl, installed to
+                          /etc/kairon/ui-tls/ and wired into kairon-ui.env
+                          (set even when the file exists). Browsers warn once
+                          about a self-signed certificate.
   --console-tls           Enable one-way TLS on the kairon-ui -> kairon-node
                           console relay hop (plaintext by default). Requires
                           --with-console. With no --console-tls-cert/-key/-ca,
@@ -125,6 +143,20 @@ Flags:
   --console-tls-key=PATH   Bring your own console relay server private key.
   --console-tls-ca=PATH    CA certificate that signed --console-tls-cert;
                           installed on the kairon-ui side to verify it.
+  --self-test[=PROFILE]   After the deploy, run 'kaironctl selftest' on the host
+                          over an SSH terminal (coloured): it boots a tiny CirrOS
+                          VM and checks power, network and more, then cleans up.
+                          PROFILE is quick (default), standard or full. Needs a
+                          reachable Kubernetes API (see --kube-url); the run's
+                          result becomes this script's exit code.
+  --remote-build          Compile on the host instead of on this machine: a
+                          small source tarball (about 6 MB) is copied there and
+                          built with a Go toolchain (and Node, for --with-ui)
+                          cached under ~/.cache/kairon-build on the host, so
+                          this machine needs no Go, no Node and no build cache.
+                          The host needs curl, tar, and network access to
+                          go.dev and the Go module proxy (and npm, for the
+                          dashboard). Downloads are checksum-verified.
   --no-start              Install files but do not enable/start the service(s).
   --sync-only             Copy binaries + unit files to the remote host only;
                           skip user/dir/config/unit install and service start.
@@ -154,6 +186,12 @@ Flags:
   --reserved-cpus=LIST    Set KAIRON_RESERVED_CPUS (kubelet's reserved CPUs,
                           e.g. 0-1) in kairon-node.env, even when the file
                           already exists. Other keys are left untouched.
+  --image-cache-dir=PATH  Set KAIRON_IMAGE_CACHE_DIR, the directory kairon-node
+                          downloads spec.image.source images into (needed by
+                          --self-test and any Machine that downloads its image).
+                          Created if absent and made writable for the service;
+                          set even when kairon-node.env already exists. A path
+                          under /var/lib/kairon-node/ needs nothing else.
   --cpu-pinning           Turn on pinnable-CPU discovery: install
                           kairon-cpustate.path/.service, which copy kubelet's
                           root-only cpu_manager_state to a file kairon-node
@@ -225,12 +263,21 @@ CONSOLE_PORT="8090"
 CONSOLE_PORT_EXPLICIT=0
 RESOLVED_CONSOLE_TOKEN=""
 WITH_CONSOLE_TLS=0
+UI_TLS=0
+UI_INSECURE_HTTP=0
+UI_TLS_REUSE=0
+UI_TLS_REGEN=0
+UI_TLS_CERT=""
+UI_TLS_KEY=""
 CONSOLE_TLS_CERT=""
 CONSOLE_TLS_KEY=""
 CONSOLE_TLS_CA=""
 RESOLVED_CONSOLE_TLS_SOURCE="none"
 NO_START=0
 SYNC_ONLY=0
+REMOTE_BUILD=0
+SELF_TEST=0
+SELF_TEST_PROFILE="quick"
 DRY_RUN=0
 ARCH_OVERRIDE=""
 UNINSTALL=0
@@ -257,6 +304,7 @@ MIGRATION_PORT_EXPLICIT=0
 MIGRATION_ADAPTER_SOCKET="/run/kairon/migration-adapter.sock"
 WITH_MIGRATION_ADAPTER_STUB=0
 RESERVED_CPUS=""
+IMAGE_CACHE_DIR=""
 CPU_PINNING=""
 VERSION_OVERRIDE="${KAIRON_VERSION:-}"
 SSH_PORT="${SSH_PORT:-22}"
@@ -301,11 +349,23 @@ while [[ $# -gt 0 ]]; do
     --with-console) WITH_CONSOLE=1 ;;
     --console-port=*) CONSOLE_PORT="${1#*=}"; CONSOLE_PORT_EXPLICIT=1 ;;
     --console-tls) WITH_CONSOLE_TLS=1 ;;
+    --ui-tls) UI_TLS=1 ;;   # HTTPS is already the default with --with-ui; kept for scripts
+    --ui-insecure-http) UI_INSECURE_HTTP=1 ;;
+    --ui-regenerate-cert) UI_TLS_REGEN=1 ;;
+    --ui-tls-cert=*) UI_TLS_CERT="${1#*=}"; UI_TLS=1 ;;
+    --ui-tls-key=*) UI_TLS_KEY="${1#*=}"; UI_TLS=1 ;;
     --console-tls-cert=*) CONSOLE_TLS_CERT="${1#*=}" ;;
     --console-tls-key=*) CONSOLE_TLS_KEY="${1#*=}" ;;
     --console-tls-ca=*) CONSOLE_TLS_CA="${1#*=}" ;;
     --no-start) NO_START=1 ;;
     --sync-only) SYNC_ONLY=1 ;;
+    --remote-build) REMOTE_BUILD=1 ;;
+    --self-test) SELF_TEST=1 ;;
+    --self-test=*)
+      SELF_TEST=1
+      SELF_TEST_PROFILE="${1#*=}"
+      case "$SELF_TEST_PROFILE" in quick|standard|full) ;; *) die "--self-test=PROFILE must be quick, standard or full (got: $SELF_TEST_PROFILE)" ;; esac
+      ;;
     --dry-run) DRY_RUN=1 ;;
     --arch=*) ARCH_OVERRIDE="${1#*=}" ;;
     --uninstall) UNINSTALL=1 ;;
@@ -331,6 +391,7 @@ while [[ $# -gt 0 ]]; do
     --version=*) VERSION_OVERRIDE="${1#*=}" ;;
     --ssh-port=*) SSH_PORT="${1#*=}" ;;
     --reserved-cpus=*) RESERVED_CPUS="${1#*=}" ;;
+    --image-cache-dir=*) IMAGE_CACHE_DIR="${1#*=}" ;;
     --cpu-pinning) CPU_PINNING=1 ;;
     --no-cpu-pinning) CPU_PINNING=0 ;;
     -h|--help) usage; exit 0 ;;
@@ -341,6 +402,9 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+if [[ -n "$IMAGE_CACHE_DIR" && ! "$IMAGE_CACHE_DIR" =~ ^/[A-Za-z0-9._/-]+$ ]]; then
+  die "--image-cache-dir=$IMAGE_CACHE_DIR: want an absolute path of letters, digits, . _ - and /"
+fi
 if [[ -n "$RESERVED_CPUS" && ! "$RESERVED_CPUS" =~ ^[0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*$ ]]; then
   die "--reserved-cpus=$RESERVED_CPUS: want a CPU list like 0-1 or 0,6"
 fi
@@ -384,6 +448,24 @@ if [[ "$console_tls_paths_given" -eq 3 ]]; then
 fi
 if [[ "$WITH_CONSOLE_TLS" == "1" && "$WITH_CONSOLE" != "1" ]]; then
   die "--console-tls requires --with-console"
+fi
+if [[ "$UI_INSECURE_HTTP" == "1" ]]; then
+  [[ "$WITH_UI" == "1" ]] || die "--ui-insecure-http requires --with-ui"
+  [[ -z "$UI_TLS_CERT$UI_TLS_KEY" ]] || die "--ui-insecure-http contradicts --ui-tls-cert/--ui-tls-key; pick plain HTTP or a certificate"
+fi
+if [[ "$UI_TLS" == "1" || -n "$UI_TLS_CERT$UI_TLS_KEY" ]]; then
+  [[ "$WITH_UI" == "1" ]] || die "--ui-tls / --ui-tls-cert / --ui-tls-key require --with-ui"
+  [[ "$UI_INSECURE_HTTP" != "1" ]] || die "--ui-tls contradicts --ui-insecure-http"
+  if [[ -n "$UI_TLS_CERT" || -n "$UI_TLS_KEY" ]]; then
+    [[ -n "$UI_TLS_CERT" && -n "$UI_TLS_KEY" ]] || die "--ui-tls-cert and --ui-tls-key must be given together"
+    [[ -f "$UI_TLS_CERT" ]] || die "dashboard TLS certificate not found: $UI_TLS_CERT"
+    [[ -f "$UI_TLS_KEY" ]] || die "dashboard TLS key not found: $UI_TLS_KEY"
+  fi
+fi
+# The dashboard is HTTPS by default: with --with-ui a certificate is always
+# installed unless plain HTTP was asked for by name.
+if [[ "$WITH_UI" == "1" && "$UI_INSECURE_HTTP" != "1" ]]; then
+  UI_TLS=1
 fi
 
 # USER@HOST [PASSWORD] is at most 2 bare tokens; USER HOST [PASSWORD] and
@@ -532,6 +614,10 @@ $([[ "$WITH_CONSOLE" == "1" ]] && echo "Console relay port:       ${CONSOLE_PORT
 $([[ "$WITH_CONSOLE" == "1" ]] && echo "Console relay token:      will be auto-generated at deploy time (openssl rand -hex 32), shared between kairon-node and kairon-ui only -- never shown to an operator")
 $([[ "$WITH_CONSOLE_TLS" == "1" ]] && echo "Console relay TLS:        $(if [[ -n "$CONSOLE_TLS_CERT" ]]; then echo "provided via --console-tls-cert/-key/-ca"; else echo "self-signed CA + cert will be auto-generated at deploy time (openssl)"; fi)")
 Start after install:      $([[ "$NO_START" == "1" ]] && echo "no (--no-start)" || echo "yes")
+Image cache dir:          ${IMAGE_CACHE_DIR:-<unchanged>}
+$([[ "$WITH_UI" == "1" ]] && echo "Dashboard scheme:        $(if [[ "$UI_INSECURE_HTTP" == "1" ]]; then echo "http (--ui-insecure-http: clear-text logins)"; elif [[ -n "$UI_TLS_CERT" ]]; then echo "https, certificate provided via --ui-tls-cert/-key"; else echo "https, self-signed certificate generated at deploy time (openssl)"; fi)")
+Build location:           $([[ "$REMOTE_BUILD" == "1" ]] && echo "on the host (--remote-build)" || echo "this machine (cross-compile)")
+Self-test after deploy:   $([[ "$SELF_TEST" == "1" ]] && echo "yes (profile ${SELF_TEST_PROFILE})" || echo "no (add --self-test)")
 
 Remote paths:
   /usr/bin/kairon-node, /usr/bin/kaironctl$([[ "$WITH_CONTROLLER" == "1" ]] && echo ", /usr/bin/kairon-controller")$([[ "$WITH_UI" == "1" ]] && echo ", /usr/bin/kairon-ui")
@@ -620,12 +706,43 @@ UNINSTALL_EOF
 }
 
 verify_remote() {
-  local unit="$1" port="$2"
+  local unit="$1" port="$2" scheme="${3:-http}"
+  # -k: the dashboard's own certificate may be self-signed and is addressed
+  # as 127.0.0.1 here; this probe checks liveness, not the certificate.
   ssh_cmd "$REMOTE" "
     systemctl is-active $unit 2>/dev/null || true
-    curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:$port/healthz 2>/dev/null
-    curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:$port/readyz 2>/dev/null
+    curl -sk -o /dev/null -w '%{http_code}\n' ${scheme}://127.0.0.1:$port/healthz 2>/dev/null
+    curl -sk -o /dev/null -w '%{http_code}\n' ${scheme}://127.0.0.1:$port/readyz 2>/dev/null
   " || true
+}
+
+# remote_build copies a small source tarball and scripts/lib/remote-build.sh to
+# the host and compiles there, writing the binaries (and, for the dashboard,
+# kairon-ui-web.tar.gz) into the staging directory so install.sh finds them
+# exactly where a local build would have put them.
+remote_build() {
+  local local_stage="$1" remote_tmp="$2" targets="$3"
+  local src="$local_stage/kairon-src.tar.gz" tar_extra=()
+  if tar --no-xattrs -cf /dev/null -T /dev/null 2>/dev/null; then tar_extra+=(--no-xattrs); fi
+  info "packing the source (cmd, internal, charts, web, go.mod)..."
+  if git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    # Tracked and untracked-but-not-ignored files, so uncommitted edits ship
+    # and node_modules/dist/bin never do.
+    git -C "$REPO_ROOT" ls-files -z --cached --others --exclude-standard -- go.mod go.sum VERSION cmd internal charts web \
+      | while IFS= read -r -d '' f; do [[ -e "$REPO_ROOT/$f" ]] && printf '%s\0' "$f"; done \
+      | ( cd "$REPO_ROOT" && COPYFILE_DISABLE=1 tar ${tar_extra[@]+"${tar_extra[@]}"} --null -T - -czf "$src" )
+  else
+    ( cd "$REPO_ROOT" && COPYFILE_DISABLE=1 tar ${tar_extra[@]+"${tar_extra[@]}"} --exclude=node_modules --exclude=dist \
+        -czf "$src" go.mod go.sum VERSION cmd internal charts web )
+  fi
+  [[ -s "$src" ]] || die "could not pack the source tree from $REPO_ROOT"
+  info "source tarball: $(du -k "$src" | cut -f1) KiB; copying to ${REMOTE}"
+  scp_cmd "$src" "$REPO_ROOT/scripts/lib/remote-build.sh" "${REMOTE}:${remote_tmp}/"
+  info "compiling on ${REMOTE} (first run downloads a Go toolchain and modules into ~/.cache/kairon-build)..."
+  # shellcheck disable=SC2086 # targets is a space-separated word list
+  ssh_cmd "$REMOTE" "bash ${remote_tmp}/remote-build.sh ${remote_tmp}/kairon-src.tar.gz ${remote_tmp} ${RESOLVED_GOARCH} ${RESOLVED_VERSION} ${targets}" \
+    || die "the build on ${REMOTE} failed (see the output above; the build cache is ~/.cache/kairon-build)"
+  ok "built on ${REMOTE}"
 }
 
 save_deploy_last() {
@@ -690,28 +807,34 @@ run_deploy() {
   detect_arch
   info "target arch: linux/$RESOLVED_GOARCH"
 
-  local build_dir="$REPO_ROOT/dist/deploy-remote/$RESOLVED_GOARCH"
-  mkdir -p "$build_dir"
-  info "cross-compiling for linux/$RESOLVED_GOARCH (version $RESOLVED_VERSION)..."
-  ( cd "$REPO_ROOT" && CGO_ENABLED=0 GOOS=linux GOARCH="$RESOLVED_GOARCH" go build -trimpath -ldflags="-s -w -X main.version=$RESOLVED_VERSION" -o "$build_dir/kairon-node" ./cmd/kairon-node )
-  ( cd "$REPO_ROOT" && CGO_ENABLED=0 GOOS=linux GOARCH="$RESOLVED_GOARCH" go build -trimpath -ldflags="-s -w -X main.version=$RESOLVED_VERSION" -o "$build_dir/kaironctl" ./cmd/kaironctl )
-  if [[ "$WITH_CONTROLLER" == "1" ]]; then
-    ( cd "$REPO_ROOT" && CGO_ENABLED=0 GOOS=linux GOARCH="$RESOLVED_GOARCH" go build -trimpath -ldflags="-s -w -X main.version=$RESOLVED_VERSION" -o "$build_dir/kairon-controller" ./cmd/kairon-controller )
-  fi
-  if [[ "$WITH_MIGRATION_ADAPTER_STUB" == "1" ]]; then
-    ( cd "$REPO_ROOT" && CGO_ENABLED=0 GOOS=linux GOARCH="$RESOLVED_GOARCH" go build -trimpath -o "$build_dir/kairon-migration-adapter-stub" ./cmd/kairon-migration-adapter-stub )
-  fi
-  if [[ "$WITH_UI" == "1" ]]; then
-    ( cd "$REPO_ROOT" && CGO_ENABLED=0 GOOS=linux GOARCH="$RESOLVED_GOARCH" go build -trimpath -ldflags="-s -w -X main.version=$RESOLVED_VERSION" -o "$build_dir/kairon-ui" ./cmd/kairon-ui )
-  fi
-  ok "build complete: $build_dir"
+  local build_dir=""
+  if [[ "$REMOTE_BUILD" == "1" ]]; then
+    info "--remote-build: the source will be copied to ${REMOTE} and compiled there (version $RESOLVED_VERSION)"
+  else
+    build_dir="$REPO_ROOT/dist/deploy-remote/$RESOLVED_GOARCH"
+    mkdir -p "$build_dir"
+    info "cross-compiling for linux/$RESOLVED_GOARCH (version $RESOLVED_VERSION)..."
+    ( cd "$REPO_ROOT" && CGO_ENABLED=0 GOOS=linux GOARCH="$RESOLVED_GOARCH" go build -trimpath -ldflags="-s -w -X main.version=$RESOLVED_VERSION" -o "$build_dir/kairon-node" ./cmd/kairon-node )
+    ( cd "$REPO_ROOT" && CGO_ENABLED=0 GOOS=linux GOARCH="$RESOLVED_GOARCH" go build -trimpath -ldflags="-s -w -X main.version=$RESOLVED_VERSION" -o "$build_dir/kaironctl" ./cmd/kaironctl )
+    if [[ "$WITH_CONTROLLER" == "1" ]]; then
+      ( cd "$REPO_ROOT" && CGO_ENABLED=0 GOOS=linux GOARCH="$RESOLVED_GOARCH" go build -trimpath -ldflags="-s -w -X main.version=$RESOLVED_VERSION" -o "$build_dir/kairon-controller" ./cmd/kairon-controller )
+    fi
+    if [[ "$WITH_MIGRATION_ADAPTER_STUB" == "1" ]]; then
+      ( cd "$REPO_ROOT" && CGO_ENABLED=0 GOOS=linux GOARCH="$RESOLVED_GOARCH" go build -trimpath -o "$build_dir/kairon-migration-adapter-stub" ./cmd/kairon-migration-adapter-stub )
+    fi
+    if [[ "$WITH_UI" == "1" ]]; then
+      ( cd "$REPO_ROOT" && CGO_ENABLED=0 GOOS=linux GOARCH="$RESOLVED_GOARCH" go build -trimpath -ldflags="-s -w -X main.version=$RESOLVED_VERSION" -o "$build_dir/kairon-ui" ./cmd/kairon-ui )
+    fi
+    ok "build complete: $build_dir"
 
-  if [[ "$WITH_UI" == "1" ]]; then
-    command -v npm >/dev/null 2>&1 || die "--with-ui requires 'npm' on PATH to build web/dist locally (the only place this script needs Node.js, and only with --with-ui)"
-    info "building kairon-ui web assets (npm ci && npm run build)..."
-    ( cd "$REPO_ROOT/web" && npm ci && npm run build )
-    [[ -d "$REPO_ROOT/web/dist" ]] || die "npm run build did not produce web/dist -- check the build output above"
-    ok "web/dist built"
+    if [[ "$WITH_UI" == "1" ]]; then
+      command -v npm >/dev/null 2>&1 || die "--with-ui requires 'npm' on PATH to build web/dist locally (the only place this script needs Node.js, and only with --with-ui)"
+      info "building kairon-ui web assets (npm ci && npm run build)..."
+      ( cd "$REPO_ROOT/web" && npm ci && npm run build )
+      [[ -d "$REPO_ROOT/web/dist" ]] || die "npm run build did not produce web/dist -- check the build output above"
+      ok "web/dist built"
+    fi
+
   fi
 
   local local_stage
@@ -768,6 +891,48 @@ run_deploy() {
     fi
   fi
 
+  if [[ "$UI_TLS" == "1" ]]; then
+    if [[ -n "$UI_TLS_CERT" ]]; then
+      cp "$UI_TLS_CERT" "$local_stage/ui-tls-cert.pem"
+      cp "$UI_TLS_KEY" "$local_stage/ui-tls-key.pem"
+      ok "using the provided dashboard TLS certificate (--ui-tls-cert/-key)"
+    elif [[ "$UI_TLS_REGEN" != "1" ]] && ssh_exec_privileged "$REMOTE" "${SUDO} test -s /etc/kairon/ui-tls/cert.pem -a -s /etc/kairon/ui-tls/key.pem" >/dev/null 2>&1; then
+      UI_TLS_REUSE=1
+      ok "reusing the dashboard certificate already installed on the host (--ui-regenerate-cert to replace it)"
+    else
+      command -v openssl >/dev/null 2>&1 || die "--ui-tls needs a certificate: install 'openssl' (used to generate a self-signed one), or pass --ui-tls-cert/-key"
+      local ui_ips ui_sans ui_ip
+      ui_ips="$(ssh_cmd "$REMOTE" "hostname -I" 2>/dev/null || true)"
+      ui_sans="DNS:${remote_hostname},DNS:localhost,IP:127.0.0.1"
+      for ui_ip in $ui_ips; do
+        ui_sans="${ui_sans},IP:${ui_ip}"
+      done
+      if [[ "$HOST_ARG" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ && "$ui_sans" != *"IP:${HOST_ARG}"* ]]; then
+        ui_sans="${ui_sans},IP:${HOST_ARG}"
+      elif [[ ! "$HOST_ARG" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ && "$ui_sans" != *"DNS:${HOST_ARG}"* ]]; then
+        ui_sans="${ui_sans},DNS:${HOST_ARG}"
+      fi
+      info "generating a self-signed dashboard certificate..."
+      # Some openssl builds (e.g. a Homebrew install with no openssl.cnf) fail
+      # on the default config; an empty one is enough for -subj + -extfile.
+      local ui_gen_log="$local_stage/ui-tls-openssl.log"
+      ui_tls_generate() {
+        openssl req -newkey rsa:2048 -sha256 -nodes \
+          -keyout "$local_stage/ui-tls-key.pem" -out "$local_stage/ui-tls.csr" \
+          -subj "/CN=${remote_hostname}" >/dev/null 2>"$ui_gen_log" || return 1
+        openssl x509 -req -sha256 -days 825 \
+          -in "$local_stage/ui-tls.csr" -signkey "$local_stage/ui-tls-key.pem" \
+          -out "$local_stage/ui-tls-cert.pem" \
+          -extfile <(printf 'subjectAltName=%s\nbasicConstraints=CA:FALSE' "$ui_sans") >/dev/null 2>>"$ui_gen_log" || return 1
+        [[ -s "$local_stage/ui-tls-cert.pem" ]]
+      }
+      if ! ui_tls_generate && ! OPENSSL_CONF=/dev/null ui_tls_generate; then
+        die "could not generate the dashboard certificate with openssl: $(tr '\n' ' ' < "$ui_gen_log" | cut -c1-300) -- install a working openssl or pass --ui-tls-cert/-key"
+      fi
+      ok "generated a self-signed dashboard certificate (SAN: $ui_sans)"
+    fi
+  fi
+
   {
     printf 'WITH_CONTROLLER=%q\n' "$WITH_CONTROLLER"
     printf 'NO_START=%q\n' "$NO_START"
@@ -809,6 +974,10 @@ run_deploy() {
     printf 'CONSOLE_PORT_EXPLICIT=%q\n' "$CONSOLE_PORT_EXPLICIT"
     printf 'WITH_CONSOLE_TLS=%q\n' "$WITH_CONSOLE_TLS"
     printf 'RESERVED_CPUS=%q\n' "$RESERVED_CPUS"
+    printf 'IMAGE_CACHE_DIR=%q\n' "$IMAGE_CACHE_DIR"
+    printf 'UI_TLS=%q\n' "$UI_TLS"
+    printf 'UI_INSECURE_HTTP=%q\n' "$UI_INSECURE_HTTP"
+    printf 'UI_TLS_REUSE=%q\n' "$UI_TLS_REUSE"
     printf 'CPU_PINNING=%q\n' "$CPU_PINNING"
   } > "$local_stage/params.env"
 
@@ -1010,6 +1179,22 @@ set_env_key() {
   fi
 }
 
+# Image cache: kairon-node refuses spec.image.source (and the self-test's
+# downloaded CirrOS) without one. The unit runs with ProtectSystem=strict, so
+# a directory outside its own state directory needs a ReadWritePaths drop-in.
+if [[ -n "$IMAGE_CACHE_DIR" ]]; then
+  install -d -m 0755 -o kairon -g kairon "$IMAGE_CACHE_DIR"
+  set_env_key /etc/kairon/kairon-node.env KAIRON_IMAGE_CACHE_DIR "$IMAGE_CACHE_DIR"
+  case "$IMAGE_CACHE_DIR" in
+    /var/lib/kairon-node|/var/lib/kairon-node/*) rm -f /etc/systemd/system/kairon-node.service.d/image-cache.conf ;;
+    *)
+      install -d -m 0755 /etc/systemd/system/kairon-node.service.d
+      printf '[Service]\nReadWritePaths=%s\n' "$IMAGE_CACHE_DIR" > /etc/systemd/system/kairon-node.service.d/image-cache.conf
+      ;;
+  esac
+  ok "set KAIRON_IMAGE_CACHE_DIR=$IMAGE_CACHE_DIR in /etc/kairon/kairon-node.env"
+fi
+
 CPU_STATE_COPY=/var/lib/kairon-node/cpu_manager_state
 if [[ -n "$RESERVED_CPUS" ]]; then
   set_env_key /etc/kairon/kairon-node.env KAIRON_RESERVED_CPUS "$RESERVED_CPUS"
@@ -1164,6 +1349,25 @@ if [[ "$WITH_UI" == "1" ]]; then
   RESOLVED_UI_PORT="$(resolve_port "$UI_PORT" "$UI_PORT_EXPLICIT" "ui" "$(unit_port /etc/systemd/system/kairon-ui.service listen)")" || exit 1
   install -m 0644 -o root -g root ./kairon-ui.service /etc/systemd/system/kairon-ui.service
   sed -i "s#^ExecStart=.*#ExecStart=/usr/bin/kairon-ui --listen=:$RESOLVED_UI_PORT --web-dir=/etc/kairon/ui-web#" /etc/systemd/system/kairon-ui.service
+  if [[ "$UI_INSECURE_HTTP" == "1" ]]; then
+    set_env_key /etc/kairon/kairon-ui.env KAIRON_UI_INSECURE_HTTP true
+    sed -i -E '/^(KAIRON_UI_TLS_CERT|KAIRON_UI_TLS_KEY)=/d' /etc/kairon/kairon-ui.env
+    warn "dashboard served over plain HTTP (--ui-insecure-http): logins and tokens are clear text on the network"
+  elif [[ "$UI_TLS" == "1" ]]; then
+    if [[ "$UI_TLS_REUSE" != "1" ]]; then
+      install -d -m 0750 -o root -g kairon /etc/kairon/ui-tls
+      install -m 0644 -o root -g kairon ./ui-tls-cert.pem /etc/kairon/ui-tls/cert.pem
+      install -m 0640 -o root -g kairon ./ui-tls-key.pem /etc/kairon/ui-tls/key.pem
+    fi
+    sed -i -E '/^KAIRON_UI_INSECURE_HTTP=/d' /etc/kairon/kairon-ui.env
+    set_env_key /etc/kairon/kairon-ui.env KAIRON_UI_TLS_CERT /etc/kairon/ui-tls/cert.pem
+    set_env_key /etc/kairon/kairon-ui.env KAIRON_UI_TLS_KEY /etc/kairon/ui-tls/key.pem
+    if [[ "$UI_TLS_REUSE" == "1" ]]; then
+      ok "dashboard TLS: existing certificate in /etc/kairon/ui-tls/ kept and wired into kairon-ui.env"
+    else
+      ok "dashboard TLS: certificate installed to /etc/kairon/ui-tls/ and wired into kairon-ui.env"
+    fi
+  fi
 fi
 
 systemctl daemon-reload
@@ -1209,9 +1413,15 @@ fi
 systemctl status kairon-node.service --no-pager -l 2>&1 | tail -n 15 || true
 INSTALL_EOF
 
-  local scp_files=("$build_dir/kairon-node" "$build_dir/kaironctl" "$REPO_ROOT/systemd/kairon-node.service")
+  # With --remote-build the binaries and web assets are produced on the host
+  # (into the staging directory), so only units and config travel from here.
+  local scp_files=("$REPO_ROOT/systemd/kairon-node.service")
+  if [[ "$REMOTE_BUILD" != "1" ]]; then
+    scp_files+=("$build_dir/kairon-node" "$build_dir/kaironctl")
+  fi
   if [[ "$WITH_CONTROLLER" == "1" ]]; then
-    scp_files+=("$build_dir/kairon-controller" "$REPO_ROOT/systemd/kairon-controller.service")
+    [[ "$REMOTE_BUILD" == "1" ]] || scp_files+=("$build_dir/kairon-controller")
+    scp_files+=("$REPO_ROOT/systemd/kairon-controller.service")
   fi
   if [[ "$CPU_PINNING" == "1" ]]; then
     scp_files+=("$REPO_ROOT/systemd/kairon-cpustate.service" "$REPO_ROOT/systemd/kairon-cpustate.path")
@@ -1226,17 +1436,24 @@ INSTALL_EOF
     scp_files+=("$local_stage/console-tls-ca.pem" "$local_stage/console-tls-cert.pem" "$local_stage/console-tls-key.pem")
   fi
   if [[ "$WITH_MIGRATION_ADAPTER_STUB" == "1" ]]; then
-    scp_files+=("$build_dir/kairon-migration-adapter-stub" "$REPO_ROOT/systemd/kairon-migration-adapter-stub.service")
+    [[ "$REMOTE_BUILD" == "1" ]] || scp_files+=("$build_dir/kairon-migration-adapter-stub")
+    scp_files+=("$REPO_ROOT/systemd/kairon-migration-adapter-stub.service")
   fi
   if [[ "$WITH_UI" == "1" ]]; then
-    scp_files+=("$build_dir/kairon-ui" "$REPO_ROOT/systemd/kairon-ui.service")
-    # bsdtar on macOS otherwise stores com.apple.* xattrs that GNU tar on the
-    # remote host warns about once per file.
-    tar_extra=()
-    # Probe by trying it: bsdtar's --help does not list --no-xattrs even though it accepts it.
-    if tar --no-xattrs -cf /dev/null -T /dev/null 2>/dev/null; then tar_extra+=(--no-xattrs); fi
-    COPYFILE_DISABLE=1 tar "${tar_extra[@]}" -C "$REPO_ROOT/web/dist" -czf "$local_stage/kairon-ui-web.tar.gz" .
-    scp_files+=("$local_stage/kairon-ui-web.tar.gz")
+    scp_files+=("$REPO_ROOT/systemd/kairon-ui.service")
+    if [[ "$REMOTE_BUILD" != "1" ]]; then
+      scp_files+=("$build_dir/kairon-ui")
+      # bsdtar on macOS otherwise stores com.apple.* xattrs that GNU tar on the
+      # remote host warns about once per file.
+      tar_extra=()
+      # Probe by trying it: bsdtar's --help does not list --no-xattrs even though it accepts it.
+      if tar --no-xattrs -cf /dev/null -T /dev/null 2>/dev/null; then tar_extra+=(--no-xattrs); fi
+      COPYFILE_DISABLE=1 tar "${tar_extra[@]}" -C "$REPO_ROOT/web/dist" -czf "$local_stage/kairon-ui-web.tar.gz" .
+      scp_files+=("$local_stage/kairon-ui-web.tar.gz")
+    fi
+    if [[ "$UI_TLS" == "1" && "$UI_TLS_REUSE" != "1" ]]; then
+      scp_files+=("$local_stage/ui-tls-cert.pem" "$local_stage/ui-tls-key.pem")
+    fi
   fi
   if [[ "$APPLY_CRDS" == "1" ]]; then
     scp_files+=("$REPO_ROOT/deploy/crd.yaml" "$REPO_ROOT/deploy/fleet-crds.yaml")
@@ -1250,6 +1467,14 @@ INSTALL_EOF
   remote_tmp="$(ssh_cmd "$REMOTE" mktemp -d)"
   info "staging files in ${REMOTE}:${remote_tmp}"
   scp_cmd "${scp_files[@]}" "${REMOTE}:${remote_tmp}/"
+
+  if [[ "$REMOTE_BUILD" == "1" ]]; then
+    local build_targets="kairon-node kaironctl"
+    [[ "$WITH_CONTROLLER" == "1" ]] && build_targets+=" kairon-controller"
+    [[ "$WITH_MIGRATION_ADAPTER_STUB" == "1" ]] && build_targets+=" kairon-migration-adapter-stub"
+    [[ "$WITH_UI" == "1" ]] && build_targets+=" kairon-ui web"
+    remote_build "$local_stage" "$remote_tmp" "$build_targets"
+  fi
 
   if [[ "$SYNC_ONLY" == "1" ]]; then
     ok "--sync-only: files copied to ${remote_tmp} on the remote host, nothing installed or started"
@@ -1310,15 +1535,23 @@ INSTALL_EOF
     # kairon-ui's /readyz is an unconditional 200 with no actual Kubernetes
     # reachability check (unlike node/controller), so only healthz is a
     # meaningful signal here -- verify_remote's readyz line is discarded.
+    # https unless kairon-ui.env opts out of it by name.
+    ui_scheme="$(ssh_exec_privileged "$REMOTE" "${SUDO} sh -c 'grep -qE \"^KAIRON_UI_INSECURE_HTTP=true\" /etc/kairon/kairon-ui.env && echo http || echo https'" 2>/dev/null | tr -d '\r' | tail -1)"
+    [[ "$ui_scheme" == "http" ]] || ui_scheme="https"
     local ui_report ui_active ui_healthz
-    ui_report="$(verify_remote kairon-ui.service "${ui_port:-18082}")"
+    ui_report="$(verify_remote kairon-ui.service "${ui_port:-18082}" "$ui_scheme")"
     ui_active="$(sed -n '1p' <<< "$ui_report")"
     ui_healthz="$(sed -n '2p' <<< "$ui_report")"
     [[ "$ui_active" == "active" ]] && ok "kairon-ui.service is active" || err "kairon-ui.service is '$ui_active' (expected active)"
     [[ "$ui_healthz" == "200" ]] && ok "ui healthz: $ui_healthz" || warn "ui healthz: $ui_healthz"
 
     echo
-    ok "dashboard: http://${HOST_ARG}:${ui_port:-18082}"
+    ok "dashboard: ${ui_scheme}://${HOST_ARG}:${ui_port:-18082}"
+    if [[ "$ui_scheme" == "http" ]]; then
+      tip "the dashboard is plain HTTP: logins and tokens cross the network in clear text; add --ui-tls (or terminate TLS in front of it)"
+    elif [[ "$UI_TLS" == "1" && -z "$UI_TLS_CERT" ]]; then
+      tip "the certificate is self-signed, so browsers warn once; pass --ui-tls-cert/--ui-tls-key for a trusted one"
+    fi
     if [[ -n "$RESOLVED_UI_SESSION_SECRET" ]]; then
       if ssh_exec_privileged "$REMOTE" "${SUDO} grep -q '^KAIRON_UI_DEFAULT_ADMIN_PASSWORD=' /etc/kairon/kairon-ui.env" >/dev/null 2>&1; then
         ok "dashboard login: username 'admin' (password from --ui-admin-password; default Admin@321 -- change it)"
@@ -1381,6 +1614,47 @@ INSTALL_EOF
   tip "ssh ${REMOTE} 'journalctl -u kairon-node -n 30 --no-pager'"
   tip "ssh ${REMOTE} 'sudo cat /etc/kairon/kairon-node.env'"
   tip "use kaironctl on that host: export KAIRON_KUBE_URL=... ; kaironctl get"
+  if [[ "$SELF_TEST" == "1" ]]; then
+    if [[ "$NO_START" == "1" ]]; then
+      warn "--self-test skipped: --no-start left the services stopped"
+    else
+      echo
+      run_selftest_remote "$SELF_TEST_PROFILE" "${ui_port:-}" "${ui_scheme:-http}" || { err "self-test failed (see the log above)"; return 1; }
+    fi
+  else
+    tip "check it all works: ssh -t ${REMOTE} 'sudo kaironctl selftest --profile quick'  (or re-run with --self-test)"
+  fi
+}
+
+# run_selftest_remote runs 'kaironctl selftest' on the host through a
+# pseudo-terminal so its colours survive. It loads the node's env file for
+# the Kubernetes connection (a k3s kubeconfig is the fallback), and, when
+# kairon-ui was deployed, points the self-test at it for serial-console and
+# usage checks.
+run_selftest_remote() {
+  local profile="$1" ui_port="${2:-}" ui_scheme="${3:-http}" script
+  # The self-test creates and deletes Machines, which the kairon-node
+  # service account may not do, so prefer an admin kubeconfig (k3s) and fall
+  # back to the connection kairon-node itself uses.
+  script='kc=;'
+  script+=' if [ -r /etc/rancher/k3s/k3s.yaml ]; then kc="--kubeconfig /etc/rancher/k3s/k3s.yaml";'
+  script+=' elif [ -r /etc/kairon/kairon-node.env ]; then set -a; . /etc/kairon/kairon-node.env; set +a; fi;'
+  if [[ -n "$ui_port" ]]; then
+    script+=" export KAIRON_UI_URL=${ui_scheme}://127.0.0.1:${ui_port};"
+    if [[ "$ui_scheme" == "https" ]]; then
+      script+=" export KAIRON_UI_CA=/etc/kairon/ui-tls/cert.pem;"
+    fi
+    script+=' t=$(sed -n "s/^KAIRON_UI_TOKEN=//p" /etc/kairon/kairon-ui.env 2>/dev/null | head -1); [ -n "$t" ] && export KAIRON_UI_TOKEN="$t";'
+  fi
+  script+=" exec kaironctl \$kc selftest --profile ${profile}"
+  info "running kaironctl selftest --profile ${profile} on ${REMOTE}"
+  local rc=0
+  if [[ -n "${SSHPASS:-}" ]] && command -v sshpass >/dev/null 2>&1; then
+    sshpass -e ssh -tt "${SSH_OPTS[@]}" "$REMOTE" "${SUDO} sh -c '${script}'" || rc=$?
+  else
+    ssh -tt "${SSH_OPTS[@]}" "$REMOTE" "${SUDO} sh -c '${script}'" || rc=$?
+  fi
+  return "$rc"
 }
 
 case "$MODE" in

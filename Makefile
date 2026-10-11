@@ -71,6 +71,8 @@ smoke: build
 	test "$$($(CURDIR)/bin/kairon-csi-controller --version)" = "$(VERSION)"
 	$(CURDIR)/bin/kaironctl network --help >/dev/null
 	$(CURDIR)/bin/kaironctl network status --help >/dev/null
+	$(CURDIR)/bin/kaironctl selftest --help >/dev/null
+	$(CURDIR)/bin/kaironctl selftest --list | grep -q '^boot '
 
 validate:
 	python3 scripts/validate.py

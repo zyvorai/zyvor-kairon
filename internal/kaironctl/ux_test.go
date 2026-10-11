@@ -168,7 +168,7 @@ func TestUIProxyIsConfinedToTheService(t *testing.T) {
 	if !strings.HasPrefix(addr, "127.0.0.1:") {
 		t.Fatalf("proxy must bind loopback, got %s", addr)
 	}
-	const prefix = "/api/v1/namespaces/kairon-system/services/http:kairon-ui:18082/proxy"
+	const prefix = "/api/v1/namespaces/kairon-system/services/https:kairon-ui:18082/proxy"
 
 	get := func(path, host string, hdr map[string]string) (int, string) {
 		req, _ := http.NewRequest(http.MethodGet, "http://"+addr+path, nil)

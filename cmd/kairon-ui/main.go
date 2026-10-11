@@ -52,7 +52,10 @@ func run() int {
 	atlasURL := flag.String("atlas-url", os.Getenv("KAIRON_UI_ATLAS_URL"), "Zyvor Atlas storage gateway base URL (e.g. http://atlas.atlas-system:5110); enables the read-only Storage views. Empty disables them")
 	atlasTokenFile := flag.String("atlas-token-file", os.Getenv("KAIRON_UI_ATLAS_TOKEN_FILE"), "file holding the Atlas bearer token (falls back to KAIRON_UI_ATLAS_TOKEN)")
 	atlasConsoleURL := flag.String("atlas-console-url", os.Getenv("KAIRON_UI_ATLAS_CONSOLE_URL"), "optional browser URL of the Atlas console, shown as an \"Open in Atlas\" link")
-	listenAddr := flag.String("listen", env("KAIRON_UI_LISTEN", ":18082"), "HTTP listen address (serves both /api/v1/... and the built web UI)")
+	listenAddr := flag.String("listen", env("KAIRON_UI_LISTEN", ":18082"), "listen address (serves both /api/v1/... and the built web UI); HTTPS unless -insecure-http is set")
+	tlsCert := flag.String("tls-cert", env("KAIRON_UI_TLS_CERT", ""), "serve HTTPS with this PEM certificate (needs -tls-key); empty generates a self-signed certificate at startup, which changes on every restart")
+	tlsKey := flag.String("tls-key", env("KAIRON_UI_TLS_KEY", ""), "PEM private key for -tls-cert; both are reloaded when the files change")
+	insecureHTTP := flag.Bool("insecure-http", os.Getenv("KAIRON_UI_INSECURE_HTTP") == "true", "serve plain HTTP instead of HTTPS. Logins and bearer tokens then cross the network in clear text; only for a trusted loopback or a dev setup. Also KAIRON_UI_INSECURE_HTTP=true")
 	webDir := flag.String("web-dir", env("KAIRON_UI_WEB_DIR", ""), "directory containing the built web/dist SPA; empty serves API-only")
 	token := flag.String("token", os.Getenv("KAIRON_UI_TOKEN"), "static bearer token required on every /api/v1/... request (default: $KAIRON_UI_TOKEN)")
 	allowUnauthenticated := flag.Bool("allow-unauthenticated", env("KAIRON_UI_ALLOW_UNAUTHENTICATED", "false") == "true", "start without a token -- local development only, refused by default")
@@ -239,11 +242,40 @@ func run() int {
 		ImageStorePublicURL:     *imageStorePublicURL,
 		ImageStoreMaxBytes:      *imageStoreMaxBytes,
 	}
+	mode, err := resolveTransport(*tlsCert, *tlsKey, *insecureHTTP)
+	if err != nil {
+		log.Error("invalid flags", "error", err)
+		return 2
+	}
 	httpServer := &http.Server{
 		Addr:              *listenAddr,
 		Handler:           srv.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       60 * time.Second,
+	}
+	switch mode {
+	case modeCertFiles:
+		tlsCfg, watcher, err := newServerTLS(log, *tlsCert, *tlsKey)
+		if err != nil {
+			log.Error("tls", "error", err)
+			return 1
+		}
+		httpServer.TLSConfig = tlsCfg
+		go watcher.Run(ctx, 30*time.Second)
+		if leaf, err := leafFromFile(*tlsCert); err == nil {
+			srv.TLSSelfSigned = isSelfSigned(leaf)
+		}
+	case modeEphemeral:
+		tlsCfg, leaf, err := newEphemeralTLS(os.Getenv("KAIRON_UI_TLS_SANS"))
+		if err != nil {
+			log.Error("generate a self-signed certificate", "error", err)
+			return 1
+		}
+		httpServer.TLSConfig = tlsCfg
+		srv.TLSSelfSigned = isSelfSigned(leaf)
+		log.Warn("serving HTTPS with a self-signed certificate generated at startup: browsers will warn and it changes on every restart; set -tls-cert/-tls-key (or KAIRON_UI_TLS_CERT/KEY, Helm ui.tls.secretName) for a stable one")
+	case modeHTTP:
+		log.Warn("serving plain HTTP (-insecure-http): logins and bearer tokens cross the network in clear text; use only on a trusted loopback or in development")
 	}
 	go func() {
 		<-ctx.Done()
@@ -254,9 +286,16 @@ func run() int {
 	go srv.RunSharedStateSync(ctx, sharedStateSyncInterval)
 	go srv.RunMetricsSampler(ctx, 15*time.Second)
 
-	log.Info("kairon-ui listening", "address", *listenAddr, "webDir", *webDir, "authenticated", *token != "" || len(users) > 0, "loginUsers", len(users))
-	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Error("http server", "error", err)
+	log.Info("kairon-ui listening", "address", *listenAddr, "scheme", mode.scheme(), "webDir", *webDir, "authenticated", *token != "" || len(users) > 0, "loginUsers", len(users))
+	var serveErr error
+	if mode == modeHTTP {
+		serveErr = httpServer.ListenAndServe()
+	} else {
+		// The certificate comes from httpServer.TLSConfig.
+		serveErr = httpServer.ListenAndServeTLS("", "")
+	}
+	if serveErr != nil && serveErr != http.ErrServerClosed {
+		log.Error("http server", "error", serveErr)
 		return 1
 	}
 	return 0

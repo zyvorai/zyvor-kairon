@@ -118,7 +118,7 @@ func uiRequest(ctx context.Context, method, path string, body io.Reader) (*http.
 	if token := uiToken(false); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	return http.DefaultClient.Do(req)
+	return uiDo(req)
 }
 
 // postCapture reports whether the session was sent; without KAIRON_UI_URL

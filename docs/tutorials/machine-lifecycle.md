@@ -140,6 +140,7 @@ Every action above has a point-and-click equivalent — Machines/Migrations/Snap
 ```bash
 helm upgrade --install kairon ./charts/kairon -n kairon-system --set ui.enabled=true
 kubectl -n kairon-system port-forward svc/kairon-ui 18082:18082
+# then open https://localhost:18082 (a self-signed certificate; accept the warning)
 ```
 
 See the top-level README's [dashboard section](https://zyvorai.github.io/kairon/docs/getting-started#deploy-the-web-dashboard) for login setup.

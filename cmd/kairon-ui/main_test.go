@@ -19,7 +19,11 @@ import (
 	"testing"
 	"time"
 
+	"crypto/tls"
 	"golang.org/x/crypto/bcrypt"
+	"log/slog"
+	"net"
+	"net/http"
 )
 
 func TestLoadUsersParsesConfiguredAccounts(t *testing.T) {
@@ -245,5 +249,219 @@ func TestWellKnownPasswordOnlyForTheChartDefault(t *testing.T) {
 	t.Setenv("KAIRON_UI_DEFAULT_ADMIN_PASSWORD", "something-else-123")
 	if wellKnownPassword() != "" {
 		t.Fatal("a custom password must not be reported")
+	}
+}
+
+func TestResolveTransport(t *testing.T) {
+	cases := []struct {
+		name         string
+		cert, key    string
+		insecureHTTP bool
+		want         transportMode
+		wantErr      bool
+	}{
+		{"default is HTTPS with a generated certificate", "", "", false, modeEphemeral, false},
+		{"certificate files", "/c.pem", "/k.pem", false, modeCertFiles, false},
+		{"explicit opt-out", "", "", true, modeHTTP, false},
+		{"cert without key", "/c.pem", "", false, 0, true},
+		{"key without cert", "", "/k.pem", false, 0, true},
+		{"certificate contradicts opt-out", "/c.pem", "/k.pem", true, 0, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := resolveTransport(c.cert, c.key, c.insecureHTTP)
+			if (err != nil) != c.wantErr || (!c.wantErr && got != c.want) {
+				t.Errorf("resolveTransport(%q,%q,%v) = %v, %v; want %v, err=%v", c.cert, c.key, c.insecureHTTP, got, err, c.want, c.wantErr)
+			}
+		})
+	}
+	if modeEphemeral.scheme() != "https" || modeCertFiles.scheme() != "https" || modeHTTP.scheme() != "http" {
+		t.Error("only -insecure-http may report the http scheme")
+	}
+}
+
+func TestEphemeralTLSServesHTTPSAndIsSelfSigned(t *testing.T) {
+	cfg, leaf, err := newEphemeralTLS("kairon.example.test,10.9.8.7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isSelfSigned(leaf) {
+		t.Error("the generated certificate must report itself as self-signed (images are then marked insecureSkipTLSVerify)")
+	}
+	if cfg.MinVersion < tls.VersionTLS12 {
+		t.Errorf("MinVersion = %x, want TLS 1.2+", cfg.MinVersion)
+	}
+	var hasDNS, hasIP, hasLoopback bool
+	for _, n := range leaf.DNSNames {
+		hasDNS = hasDNS || n == "kairon.example.test"
+	}
+	for _, ip := range leaf.IPAddresses {
+		hasIP = hasIP || ip.String() == "10.9.8.7"
+		hasLoopback = hasLoopback || ip.String() == "127.0.0.1"
+	}
+	if !hasDNS || !hasIP || !hasLoopback {
+		t.Errorf("SANs dns=%v ips=%v; want the extras and loopback", leaf.DNSNames, leaf.IPAddresses)
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &http.Server{
+		Handler:           http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, "ok") }),
+		TLSConfig:         cfg,
+		ReadHeaderTimeout: time.Second,
+	}
+	go func() { _ = srv.ServeTLS(ln, "", "") }()
+	defer func() { _ = srv.Close() }()
+
+	roots := x509.NewCertPool()
+	roots.AddCert(leaf)
+	client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots}}}
+	resp, err := client.Get("https://" + ln.Addr().String())
+	if err != nil {
+		t.Fatalf("a client that trusts the certificate must connect: %v", err)
+	}
+	_ = resp.Body.Close()
+
+	if r, err := http.Get("http://" + ln.Addr().String()); err == nil {
+		_ = r.Body.Close()
+		if r.StatusCode < 400 {
+			t.Errorf("plain HTTP on the TLS port must not succeed, got %d", r.StatusCode)
+		}
+	}
+}
+
+func TestIsSelfSignedDistinguishesAnIssuedCertificate(t *testing.T) {
+	_, leaf, err := newEphemeralTLS("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isSelfSigned(leaf) {
+		t.Fatal("ephemeral certificate should be self-signed")
+	}
+	if isSelfSigned(nil) {
+		t.Error("nil is not self-signed")
+	}
+}
+
+func TestLeafFromFileReadsTheFirstCertificate(t *testing.T) {
+	certPath, _, want := writeServerCert(t)
+	got, err := leafFromFile(certPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Equal(want) {
+		t.Error("leafFromFile returned a different certificate")
+	}
+	if _, err := leafFromFile(filepath.Join(t.TempDir(), "missing.pem")); err == nil {
+		t.Error("a missing file must be an error")
+	}
+}
+
+// writeServerCert writes a self-signed ECDSA leaf for 127.0.0.1 and returns
+// the cert and key paths plus the parsed certificate for use as a root.
+func writeServerCert(t *testing.T) (certPath, keyPath string, cert *x509.Certificate) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "kairon-ui"},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
+		KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses: []net.IP{net.ParseIP("127.0.0.1")},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	certPath, keyPath = filepath.Join(dir, "cert.pem"), filepath.Join(dir, "key.pem")
+	if err := os.WriteFile(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return certPath, keyPath, parsed
+}
+
+func TestNewServerTLSServesHTTPSAndRefusesOldTLS(t *testing.T) {
+	certPath, keyPath, leaf := writeServerCert(t)
+	cfg, _, err := newServerTLS(slog.New(slog.NewTextHandler(io.Discard, nil)), certPath, keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A real listener: httptest's StartTLS injects its own certificate when
+	// Certificates is empty, which would hide the GetCertificate path.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &http.Server{
+		Handler:           http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, "ok") }),
+		TLSConfig:         cfg,
+		ReadHeaderTimeout: time.Second,
+	}
+	go func() { _ = srv.ServeTLS(ln, "", "") }()
+	defer func() { _ = srv.Close() }()
+	url := "https://" + ln.Addr().String()
+
+	roots := x509.NewCertPool()
+	roots.AddCert(leaf)
+	client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots}}}
+	resp, err := client.Get(url)
+	if err != nil {
+		t.Fatalf("HTTPS request failed: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if string(body) != "ok" || resp.TLS == nil || resp.TLS.Version < tls.VersionTLS12 {
+		t.Errorf("body=%q tls=%+v", body, resp.TLS)
+	}
+
+	old := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, MaxVersion: tls.VersionTLS11}}}
+	if _, err := old.Get(url); err == nil {
+		t.Error("a TLS 1.1 client must be refused")
+	}
+}
+
+func TestNewServerTLSFailsOnABadPair(t *testing.T) {
+	certPath, _, _ := writeServerCert(t)
+	if _, _, err := newServerTLS(slog.New(slog.NewTextHandler(io.Discard, nil)), certPath, "/does/not/exist.pem"); err == nil {
+		t.Error("a missing key must be a startup failure")
+	}
+}
+
+func TestEphemeralSANsAreDeduplicated(t *testing.T) {
+	dns, ips := ephemeralSANs("localhost,127.0.0.1,::1,extra.test,extra.test")
+	count := func(want string) int {
+		n := 0
+		for _, d := range dns {
+			if d == want {
+				n++
+			}
+		}
+		for _, ip := range ips {
+			if ip.String() == want {
+				n++
+			}
+		}
+		return n
+	}
+	for _, name := range []string{"localhost", "127.0.0.1", "::1", "extra.test"} {
+		if got := count(name); got != 1 {
+			t.Errorf("%s appears %d times, want 1 (dns=%v ips=%v)", name, got, dns, ips)
+		}
 	}
 }

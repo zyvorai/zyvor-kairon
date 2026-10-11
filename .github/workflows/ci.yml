@@ -129,6 +129,57 @@ jobs:
           print('helm render YAML: OK (kairon-ui legacy token)')
           PY
 
+      - name: Helm render -- kairon-ui serves HTTPS by default
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import subprocess, yaml
+
+          def render(*args):
+              out = subprocess.run(
+                  ["helm", "template", "kairon", "charts/kairon", "--namespace", "kairon-system", "--set", "ui.enabled=true", *args],
+                  capture_output=True, text=True,
+              )
+              return out
+
+          def ui(docs):
+              dep = next(d for d in docs if d.get("kind") == "Deployment" and d["metadata"]["name"] == "kairon-ui")
+              c = dep["spec"]["template"]["spec"]["containers"][0]
+              env = {e["name"]: e.get("value") for e in c["env"]}
+              svc = next(d for d in docs if d.get("kind") == "Service" and d["metadata"]["name"] == "kairon-ui")
+              return c, env, svc
+
+          # Default: HTTPS probes, an https port and no opt-out in the environment.
+          out = render()
+          assert out.returncode == 0, out.stderr
+          c, env, svc = ui([d for d in yaml.safe_load_all(out.stdout) if d])
+          assert c["ports"][0]["name"] == "https", c["ports"]
+          for probe in ("readinessProbe", "livenessProbe"):
+              assert c[probe]["httpGet"]["scheme"] == "HTTPS", (probe, c[probe])
+          assert "KAIRON_UI_INSECURE_HTTP" not in env
+          assert svc["spec"]["ports"][0]["name"] == "https"
+
+          # A certificate Secret is mounted and wired in.
+          c, env, _ = ui([d for d in yaml.safe_load_all(render("--set", "ui.tls.secretName=dash-tls").stdout) if d])
+          assert env["KAIRON_UI_TLS_CERT"] == "/etc/kairon/ui-tls/tls.crt"
+          assert env["KAIRON_UI_TLS_KEY"] == "/etc/kairon/ui-tls/tls.key"
+
+          # The opt-out is explicit and switches probes and port name together.
+          c, env, _ = ui([d for d in yaml.safe_load_all(render("--set", "ui.insecureHttp=true").stdout) if d])
+          assert env["KAIRON_UI_INSECURE_HTTP"] == "true"
+          assert c["readinessProbe"]["httpGet"]["scheme"] == "HTTP" and c["ports"][0]["name"] == "http"
+
+          # A certificate and the opt-out contradict each other: the render must fail.
+          bad = render("--set", "ui.insecureHttp=true", "--set", "ui.tls.secretName=dash-tls")
+          assert bad.returncode != 0 and "mutually exclusive" in bad.stderr, bad.stderr
+
+          # Ingress: HTTPS backend annotation by default, absent with the opt-out.
+          ing = [d for d in yaml.safe_load_all(render("--set", "ui.ingress.enabled=true", "--set", "ui.ingress.host=d.example.com").stdout) if d]
+          ingress = next(d for d in ing if d.get("kind") == "Ingress")
+          assert ingress["metadata"]["annotations"]["nginx.ingress.kubernetes.io/backend-protocol"] == "HTTPS"
+          print("helm render YAML: OK (kairon-ui HTTPS by default)")
+          PY
+
       - name: Helm render -- Cilium flags
         run: |
           helm template kairon charts/kairon --namespace kairon-system \

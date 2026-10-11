@@ -1,0 +1,659 @@
+// Copyright 2026 Zyvor · https://zyvor.dev
+// SPDX-License-Identifier: Apache-2.0
+
+package selftest
+
+import (
+	"context"
+	"errors"
+	"io"
+	"regexp"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/zyvorai/kairon/internal/kube"
+	"github.com/zyvorai/kairon/internal/model"
+)
+
+// fakeKube simulates just enough of the controller: a created Machine goes
+// Running, powerState patches move the phase, and a cpu patch is applied.
+type fakeKube struct {
+	mu        sync.Mutex
+	machines  map[string]*model.Machine
+	failBoot  bool
+	nodes     []model.Node
+	migrate   bool
+	deleted   []string
+	createErr error
+	// pendingForever leaves created Machines in phase Pending.
+	pendingForever bool
+
+	// snapshot support
+	snapTarget    kube.SnapshotTarget
+	pvcs          map[string]bool
+	snapshots     map[string]model.MachineSnapshot
+	restores      map[string]model.MachineSnapshotRestore
+	snapFails     bool
+	restoreFail   bool
+	pvcNeverBinds bool
+	// createdSpecs records every Machine passed to CreateMachine.
+	createdSpecs []model.Machine
+}
+
+func newFakeKube() *fakeKube {
+	ready := []model.NodeCondition{{Type: "Ready", Status: "True"}}
+	node := func(name string) model.Node {
+		return model.Node{
+			Metadata: model.ObjectMeta{Name: name, Labels: map[string]string{model.CapableLabel: "true", "kubernetes.io/arch": "amd64"}},
+			Status:   model.NodeStatus{Conditions: ready, Addresses: []model.NodeAddress{{Type: "InternalIP", Address: "10.0.0." + name[len(name)-1:]}}},
+		}
+	}
+	return &fakeKube{machines: map[string]*model.Machine{}, nodes: []model.Node{node("n1")},
+		pvcs: map[string]bool{}, snapshots: map[string]model.MachineSnapshot{}, restores: map[string]model.MachineSnapshotRestore{}}
+}
+
+func (f *fakeKube) CreateMachine(_ context.Context, ns string, m model.Machine) (model.Machine, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.createErr != nil {
+		return model.Machine{}, f.createErr
+	}
+	m.Metadata.Namespace = ns
+	f.createdSpecs = append(f.createdSpecs, m)
+	m.Status.NodeName = "n1"
+	m.Status.Phase = "Running"
+	if f.failBoot {
+		m.Status.Phase, m.Status.Message = "Failed", "image digest mismatch"
+	}
+	if f.pendingForever {
+		m.Status.Phase, m.Status.Message = "Pending", "no Ready Kairon-capable nodes match placement constraints"
+	}
+	m.Status.AppliedVCPUs = 1
+	m.Status.ResourceUsage = &model.ResourceUsage{CPUPercent: 3, MemoryBytes: 64 << 20}
+	m.Status.Conditions = []model.Condition{{Type: "Ready", Status: "True"}}
+	f.machines[m.Metadata.Name] = &m
+	return m, nil
+}
+
+func (f *fakeKube) GetMachine(_ context.Context, _, name string) (model.Machine, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	m, ok := f.machines[name]
+	if !ok {
+		return model.Machine{}, &kube.APIError{StatusCode: 404}
+	}
+	return *m, nil
+}
+
+func (f *fakeKube) DeleteMachine(_ context.Context, _, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.machines, name)
+	f.deleted = append(f.deleted, name)
+	return nil
+}
+
+func (f *fakeKube) PatchMachine(_ context.Context, _, name string, patch map[string]any) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	m, ok := f.machines[name]
+	if !ok {
+		return &kube.APIError{StatusCode: 404}
+	}
+	spec, _ := patch["spec"].(map[string]any)
+	if ps, ok := spec["powerState"].(string); ok {
+		m.Status.Phase = ps
+	}
+	if res, ok := spec["resources"].(map[string]any); ok && res["cpu"] == "2" {
+		m.Status.AppliedVCPUs = 2
+	}
+	return nil
+}
+
+func (f *fakeKube) ListNodes(context.Context) ([]model.Node, error) { return f.nodes, nil }
+func (f *fakeKube) ListEventsFor(context.Context, string, string, string) ([]model.Event, error) {
+	return []model.Event{{Reason: "Scheduled", Message: "placed", Type: "Normal"}}, nil
+}
+func (f *fakeKube) CreateMachineMigration(_ context.Context, _ string, m model.MachineMigration) (model.MachineMigration, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.migrate = true
+	if vm, ok := f.machines[m.Spec.MachineName]; ok {
+		vm.Status.NodeName = m.Spec.TargetNode
+	}
+	return m, nil
+}
+func (f *fakeKube) GetMachineMigration(context.Context, string, string) (model.MachineMigration, error) {
+	return model.MachineMigration{Status: model.MachineMigrationStatus{Phase: "Succeeded"}}, nil
+}
+
+type recorder struct {
+	logs    []string
+	results []Result
+}
+
+func (r *recorder) Log(l Level, m string)      { r.logs = append(r.logs, string(l)+": "+m) }
+func (r *recorder) StepStart(id, title string) {}
+func (r *recorder) StepDone(res Result)        { r.results = append(r.results, res) }
+func (r *recorder) status(id string) Status {
+	for _, x := range r.results {
+		if x.ID == id {
+			return x.Status
+		}
+	}
+	return ""
+}
+
+func baseEnv(f *fakeKube) Env {
+	return Env{
+		Kube: f, Namespace: "default", PollInterval: time.Millisecond, BootTimeout: time.Second, StepTimeout: time.Second,
+		RunID: "t1",
+		ControlPlane: func(context.Context) []Check {
+			return []Check{{Name: "controller", Status: Pass, Detail: "ready"}}
+		},
+		SerialLog: func(context.Context, string, string) (string, error) {
+			return "booting\ncirros login: ", nil
+		},
+		Dial: func(context.Context, string) (string, error) { return "SSH-2.0-dropbear_2022.83\r\n", nil },
+	}
+}
+
+func TestStandardProfileAllPassAndCleansUp(t *testing.T) {
+	f := newFakeKube()
+	rec := &recorder{}
+	res := Run(context.Background(), baseEnv(f), rec, Options{Profile: ProfileStandard})
+
+	for _, id := range []string{"control-plane", "boot", "console-log", "power", "network", "pause-resume", "hotplug-cpu", "observability"} {
+		if got := rec.status(id); got != Pass {
+			t.Errorf("%s = %q, want pass; logs:\n%s", id, got, strings.Join(rec.logs, "\n"))
+		}
+	}
+	if s := Summarize(res); s.Fail != 0 {
+		t.Errorf("summary = %+v", s)
+	}
+	if ExitCode(res, false) != 0 {
+		t.Error("exit code should be 0")
+	}
+	if len(f.machines) != 0 {
+		t.Errorf("machines left behind: %v", f.machines)
+	}
+}
+
+func TestBootFailureSkipsDependentsAndCleansUp(t *testing.T) {
+	f := newFakeKube()
+	f.failBoot = true
+	rec := &recorder{}
+	res := Run(context.Background(), baseEnv(f), rec, Options{Profile: ProfileStandard})
+
+	if rec.status("boot") != Fail {
+		t.Fatalf("boot = %q", rec.status("boot"))
+	}
+	for _, id := range []string{"console-log", "power", "network", "pause-resume", "hotplug-cpu", "observability"} {
+		if rec.status(id) != Skip {
+			t.Errorf("%s = %q, want skip after boot failure", id, rec.status(id))
+		}
+	}
+	if ExitCode(res, false) != 1 {
+		t.Error("exit code should be 1")
+	}
+	var boot Result
+	for _, r := range res {
+		if r.ID == "boot" {
+			boot = r
+		}
+	}
+	if !strings.Contains(boot.Reason, "image digest mismatch") {
+		t.Errorf("boot reason lost the controller message: %q", boot.Reason)
+	}
+	if len(f.machines) != 0 {
+		t.Errorf("machines left behind: %v", f.machines)
+	}
+}
+
+func TestCancelledRunStillCleansUp(t *testing.T) {
+	f := newFakeKube()
+	ctx, cancel := context.WithCancel(context.Background())
+	env := baseEnv(f)
+	env.SerialLog = func(context.Context, string, string) (string, error) {
+		cancel() // Ctrl-C arrives while waiting for the login prompt
+		return "", nil
+	}
+	rec := &recorder{}
+	Run(ctx, env, rec, Options{Profile: ProfileQuick})
+	if len(f.machines) != 0 {
+		t.Errorf("machines left behind after cancel: %v", f.machines)
+	}
+	if len(f.deleted) == 0 {
+		t.Error("expected the test Machine to be deleted")
+	}
+}
+
+func TestKeepLeavesMachine(t *testing.T) {
+	f := newFakeKube()
+	env := baseEnv(f)
+	env.Keep = true
+	Run(context.Background(), env, &recorder{}, Options{Profile: ProfileQuick})
+	if len(f.machines) != 1 {
+		t.Errorf("--keep should leave one Machine, have %d", len(f.machines))
+	}
+}
+
+func TestNetworkSkipsWhenUnreachable(t *testing.T) {
+	f := newFakeKube()
+	env := baseEnv(f)
+	env.Dial = func(context.Context, string) (string, error) { return "", errors.New("i/o timeout") }
+	rec := &recorder{}
+	Run(context.Background(), env, rec, Options{Profile: ProfileStandard, Only: []string{"control-plane", "boot", "network"}})
+	if rec.status("network") != Skip {
+		t.Fatalf("network = %q, want skip", rec.status("network"))
+	}
+	if rec.status("boot") != Pass {
+		t.Errorf("boot = %q", rec.status("boot"))
+	}
+}
+
+func TestNoVMRunsOnlyControlPlane(t *testing.T) {
+	f := newFakeKube()
+	env := baseEnv(f)
+	env.NoVM = true
+	rec := &recorder{}
+	Run(context.Background(), env, rec, Options{Profile: ProfileStandard})
+	if rec.status("control-plane") != Pass || rec.status("boot") != Skip {
+		t.Errorf("control-plane=%q boot=%q", rec.status("control-plane"), rec.status("boot"))
+	}
+	if len(f.machines) != 0 {
+		t.Error("--no-vm must not create Machines")
+	}
+}
+
+func TestOnlySkipAndProfileFiltering(t *testing.T) {
+	f := newFakeKube()
+	rec := &recorder{}
+	Run(context.Background(), baseEnv(f), rec, Options{Profile: ProfileQuick, Skip: []string{"console-log"}})
+	if rec.status("console-log") != "" {
+		t.Error("console-log should be filtered out by --skip")
+	}
+	if rec.status("network") != "" {
+		t.Error("network is a standard-profile scenario and must not run in quick")
+	}
+	if rec.status("power") != Pass {
+		t.Errorf("power = %q", rec.status("power"))
+	}
+}
+
+func TestFullProfileSkipsWithReasons(t *testing.T) {
+	f := newFakeKube() // one node: no migration; no bridge/pvc
+	rec := &recorder{}
+	res := Run(context.Background(), baseEnv(f), rec, Options{Profile: ProfileFull})
+	reasons := map[string]string{}
+	for _, r := range res {
+		reasons[r.ID] = r.Reason
+	}
+	for id, want := range map[string]string{
+		"nic-hotplug":    "--bridge",
+		"disk-hotplug":   "--pvc",
+		"cold-migration": "two capable",
+	} {
+		if rec.status(id) != Skip || !strings.Contains(reasons[id], want) {
+			t.Errorf("%s: status %q reason %q, want skip mentioning %q", id, rec.status(id), reasons[id], want)
+		}
+	}
+}
+
+func TestColdMigrationWithTwoNodes(t *testing.T) {
+	f := newFakeKube()
+	n2 := f.nodes[0]
+	n2.Metadata = model.ObjectMeta{Name: "n2", Labels: f.nodes[0].Metadata.Labels}
+	f.nodes = append(f.nodes, n2)
+	rec := &recorder{}
+	Run(context.Background(), baseEnv(f), rec, Options{Profile: ProfileFull, Only: []string{"control-plane", "boot", "cold-migration"}})
+	if rec.status("cold-migration") != Pass || !f.migrate {
+		t.Errorf("cold-migration = %q (migrate=%v)\n%s", rec.status("cold-migration"), f.migrate, strings.Join(rec.logs, "\n"))
+	}
+}
+
+func TestPinnedCirrosDigestsAreWellFormed(t *testing.T) {
+	re := regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+	for arch, p := range cirros {
+		if !re.MatchString(p.Digest) {
+			t.Errorf("%s digest %q is not sha256:<64 hex>", arch, p.Digest)
+		}
+		if !strings.HasPrefix(p.URL, "https://download.cirros-cloud.net/") {
+			t.Errorf("%s URL %q", arch, p.URL)
+		}
+	}
+}
+
+func TestParseProfileAndUnknownIDs(t *testing.T) {
+	if p, err := ParseProfile(""); err != nil || p != ProfileStandard {
+		t.Errorf("default profile = %q, %v", p, err)
+	}
+	if _, err := ParseProfile("huge"); err == nil {
+		t.Error("want error for unknown profile")
+	}
+	if bad := UnknownIDs([]string{"boot", "nope"}); len(bad) != 1 || bad[0] != "nope" {
+		t.Errorf("UnknownIDs = %v", bad)
+	}
+}
+
+func TestBootRunsEvenWhenControlPlaneFails(t *testing.T) {
+	f := newFakeKube()
+	env := baseEnv(f)
+	env.ControlPlane = func(context.Context) []Check {
+		return []Check{{Name: "webhook", Status: Fail, Detail: "missing", Hint: "install it"}}
+	}
+	rec := &recorder{}
+	Run(context.Background(), env, rec, Options{Profile: ProfileQuick})
+	if rec.status("control-plane") != Fail {
+		t.Fatalf("control-plane = %q", rec.status("control-plane"))
+	}
+	if rec.status("boot") != Pass {
+		t.Errorf("boot = %q, want pass independent of control-plane", rec.status("boot"))
+	}
+}
+
+func TestNoCapableNodeFailsFastInsteadOfWaitingFullBootTimeout(t *testing.T) {
+	f := newFakeKube()
+	f.nodes[0].Metadata.Labels = nil
+	f.pendingForever = true
+	env := baseEnv(f)
+	env.BootTimeout = 10 * time.Minute // would hang the test if the fast path were missing
+	clock := time.Now()
+	env.Now = func() time.Time { clock = clock.Add(5 * time.Second); return clock } // fake time runs ahead
+	rec := &recorder{}
+	res := Run(context.Background(), env, rec, Options{Profile: ProfileQuick, Only: []string{"boot"}})
+	if len(res) != 1 || res[0].Status != Fail {
+		t.Fatalf("results = %+v", res)
+	}
+	if !strings.Contains(res[0].Reason, "timed out after 45s") {
+		t.Errorf("reason %q should show the 45s fail-fast window", res[0].Reason)
+	}
+	if !strings.Contains(res[0].Hint, model.CapableLabel) {
+		t.Errorf("hint %q should mention the capable label", res[0].Hint)
+	}
+}
+
+func TestBootFailureHintsNameTheFix(t *testing.T) {
+	if h := bootFailureHint("x is Error: this node has no image cache configured (-image-cache-dir) -- spec.image.source cannot be used"); !strings.Contains(h, "--image-cache-dir") {
+		t.Errorf("hint = %q", h)
+	}
+	if h := bootFailureHint("image digest mismatch"); !strings.Contains(h, "--image-digest") {
+		t.Errorf("hint = %q", h)
+	}
+	if h := bootFailureHint("something unrelated"); h != "" {
+		t.Errorf("unrelated message got hint %q", h)
+	}
+}
+
+func TestBootAcceptsDHCPLeaseBeforeLoginPrompt(t *testing.T) {
+	f := newFakeKube()
+	env := baseEnv(f)
+	env.SerialLog = func(context.Context, string, string) (string, error) {
+		// What CirrOS prints while cloud-init is still polling for metadata.
+		return "eth0: offered 10.0.2.15 from 10.0.2.2\neth0: leased 10.0.2.15 for 86400 seconds\nchecking http://169.254.169.254/2009-04-04/instance-id\nfailed 1/20: up 9.59. request failed\n", nil
+	}
+	rec := &recorder{}
+	Run(context.Background(), env, rec, Options{Profile: ProfileQuick, Only: []string{"boot"}})
+	if rec.status("boot") != Pass {
+		t.Fatalf("boot = %q\n%s", rec.status("boot"), strings.Join(rec.logs, "\n"))
+	}
+	if !strings.Contains(strings.Join(rec.logs, "\n"), "leased 10.0.2.15") {
+		t.Errorf("log should say which marker proved the boot:\n%s", strings.Join(rec.logs, "\n"))
+	}
+}
+
+func TestBootMarker(t *testing.T) {
+	cases := map[string]string{
+		"":                                   "",
+		"booting kernel":                     "",
+		"cirros login: ":                     "login prompt",
+		"eth0: leased 10.0.2.15 for 86400 s": "10.0.2.15",
+	}
+	for in, want := range cases {
+		got := bootMarker(in)
+		if want == "" && got != "" || want != "" && !strings.Contains(got, want) {
+			t.Errorf("bootMarker(%q) = %q, want it to contain %q", in, got, want)
+		}
+	}
+}
+
+func TestNetworkExplainsAcceptedThenClosedConnection(t *testing.T) {
+	f := newFakeKube()
+	env := baseEnv(f)
+	env.Dial = func(context.Context, string) (string, error) { return "", io.EOF }
+	rec := &recorder{}
+	res := Run(context.Background(), env, rec, Options{Profile: ProfileStandard, Only: []string{"control-plane", "boot", "network"}})
+	var net Result
+	for _, r := range res {
+		if r.ID == "network" {
+			net = r
+		}
+	}
+	if net.Status != Skip || !strings.Contains(net.Reason, "accepted the connection") {
+		t.Errorf("network = %+v", net)
+	}
+}
+
+func (f *fakeKube) ListVolumeSnapshotClasses(context.Context) ([]kube.VolumeSnapshotClass, error) {
+	if f.snapTarget.SnapshotClass == "" {
+		return nil, nil
+	}
+	return []kube.VolumeSnapshotClass{{Name: f.snapTarget.SnapshotClass, Driver: f.snapTarget.Driver}}, nil
+}
+func (f *fakeKube) ListStorageClasses(context.Context) ([]kube.StorageClass, error) {
+	if f.snapTarget.StorageClass == "" {
+		return nil, nil
+	}
+	return []kube.StorageClass{{Name: f.snapTarget.StorageClass, Provisioner: f.snapTarget.Driver, Immediate: f.snapTarget.ImmediateBinding}}, nil
+}
+func (f *fakeKube) CreatePersistentVolumeClaim(_ context.Context, _ string, p model.PersistentVolumeClaim) (model.PersistentVolumeClaim, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.pvcs[p.Metadata.Name] = true
+	return p, nil
+}
+func (f *fakeKube) GetPersistentVolumeClaim(_ context.Context, _, name string) (model.PersistentVolumeClaim, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.pvcs[name] {
+		return model.PersistentVolumeClaim{}, &kube.APIError{StatusCode: 404}
+	}
+	phase := "Bound"
+	if f.pvcNeverBinds {
+		phase = "Pending"
+	}
+	return model.PersistentVolumeClaim{Metadata: model.ObjectMeta{Name: name}, Status: model.PersistentVolumeClaimStatus{Phase: phase}}, nil
+}
+func (f *fakeKube) DeletePersistentVolumeClaim(_ context.Context, _, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.pvcs[name] {
+		return &kube.APIError{StatusCode: 404}
+	}
+	delete(f.pvcs, name)
+	return nil
+}
+func (f *fakeKube) CreateMachineSnapshot(_ context.Context, _ string, sn model.MachineSnapshot) (model.MachineSnapshot, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	sn.Status = model.MachineSnapshotStatus{Phase: "Succeeded", ReadyToUse: true,
+		VolumeSnapshots: []model.VolumeSnapshotReference{{VolumeName: "root", VolumeSnapshotName: sn.Metadata.Name + "-root", ReadyToUse: true}}}
+	if f.snapFails {
+		sn.Status = model.MachineSnapshotStatus{Phase: "Failed", Message: "VolumeSnapshot creation failed"}
+	}
+	f.snapshots[sn.Metadata.Name] = sn
+	return sn, nil
+}
+func (f *fakeKube) GetMachineSnapshot(_ context.Context, _, name string) (model.MachineSnapshot, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	sn, ok := f.snapshots[name]
+	if !ok {
+		return model.MachineSnapshot{}, &kube.APIError{StatusCode: 404}
+	}
+	return sn, nil
+}
+func (f *fakeKube) DeleteMachineSnapshot(_ context.Context, _, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.snapshots, name)
+	return nil
+}
+func (f *fakeKube) CreateMachineSnapshotRestore(_ context.Context, _ string, r model.MachineSnapshotRestore) (model.MachineSnapshotRestore, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	r.Status = model.MachineSnapshotRestoreStatus{Phase: "Succeeded", RestoredClaimName: r.Spec.TargetClaimName}
+	if f.restoreFail {
+		r.Status = model.MachineSnapshotRestoreStatus{Phase: "Failed", Message: "PVC provisioning failed"}
+	} else {
+		f.pvcs[r.Spec.TargetClaimName] = true // the controller creates the claim
+	}
+	f.restores[r.Metadata.Name] = r
+	return r, nil
+}
+func (f *fakeKube) GetMachineSnapshotRestore(_ context.Context, _, name string) (model.MachineSnapshotRestore, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	r, ok := f.restores[name]
+	if !ok {
+		return model.MachineSnapshotRestore{}, &kube.APIError{StatusCode: 404}
+	}
+	return r, nil
+}
+func (f *fakeKube) DeleteMachineSnapshotRestore(_ context.Context, _, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.restores, name)
+	return nil
+}
+
+func withSnapshots(f *fakeKube) {
+	f.snapTarget = kube.SnapshotTarget{SnapshotClass: "csi-snap", StorageClass: "csi-sc", Driver: "hostpath.csi.k8s.io", ImmediateBinding: true}
+}
+
+func TestSnapshotRestorePassesAndCleansEverything(t *testing.T) {
+	f := newFakeKube()
+	withSnapshots(f)
+	rec := &recorder{}
+	Run(context.Background(), baseEnv(f), rec, Options{Profile: ProfileFull, Only: []string{"control-plane", "boot", "snapshot-restore"}})
+	if rec.status("snapshot-restore") != Pass {
+		t.Fatalf("snapshot-restore = %q\n%s", rec.status("snapshot-restore"), strings.Join(rec.logs, "\n"))
+	}
+	if len(f.machines) != 0 || len(f.pvcs) != 0 || len(f.snapshots) != 0 || len(f.restores) != 0 {
+		t.Errorf("left behind: machines=%d pvcs=%v snapshots=%d restores=%d", len(f.machines), f.pvcs, len(f.snapshots), len(f.restores))
+	}
+}
+
+func TestSnapshotRestoreFailuresAreReportedAndStillCleanUp(t *testing.T) {
+	for name, set := range map[string]func(*fakeKube){
+		"snapshot fails": func(f *fakeKube) { f.snapFails = true },
+		"restore fails":  func(f *fakeKube) { f.restoreFail = true },
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFakeKube()
+			withSnapshots(f)
+			set(f)
+			rec := &recorder{}
+			res := Run(context.Background(), baseEnv(f), rec, Options{Profile: ProfileFull, Only: []string{"control-plane", "boot", "snapshot-restore"}})
+			var r Result
+			for _, x := range res {
+				if x.ID == "snapshot-restore" {
+					r = x
+				}
+			}
+			if r.Status != Fail || r.Hint == "" {
+				t.Errorf("result = %+v", r)
+			}
+			if len(f.machines) != 0 || len(f.pvcs) != 0 || len(f.snapshots) != 0 || len(f.restores) != 0 {
+				t.Errorf("left behind: machines=%d pvcs=%v snapshots=%d restores=%d", len(f.machines), f.pvcs, len(f.snapshots), len(f.restores))
+			}
+		})
+	}
+}
+
+func TestSnapshotRestoreSkipsWithReasons(t *testing.T) {
+	cases := map[string]struct {
+		target kube.SnapshotTarget
+		want   string
+	}{
+		"no class":       {kube.SnapshotTarget{}, "no VolumeSnapshotClass"},
+		"no storage cls": {kube.SnapshotTarget{SnapshotClass: "c", Driver: "d"}, "no StorageClass"},
+		"waits":          {kube.SnapshotTarget{SnapshotClass: "c", StorageClass: "sc", Driver: "d"}, "waits for a consumer"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			f := newFakeKube()
+			f.snapTarget = tc.target
+			rec := &recorder{}
+			res := Run(context.Background(), baseEnv(f), rec, Options{Profile: ProfileFull, Only: []string{"control-plane", "boot", "snapshot-restore"}})
+			for _, r := range res {
+				if r.ID == "snapshot-restore" && (r.Status != Skip || !strings.Contains(r.Reason, tc.want)) {
+					t.Errorf("result = %+v, want skip mentioning %q", r, tc.want)
+				}
+			}
+		})
+	}
+}
+
+func TestSnapshotRestoreSkipsWhenTheClaimNeverBinds(t *testing.T) {
+	f := newFakeKube()
+	withSnapshots(f)
+	f.pvcNeverBinds = true
+	env := baseEnv(f)
+	clock := time.Now()
+	env.Now = func() time.Time { clock = clock.Add(10 * time.Second); return clock }
+	rec := &recorder{}
+	res := Run(context.Background(), env, rec, Options{Profile: ProfileFull, Only: []string{"control-plane", "boot", "snapshot-restore"}})
+	for _, r := range res {
+		if r.ID == "snapshot-restore" && (r.Status != Skip || !strings.Contains(r.Reason, "did not bind")) {
+			t.Errorf("result = %+v, want a skip saying the claim did not bind", r)
+		}
+	}
+	if len(f.pvcs) != 0 {
+		t.Errorf("claim left behind: %v", f.pvcs)
+	}
+}
+
+func TestForkParentIsFluxVMWithTapNetNS(t *testing.T) {
+	f := newFakeKube()
+	Run(context.Background(), baseEnv(f), &recorder{}, Options{Profile: ProfileFull, Only: []string{"control-plane", "boot", "fork"}})
+	var parent *model.Machine
+	for i := range f.createdSpecs {
+		if strings.HasSuffix(f.createdSpecs[i].Metadata.Name, "-fork") {
+			parent = &f.createdSpecs[i]
+		}
+	}
+	if parent == nil {
+		t.Fatal("the fork scenario never created its parent Machine")
+	}
+	if parent.Spec.Runtime.Backend != "flux-vm" {
+		t.Errorf("backend = %q", parent.Spec.Runtime.Backend)
+	}
+	if parent.Spec.Network.Mode != "tap" || !parent.Spec.Network.NetNS {
+		t.Errorf("network = %+v; the flux-vm backend needs tap networking in a netns", parent.Spec.Network)
+	}
+}
+
+func TestForkUnsupportedIsRecognised(t *testing.T) {
+	yes := []string{
+		"x-fork-c is Error: fork default/x: fluxvm POST /v1/vms/abc/fork: HTTP 404: ",
+		"fluxvm POST /v1/vms/abc/fork: HTTP 501: not implemented",
+	}
+	no := []string{
+		"fluxvm POST /v1/vms/abc/fork: HTTP 500: snapshot failed",
+		"fluxvm POST /v1/vms: HTTP 404: no such image",
+		"timed out after 4m0s waiting for x to be Running",
+	}
+	for _, m := range yes {
+		if !forkUnsupported(m) {
+			t.Errorf("%q should count as unsupported", m)
+		}
+	}
+	for _, m := range no {
+		if forkUnsupported(m) {
+			t.Errorf("%q must remain a failure", m)
+		}
+	}
+}

@@ -6,7 +6,7 @@
 // kairon-ui backed by docs/ux/sample-api.go. See docs/ux/README.md.
 //
 //   npm i --no-save playwright-core        # outside the repo, or --no-save here
-//   node docs/ux/capture.mjs               # BASE=http://127.0.0.1:18082 by default
+//   node docs/ux/capture.mjs               # BASE=https://127.0.0.1:18082 by default
 //
 // CHROME=/path/to/chrome overrides the browser; otherwise Playwright's own
 // Chromium is used.
@@ -19,7 +19,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const BASE = process.env.BASE || 'http://127.0.0.1:18082';
+// kairon-ui serves HTTPS with a self-signed certificate unless given one, so
+// the contexts below ignore certificate errors (loopback sample stack only).
+const BASE = process.env.BASE || 'https://127.0.0.1:18082';
 const USER = process.env.KAIRON_UI_USER || 'admin';
 const PASS = process.env.KAIRON_UI_PASSWORD || 'sample-stack-2026'; // matches docs/ux/README.md; sample stack only
 const W = 1440;
@@ -57,7 +59,7 @@ async function settle(page, ms = 900) {
 
 async function shots(theme) {
   const browser = await launch();
-  const ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
+  const ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1, ignoreHTTPSErrors: true });
   await ctx.addInitScript((t) => localStorage.setItem('kairon_theme', t), theme);
   const page = await ctx.newPage();
   await signIn(page);
@@ -94,7 +96,7 @@ async function clip(name, run) {
   const frames = mkdtempSync(join(tmpdir(), 'kairon-clip-'));
   mkdirSync(dir, { recursive: true });
   const browser = await launch();
-  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, ignoreHTTPSErrors: true });
   await ctx.addInitScript(() => localStorage.setItem('kairon_theme', 'light'));
   const page = await ctx.newPage();
   await signIn(page);

@@ -250,6 +250,7 @@ func runHelmInstall(ctx context.Context, h *helmInstallOpts, upgradeOnly bool) e
 		fmt.Print(rel.Manifest)
 	}
 	style.Log(style.EmojiOK, "Kairon %s complete", action)
+	selftestHint()
 	return nil
 }
 
@@ -285,6 +286,7 @@ func runHelmCLIInstall(ctx context.Context, h *helmInstallOpts, upgradeOnly bool
 		action = "upgrade"
 	}
 	style.Log(style.EmojiOK, "Kairon %s complete", action)
+	selftestHint()
 	return nil
 }
 
@@ -341,4 +343,9 @@ func runHelmUninstall(ctx context.Context, h *helmInstallOpts) error {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// selftestHint tells the operator how to confirm the install really works.
+func selftestHint() {
+	style.Log(style.EmojiInfo, "Check that it all works (boots a tiny CirrOS VM, then removes it): kaironctl selftest --profile quick")
 }

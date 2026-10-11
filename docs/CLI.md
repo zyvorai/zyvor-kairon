@@ -88,7 +88,7 @@ kaironctl sysdump [-o FILE] [--tail N] [--no-logs] [--no-crs]
 ## Dashboard
 
 ```text
-kaironctl ui [--port N] [--no-open] [-n kairon-system] [--service kairon-ui] [--service-port 18082]
+kaironctl ui [--port N] [--no-open] [-n kairon-system] [--service kairon-ui] [--service-port 18082] [--backend-http]
 ```
 
 Starts a proxy on `127.0.0.1` that forwards to the `kairon-ui` Service through the Kubernetes API server and opens it in a browser. No port-forward, Ingress or cluster-internal address is needed, and your kubeconfig credentials never reach the browser. The proxy is confined to that one Service path and refuses requests whose `Host` is not the loopback address; the dashboard still requires its own sign-in ([dashboard guide](guides/kairon-ui-dashboard.md)).
