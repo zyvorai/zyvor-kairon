@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { MachineInstanceType } from '../types';
 import ResourceTable from '../components/ResourceTable';
+import EmptyHint from '../components/EmptyHint';
 
 export default function InstanceTypes() {
   const [items, setItems] = useState<MachineInstanceType[]>([]);
@@ -27,7 +28,7 @@ export default function InstanceTypes() {
         <ResourceTable
           items={items}
           keyFn={(t) => t.metadata.name}
-          emptyText="No MachineInstanceTypes yet."
+          emptyText={<EmptyHint what="instance types" command="kaironctl create instancetype NAME --cpu 2 --memory 4Gi" />}
           columns={[
             { header: 'Name', render: (t) => t.metadata.name },
             { header: 'CPU', render: (t) => t.spec.resources.cpu },

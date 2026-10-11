@@ -7,6 +7,7 @@ import { MachineSnapshotRestore } from '../types';
 import ResourceTable from '../components/ResourceTable';
 import { badgeClass } from '../lib/phase';
 import { currentNamespace } from '../lib/namespace';
+import EmptyHint from '../components/EmptyHint';
 
 // Restores is the dashboard counterpart of Snapshots.tsx: create form plus
 // a live table, following that page's shape (not ResourceTable's read-only
@@ -114,7 +115,7 @@ export default function Restores({ prefillSnapshot }: { prefillSnapshot: string 
         <ResourceTable
           items={items}
           keyFn={(r) => r.metadata.name}
-          emptyText="No restores yet."
+          emptyText={<EmptyHint what="restores" hint="Restore a snapshot from the Snapshots page, or: kaironctl restore SNAPSHOT --target-claim NAME." />}
           columns={[
             { header: 'Name', render: (r) => r.metadata.name },
             { header: 'Snapshot', render: (r) => r.spec.snapshotName },

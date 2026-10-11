@@ -7,6 +7,7 @@ import { MachineSet } from '../types';
 import ResourceTable from '../components/ResourceTable';
 import { badgeClass } from '../lib/phase';
 import { currentNamespace } from '../lib/namespace';
+import EmptyHint from '../components/EmptyHint';
 
 export default function MachineSets() {
   const [items, setItems] = useState<MachineSet[]>([]);
@@ -65,7 +66,7 @@ export default function MachineSets() {
         <ResourceTable
           items={items}
           keyFn={(s) => s.metadata.name}
-          emptyText="No MachineSets yet."
+          emptyText={<EmptyHint what="MachineSets" command="kaironctl create machineset NAME --image PATH --replicas 3" />}
           columns={[
             { header: 'Name', render: (s) => s.metadata.name },
             { header: 'Replicas', render: (s) => s.spec.replicas },

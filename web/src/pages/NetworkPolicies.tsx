@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { MachineNetworkPolicy } from '../types';
 import ResourceTable from '../components/ResourceTable';
+import EmptyHint from '../components/EmptyHint';
 
 function formatSelector(selector?: Record<string, string>): string {
   const entries = Object.entries(selector || {});
@@ -38,7 +39,7 @@ export default function NetworkPolicies() {
         <ResourceTable
           items={items}
           keyFn={(p) => p.metadata.name}
-          emptyText="No MachineNetworkPolicies yet."
+          emptyText={<EmptyHint what="network policies" hint="See docs/guides/network-policy.md." command="kaironctl create networkpolicy NAME …" />}
           columns={[
             { header: 'Name', render: (p) => p.metadata.name },
             { header: 'Target', render: (p) => formatTarget(p) },

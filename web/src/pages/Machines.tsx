@@ -19,6 +19,7 @@ import AgentFiles from './AgentFiles';
 import Logs from './Logs';
 import NetworkPanel from './NetworkPanel';
 import { currentNamespace } from '../lib/namespace';
+import EmptyHint from '../components/EmptyHint';
 // Lazy-loaded: @xterm/xterm alone adds ~300kB to the bundle, not worth
 // shipping to every visitor when only a Machine with
 // spec.guestAgent.console even shows this button.
@@ -282,7 +283,7 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
           items={items}
           columns={columns}
           keyFn={(x) => x.metadata.name}
-          emptyText="No machines yet."
+          emptyText={<EmptyHint what="machines" command="kaironctl create NAME --image PATH" />}
           onRowClick={(x) => setSelected(x.metadata.name)}
           selectedKey={selected ?? undefined}
           csvName="kairon-machines"
