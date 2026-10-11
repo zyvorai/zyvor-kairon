@@ -54,8 +54,7 @@ func (s *Server) handleListMachines(w http.ResponseWriter, r *http.Request) {
 // rule requireNamespace applies) and everyone else sees only the namespaces
 // authorizedForNamespace grants -- an admin identity sees all of them.
 func (s *Server) handleListAllMachines(w http.ResponseWriter, r *http.Request) {
-	if s.NamespaceScopingEnabled && usernameFromContext(r.Context()) == "" {
-		writeError(w, http.StatusForbidden, "listing every namespace requires a per-operator identity when namespace scoping is on")
+	if !s.allNamespacesAllowed(w, r) {
 		return
 	}
 	items, err := s.Kube.ListMachines(r.Context())

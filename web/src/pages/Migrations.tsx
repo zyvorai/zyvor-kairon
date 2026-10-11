@@ -6,7 +6,7 @@ import { api, apiJSON } from '../api';
 import { MachineMigration } from '../types';
 import { badgeClass, formatBytes, formatDuration, transferProgress } from '../lib/phase';
 import TerminalFrame from '../components/TerminalFrame';
-import { currentNamespace } from '../lib/namespace';
+import { allNamespaces, currentNamespace } from '../lib/namespace';
 
 interface CreateForm {
   machine: string;
@@ -42,7 +42,9 @@ export default function Migrations({ prefillMachine }: { prefillMachine: string 
     return () => clearInterval(t);
   }, []);
 
-  const current = items.find((m) => m.metadata.name === selected) || null;
+  const showNs = allNamespaces();
+  const keyOf = (m: MachineMigration) => `${m.metadata.namespace || ''}/${m.metadata.name}`;
+  const current = items.find((m) => keyOf(m) === selected) || null;
 
   async function create(e: React.FormEvent) {
     e.preventDefault();
@@ -139,6 +141,7 @@ export default function Migrations({ prefillMachine }: { prefillMachine: string 
         <table className="datatable">
           <thead>
             <tr>
+              {showNs && <th>Namespace</th>}
               <th>Name</th>
               <th>Machine</th>
               <th>Strategy</th>
@@ -149,7 +152,8 @@ export default function Migrations({ prefillMachine }: { prefillMachine: string 
           </thead>
           <tbody>
             {items.map((m) => (
-              <tr key={m.metadata.name} onClick={() => setSelected(m.metadata.name)} style={{ cursor: 'pointer', background: selected === m.metadata.name ? 'var(--row-sel)' : undefined }}>
+              <tr key={keyOf(m)} onClick={() => setSelected(keyOf(m))} style={{ cursor: 'pointer', background: selected === keyOf(m) ? 'var(--row-sel)' : undefined }}>
+                {showNs && <td>{m.metadata.namespace}</td>}
                 <td>{m.metadata.name}</td>
                 <td>{m.spec.machineName}</td>
                 <td>{m.status?.effectiveStrategy || m.spec.strategy || '-'}</td>
@@ -162,7 +166,7 @@ export default function Migrations({ prefillMachine }: { prefillMachine: string 
             ))}
             {items.length === 0 && (
               <tr>
-                <td colSpan={6} className="msg">
+                <td colSpan={showNs ? 7 : 6} className="msg">
                   No migrations yet.
                 </td>
               </tr>

@@ -458,3 +458,48 @@ func sortStrings(s []string) {
 		}
 	}
 }
+
+// TestListMigrationsAndSnapshotsAllNamespaces covers ?namespace=_all on the
+// Migrations and Snapshots lists: same visibility rule as Machines.
+func TestListMigrationsAndSnapshotsAllNamespaces(t *testing.T) {
+	fk := newFakeKube()
+	fk.migrations["m-a"] = model.MachineMigration{Metadata: model.ObjectMeta{Name: "m-a", Namespace: "default"}}
+	fk.migrations["m-b"] = model.MachineMigration{Metadata: model.ObjectMeta{Name: "m-b", Namespace: "b"}}
+	fk.snapshots["s-a"] = model.MachineSnapshot{Metadata: model.ObjectMeta{Name: "s-a", Namespace: "default"}}
+	fk.snapshots["s-b"] = model.MachineSnapshot{Metadata: model.ObjectMeta{Name: "s-b", Namespace: "b"}}
+
+	count := func(t *testing.T, rr *httptest.ResponseRecorder) int {
+		t.Helper()
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+		}
+		var raw []json.RawMessage
+		if err := json.Unmarshal(rr.Body.Bytes(), &raw); err != nil {
+			t.Fatalf("decode: %v: %s", err, rr.Body.String())
+		}
+		return len(raw)
+	}
+
+	for _, path := range []string{"/api/v1/migrations?namespace=_all", "/api/v1/snapshots?namespace=_all"} {
+		t.Run("scoped user "+path, func(t *testing.T) {
+			s := newNamespaceScopingTestServer(t, fk, []User{
+				{Username: "bob", PasswordHash: hashFor(t, "bob-pw"), Namespaces: []string{"default"}},
+			}, nil, true)
+			h := s.Handler()
+			token := loginToken(t, h, "bob", "bob-pw")
+			if n := count(t, doJSON(t, h, http.MethodGet, path, token, nil)); n != 1 {
+				t.Fatalf("scoped user got %d items, want 1", n)
+			}
+		})
+		t.Run("admin "+path, func(t *testing.T) {
+			s := newNamespaceScopingTestServer(t, fk, []User{
+				{Username: "root", PasswordHash: hashFor(t, "root-pw"), IsAdmin: true},
+			}, nil, true)
+			h := s.Handler()
+			token := loginToken(t, h, "root", "root-pw")
+			if n := count(t, doJSON(t, h, http.MethodGet, path, token, nil)); n != 2 {
+				t.Fatalf("admin got %d items, want 2", n)
+			}
+		})
+	}
+}

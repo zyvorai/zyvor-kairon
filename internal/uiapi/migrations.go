@@ -55,6 +55,26 @@ func (s *Server) handleListMigrations(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, items)
 }
 
+// handleListAllMigrations serves GET /api/v1/migrations?namespace=_all: every
+// MachineMigration in the namespaces the caller is authorized for.
+func (s *Server) handleListAllMigrations(w http.ResponseWriter, r *http.Request) {
+	if !s.allNamespacesAllowed(w, r) {
+		return
+	}
+	items, err := s.Kube.ListMachineMigrations(r.Context())
+	if err != nil {
+		writeUpstreamError(w, err)
+		return
+	}
+	visible := make([]model.MachineMigration, 0, len(items))
+	for _, m := range items {
+		if s.authorizedForNamespace(r.Context(), m.Metadata.Namespace) {
+			visible = append(visible, m)
+		}
+	}
+	writeJSON(w, http.StatusOK, visible)
+}
+
 func (s *Server) handleGetMigration(w http.ResponseWriter, r *http.Request) {
 	m, err := s.Kube.GetMachineMigration(r.Context(), r.PathValue("namespace"), r.PathValue("name"))
 	if err != nil {

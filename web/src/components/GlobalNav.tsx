@@ -123,7 +123,7 @@ export default function GlobalNav({
                 }
               }}
             >
-              <option value="_all">All (Machines)</option>
+              <option value="_all">All namespaces</option>
               {[...new Set([namespace, ...namespaces])].map((ns) => (
                 <option key={ns} value={ns}>
                   {ns}

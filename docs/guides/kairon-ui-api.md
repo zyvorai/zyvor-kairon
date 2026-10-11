@@ -155,9 +155,10 @@ user exists).
 | POST | `/api/v1/machines/{namespace}/{name}/vm-restore-snapshot` | namespace |
 | POST | `/api/v1/machines/{namespace}/{name}/vm-snapshot` | namespace |
 
-`GET /api/v1/machines` also accepts `?namespace=_all`: every Machine in every
-namespace the caller may see. With namespace scoping on, a caller without a
-per-operator identity gets `403`, and everyone else is filtered per namespace
+`GET /api/v1/machines`, `GET /api/v1/migrations` and `GET /api/v1/snapshots`
+also accept `?namespace=_all`: every object of that kind in every namespace the
+caller may see. With namespace scoping on, a caller without a per-operator
+identity gets `403`, and everyone else is filtered per namespace
 (administrators see all). No other route treats `_all` specially.
 
 ### machinesets

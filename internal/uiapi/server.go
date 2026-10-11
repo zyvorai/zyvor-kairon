@@ -260,7 +260,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/vm-snapshot", s.requireNamespace(namespaceFromPath, s.handleVMSnapshot))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/vm-restore-snapshot", s.requireNamespace(namespaceFromPath, s.handleVMRestoreSnapshot))
 
-	api.HandleFunc("GET /api/v1/migrations", s.requireNamespace(namespaceParam, s.handleListMigrations))
+	api.HandleFunc("GET /api/v1/migrations", s.orAllNamespaces(s.requireNamespace(namespaceParam, s.handleListMigrations), s.handleListAllMigrations))
 	api.HandleFunc("POST /api/v1/migrations", s.requireNamespace(namespaceParam, s.handleCreateMigration))
 	api.HandleFunc("GET /api/v1/migrations/{namespace}/{name}", s.requireNamespace(namespaceFromPath, s.handleGetMigration))
 	// Evacuation authorizes the full batch before its first write.
@@ -268,7 +268,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/v1/migrations/{namespace}/{name}/recover", s.requireNamespace(namespaceFromPath, s.handleRecoverMigration))
 	api.HandleFunc("POST /api/v1/migrations/{namespace}/{name}/cancel", s.requireNamespace(namespaceFromPath, s.handleCancelMigration))
 
-	api.HandleFunc("GET /api/v1/snapshots", s.requireNamespace(namespaceParam, s.handleListSnapshots))
+	api.HandleFunc("GET /api/v1/snapshots", s.orAllNamespaces(s.requireNamespace(namespaceParam, s.handleListSnapshots), s.handleListAllSnapshots))
 	api.HandleFunc("POST /api/v1/snapshots", s.requireNamespace(namespaceParam, s.handleCreateSnapshot))
 	api.HandleFunc("GET /api/v1/restores", s.requireNamespace(namespaceParam, s.handleListRestores))
 	api.HandleFunc("POST /api/v1/restores", s.requireNamespace(namespaceParam, s.handleCreateRestore))
@@ -693,6 +693,18 @@ func (s *Server) orAllNamespaces(scoped, all http.HandlerFunc) http.HandlerFunc 
 		}
 		scoped(w, r)
 	}
+}
+
+// allNamespacesAllowed applies the rule shared by every ?namespace=_all list:
+// with namespace scoping on, a caller without a per-operator identity is
+// refused (the same rule requireNamespace applies). It writes the 403 and
+// reports false in that case.
+func (s *Server) allNamespacesAllowed(w http.ResponseWriter, r *http.Request) bool {
+	if s.NamespaceScopingEnabled && usernameFromContext(r.Context()) == "" {
+		writeError(w, http.StatusForbidden, "listing every namespace requires a per-operator identity when namespace scoping is on")
+		return false
+	}
+	return true
 }
 
 // namespaceFromPath is namespaceParam's counterpart for a route registered
