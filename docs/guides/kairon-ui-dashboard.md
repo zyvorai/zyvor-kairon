@@ -175,6 +175,34 @@ when namespace scoping is on.
 - **Nodes** gains requested-versus-allocatable bars and a "Will it fit?"
   what-if for a given vCPU and memory size.
 
+## HTTPS
+
+kairon-ui serves plain HTTP unless it is given a certificate. On Kubernetes the
+usual answer is an Ingress that terminates TLS (`ui.ingress` in the chart). For a
+host deployed with `scripts/deploy-remote.sh`, or anywhere you run the binary
+directly, kairon-ui can serve HTTPS itself:
+
+```bash
+kairon-ui -tls-cert /etc/kairon/ui-tls/cert.pem -tls-key /etc/kairon/ui-tls/key.pem
+# or KAIRON_UI_TLS_CERT / KAIRON_UI_TLS_KEY in the environment
+
+scripts/deploy-remote.sh HOST USER --with-ui --ui-tls                    # self-signed
+scripts/deploy-remote.sh HOST USER --with-ui --ui-tls-cert=c.pem --ui-tls-key=k.pem
+```
+
+- Both flags are required together; kairon-ui refuses to start with only one,
+  rather than quietly falling back to HTTP.
+- TLS 1.2 and later. The pair is reloaded when the files change, so renewing a
+  certificate needs no restart.
+- `--ui-tls` generates a self-signed certificate whose names cover the host, so a
+  browser shows one warning; use your own certificate to avoid it.
+- `kaironctl` reaches an HTTPS dashboard with `KAIRON_UI_URL=https://...`. For a
+  self-signed certificate set `KAIRON_UI_CA=/path/to/cert.pem` to trust it without
+  disabling verification. `KAIRON_UI_INSECURE=true` skips verification and is for
+  throwaway labs only.
+- Over plain HTTP the session token and any login password cross the network in
+  clear text, so do not expose a plain-HTTP dashboard beyond a trusted network.
+
 ## Self-test
 
 **Operations › Self-test** boots a CirrOS VM from the server and shows a
