@@ -372,3 +372,35 @@ func TestBootFailureHintsNameTheFix(t *testing.T) {
 		t.Errorf("unrelated message got hint %q", h)
 	}
 }
+
+func TestBootAcceptsDHCPLeaseBeforeLoginPrompt(t *testing.T) {
+	f := newFakeKube()
+	env := baseEnv(f)
+	env.SerialLog = func(context.Context, string, string) (string, error) {
+		// What CirrOS prints while cloud-init is still polling for metadata.
+		return "eth0: offered 10.0.2.15 from 10.0.2.2\neth0: leased 10.0.2.15 for 86400 seconds\nchecking http://169.254.169.254/2009-04-04/instance-id\nfailed 1/20: up 9.59. request failed\n", nil
+	}
+	rec := &recorder{}
+	Run(context.Background(), env, rec, Options{Profile: ProfileQuick, Only: []string{"boot"}})
+	if rec.status("boot") != Pass {
+		t.Fatalf("boot = %q\n%s", rec.status("boot"), strings.Join(rec.logs, "\n"))
+	}
+	if !strings.Contains(strings.Join(rec.logs, "\n"), "leased 10.0.2.15") {
+		t.Errorf("log should say which marker proved the boot:\n%s", strings.Join(rec.logs, "\n"))
+	}
+}
+
+func TestBootMarker(t *testing.T) {
+	cases := map[string]string{
+		"":                                   "",
+		"booting kernel":                     "",
+		"cirros login: ":                     "login prompt",
+		"eth0: leased 10.0.2.15 for 86400 s": "10.0.2.15",
+	}
+	for in, want := range cases {
+		got := bootMarker(in)
+		if want == "" && got != "" || want != "" && !strings.Contains(got, want) {
+			t.Errorf("bootMarker(%q) = %q, want it to contain %q", in, got, want)
+		}
+	}
+}

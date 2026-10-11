@@ -20,7 +20,7 @@ kaironctl selftest --list               # every check and what it needs
 
 | Profile | Adds | Typical time |
 |---|---|---|
-| `quick` | control plane, boot to the login prompt, serial console, stop/start | ~1 min |
+| `quick` | control plane, boot, serial console, stop/start | ~1 min |
 | `standard` (default) | forwarded-port network, pause/resume, vCPU hotplug, usage and conditions | ~3 min |
 | `full` | NIC hotplug (`--bridge`), disk hotplug (`--pvc`), fork, cold migration | ~8 min |
 
@@ -32,7 +32,7 @@ that enables it**, never dropped silently. `--strict` makes a skip a failure.
 | Check | Proves | Skipped when |
 |---|---|---|
 | `control-plane` | API server, capable nodes, CRDs, controller/node/dashboard health | never |
-| `boot` | the scheduler places the VM, the node pulls and verifies the image, the guest reaches `login:` | never |
+| `boot` | the scheduler places the VM, the node pulls and verifies the image, and the guest boots far enough to lease an IP over DHCP or print `login:` | never |
 | `console-log` | the serial console relay works and the guest did not crash | no dashboard API (`--ui-url`, `--ui-token`) |
 | `power` | stop then start | after a failed `boot` |
 | `network` | the guest answers on a forwarded port (SSH banner) | the node address is unreachable from where you run it |
@@ -47,6 +47,13 @@ that enables it**, never dropped silently. `--strict` makes a skip a failure.
 `boot` does not depend on `control-plane`: a doctor warning, or a 403 for the
 identity you run as, never hides whether a VM really boots. A 403 is reported as
 "not checked" rather than a failure.
+
+## Why not wait for `login:`?
+
+CirrOS prints its login prompt only after cloud-init has stopped looking for a
+metadata service, which can take many minutes when none is configured. The DHCP
+lease it logs earlier already proves the kernel booted, the guest's init ran and
+its NIC works, so the self-test accepts either.
 
 ## The image
 
