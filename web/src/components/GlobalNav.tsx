@@ -37,7 +37,7 @@ export default function GlobalNav({
   useEffect(() => {
     let alive = true;
     api<string[]>('/api/v1/namespaces')
-      .then((list) => alive && setNamespaces(list))
+      .then((list) => alive && setNamespaces(list ?? []))
       .catch(() => {});
     return () => {
       alive = false;

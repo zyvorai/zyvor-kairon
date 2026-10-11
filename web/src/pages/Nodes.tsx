@@ -38,7 +38,7 @@ export default function Nodes() {
   const [selected, setSelected] = useState<string | null>(null);
 
   const refresh = () => {
-    api<KaironNode[]>('/api/v1/nodes').then(setItems).catch((e) => setMsg(String(e)));
+    api<KaironNode[]>('/api/v1/nodes').then((r) => setItems(r ?? [])).catch((e) => setMsg(String(e)));
     // A dedicated GET request, not derived from `items` above: usage is
     // rolled up cluster-wide from every Machine's own Status.ResourceUsage
     // (internal/uiapi's handleNodeUsage), an entirely different resource

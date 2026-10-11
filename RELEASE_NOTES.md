@@ -1,5 +1,6 @@
 # Unreleased
 
+- Dashboard: list pages treat a `null` list from the API as empty instead of crashing.
 - Docs: dashboard screenshots, interaction clips and animated architecture diagrams in the README and on the GitHub Pages site (gallery); reproducible from `docs/ux`.
 
 # Kairon v0.9.0

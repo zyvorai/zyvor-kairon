@@ -18,7 +18,7 @@ export default function MachineSets() {
   // its own exec-form drafts out of the polled resource list.
   const [drafts, setDrafts] = useState<Record<string, string>>({});
 
-  const refresh = () => api<MachineSet[]>('/api/v1/machinesets').then(setItems).catch((e) => setMsg(String(e)));
+  const refresh = () => api<MachineSet[]>('/api/v1/machinesets').then((r) => setItems(r ?? [])).catch((e) => setMsg(String(e)));
 
   useEffect(() => {
     refresh();

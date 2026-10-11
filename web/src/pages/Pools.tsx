@@ -30,8 +30,8 @@ export default function Pools() {
 
   useEffect(() => {
     const load = () => {
-      api<Pool[]>('/api/v1/machinepools').then(setPools).catch((e) => setMsg(apiErrorText(e)));
-      api<Claim[]>('/api/v1/machineclaims').then(setClaims).catch((e) => setMsg(apiErrorText(e)));
+      api<Pool[]>('/api/v1/machinepools').then((r) => setPools(r ?? [])).catch((e) => setMsg(apiErrorText(e)));
+      api<Claim[]>('/api/v1/machineclaims').then((r) => setClaims(r ?? [])).catch((e) => setMsg(apiErrorText(e)));
     };
     load();
     const t = setInterval(load, 5000);

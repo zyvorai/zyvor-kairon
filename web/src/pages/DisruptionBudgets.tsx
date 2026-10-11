@@ -18,7 +18,7 @@ export default function DisruptionBudgets() {
   const [msg, setMsg] = useState('');
 
   const refresh = () =>
-    api<MachineDisruptionBudget[]>('/api/v1/disruption-budgets').then(setItems).catch((e) => setMsg(String(e)));
+    api<MachineDisruptionBudget[]>('/api/v1/disruption-budgets').then((r) => setItems(r ?? [])).catch((e) => setMsg(String(e)));
 
   useEffect(() => {
     refresh();

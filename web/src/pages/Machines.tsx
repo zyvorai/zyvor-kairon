@@ -142,7 +142,7 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
   }, []);
 
   const refresh = () =>
-    api<Machine[]>('/api/v1/machines').then(setItems).catch((e) => setMsg(String(e)));
+    api<Machine[]>('/api/v1/machines').then((r) => setItems(r ?? [])).catch((e) => setMsg(String(e)));
 
   useEffect(() => {
     refresh();

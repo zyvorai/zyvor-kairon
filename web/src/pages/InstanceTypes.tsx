@@ -12,7 +12,7 @@ export default function InstanceTypes() {
   const [msg, setMsg] = useState('');
 
   const refresh = () =>
-    api<MachineInstanceType[]>('/api/v1/instancetypes').then(setItems).catch((e) => setMsg(String(e)));
+    api<MachineInstanceType[]>('/api/v1/instancetypes').then((r) => setItems(r ?? [])).catch((e) => setMsg(String(e)));
 
   useEffect(() => {
     refresh();
