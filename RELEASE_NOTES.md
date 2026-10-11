@@ -1,3 +1,7 @@
+# Unreleased
+
+- Docs: dashboard screenshots, interaction clips and animated architecture diagrams in the README and on the GitHub Pages site (gallery); reproducible from `docs/ux`.
+
 # Kairon v0.9.0
 
 Released 2026-10-11.

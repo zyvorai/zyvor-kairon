@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 360" role="img" aria-label="Machine lifecycle: Pending to Running, and from Running to Paused, Halted, Stopped or Failed">
+<!-- Copyright 2026 Zyvor. SPDX-License-Identifier: Apache-2.0 -->
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#06121c"/><stop offset="1" stop-color="#0b1f2e"/></linearGradient>
+<filter id="glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#4f7a96"/></marker>
+<style>
+text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;fill:#f5f5f7;text-anchor:middle}
+.s{font-size:12px;fill:#9fb3c0}.h{font-size:14px;font-weight:600}.t{font-size:20px;font-weight:650;text-anchor:start}.l{text-anchor:start}
+.box{fill:#0e2a3b;stroke:#1f4a63}.hot{fill:#0e2a3b;stroke:#0a84ff;stroke-width:2}.ln{fill:none;stroke:#2b5671;stroke-width:1.6;marker-end:url(#ar)}
+.dot{fill:#4cc2ff;filter:url(#glow)}.back{fill:#ff9f0a;filter:url(#glow)}.ok{fill:#30d158;filter:url(#glow)}
+@media (prefers-reduced-motion: reduce){animate,animateMotion,animateTransform{display:none}}
+</style>
+</defs>
+<rect width="960" height="360" rx="20" fill="url(#bg)"/>
+<text x="40" y="44" class="t">A Machine's life</text>
+<text x="40" y="66" class="s l">Desired state is spec.powerState. The phase in status is what actually happened.</text>
+<rect class="box" x="40" y="152" width="150" height="56" rx="14"/><text x="115.0" y="178" class="h">Pending</text><text x="115.0" y="196" class="s" style="font-size:11px">created, being placed</text>
+<rect class="hot" x="300" y="152" width="170" height="56" rx="14"/><text x="385.0" y="178" class="h">Running</text><text x="385.0" y="196" class="s" style="font-size:11px">guest is up</text>
+<rect class="box" x="600" y="84" width="150" height="56" rx="14"/><text x="675.0" y="110" class="h">Paused</text><text x="675.0" y="128" class="s" style="font-size:11px">vCPUs frozen</text>
+<rect class="box" x="600" y="152" width="150" height="56" rx="14"/><text x="675.0" y="178" class="h">Halted</text><text x="675.0" y="196" class="s" style="font-size:11px">hard power-off</text>
+<rect class="box" x="600" y="220" width="150" height="56" rx="14"/><text x="675.0" y="246" class="h">Stopped</text><text x="675.0" y="264" class="s" style="font-size:11px">clean shutdown</text>
+<path class="ln" d="M190 180 L300 180"/>
+<circle r="5" class="dot"><animateMotion dur="2.2s" begin="0s" repeatCount="indefinite" path="M190 180 L300 180"/></circle>
+<path class="ln" d="M470 166 L600 112"/>
+<circle r="5" class="dot"><animateMotion dur="2.6s" begin="0.7s" repeatCount="indefinite" path="M470 166 L600 112"/></circle>
+<path class="ln" d="M470 180 L600 180"/>
+<circle r="5" class="dot"><animateMotion dur="2.6s" begin="1.4s" repeatCount="indefinite" path="M470 180 L600 180"/></circle>
+<path class="ln" d="M470 194 L600 248"/>
+<circle r="5" class="dot"><animateMotion dur="2.6s" begin="2.1s" repeatCount="indefinite" path="M470 194 L600 248"/></circle>
+<text x="245" y="170" class="s" style="font-size:11px">controller places</text>
+<text x="535" y="120" class="s" style="font-size:11px">pause</text>
+<text x="535" y="174" class="s" style="font-size:11px">halt</text>
+<text x="535" y="246" class="s" style="font-size:11px">stop</text>
+<path d="M600 140 L470 160" class="ln" stroke-dasharray="4 5" style="marker-end:none;opacity:.55"/><text x="675" y="316" class="s">resume / start returns to Running</text>
+<rect class="box" x="300" y="262" width="170" height="56" rx="14"/><text x="385" y="288" class="h">Failed</text><text x="385" y="306" class="s" style="font-size:11px">runtime exited</text>
+<path class="ln" d="M385 208 L385 262"/><circle r="5" class="back"><animateMotion dur="2.4s" begin="3s" repeatCount="indefinite" path="M385 208 L385 262"/></circle>
+<text x="428" y="240" class="s" style="font-size:11px">fault</text>
+</svg>

@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 360" role="img" aria-label="Live migration: source and target node connected by a mutually authenticated TLS link, moving a VM through Starting, Running, Cutover, Adopting and Succeeded">
+<!-- Copyright 2026 Zyvor. SPDX-License-Identifier: Apache-2.0 -->
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#06121c"/><stop offset="1" stop-color="#0b1f2e"/></linearGradient>
+<filter id="glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#4f7a96"/></marker>
+<style>
+text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;fill:#f5f5f7;text-anchor:middle}
+.s{font-size:12px;fill:#9fb3c0}.h{font-size:14px;font-weight:600}.t{font-size:20px;font-weight:650;text-anchor:start}.l{text-anchor:start}
+.box{fill:#0e2a3b;stroke:#1f4a63}.hot{fill:#0e2a3b;stroke:#0a84ff;stroke-width:2}.ln{fill:none;stroke:#2b5671;stroke-width:1.6;marker-end:url(#ar)}
+.dot{fill:#4cc2ff;filter:url(#glow)}.back{fill:#ff9f0a;filter:url(#glow)}.ok{fill:#30d158;filter:url(#glow)}
+@media (prefers-reduced-motion: reduce){animate,animateMotion,animateTransform{display:none}}
+</style>
+</defs>
+<rect width="960" height="360" rx="20" fill="url(#bg)"/>
+<text x="40" y="44" class="t">Live migration, with a guard at every step</text>
+<text x="40" y="66" class="s l">Source stays authoritative until the target has committed. Preview: the multi-host lab matrix is not yet green.</text>
+<rect class="box" x="40" y="104" width="260" height="150" rx="18"/><text x="170" y="132" class="h">Source node</text>
+<rect class="box" x="660" y="104" width="260" height="150" rx="18"/><text x="790" y="132" class="h">Target node</text>
+<rect x="110" y="160" width="120" height="56" rx="12" fill="#12394f" stroke="#0a84ff"><animate attributeName="opacity" values="1;1;0.15;0.15;1" keyTimes="0;0.45;0.62;0.9;1" dur="8s" repeatCount="indefinite"/></rect><text x="170" y="193" class="h">VM</text>
+<rect x="730" y="160" width="120" height="56" rx="12" fill="#12394f" stroke="#30d158" stroke-dasharray="5 4"><animate attributeName="opacity" values="0.15;0.15;1;1;0.15" keyTimes="0;0.45;0.62;0.9;1" dur="8s" repeatCount="indefinite"/></rect><text x="790" y="193" class="h">VM</text>
+<path class="ln" d="M300 188 L660 188"/><text x="480" y="176" class="s">TLS 1.3 · mandatory client certificate</text>
+<circle r="5" class="dot"><animateMotion dur="2.0s" begin="0s" repeatCount="indefinite" path="M300 188 L660 188"/></circle>
+<circle r="5" class="dot"><animateMotion dur="2.0s" begin="0.5s" repeatCount="indefinite" path="M300 188 L660 188"/></circle>
+<circle r="5" class="dot"><animateMotion dur="2.0s" begin="1.0s" repeatCount="indefinite" path="M300 188 L660 188"/></circle>
+<rect class="box" x="70" y="288" width="140" height="36" rx="18"/><text x="140" y="311" class="s" style="fill:#f5f5f7">Starting</text>
+<rect x="70" y="288" width="140" height="36" rx="18" fill="#0a84ff" opacity="0"><animate attributeName="opacity" values="0;0.5;0" keyTimes="0;0.5;1" dur="2s" begin="0.0s" repeatCount="indefinite"/></rect>
+<rect class="box" x="240" y="288" width="140" height="36" rx="18"/><text x="310" y="311" class="s" style="fill:#f5f5f7">Running</text>
+<rect x="240" y="288" width="140" height="36" rx="18" fill="#0a84ff" opacity="0"><animate attributeName="opacity" values="0;0.5;0" keyTimes="0;0.5;1" dur="2s" begin="1.6s" repeatCount="indefinite"/></rect>
+<rect class="box" x="410" y="288" width="140" height="36" rx="18"/><text x="480" y="311" class="s" style="fill:#f5f5f7">Cutover</text>
+<rect x="410" y="288" width="140" height="36" rx="18" fill="#0a84ff" opacity="0"><animate attributeName="opacity" values="0;0.5;0" keyTimes="0;0.5;1" dur="2s" begin="3.2s" repeatCount="indefinite"/></rect>
+<rect class="box" x="580" y="288" width="140" height="36" rx="18"/><text x="650" y="311" class="s" style="fill:#f5f5f7">Adopting</text>
+<rect x="580" y="288" width="140" height="36" rx="18" fill="#0a84ff" opacity="0"><animate attributeName="opacity" values="0;0.5;0" keyTimes="0;0.5;1" dur="2s" begin="4.800000000000001s" repeatCount="indefinite"/></rect>
+<rect class="box" x="750" y="288" width="140" height="36" rx="18"/><text x="820" y="311" class="s" style="fill:#f5f5f7">Succeeded</text>
+<rect x="750" y="288" width="140" height="36" rx="18" fill="#0a84ff" opacity="0"><animate attributeName="opacity" values="0;0.5;0" keyTimes="0;0.5;1" dur="2s" begin="6.4s" repeatCount="indefinite"/></rect>
+</svg>

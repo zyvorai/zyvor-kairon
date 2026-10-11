@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 360" role="img" aria-label="How Kairon works: clients talk to the Kubernetes API, kairon-controller places Machines, kairon-node reconciles them into FluxVM, which runs QEMU, Cloud Hypervisor or Firecracker VMs, and status flows back">
+<!-- Copyright 2026 Zyvor. SPDX-License-Identifier: Apache-2.0 -->
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#06121c"/><stop offset="1" stop-color="#0b1f2e"/></linearGradient>
+<filter id="glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#4f7a96"/></marker>
+<style>
+text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;fill:#f5f5f7;text-anchor:middle}
+.s{font-size:12px;fill:#9fb3c0}.h{font-size:14px;font-weight:600}.t{font-size:20px;font-weight:650;text-anchor:start}.l{text-anchor:start}
+.box{fill:#0e2a3b;stroke:#1f4a63}.hot{fill:#0e2a3b;stroke:#0a84ff;stroke-width:2}.ln{fill:none;stroke:#2b5671;stroke-width:1.6;marker-end:url(#ar)}
+.dot{fill:#4cc2ff;filter:url(#glow)}.back{fill:#ff9f0a;filter:url(#glow)}.ok{fill:#30d158;filter:url(#glow)}
+@media (prefers-reduced-motion: reduce){animate,animateMotion,animateTransform{display:none}}
+</style>
+</defs>
+<rect width="960" height="360" rx="20" fill="url(#bg)"/>
+<text x="40" y="44" class="t">How Kairon works</text>
+<text x="40" y="66" class="s l">Kubernetes is the source of truth. Everything else reconciles toward it.</text>
+<rect class="box" x="40" y="100" width="172" height="44" rx="12"/><text x="126" y="127" class="h">kubectl · kaironctl</text>
+<path class="ln" d="M212 122 L268 180"/>
+<circle r="5" class="dot"><animateMotion dur="3.2s" begin="0.0s" repeatCount="indefinite" path="M212 122 L268 180"/></circle>
+<rect class="box" x="40" y="156" width="172" height="44" rx="12"/><text x="126" y="183" class="h">Dashboard (kairon-ui)</text>
+<path class="ln" d="M212 178 L268 180"/>
+<circle r="5" class="dot"><animateMotion dur="3.2s" begin="0.5s" repeatCount="indefinite" path="M212 178 L268 180"/></circle>
+<rect class="box" x="40" y="212" width="172" height="44" rx="12"/><text x="126" y="239" class="h">MCP agents (approvals)</text>
+<path class="ln" d="M212 234 L268 180"/>
+<circle r="5" class="dot"><animateMotion dur="3.2s" begin="1.0s" repeatCount="indefinite" path="M212 234 L268 180"/></circle>
+<rect class="hot" x="270" y="124" width="190" height="112" rx="16"/><text x="365" y="164" class="h">Kubernetes API</text><text x="365" y="186" class="s">Machine · MachineMigration</text><text x="365" y="204" class="s">MachineSnapshot · 17 CRDs</text>
+<rect class="box" x="550" y="88" width="190" height="64" rx="14"/><text x="645" y="116" class="h">kairon-controller</text><text x="645" y="136" class="s">placement · migration · snapshots</text>
+<rect class="box" x="550" y="208" width="190" height="64" rx="14"/><text x="645" y="236" class="h">kairon-node</text><text x="645" y="256" class="s">one per VM node · mTLS peer</text>
+<rect class="box" x="780" y="208" width="140" height="64" rx="14"/><text x="850" y="236" class="h">FluxVM</text><text x="850" y="256" class="s">owns the VMM lifecycle</text>
+<rect class="box" x="760" y="302" width="58" height="34" rx="9"/><text x="789" y="323" class="s" style="font-size:10px">QEMU</text>
+<rect class="box" x="822" y="302" width="58" height="34" rx="9"/><text x="851" y="323" class="s" style="font-size:10px">CH</text>
+<rect class="box" x="884" y="302" width="58" height="34" rx="9"/><text x="913" y="323" class="s" style="font-size:10px">Firecracker</text>
+<path class="ln" d="M460 150 L550 120"/>
+<circle r="5" class="dot"><animateMotion dur="2.4s" begin="0s" repeatCount="indefinite" path="M460 150 L550 120"/></circle>
+<path class="ln" d="M460 214 L550 240"/>
+<circle r="5" class="dot"><animateMotion dur="2.4s" begin="0.6s" repeatCount="indefinite" path="M460 214 L550 240"/></circle>
+<path class="ln" d="M740 240 L780 240"/>
+<circle r="5" class="dot"><animateMotion dur="1.2s" begin="1.2s" repeatCount="indefinite" path="M740 240 L780 240"/></circle>
+<path class="ln" d="M850 272 L850 302"/>
+<circle r="5" class="dot"><animateMotion dur="1.0s" begin="1.8s" repeatCount="indefinite" path="M850 272 L850 302"/></circle>
+<path d="M550 262 L460 226" class="ln" stroke-dasharray="4 5" style="marker-end:none"/>
+<circle r="5" class="back"><animateMotion dur="2.4s" begin="0.9s" repeatCount="indefinite" path="M550 262 L460 226"/></circle>
+<text x="40" y="344" class="s l">Orange: status written back. kaironctl and the dashboard are plain API clients, never a side channel.</text>
+</svg>

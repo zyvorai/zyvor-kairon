@@ -23,6 +23,10 @@
 
 **Zero pods per VM** · **Four hypervisors, one CRD** · **eBPF on every VM edge** · **No silent split-brain** · **AI agents built in (MCP)**
 
+<img src="docs/ux/anim/hero.gif" alt="The Kairon dashboard: overview, machines, migrations, snapshots, nodes, network policies and the all-namespaces view" width="100%">
+
+<sub>Dashboard tour captured against the local sample-data stack (<a href="docs/ux/README.md">how</a>), not a production cluster.</sub>
+
 ![Kairon: VMs that don't pretend to be Pods. Measured against KubeVirt v1.9.0: 14x lighter idle control plane, 7.4x faster to SSH for five VMs](docs/assets/readme-hero.jpg)
 
 </div>
@@ -162,7 +166,41 @@ kaironctl network capture demo --seconds 15 --output demo.pcap
 
 ---
 
+## The dashboard
+
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/ux/night-01-machines.png">
+  <img src="docs/ux/day-01-machines.png" alt="Kairon dashboard: Machines table with the inspector open" width="880">
+</picture>
+</div>
+
+<table>
+<tr>
+<td width="33%"><img src="docs/ux/day-00-overview.png" alt="Overview"><br><sub>Overview: fleet health and node usage</sub></td>
+<td width="33%"><img src="docs/ux/day-02-migrations.png" alt="Migrations"><br><sub>Migrations, with NeedsRecovery surfaced</sub></td>
+<td width="33%"><img src="docs/ux/day-09-machines-all-namespaces.png" alt="All-namespaces Machines with bulk actions"><br><sub>All namespaces, bulk Start/Stop</sub></td>
+</tr>
+</table>
+
+<p align="center">
+<img src="docs/ux/clips/bulk-stop.gif" alt="Selecting three Machines and stopping them together" width="49%">
+<img src="docs/ux/clips/namespaces.gif" alt="Switching namespace and filtering the Machines table" width="49%">
+</p>
+
+More pages: [gallery](https://zyvorai.github.io/zyvor-kairon/gallery). Screenshots and clips are generated from the sample-data stack in [`docs/ux`](docs/ux/README.md), so they show the real dashboard build, not a lab cluster.
+
+---
+
 ## How it fits together
+
+<img src="docs/ux/anim/how-it-works.svg" alt="Animated: clients talk to the Kubernetes API, kairon-controller places Machines, kairon-node reconciles them into FluxVM" width="100%">
+
+<img src="docs/ux/anim/machine-lifecycle.svg" alt="Animated Machine lifecycle: Pending, Running, Paused, Halted, Stopped, Failed" width="100%">
+
+<img src="docs/ux/anim/live-migration.svg" alt="Animated live migration between two nodes over a mutually authenticated TLS link (Preview)" width="100%">
+
+<img src="docs/ux/anim/no-pod-per-vm.svg" alt="Animated bars: idle control plane memory and time to SSH, Kairon against KubeVirt v1.9.0" width="100%">
 
 ![Two Go binaries and your KVM hosts: kairon-controller, kairon-node, FluxVM and KVM under the Kubernetes API](docs/ux/readme-how-it-works.jpg)
 
