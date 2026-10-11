@@ -35,7 +35,7 @@
 
 ## What's new
 
-New since v0.6.0 (current: v0.9.0):
+New since v0.6.0 (current: v0.9.1):
 
 | | |
 |---|---|
@@ -224,10 +224,10 @@ On a Kubernetes cluster whose VM hosts run [FluxVM](https://github.com/zyvorai/z
 kubectl label node worker-1 kairon.zyvor.dev/capable=true
 
 helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \
-  --version 0.9.0 -n kairon-system --create-namespace \
-  -f https://raw.githubusercontent.com/zyvorai/kairon/v0.9.0/charts/kairon/values-production.yaml
+  --version 0.9.1 -n kairon-system --create-namespace \
+  -f https://raw.githubusercontent.com/zyvorai/kairon/v0.9.1/charts/kairon/values-production.yaml
 
-curl -fsSL -o kaironctl https://github.com/zyvorai/kairon/releases/download/v0.9.0/kaironctl-linux-amd64
+curl -fsSL -o kaironctl https://github.com/zyvorai/kairon/releases/download/v0.9.1/kaironctl-linux-amd64
 chmod +x kaironctl && sudo mv kaironctl /usr/local/bin/      # or: kubectl krew install kairon
 
 kaironctl create demo --image /var/lib/fluxvm/images/ubuntu.qcow2 --cpu 2 --memory 2Gi
@@ -308,7 +308,7 @@ kubectl -n kairon-system port-forward svc/kairon-ui 18082:18082
 | MCP server for AI agents | Preview, CI end-to-end with the official SDK |
 | CPU/memory hotplug | Grow-only (QEMU) |
 
-**v0.9.0** is the latest release. Real two-host live migration is still Preview: the multi-host lab matrix is not yet green, so it is not claimed as Stable. Honest gaps live in [docs/STATUS.md](docs/STATUS.md); what comes next is in [ROADMAP.md](ROADMAP.md).
+**v0.9.1** is the latest release. Real two-host live migration is still Preview: the multi-host lab matrix is not yet green, so it is not claimed as Stable. Honest gaps live in [docs/STATUS.md](docs/STATUS.md); what comes next is in [ROADMAP.md](ROADMAP.md).
 
 ---
 

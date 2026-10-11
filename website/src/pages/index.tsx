@@ -171,7 +171,7 @@ function TrustBand() {
               Open, and honest about its limits
             </Heading>
             <p>
-              Apache-2.0. <strong>v0.9.0</strong> adds kaironctl lifecycle and
+              Apache-2.0. <strong>v0.9.1</strong> ships kaironctl lifecycle and
               diagnostics commands and a namespace-aware dashboard, on top of
               admission webhooks, dashboard SSO, MachineSet, pause/halt,
               snapshot schedules, a native macOS node, the developer
@@ -193,8 +193,8 @@ function TrustBand() {
               alt="Apache 2.0 license"
             />
             <img
-              src="https://img.shields.io/badge/version-v0.9.0-blue"
-              alt="v0.9.0"
+              src="https://img.shields.io/badge/version-v0.9.1-blue"
+              alt="v0.9.1"
             />
           </div>
         </Reveal>

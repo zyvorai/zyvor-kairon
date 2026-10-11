@@ -127,7 +127,7 @@ func runConnectivity(ctx context.Context, kc *kube.Client, ns string) doctorRepo
 			continue
 		}
 		if len(pods) == 0 {
-			rep.add(doctorCheck{Name: c.label, Status: checkSkip, Detail: "no pods"})
+			rep.add(doctorCheck{Name: c.label, Status: checkSkip, Detail: "no pods in namespace " + ns + " (components running outside Kubernetes, e.g. systemd units from scripts/deploy-remote.sh, are not probed; use --machine for an end-to-end check)"})
 			continue
 		}
 		for _, p := range pods {

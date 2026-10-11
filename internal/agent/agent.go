@@ -1361,7 +1361,25 @@ func (a *Agent) patchMachineStatusIfChanged(ctx context.Context, m model.Machine
 	if model.MachineStatusEqualIgnoringVolatile(m.Status, status) {
 		return nil
 	}
-	return a.Kube.PatchMachineStatus(ctx, m.Namespace(), m.Metadata.Name, status)
+	if err := a.Kube.PatchMachineStatus(ctx, m.Namespace(), m.Metadata.Name, status); err != nil {
+		return err
+	}
+	// Best-effort Event so `kaironctl events` / `kubectl get events` show
+	// lifecycle transitions; a failure here must never fail reconcile.
+	if status.Phase != "" && status.Phase != m.Status.Phase {
+		from := m.Status.Phase
+		if from == "" {
+			from = "None"
+		}
+		typ := "Normal"
+		if status.Phase == "Failed" {
+			typ = "Warning"
+		}
+		if err := a.Kube.RecordEvent(ctx, m.Namespace(), "Machine", m.Metadata.Name, m.Metadata.UID, "Phase"+status.Phase, "phase "+from+" -> "+status.Phase, typ); err != nil {
+			a.log().Debug("record phase event failed", "machine", m.Metadata.Name, "error", err)
+		}
+	}
+	return nil
 }
 
 func (a *Agent) Run(ctx context.Context, interval time.Duration) error {
