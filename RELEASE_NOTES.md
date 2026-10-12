@@ -72,6 +72,56 @@ capability scheduling, backend isolation, network allocation, membership schedul
 and a Mac leaving a network all passed. Booting on real Macs and traffic between them have not run. See
 `docs/guides/mac-fabric.md` and the "Mac Fabric" section of `docs/COMPATIBILITY.md`.
 
+## Added: DR networking and scheduled DR tests (experimental)
+
+`MachineProtectionPlan` gains `spec.network` and `spec.test.every`:
+
+- `network.preserveIP`: the standby pins each mirrored spec to the
+  VirtualNetwork address the Machine has on the active site, so a failover
+  brings it up with the same address. The `NetworkReady` condition says
+  whether the standby's VirtualNetwork can take every address; a failover
+  refuses to create a Machine whose address is unavailable.
+- `network.dns`: the active site writes an external-dns `DNSEndpoint`
+  `dr-<plan>` with an A record per protected Machine (floating IP,
+  VirtualNetwork address or guest IP); the standby and a fenced site delete
+  theirs, so names follow the Machines. Condition `DNSPublished`. Helm's
+  `controller.dr.enabled` now also grants access to `dnsendpoints`.
+- `test.every` (at least 5m): the standby runs a DR test by itself, ends it
+  as soon as it has a result, and keeps it in `status.lastTest` (condition
+  `LastTestSucceeded`) with the next one in `status.nextTest`.
+- New metrics `kairon_dr_last_test_success`,
+  `kairon_dr_last_test_timestamp_seconds` and `kairon_dr_dns_records`.
+  `kaironctl dr status` shows the last and next test and the DNS records.
+
+Fixed: the plan's status was written with a merge patch, so a field a new
+run left empty kept the previous run's value. A second DR test on the same
+plan inherited the first one's restored Machines and reported success
+without restoring anything; `nextTest` and other cleared fields never
+cleared. The status is now replaced as a whole (JSON patch).
+
+Fixed: an S3 backup's `pointInTime` was the time kairon-controller accepted
+it, but kairon-node captures the disk on a later tick, so a restore could
+hold writes newer than its point in time (13s in the lab). kairon-node now
+sets it when it starts the FluxVM job.
+
+Fixed: a failover or DR test failed on a single API server timeout or 5xx;
+it now retries on the next pass, with the error in the run's message.
+
+Fixed: kairon-controller marked a MachineBackup or MachineBackupRestore
+Failed on any reconcile error, including an API server timeout, and a
+policy's retention then deleted the failed backup. In the lab this lost a
+synthetic full and a planned failover's final backup, and the handoff then
+waited for it forever. Timeouts, throttling and 5xx are now retried, and a
+handoff takes a final backup again if it disappears.
+
+Fixed: a VirtualNetwork Machine whose status write after create was lost
+never reported `status.network.virtualNetwork`; kairon-node now fills it
+in from the network's allocation.
+
+The lab ran on one cluster with the two sites as namespaces and no
+external-dns; moving a floating IP between real clusters and external-dns
+writing to a real zone have not run. See `docs/guides/cross-cluster-dr.md`.
+
 ## Added: cross-cluster DR (experimental)
 
 A `MachineProtectionPlan` (`kmpp`) protects a group of Machines across two

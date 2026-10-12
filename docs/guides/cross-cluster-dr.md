@@ -4,7 +4,10 @@ A `MachineProtectionPlan` protects a group of Machines across two Kairon
 clusters. One site runs the Machines and replicates them to S3; the other
 keeps their specs and restore points, and can take over: in dependency
 order, after a disaster (unplanned) or with nothing lost (planned), or
-as a DR test into an isolated network while production keeps running.
+as a DR test into an isolated network while production keeps running,
+on demand or on a schedule. Machines can keep their VirtualNetwork
+addresses across sites, and DNS names follow the active site through
+external-dns.
 
 Replication is the incremental S3 backup
 ([machine-backup-incremental.md](machine-backup-incremental.md)), so the
@@ -84,13 +87,66 @@ create it on every node that may run the copies
 site keeps running and replicating. `kaironctl dr test-end PLAN`, or
 `test.ttl` (default 1h), deletes the copies and their restores.
 
+**Scheduled tests.** With `test.every` (at least 5m), the standby starts a
+test by itself once `every` has passed since the last test started (or
+since the plan was created), with an ID `scheduled-<time>`. A scheduled
+test ends itself as soon as it has a result, so its copies only live
+until every one is Running or the test fails. It is skipped while a
+failover or another test is running. The standby keeps the newest result
+in `status.lastTest` (`succeeded`, `rtoSeconds`, `message`) and the
+`LastTestSucceeded` condition, and the time of the next one in
+`status.nextTest`. Manual tests are recorded the same way and also reset
+the schedule.
+
+## Networking
+
+**Keeping addresses (`network.preserveIP`).** For Machines on a
+[`VirtualNetwork`](virtual-networks.md), the standby pins each mirrored
+spec's `network.virtualNetwork.ip` to the address the Machine has on the
+active site (`status.network.virtualNetwork.ip`), and keeps it while the
+active Machine is halted. On failover the Machine asks for that address
+instead of the lowest free one. A floating IP in the spec is carried over
+unchanged. The standby needs a `VirtualNetwork` with the same name and a
+CIDR containing the address. It reports the `NetworkReady` condition:
+False, with the Machine and the reason, when the network is missing, not
+Ready, does not contain the address, or another Machine holds it there.
+A failover does not create a Machine whose address is unavailable: it
+fails at that Machine with `network.preserveIP: ...`, and Machines of
+earlier waves stay. DR test copies go on the test bridge and are not
+affected.
+
+**DNS (`network.dns`).** Each record names a protected Machine, a
+hostname and which address to publish (`floatingIP`, `ip` for the
+VirtualNetwork address, `guestIP`; empty takes the first of these the
+Machine has), with an optional `ttl`. The active site keeps an
+[external-dns](https://github.com/kubernetes-sigs/external-dns)
+`DNSEndpoint` named `dr-<plan>` (labelled with the plan) in the plan's
+namespace, with an A record per Running Machine. The standby and a
+fenced site delete theirs, so after a failover the names follow the
+Machines once external-dns on the new site syncs. Run external-dns with
+`--source=crd` on both clusters, pointed at the same zone and with
+distinct `--txt-owner-id`s. Kairon only writes the `DNSEndpoint`; it never
+talks to a DNS provider. The `DNSPublished` condition says how many
+records are published, and which are waiting for an address.
+
+```yaml
+spec:
+  test: {bridge: drtest0, ttl: 2h, every: 168h}   # a test every week
+  network:
+    preserveIP: true
+    dns:
+      - {machine: web, hostname: shop.example.com, address: floatingIP, ttl: 60}
+      - {machine: db, hostname: db.shop.internal.example.com, address: ip}
+```
+
 ## Setup
 
 1. On both clusters, install kairon-controller with DR on (chart
    `controller.dr.enabled=true`, or `--dr-secret-namespace` on a
    kairon-controller you run yourself). This grants it create and delete
    on `machinebackuppolicies` and `machinebackuprestores`, and `get` on
-   Secrets in its own namespace.
+   Secrets in its own namespace, and get, create, patch and delete on
+   external-dns `dnsendpoints` for `network.dns`.
 2. On each cluster, apply [`deploy/dr-peer-rbac.yaml`](../../deploy/dr-peer-rbac.yaml),
    bind `kairon-dr-peer` in the plan's namespace and create a token for the
    ServiceAccount. The peer can read the plan, patch it (the handoff
@@ -150,7 +206,11 @@ while one is running, is ignored with the reason in `status.message`.
 
 Metrics: `kairon_dr_rpo_seconds`, `kairon_dr_active`,
 `kairon_dr_peer_reachable`, `kairon_dr_last_rto_seconds{kind}` and
-`kairon_dr_last_data_loss_seconds{kind}` (kind `failover` or `test`).
+`kairon_dr_last_data_loss_seconds{kind}` (kind `failover` or `test`),
+`kairon_dr_last_test_success`, `kairon_dr_last_test_timestamp_seconds`
+and `kairon_dr_dns_records`. Alert on a stale
+`kairon_dr_last_test_timestamp_seconds` to catch tests that stopped
+running.
 
 ## Limits
 
@@ -167,9 +227,21 @@ Metrics: `kairon_dr_rpo_seconds`, `kairon_dr_active`,
   only chains older than its window, so this takes either an outage
   longer than the window or a new chain (`fullEvery`) starting during it.
   A failover from a deleted point fails with the missing S3 key.
-- Networking is whatever the mirrored spec says; making the Machines
-  reachable at the new site (DNS, load balancers, IP addresses) is outside
-  the plan.
+- `preserveIP` covers VirtualNetwork addresses only. Machines on a host
+  bridge, macvtap or Cilium keep whatever their spec says, and a guest
+  with DHCP gets what the new site's network hands out.
+- A floating IP moves only if the new site routes it: announce it over
+  BGP from both sites (kairon-node announces it from the node running the
+  Machine) or route it statically. Floating IPs are unique per cluster, so
+  a same-cluster setup like the lab cannot carry one over.
+- DNS moves at external-dns's sync interval plus the record TTL, and only
+  while the new site's external-dns can write the zone. Load balancers
+  and other names outside `network.dns` are not updated.
+- The two sites' external-dns instances must not fight over the records:
+  the fenced site deletes its `DNSEndpoint` only once it can reach the
+  new one, and until then both may publish.
+- A scheduled test needs the same test bridge and capacity as a manual
+  one; nothing reserves room for it.
 
 Lab results are in the "Cross-cluster DR" section of
 [`COMPATIBILITY.md`](../COMPATIBILITY.md#cross-cluster-dr).

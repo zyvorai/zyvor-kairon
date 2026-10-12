@@ -99,3 +99,68 @@ func TestMirrorSpecClearsPlacement(t *testing.T) {
 		t.Fatalf("mirrored = %+v", got)
 	}
 }
+
+func TestProtectionValidateNetworkAndSchedule(t *testing.T) {
+	for name, mutate := range map[string]func(*MachineProtectionPlanSpec){
+		"every too short":   func(s *MachineProtectionPlanSpec) { s.Test.Every = "1m" },
+		"every unparseable": func(s *MachineProtectionPlanSpec) { s.Test.Every = "monthly" },
+		"dns unknown": func(s *MachineProtectionPlanSpec) {
+			s.Network.DNS = []ProtectionDNSRecord{{Machine: "nope", Hostname: "a.example.com"}}
+		},
+		"dns bad name": func(s *MachineProtectionPlanSpec) {
+			s.Network.DNS = []ProtectionDNSRecord{{Machine: "db", Hostname: "Bad_Name"}}
+		},
+		"dns twice": func(s *MachineProtectionPlanSpec) {
+			s.Network.DNS = []ProtectionDNSRecord{{Machine: "db", Hostname: "a.example.com"}, {Machine: "web", Hostname: "a.example.com"}}
+		},
+		"dns address": func(s *MachineProtectionPlanSpec) {
+			s.Network.DNS = []ProtectionDNSRecord{{Machine: "db", Hostname: "a.example.com", Address: "mac"}}
+		},
+	} {
+		s := protectionSpec()
+		mutate(&s)
+		if err := s.Validate("shop"); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	s := protectionSpec()
+	s.Test.Every = "720h"
+	s.Network = ProtectionNetwork{PreserveIP: true, DNS: []ProtectionDNSRecord{{Machine: "db", Hostname: "db.shop.example.com.", Address: DNSAddressIP, TTL: 30}}}
+	if err := s.Validate("shop"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPreservedSpecPinsTheAllocatedAddress(t *testing.T) {
+	m := Machine{Spec: MachineSpec{NodeName: "n1", Network: NetworkSpec{Mode: "tap", VirtualNetwork: &MachineVirtualNetwork{Name: "app"}}}}
+	m.Status.Network = &MachineNetworkStatus{VirtualNetwork: &MachineVirtualNetworkStatus{Name: "app", IP: "10.50.0.7"}}
+	if got := PreservedSpec(m, true); got.Network.VirtualNetwork.IP != "10.50.0.7" || got.NodeName != "" || m.Spec.Network.VirtualNetwork.IP != "" {
+		t.Fatalf("preserved = %+v, source changed: %+v", got.Network.VirtualNetwork, m.Spec.Network.VirtualNetwork)
+	}
+	if got := PreservedSpec(m, false); got.Network.VirtualNetwork.IP != "" {
+		t.Fatal("pinned without preserveIP")
+	}
+	m.Spec.Network.VirtualNetwork.IP = "10.50.0.3"
+	if got := PreservedSpec(m, true); got.Network.VirtualNetwork.IP != "10.50.0.3" {
+		t.Fatal("a requested address must win")
+	}
+}
+
+func TestDNSAddressPicksTheFirstAvailable(t *testing.T) {
+	m := Machine{}
+	m.Status.GuestIP = "192.168.1.5"
+	auto := ProtectionDNSRecord{}
+	if got := auto.DNSAddress(m); got != "192.168.1.5" {
+		t.Fatalf("guest only = %q", got)
+	}
+	m.Status.Network = &MachineNetworkStatus{VirtualNetwork: &MachineVirtualNetworkStatus{IP: "10.50.0.7", FloatingIP: "203.0.113.4"}}
+	if got := auto.DNSAddress(m); got != "203.0.113.4" {
+		t.Fatalf("auto = %q", got)
+	}
+	if got := (ProtectionDNSRecord{Address: DNSAddressIP}).DNSAddress(m); got != "10.50.0.7" {
+		t.Fatalf("ip = %q", got)
+	}
+	if got := (ProtectionDNSRecord{Address: DNSAddressFloatingIP}).DNSAddress(Machine{}); got != "" {
+		t.Fatalf("missing floating = %q", got)
+	}
+}

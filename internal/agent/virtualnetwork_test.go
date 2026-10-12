@@ -4,9 +4,17 @@
 package agent
 
 import (
+	"context"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/zyvorai/kairon/internal/fluxvm"
+	"github.com/zyvorai/kairon/internal/kube"
 	"github.com/zyvorai/kairon/internal/model"
 )
 
@@ -70,5 +78,34 @@ func TestMachineVirtualNetworkStatus(t *testing.T) {
 	vn.Status.Phase = "Failed"
 	if _, err := machineVirtualNetworkStatus(vn, "a"); err == nil || !strings.Contains(err.Error(), "not ready") {
 		t.Fatalf("failed network: %v", err)
+	}
+}
+
+func TestProjectNetworkStatusRecoversALostVirtualNetworkStatus(t *testing.T) {
+	vn := readyVnet("app", 4096, false, model.VirtualNetworkAllocation{Machine: "db", IP: "10.50.0.3", MAC: "52:54:00:00:00:03"})
+	ks := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/apis/kairon.zyvor.dev/v1/namespaces/prod/virtualnetworks/app" {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(vn)
+	}))
+	defer ks.Close()
+	fs := httptest.NewServer(http.NotFoundHandler())
+	defer fs.Close()
+	kc, _ := kube.New(ks.URL, "", "", false)
+	kc.HTTP = ks.Client()
+	a := &Agent{Kube: kc, Flux: fluxvm.New(fs.URL, ""), Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	// Running, but the status write that recorded the address was lost.
+	m := model.Machine{
+		Metadata: model.ObjectMeta{Name: "db", Namespace: "prod"},
+		Spec:     model.MachineSpec{Network: model.NetworkSpec{VirtualNetwork: &model.MachineVirtualNetwork{Name: "app"}}},
+	}
+	var status model.MachineStatus
+	if err := a.projectNetworkStatus(context.Background(), m, &fluxvm.Record{UUID: "vm-1"}, &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.Network == nil || status.Network.VirtualNetwork == nil || status.Network.VirtualNetwork.IP != "10.50.0.3" || status.Network.VirtualNetwork.VNI != 4096 {
+		t.Fatalf("network = %+v", status.Network)
 	}
 }

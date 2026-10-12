@@ -8,7 +8,10 @@ import (
 	"crypto/sha1" // #nosec G505 -- short object names, not security
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
 	"reflect"
 	"slices"
 	"sort"
@@ -81,6 +84,9 @@ type protection struct {
 	peer     *kube.Client
 	peerPlan *model.MachineProtectionPlan
 	now      time.Time
+	// netProblems are, with preserveIP, the Machines whose address does
+	// not fit on this site.
+	netProblems map[string]string
 }
 
 func (c *Controller) runProtectionPlan(ctx context.Context, p model.MachineProtectionPlan, machines []model.Machine, backups []model.MachineBackup, now time.Time) model.MachineProtectionPlanStatus {
@@ -273,6 +279,9 @@ func (r *protection) active(ctx context.Context) {
 		return !b.Replicated() && b.Metadata.Labels[model.BackupPolicyLabel] == r.plan.PolicyName()
 	}, false)
 	r.handoff(ctx)
+	r.publishDNS(ctx)
+	r.st.Conditions = removeCondition(r.st.Conditions, condNetworkReady)
+	r.st.NextTest = nil
 }
 
 func (r *protection) ensurePolicy(ctx context.Context) error {
@@ -355,19 +364,31 @@ func (r *protection) handoff(ctx context.Context) {
 			h.Backups = append(h.Backups, name)
 		}
 	case model.ProtectionHandoffBackup:
-		for _, name := range h.Backups {
+		var waiting []string
+		for _, pm := range r.plan.Spec.Machines {
+			name := r.finalBackupName(pm.Name, id)
+			if !slices.Contains(h.Backups, name) {
+				continue
+			}
 			b, ok := r.backup(name)
 			switch {
 			case !ok:
-				h.Message = "waiting for " + name
-				return
+				// Not listed yet, or deleted (retention drops a failed one):
+				// creating it again is a no-op for the former.
+				if _, err := r.finalBackup(ctx, pm.Name, id); err != nil {
+					waiting = append(waiting, err.Error())
+					continue
+				}
+				waiting = append(waiting, "waiting for "+name)
 			case b.Status.Phase == model.BackupFailed:
-				h.Message = fmt.Sprintf("final backup %s failed: %s", name, b.Status.Message)
-				return
+				waiting = append(waiting, fmt.Sprintf("final backup %s failed: %s", name, b.Status.Message))
 			case b.Status.Phase != model.BackupSucceeded:
-				h.Message = "waiting for final backup " + name
-				return
+				waiting = append(waiting, "waiting for final backup "+name)
 			}
+		}
+		if len(waiting) > 0 {
+			h.Message = strings.Join(waiting, "; ")
+			return
 		}
 		h.Phase, h.Message = model.ProtectionHandoffReady, "Machines halted and final backups taken; waiting for the peer to fail over"
 	}
@@ -383,6 +404,10 @@ func (r *protection) policyBusy() bool {
 	return false
 }
 
+func (r *protection) finalBackupName(machine, id string) string {
+	return fmt.Sprintf("%s-%s-final-%s", r.plan.PolicyName(), machine, shortHash(id))
+}
+
 func (r *protection) finalBackup(ctx context.Context, machine, id string) (string, error) {
 	policy := r.plan.PolicyName()
 	mode, parent := model.BackupModeFull, ""
@@ -393,7 +418,7 @@ func (r *protection) finalBackup(ctx context.Context, machine, id string) (strin
 	}
 	spec := r.plan.Spec.BackupPolicySpec(r.plan.Metadata.Name)
 	target := spec.Target
-	name := fmt.Sprintf("%s-%s-final-%s", policy, machine, shortHash(id))
+	name := r.finalBackupName(machine, id)
 	b := model.MachineBackup{
 		TypeMeta: model.TypeMeta{APIVersion: model.APIVersion, Kind: model.KindMachineBackup},
 		Metadata: model.ObjectMeta{Name: name, Namespace: r.plan.Namespace(), Labels: map[string]string{
@@ -423,6 +448,9 @@ func (r *protection) standby(ctx context.Context) {
 	r.st.Machines = r.machineStatuses(func(b model.MachineBackup) bool {
 		return b.Replicated() && b.Metadata.Labels[model.ProtectionPlanLabel] == r.plan.Metadata.Name
 	}, true)
+	r.withdrawDNS(ctx)
+	r.checkNetwork(ctx)
+	r.scheduleTest()
 }
 
 // mirror copies the peer's Machine specs into the plan's status and
@@ -438,7 +466,12 @@ func (r *protection) mirror(ctx context.Context) error {
 			}
 			return fmt.Errorf("get peer machine %s: %w", pm.Name, err)
 		}
-		spec := model.MirrorSpec(m.Spec)
+		spec := model.PreservedSpec(m, r.plan.Spec.Network.PreserveIP)
+		for _, prev := range r.st.Machines {
+			if prev.Name == pm.Name {
+				keepPinnedIPs(&spec, prev.Spec)
+			}
+		}
 		labels := map[string]string{}
 		for k, v := range m.Metadata.Labels {
 			if k != model.ProtectionPlanLabel {
@@ -544,6 +577,17 @@ func (r *protection) importBackup(ctx context.Context, pb model.MachineBackup) e
 
 // isAlreadyExists treats a create's 409 as the object being there already.
 func isAlreadyExists(err error) bool { return kube.IsConflict(err) }
+
+// transientAPIError reports an API call that may succeed if repeated: no
+// response, a timeout, throttling or a server error.
+func transientAPIError(err error) bool {
+	var api *kube.APIError
+	if errors.As(err, &api) {
+		return api.StatusCode >= 500 || api.StatusCode == http.StatusTooManyRequests || api.StatusCode == http.StatusRequestTimeout
+	}
+	var ue *url.Error
+	return errors.As(err, &ue)
+}
 
 func (r *protection) backup(name string) (model.MachineBackup, bool) {
 	for _, b := range r.backups {
@@ -660,6 +704,10 @@ func (r *protection) stepRuns(ctx context.Context) {
 				r.completeRun(run, "every test copy Running on bridge "+r.plan.Spec.Test.Bridge)
 			}
 		}
+		r.recordTest(run)
+		if run.Scheduled && (run.Phase == model.ProtectionRunSucceeded || run.Phase == model.ProtectionRunFailed) {
+			r.endTest(ctx, "scheduled test finished")
+		}
 	}
 }
 
@@ -699,6 +747,9 @@ func (r *protection) stepRun(ctx context.Context, run *model.ProtectionRun, test
 				continue
 			}
 			done, msg, err := r.stepMachine(ctx, run, name, test)
+			if transientAPIError(err) {
+				done, msg, err = false, "retrying: "+err.Error(), nil
+			}
 			if err != nil {
 				r.failRun(run, fmt.Sprintf("%s: %v", name, err))
 				return false
@@ -796,6 +847,9 @@ func (r *protection) stepMachine(ctx context.Context, run *model.ProtectionRun, 
 		}
 		if mirrored == nil || mirrored.Spec == nil {
 			return false, "", fmt.Errorf("no spec mirrored from the peer to create it from")
+		}
+		if p := r.netProblems[name]; p != "" && !test {
+			return false, "", fmt.Errorf("network.preserveIP: %s", p)
 		}
 		nm := model.Machine{
 			TypeMeta: model.TypeMeta{APIVersion: model.APIVersion, Kind: model.KindMachine},
@@ -903,6 +957,7 @@ func (r *protection) endTest(ctx context.Context, why string) {
 	if run.Phase == model.ProtectionRunRunning {
 		r.failRun(run, "ended before every copy was Running")
 	}
+	r.recordTest(run)
 	run.Phase = model.ProtectionRunEnded
 	run.Message = strings.TrimPrefix(run.Message+"; test copies removed ("+why+")", "; ")
 }

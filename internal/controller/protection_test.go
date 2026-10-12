@@ -6,10 +6,14 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -25,6 +29,8 @@ import (
 type drSite struct {
 	mu      sync.Mutex
 	objects map[string]map[string]any // resource/namespace/name
+	// unavailable answers this many requests "METHOD resource" with 503.
+	unavailable map[string]int
 }
 
 func newDRSite() *drSite { return &drSite{objects: map[string]map[string]any{}} }
@@ -55,8 +61,31 @@ func (s *drSite) handler(t *testing.T) http.Handler {
 			return
 		}
 		key := res + "/" + ns + "/" + name
+		if n := s.unavailable[req.Method+" "+res]; n > 0 {
+			s.unavailable[req.Method+" "+res] = n - 1
+			http.Error(w, "etcdserver: request timed out", http.StatusServiceUnavailable)
+			return
+		}
 		body := map[string]any{}
-		if req.Body != nil {
+		if req.Header.Get("Content-Type") == "application/json-patch+json" {
+			var ops []struct {
+				Op, Path string
+				Value    any
+			}
+			_ = json.NewDecoder(req.Body).Decode(&ops)
+			if len(ops) != 1 || ops[0].Op != "add" || ops[0].Path != "/status" || !status {
+				http.Error(w, "unsupported JSON patch", http.StatusUnprocessableEntity)
+				return
+			}
+			o, ok := s.objects[key]
+			if !ok {
+				http.Error(w, `{"reason":"NotFound"}`, http.StatusNotFound)
+				return
+			}
+			o["status"] = ops[0].Value
+			_ = json.NewEncoder(w).Encode(o)
+			return
+		} else if req.Body != nil {
 			_ = json.NewDecoder(req.Body).Decode(&body)
 		}
 		switch {
@@ -187,7 +216,21 @@ func (s *drSite) settle() {
 				phase = "Running"
 			}
 			name := o["metadata"].(map[string]any)["name"].(string)
-			o["status"] = map[string]any{"phase": phase, "runtimeID": "rt-" + name}
+			st := map[string]any{"phase": phase, "runtimeID": "rt-" + name}
+			if old, ok := o["status"].(map[string]any); ok && old["guestIP"] != nil {
+				st["guestIP"] = old["guestIP"]
+			}
+			// IPAM: a requested VirtualNetwork address, else .99.
+			if net, _ := spec["network"].(map[string]any); net != nil {
+				if vn, _ := net["virtualNetwork"].(map[string]any); vn != nil {
+					ip, _ := vn["ip"].(string)
+					if ip == "" {
+						ip = "10.50.0.99"
+					}
+					st["network"] = map[string]any{"virtualNetwork": map[string]any{"name": vn["name"], "ip": ip, "floatingIP": vn["floatingIP"]}}
+				}
+			}
+			o["status"] = st
 		case strings.HasPrefix(k, "machinebackuprestores/"):
 			o["status"] = map[string]any{"phase": model.BackupSucceeded}
 		}
@@ -448,6 +491,15 @@ func TestProtectionPlannedFailoverWaitsForHandoffFinalBackups(t *testing.T) {
 	if len(p.b.names("machines")) != 0 {
 		t.Fatal("standby created Machines before the handoff finished")
 	}
+	// Retention deleted a final backup that failed: the handoff takes it
+	// again instead of waiting for it forever.
+	p.a.mu.Lock()
+	delete(p.a.objects, "machinebackups/prod/"+h.Backups[1])
+	p.a.mu.Unlock()
+	p.reconcile(t, p.ca)
+	if !slices.Contains(p.a.names("machinebackups"), h.Backups[1]) {
+		t.Fatalf("final backup %s not taken again: %v", h.Backups[1], p.a.names("machinebackups"))
+	}
 	now := time.Now()
 	for _, name := range h.Backups {
 		var b model.MachineBackup
@@ -543,5 +595,185 @@ func TestProtectionUnreachablePeerKeepsStandbyAndReportsIt(t *testing.T) {
 	p.reconcile(t, p.cb)
 	if st := p.plan(t, p.b).Status; st.Phase != "" {
 		t.Fatalf("disabled controller touched the plan: %+v", st)
+	}
+}
+
+func TestProtectionPreservesAddressesAndMovesDNSWithTheActiveSite(t *testing.T) {
+	p := newDRPair(t)
+	netCfg := model.ProtectionNetwork{PreserveIP: true, DNS: []model.ProtectionDNSRecord{
+		{Machine: "web", Hostname: "web.shop.example.com", TTL: 60},
+		{Machine: "db", Hostname: "db.shop.example.com", Address: model.DNSAddressGuestIP},
+	}}
+	for _, s := range []*drSite{p.a, p.b} {
+		plan := p.plan(t, s)
+		plan.Spec.Network = netCfg
+		s.put(t, "machineprotectionplans", "prod", "shop", plan)
+	}
+	var web, db model.Machine
+	p.a.get(t, "machines", "prod", "web", &web)
+	web.Spec.Network = model.NetworkSpec{Mode: "tap", VirtualNetwork: &model.MachineVirtualNetwork{Name: "app", FloatingIP: "203.0.113.10"}}
+	web.Status.Network = &model.MachineNetworkStatus{VirtualNetwork: &model.MachineVirtualNetworkStatus{Name: "app", IP: "10.50.0.20", FloatingIP: "203.0.113.10"}}
+	p.a.put(t, "machines", "prod", "web", web)
+	p.a.get(t, "machines", "prod", "db", &db)
+	db.Status.GuestIP = "192.168.1.5"
+	p.a.put(t, "machines", "prod", "db", db)
+
+	p.reconcile(t, p.ca)
+	var ep model.DNSEndpoint
+	if !p.a.get(t, "dnsendpoints", "prod", "dr-shop", &ep) {
+		t.Fatal("active site published no DNSEndpoint")
+	}
+	want := []model.DNSEndpointRecord{
+		{DNSName: "web.shop.example.com", RecordType: "A", Targets: []string{"203.0.113.10"}, RecordTTL: 60},
+		{DNSName: "db.shop.example.com", RecordType: "A", Targets: []string{"192.168.1.5"}},
+	}
+	if !slices.EqualFunc(ep.Spec.Endpoints, want, func(a, b model.DNSEndpointRecord) bool {
+		return a.DNSName == b.DNSName && slices.Equal(a.Targets, b.Targets) && a.RecordTTL == b.RecordTTL
+	}) || p.plan(t, p.a).Status.DNSRecords != 2 {
+		t.Fatalf("endpoints = %+v", ep.Spec.Endpoints)
+	}
+
+	t0 := time.Now().Add(-5 * time.Minute)
+	p.replicate(t, "dr-shop-db-1", "db", t0)
+	p.replicate(t, "dr-shop-web-1", "web", t0)
+	p.reconcile(t, p.cb)
+	// The active site's runtime is gone: the recorded address stays.
+	web.Status.Network = nil
+	p.a.put(t, "machines", "prod", "web", web)
+	p.reconcile(t, p.cb)
+	st := p.plan(t, p.b).Status
+	var mirrored *model.MachineSpec
+	for _, ms := range st.Machines {
+		if ms.Name == "web" {
+			mirrored = ms.Spec
+		}
+	}
+	if mirrored == nil || mirrored.Network.VirtualNetwork.IP != "10.50.0.20" || mirrored.Network.VirtualNetwork.FloatingIP != "203.0.113.10" {
+		t.Fatalf("mirrored web spec = %+v", mirrored)
+	}
+	if c, _ := model.FindCondition(st.Conditions, condNetworkReady); c.Status != "False" || !strings.Contains(c.Message, "VirtualNetwork app not found here") {
+		t.Fatalf("NetworkReady = %+v", c)
+	}
+	if len(p.b.names("dnsendpoints")) != 0 {
+		t.Fatal("standby published DNS")
+	}
+
+	// Without the network here, a failover refuses to give web another address.
+	p.action(t, p.b, model.ProtectionAction{Type: model.ProtectionActionFailover, ID: "f1"})
+	for i := 0; i < 10; i++ {
+		p.reconcile(t, p.cb)
+		p.b.settle()
+	}
+	if f := p.plan(t, p.b).Status.Failover; f.Phase != model.ProtectionRunFailed || !strings.Contains(f.Message, "network.preserveIP") {
+		t.Fatalf("failover without the network = %+v", f)
+	}
+
+	vn := model.VirtualNetwork{Metadata: model.ObjectMeta{Name: "app", Namespace: "prod"}, Spec: model.VirtualNetworkSpec{CIDR: "10.50.0.0/24"}}
+	vn.Status.Phase = "Ready"
+	p.b.put(t, "virtualnetworks", "prod", "app", vn)
+	p.action(t, p.b, model.ProtectionAction{Type: model.ProtectionActionFailover, ID: "f2"})
+	for i := 0; i < 20; i++ {
+		p.reconcile(t, p.cb)
+		p.b.settle()
+		if f := p.plan(t, p.b).Status.Failover; f.ID == "f2" && f.Phase != model.ProtectionRunRunning {
+			break
+		}
+	}
+	if f := p.plan(t, p.b).Status.Failover; f.Phase != model.ProtectionRunSucceeded {
+		t.Fatalf("failover = %+v", f)
+	}
+	var restored model.Machine
+	p.b.get(t, "machines", "prod", "web", &restored)
+	if v := restored.Spec.Network.VirtualNetwork; v == nil || v.IP != "10.50.0.20" || v.FloatingIP != "203.0.113.10" {
+		t.Fatalf("restored web network = %+v", restored.Spec.Network)
+	}
+	p.reconcile(t, p.cb)
+	if !p.b.get(t, "dnsendpoints", "prod", "dr-shop", &ep) || len(ep.Spec.Endpoints) != 1 || ep.Spec.Endpoints[0].Targets[0] != "203.0.113.10" {
+		t.Fatalf("new active site endpoints = %+v", ep.Spec.Endpoints)
+	}
+	// The old site is fenced and withdraws its records.
+	p.reconcile(t, p.ca)
+	if len(p.a.names("dnsendpoints")) != 0 {
+		t.Fatal("fenced site still publishes DNS")
+	}
+}
+
+func TestProtectionScheduledTestRunsEndsAndRecordsTheResult(t *testing.T) {
+	p := newDRPair(t)
+	p.reconcile(t, p.ca)
+	p.replicate(t, "dr-shop-db-1", "db", time.Now().Add(-time.Minute))
+	p.replicate(t, "dr-shop-web-1", "web", time.Now().Add(-time.Minute))
+	// A finished manual test first: the scheduled one must not inherit its
+	// restored Machines.
+	p.action(t, p.b, model.ProtectionAction{Type: model.ProtectionActionTest, ID: "manual"})
+	for i := 0; i < 20; i++ {
+		p.reconcile(t, p.cb)
+		p.b.settle()
+		if run := p.plan(t, p.b).Status.Test; run != nil && run.Phase == model.ProtectionRunSucceeded {
+			break
+		}
+	}
+	p.action(t, p.b, model.ProtectionAction{Type: model.ProtectionActionEndTest, ID: "manual-end"})
+	p.reconcile(t, p.cb)
+	plan := p.plan(t, p.b)
+	if plan.Status.Test.Phase != model.ProtectionRunEnded || plan.Status.LastTest == nil || plan.Status.LastTest.ID != "manual" {
+		t.Fatalf("manual test = %+v last = %+v", plan.Status.Test, plan.Status.LastTest)
+	}
+	long := time.Now().Add(-time.Hour)
+	plan.Status.Test.StartedAt = &long
+	plan.Spec.Test.Every = "5m"
+	p.b.put(t, "machineprotectionplans", "prod", "shop", plan)
+	// An API server that times out once is retried, not a failed test.
+	p.b.unavailable = map[string]int{"POST machinebackuprestores": 1}
+	for i := 0; i < 20; i++ {
+		p.reconcile(t, p.cb)
+		p.b.settle()
+		if lt := p.plan(t, p.b).Status.LastTest; lt != nil && lt.ID != "manual" {
+			break
+		}
+	}
+	st := p.plan(t, p.b).Status
+	lt, run := st.LastTest, st.Test
+	if lt == nil || !lt.Succeeded || !lt.Scheduled || run == nil || !run.Scheduled || run.Phase != model.ProtectionRunEnded {
+		t.Fatalf("last test = %+v run = %+v", lt, run)
+	}
+	if !reflect.DeepEqual(run.Machines, []string{"db-drtest", "web-drtest"}) || !reflect.DeepEqual(run.Restored, []string{"db", "web"}) {
+		t.Fatalf("scheduled test created %v, restored %v", run.Machines, run.Restored)
+	}
+	if p.b.unavailable["POST machinebackuprestores"] != 0 {
+		t.Fatal("the API timeout was never injected")
+	}
+	if len(p.b.names("machines")) != 0 || len(p.b.names("machinebackuprestores")) != 0 {
+		t.Fatalf("scheduled test left %v %v", p.b.names("machines"), p.b.names("machinebackuprestores"))
+	}
+	if st.NextTest == nil || st.NextTest.Sub(*run.StartedAt) != 5*time.Minute {
+		t.Fatalf("next test = %v, started %v", st.NextTest, run.StartedAt)
+	}
+	if c, _ := model.FindCondition(st.Conditions, condTestSucceeded); c.Status != "True" {
+		t.Fatalf("LastTestSucceeded = %+v", c)
+	}
+	p.reconcile(t, p.cb)
+	if again := p.plan(t, p.b).Status.Test; again.ID != run.ID {
+		t.Fatalf("a second test started before test.every: %+v", again)
+	}
+}
+
+func TestTransientAPIError(t *testing.T) {
+	api := func(code int) error { return fmt.Errorf("patch status: %w", &kube.APIError{StatusCode: code}) }
+	for _, c := range []struct {
+		err  error
+		want bool
+	}{
+		{fmt.Errorf("create restore: %w", &url.Error{Op: "Post", URL: "https://api", Err: context.DeadlineExceeded}), true},
+		{api(http.StatusServiceUnavailable), true},
+		{api(http.StatusTooManyRequests), true},
+		{api(http.StatusNotFound), false},
+		{api(http.StatusUnprocessableEntity), false},
+		{errors.New("machine db has no FluxVM VM"), false},
+		{nil, false},
+	} {
+		if got := transientAPIError(c.err); got != c.want {
+			t.Errorf("transientAPIError(%v) = %v", c.err, got)
+		}
 	}
 }

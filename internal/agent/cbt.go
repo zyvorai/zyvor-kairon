@@ -166,6 +166,7 @@ func (a *Agent) startCBTBackup(ctx context.Context, b model.MachineBackup, disk 
 		return fail(err.Error())
 	}
 	var job fluxvm.CBTJob
+	var point *time.Time
 	if b.BackupMode() == model.BackupModeSyntheticFull {
 		job, err = a.Flux.StartCBTSynthesize(ctx, fluxvm.CBTSynthesizeRequest{
 			Target:         target,
@@ -202,13 +203,20 @@ func (a *Agent) startCBTBackup(ctx context.Context, b model.MachineBackup, disk 
 		if req.Mode == model.BackupModeIncremental {
 			req.Parent = &fluxvm.CBTParentRef{BackupID: chain.ParentBackupID, Sequence: chain.Sequence - 1, ManifestKey: chain.ParentManifestKey}
 		}
+		// FluxVM captures the disk inside the job, after this instant, so
+		// pointInTime is never later than the data the backup holds.
+		now := time.Now().UTC()
+		point = &now
 		job, err = a.Flux.StartCBTBackup(ctx, rec.ID(), req)
 	}
 	if err != nil {
 		return fail(err.Error())
 	}
 	disk.JobID, disk.Phase, disk.Message = job.ID, model.BackupRunning, "FluxVM job "+job.ID+" started"
-	return a.patchDiskBackup(ctx, b, disk)
+	if point == nil {
+		return a.patchDiskBackup(ctx, b, disk)
+	}
+	return a.Kube.PatchMachineBackupStatus(ctx, b.Namespace(), b.Metadata.Name, map[string]any{"disk": disk, "pointInTime": point})
 }
 
 func (a *Agent) pollCBTBackup(ctx context.Context, b model.MachineBackup, disk model.DiskBackupStatus) error {

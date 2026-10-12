@@ -47,6 +47,9 @@ component apiserver call visibility for free, labeled `method`
 | `kairon_dr_peer_reachable` | gauge | `namespace`, `plan` | 1 when the last call to the peer cluster succeeded. |
 | `kairon_dr_last_rto_seconds` | gauge | `namespace`, `plan`, `kind` | Start to every Machine Running for the last `failover` or `test`. |
 | `kairon_dr_last_data_loss_seconds` | gauge | `namespace`, `plan`, `kind` | Start of the last `failover` or `test` minus the oldest restore point it used. |
+| `kairon_dr_last_test_success` | gauge | `namespace`, `plan` | 1 when the last finished DR test (manual or scheduled) succeeded. |
+| `kairon_dr_last_test_timestamp_seconds` | gauge | `namespace`, `plan` | Unix time the last DR test finished; alert when it gets older than `test.every`. |
+| `kairon_dr_dns_records` | gauge | `namespace`, `plan` | Records in the plan's external-dns `DNSEndpoint` on this site (0 on the standby). |
 | `kairon_drs_moves_total` | counter | `result` | DRS moves: `recommended`, `started` or `blocked` (disruption budget). |
 | `kairon_node_memory_pressure` | gauge | `node`, `state` | kairon-node only. 1 while host memory is under pressure (`state=pressure`), and while it is with every elastic-memory balloon at its minimum (`state=exhausted`, the `KaironMemoryPressure` condition). See [elastic memory](machine-elastic-memory.md). |
 | `kairon_node_virtual_networks` | gauge | — | kairon-node only. Virtual networks applied to the local FluxVM. See [virtual networks](virtual-networks.md). |

@@ -460,8 +460,14 @@ func (a *Agent) projectNetworkStatus(ctx context.Context, m model.Machine, rec *
 	status.GuestIP = guestIP
 	status.GuestIPs = guestIPs
 	netStatus := &model.MachineNetworkStatus{GuestIP: guestIP, GuestIPs: guestIPs, TapName: rec.TapName}
-	if m.Status.Network != nil && m.Spec.Network.VirtualNetwork != nil {
-		netStatus.VirtualNetwork = m.Status.Network.VirtualNetwork
+	if m.Spec.Network.VirtualNetwork != nil {
+		if m.Status.Network != nil && m.Status.Network.VirtualNetwork != nil {
+			netStatus.VirtualNetwork = m.Status.Network.VirtualNetwork
+		} else if vn, err := a.Kube.GetVirtualNetwork(ctx, m.Namespace(), m.Spec.Network.VirtualNetwork.Name); err == nil {
+			// The status write after create was lost; the allocation the
+			// runtime was created with lasts for the Machine's lifetime.
+			netStatus.VirtualNetwork, _ = machineVirtualNetworkStatus(vn, m.Metadata.Name)
+		}
 	}
 	dp, err := a.Flux.NetworkStatus(ctx, rec.ID())
 	if err != nil {

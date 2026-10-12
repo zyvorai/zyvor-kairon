@@ -111,6 +111,11 @@ OVERRIDES = {
     "WatchMachineMigrations": ("kairon.zyvor.dev", "machinemigrations", "watch"),
     # Merge-patches status.lastRunError; "Set" isn't a verb prefix.
     "SetMachineSnapshotScheduleError": ("kairon.zyvor.dev", "machinesnapshotschedules/status", "patch"),
+    # external-dns's CRD, built by dnsEndpointPath.
+    "GetDNSEndpoint": ("externaldns.k8s.io", "dnsendpoints", "get"),
+    "CreateDNSEndpoint": ("externaldns.k8s.io", "dnsendpoints", "create"),
+    "PatchDNSEndpoint": ("externaldns.k8s.io", "dnsendpoints", "patch"),
+    "DeleteDNSEndpoint": ("externaldns.k8s.io", "dnsendpoints", "delete"),
 }
 
 VERB_PREFIXES = [

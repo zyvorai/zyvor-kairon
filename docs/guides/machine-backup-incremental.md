@@ -79,7 +79,7 @@ spec:
 |---|---|
 | `chain.id`, `chain.sequence` | The chain and the backup's place in it. A full starts a chain at 1. |
 | `chain.parent`, `chain.base` | The backup an incremental builds on; the full (or synthetic full) the chain starts from. |
-| `kind`, `pointInTime` | full, incremental or synthetic-full; the instant a restore returns to. |
+| `kind`, `pointInTime` | full, incremental or synthetic-full; the instant a restore returns to. For a full or incremental, kairon-node sets it when it starts the FluxVM job, which captures the disk moments later (after creating its local layers), so the backup can hold writes up to a few seconds newer, never older. |
 | `manifestKey`, `objects` | The S3 keys written. |
 | `storedBytes`, `changedBytes` | Bytes in the bucket (compressed, encrypted) and guest bytes the layer carries. |
 | `retentionUntil` | Object Lock date; the backup cannot be deleted before it. |

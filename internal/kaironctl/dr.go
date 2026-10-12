@@ -147,6 +147,15 @@ func printProtectionStatus(w io.Writer, p model.MachineProtectionPlan) {
 	if h := st.Handoff; h != nil {
 		_, _ = fmt.Fprintf(w, "\nHandoff %s:\t%s %v %s\n", h.ID, h.Phase, h.Backups, h.Message)
 	}
+	if lt := st.LastTest; lt != nil {
+		_, _ = fmt.Fprintf(w, "\nLast test %s:\tsucceeded=%v scheduled=%v rto=%s %s\n", lt.ID, lt.Succeeded, lt.Scheduled, seconds(lt.RTOSeconds), lt.Message)
+	}
+	if st.NextTest != nil {
+		_, _ = fmt.Fprintf(w, "Next test:\t%s (every %s)\n", st.NextTest.UTC().Format(time.RFC3339), p.Spec.Test.Every)
+	}
+	if n := len(p.Spec.Network.DNS); n > 0 {
+		_, _ = fmt.Fprintf(w, "DNS:\t%d of %d records published here\n", st.DNSRecords, n)
+	}
 	for _, c := range st.Conditions {
 		_, _ = fmt.Fprintf(w, "Condition %s=%s %s: %s\n", c.Type, c.Status, c.Reason, c.Message)
 	}

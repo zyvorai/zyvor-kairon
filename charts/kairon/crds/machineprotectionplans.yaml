@@ -173,6 +173,37 @@ spec:
                   ttl:
                     type: string
                     pattern: '^([0-9]+d|([0-9]+(\.[0-9]+)?(h|m|s))+)$'
+                  every:
+                    description: Run a DR test on the standby this long after the last one started (at least 5m).
+                    type: string
+                    pattern: '^([0-9]+d|([0-9]+(\.[0-9]+)?(h|m|s))+)$'
+              network:
+                type: object
+                properties:
+                  preserveIP:
+                    description: Restore Machines on a VirtualNetwork with the address they had on the active site.
+                    type: boolean
+                  dns:
+                    description: A records the active site publishes as an external-dns DNSEndpoint named dr-<plan>.
+                    type: array
+                    maxItems: 64
+                    items:
+                      type: object
+                      required:
+                      - machine
+                      - hostname
+                      properties:
+                        machine:
+                          type: string
+                        hostname:
+                          type: string
+                          maxLength: 253
+                        address:
+                          type: string
+                          enum: [floatingIP, ip, guestIP]
+                        ttl:
+                          type: integer
+                          minimum: 0
               action:
                 type: object
                 required:
