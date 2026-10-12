@@ -67,6 +67,7 @@ type fakeCBTKube struct {
 	backups    map[string]model.MachineBackup
 	node       model.Node
 	disk       []model.DiskBackupStatus
+	points     []*time.Time
 	finalizers [][]string
 	nodePatch  []map[string]any
 }
@@ -90,7 +91,8 @@ func newCBTAgent(t *testing.T, ff *fakeCBTFlux, fk *fakeCBTKube) *Agent {
 		raw, _ := io.ReadAll(r.Body)
 		var body struct {
 			Status struct {
-				Disk model.DiskBackupStatus `json:"disk"`
+				Disk        model.DiskBackupStatus `json:"disk"`
+				PointInTime *time.Time             `json:"pointInTime"`
 			} `json:"status"`
 			Metadata struct {
 				Finalizers []string `json:"finalizers"`
@@ -117,6 +119,7 @@ func newCBTAgent(t *testing.T, ff *fakeCBTFlux, fk *fakeCBTKube) *Agent {
 			_ = json.NewEncoder(w).Encode(fk.backups[strings.TrimPrefix(p, "/apis/kairon.zyvor.dev/v1/namespaces/prod/machinebackups/")])
 		case r.Method == http.MethodPatch && strings.HasSuffix(p, "/status"):
 			fk.disk = append(fk.disk, body.Status.Disk)
+			fk.points = append(fk.points, body.Status.PointInTime)
 			_, _ = io.WriteString(w, `{}`)
 		case r.Method == http.MethodPatch:
 			fk.finalizers = append(fk.finalizers, body.Metadata.Finalizers)
@@ -172,8 +175,12 @@ func TestCBTBackupStartsFluxVMJobAndFoldsResult(t *testing.T) {
 	a := newCBTAgent(t, ff, fk)
 	b := cbtAgentBackup("")
 	ctx := context.Background()
+	before := time.Now().UTC()
 	if err := a.reconcileDiskBackup(ctx, b, backupTestMachine("")); err != nil {
 		t.Fatal(err)
+	}
+	if pit := fk.points[len(fk.points)-1]; pit == nil || pit.Before(before) || pit.After(time.Now()) {
+		t.Fatalf("pointInTime = %v, want the time the FluxVM job started", pit)
 	}
 	req := ff.bodies["/v1/vms/vm-1/cbt-backup"]
 	target, _ := req["target"].(map[string]any)

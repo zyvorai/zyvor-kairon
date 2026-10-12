@@ -888,6 +888,32 @@ func (c *Client) PatchMachineProtectionPlan(ctx context.Context, ns, name string
 	return c.request(ctx, http.MethodPatch, namespacedObjectPath(ns, "machineprotectionplans", name), patch, nil, "application/merge-patch+json")
 }
 
+func dnsEndpointPath(ns, name string) string {
+	p := fmt.Sprintf("/apis/externaldns.k8s.io/v1alpha1/namespaces/%s/dnsendpoints", url.PathEscape(ns))
+	if name != "" {
+		p += "/" + url.PathEscape(name)
+	}
+	return p
+}
+
+func (c *Client) GetDNSEndpoint(ctx context.Context, ns, name string) (model.DNSEndpoint, error) {
+	var e model.DNSEndpoint
+	err := c.request(ctx, http.MethodGet, dnsEndpointPath(ns, name), nil, &e, "")
+	return e, err
+}
+
+func (c *Client) CreateDNSEndpoint(ctx context.Context, ns string, e model.DNSEndpoint) error {
+	return c.request(ctx, http.MethodPost, dnsEndpointPath(ns, ""), e, nil, "")
+}
+
+func (c *Client) PatchDNSEndpoint(ctx context.Context, ns, name string, patch map[string]any) error {
+	return c.request(ctx, http.MethodPatch, dnsEndpointPath(ns, name), patch, nil, "application/merge-patch+json")
+}
+
+func (c *Client) DeleteDNSEndpoint(ctx context.Context, ns, name string) error {
+	return c.request(ctx, http.MethodDelete, dnsEndpointPath(ns, name), nil, nil, "")
+}
+
 func (c *Client) ListMacNetworks(ctx context.Context) ([]model.MacNetwork, error) {
 	var list model.MacNetworkList
 	err := c.request(ctx, http.MethodGet, "/apis/kairon.zyvor.dev/v1/macnetworks", nil, &list, "")
@@ -898,8 +924,12 @@ func (c *Client) PatchMacNetworkStatus(ctx context.Context, ns, name string, sta
 	return c.request(ctx, http.MethodPatch, namespacedObjectPath(ns, "macnetworks", name)+"/status", map[string]any{"status": status}, nil, "application/merge-patch+json")
 }
 
+// PatchMachineProtectionPlanStatus replaces the whole status (JSON patch):
+// a merge patch would keep fields a new run leaves empty, such as the
+// previous run's restored Machines.
 func (c *Client) PatchMachineProtectionPlanStatus(ctx context.Context, ns, name string, status model.MachineProtectionPlanStatus) error {
-	return c.request(ctx, http.MethodPatch, namespacedObjectPath(ns, "machineprotectionplans", name)+"/status", map[string]any{"status": status}, nil, "application/merge-patch+json")
+	patch := []map[string]any{{"op": "add", "path": "/status", "value": status}}
+	return c.request(ctx, http.MethodPatch, namespacedObjectPath(ns, "machineprotectionplans", name)+"/status", patch, nil, "application/json-patch+json")
 }
 
 func (c *Client) ListMachineSnapshotSchedules(ctx context.Context) ([]model.MachineSnapshotSchedule, error) {

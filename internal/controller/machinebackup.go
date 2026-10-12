@@ -31,6 +31,9 @@ func (c *Controller) reconcileMachineBackups(ctx context.Context, machines map[s
 			if c.Metrics != nil {
 				c.Metrics.ObserveReconcileItemError("machinebackup")
 			}
+			if transientAPIError(err) {
+				continue
+			}
 			c.patchBackupStatus(ctx, b, map[string]any{"phase": model.BackupFailed, "message": err.Error(), "completionTime": time.Now().UTC()})
 		}
 	}
@@ -43,6 +46,9 @@ func (c *Controller) reconcileMachineBackups(ctx context.Context, machines map[s
 			c.Log.Error("machine backup restore reconcile failed", "namespace", r.Namespace(), "restore", r.Metadata.Name, "error", err)
 			if c.Metrics != nil {
 				c.Metrics.ObserveReconcileItemError("machinebackuprestore")
+			}
+			if transientAPIError(err) {
+				continue
 			}
 			c.patchRestoreStatus(ctx, r, map[string]any{"phase": model.BackupFailed, "message": err.Error(), "completionTime": time.Now().UTC()})
 		}

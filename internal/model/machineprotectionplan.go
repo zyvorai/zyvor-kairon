@@ -77,6 +77,9 @@ type MachineProtectionPlanSpec struct {
 	Objectives  ProtectionObjectives  `json:"objectives,omitempty"`
 	Peer        ProtectionPeer        `json:"peer"`
 	Test        ProtectionTest        `json:"test,omitempty"`
+	// Network keeps the Machines reachable at the same addresses and names
+	// after a failover.
+	Network ProtectionNetwork `json:"network,omitempty"`
 	// Action runs once per new ID.
 	Action *ProtectionAction `json:"action,omitempty"`
 }
@@ -131,7 +134,39 @@ type ProtectionTest struct {
 	Bridge string `json:"bridge,omitempty"`
 	// TTL removes the test copies after this long (default 1h).
 	TTL string `json:"ttl,omitempty"`
+	// Every runs a DR test on the standby site this long after the last
+	// one started (at least 5m). A scheduled test removes its copies as
+	// soon as it has a result.
+	Every string `json:"every,omitempty"`
 }
+
+type ProtectionNetwork struct {
+	// PreserveIP restores Machines on a VirtualNetwork with the address
+	// they had on the active site: the standby records each one's
+	// allocated IP in the mirrored spec. A floating IP is kept as is and
+	// moves with the Machine. The standby needs a Ready VirtualNetwork of
+	// the same name whose CIDR holds the address.
+	PreserveIP bool `json:"preserveIP,omitempty"`
+	// DNS records the active site publishes as an external-dns
+	// DNSEndpoint named dr-<plan>; the standby site removes its own.
+	DNS []ProtectionDNSRecord `json:"dns,omitempty"`
+}
+
+// ProtectionDNSRecord is an A record for one protected Machine.
+type ProtectionDNSRecord struct {
+	Machine  string `json:"machine"`
+	Hostname string `json:"hostname"`
+	// Address is floatingIP, ip (the VirtualNetwork address) or guestIP;
+	// empty takes the first of the three the Machine has.
+	Address string `json:"address,omitempty"`
+	TTL     int64  `json:"ttl,omitempty"`
+}
+
+const (
+	DNSAddressFloatingIP = "floatingIP"
+	DNSAddressIP         = "ip"
+	DNSAddressGuestIP    = "guestIP"
+)
 
 type ProtectionAction struct {
 	// Type is Failover, Test or EndTest.
@@ -161,6 +196,22 @@ type MachineProtectionPlanStatus struct {
 	Failover   *ProtectionRun     `json:"failover,omitempty"`
 	Test       *ProtectionRun     `json:"test,omitempty"`
 	Handoff    *ProtectionHandoff `json:"handoff,omitempty"`
+	// LastTest is the result of the newest DR test that finished.
+	LastTest *ProtectionTestResult `json:"lastTest,omitempty"`
+	// NextTest is when test.every starts the next DR test.
+	NextTest *time.Time `json:"nextTest,omitempty"`
+	// DNSRecords is how many of network.dns this site publishes.
+	DNSRecords int `json:"dnsRecords,omitempty"`
+}
+
+// ProtectionTestResult is a finished DR test.
+type ProtectionTestResult struct {
+	ID          string     `json:"id"`
+	Succeeded   bool       `json:"succeeded"`
+	Scheduled   bool       `json:"scheduled,omitempty"`
+	CompletedAt *time.Time `json:"completedAt,omitempty"`
+	RTOSeconds  *float64   `json:"rtoSeconds,omitempty"`
+	Message     string     `json:"message,omitempty"`
 }
 
 type ProtectionPeerStatus struct {
@@ -206,6 +257,8 @@ type ProtectionRun struct {
 	Points map[string]string `json:"points,omitempty"`
 	// ExpiresAt removes a test's copies.
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+	// Scheduled marks a DR test started by test.every.
+	Scheduled bool `json:"scheduled,omitempty"`
 }
 
 // ProtectionHandoff is the active site's side of a planned failover.
@@ -220,7 +273,10 @@ type ProtectionHandoff struct {
 const (
 	defaultProtectionFullEvery = 24 * time.Hour
 	defaultProtectionTestTTL   = time.Hour
+	minProtectionTestEvery     = 5 * time.Minute
 )
+
+var dnsNameRE = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.?$`)
 
 // PolicyName is the MachineBackupPolicy the active site replicates with.
 func (p MachineProtectionPlan) PolicyName() string { return "dr-" + p.Metadata.Name }
@@ -269,6 +325,14 @@ func (s MachineProtectionPlanSpec) TestTTL() (time.Duration, error) {
 	return ParseBackupDuration(s.Test.TTL)
 }
 
+// TestEvery is the DR test schedule; 0 is none.
+func (s MachineProtectionPlanSpec) TestEvery() (time.Duration, error) {
+	if s.Test.Every == "" {
+		return 0, nil
+	}
+	return ParseBackupDuration(s.Test.Every)
+}
+
 // Objective parses an RPO or RTO; "" is none.
 func Objective(v string) (time.Duration, error) {
 	if v == "" {
@@ -297,6 +361,27 @@ func (s MachineProtectionPlanSpec) Validate(planName string) error {
 	}
 	if _, err := s.TestTTL(); err != nil {
 		return fmt.Errorf("test.ttl: %w", err)
+	}
+	if every, err := s.TestEvery(); err != nil || every != 0 && every < minProtectionTestEvery {
+		return fmt.Errorf("test.every must be a duration of at least %s", minProtectionTestEvery)
+	}
+	inPlan := map[string]bool{}
+	for _, m := range s.Machines {
+		inPlan[m.Name] = true
+	}
+	hosts := map[string]bool{}
+	for _, r := range s.Network.DNS {
+		switch {
+		case !inPlan[r.Machine]:
+			return fmt.Errorf("network.dns: machine %q is not in the plan", r.Machine)
+		case !dnsNameRE.MatchString(r.Hostname) || hosts[r.Hostname]:
+			return fmt.Errorf("network.dns: hostname %q is not a DNS name or is listed twice", r.Hostname)
+		case r.Address != "" && r.Address != DNSAddressFloatingIP && r.Address != DNSAddressIP && r.Address != DNSAddressGuestIP:
+			return fmt.Errorf("network.dns: address must be floatingIP, ip or guestIP")
+		case r.TTL < 0:
+			return fmt.Errorf("network.dns: ttl cannot be negative")
+		}
+		hosts[r.Hostname] = true
 	}
 	if a := s.Action; a != nil {
 		switch a.Type {
@@ -373,6 +458,42 @@ func MirrorSpec(spec MachineSpec) MachineSpec {
 	spec.Resources.AllocatedCPUSet = nil
 	spec.DeviceClaims = nil
 	return spec
+}
+
+// PreservedSpec is MirrorSpec with, when preserveIP is set, the
+// VirtualNetwork address the Machine was allocated pinned in the spec.
+func PreservedSpec(m Machine, preserveIP bool) MachineSpec {
+	spec := MirrorSpec(m.Spec)
+	vn := spec.Network.VirtualNetwork
+	if !preserveIP || vn == nil || vn.IP != "" || m.Status.Network == nil || m.Status.Network.VirtualNetwork == nil {
+		return spec
+	}
+	pinned := *vn
+	pinned.IP = m.Status.Network.VirtualNetwork.IP
+	spec.Network.VirtualNetwork = &pinned
+	return spec
+}
+
+// DNSAddress is the address r points at for m, or "".
+func (r ProtectionDNSRecord) DNSAddress(m Machine) string {
+	var vnIP, floating string
+	if n := m.Status.Network; n != nil && n.VirtualNetwork != nil {
+		vnIP, floating = n.VirtualNetwork.IP, n.VirtualNetwork.FloatingIP
+	}
+	switch r.Address {
+	case DNSAddressFloatingIP:
+		return floating
+	case DNSAddressIP:
+		return vnIP
+	case DNSAddressGuestIP:
+		return m.Status.GuestIP
+	}
+	for _, a := range []string{floating, vnIP, m.Status.GuestIP} {
+		if a != "" {
+			return a
+		}
+	}
+	return ""
 }
 
 // Replicated reports whether b was imported from the peer site.

@@ -201,7 +201,7 @@ for incremental S3 backups,
 
 ```text
 kaironctl dr get [PLAN] [-n NS]
-kaironctl dr status PLAN [-n NS]
+kaironctl dr status PLAN [-n NS]                 # restore points, runs, last/next test, DNS, conditions
 kaironctl dr failover PLAN [--planned] [-n NS]   # on the standby; --planned also fails back
 kaironctl dr test PLAN [-n NS]                   # copies on the isolated test bridge
 kaironctl dr test-end PLAN [-n NS]

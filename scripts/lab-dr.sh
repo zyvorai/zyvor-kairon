@@ -33,6 +33,23 @@
 #              backups, A restores them: the guest's last write on B is on A
 #              (no data lost), and B is halted
 #
+# Both sites have a VirtualNetwork "app" with the same CIDR, and the plans
+# set network.preserveIP and DNS records for db and web. web is created
+# before db on A, so the lowest-free allocation B would make on its own
+# (db first, by dependency) differs from A's. More cases:
+#
+#   network    B reports NetworkReady=True; A publishes DNSEndpoint dr-shop
+#              with both Machines' addresses, B publishes none
+#   scheduled-test  test.every=5m on B: a scheduled test starts by itself,
+#              ends by itself and B records lastTest.succeeded
+#   preserve-ip  after failover, db and web on B have the addresses they had
+#              on A
+#   dns-move   after failover, the DNSEndpoint is on B only; after failback,
+#              on A only
+#
+# A minimal externaldns.k8s.io DNSEndpoint CRD is installed when missing
+# (no external-dns runs: nothing reaches a DNS provider).
+#
 # and prints COMPATIBILITY.md rows with the measured RPO, RTO and data loss.
 # Needs KAIRON_KUBE_* (lib/lab.sh), FLUXVM_URL for the serial console,
 # kairon-controller running with --dr-secret-namespace=kairon-system and
@@ -49,7 +66,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/lab.sh"
 
 IMAGE=""; NODE=""; SITE_A=dr-a; SITE_B=dr-b; INTERVAL=5m; BRIDGE=drtest0; TIMEOUT=1200; KEEP=0
 SECRET_NS=kairon-system; PLAN=shop; S3_CREDS=dr-lab-s3; S3_BUCKET=kairon-dr-lab; PEER_SECRET=dr-lab-peer
-S3_GATEWAY=""; S3_PID=""; S3_DIR=""
+S3_GATEWAY=""; S3_PID=""; S3_DIR=""; VN_CIDR=10.77.0.0/24; DNS_CRD=dnsendpoints.externaldns.k8s.io; DNS_CRD_OURS=0
 for arg in "$@"; do
   case "$arg" in
     --s3-gateway=*) S3_GATEWAY="${arg#*=}" ;;
@@ -134,6 +151,7 @@ spec = {
         ],
         "runCmd": ["systemctl daemon-reload", "systemctl enable --now drlab.service"],
     },
+    "network": {"virtualNetwork": {"name": "app"}},
 }
 if node:
     spec["placement"] = {"nodeSelector": {"kubernetes.io/hostname": node}}
@@ -153,9 +171,17 @@ print(json.dumps({"apiVersion": "kairon.zyvor.dev/v1", "kind": "MachineProtectio
                                                "credentialsSecretRef": creds, "pathStyle": True}}},
              "objectives": {"rpo": "15m", "rto": "10m"},
              "peer": {"server": server, "credentialsSecretRef": secret, "namespace": peer_ns},
-             "test": {"bridge": bridge, "ttl": "30m"}}}))
+             "test": {"bridge": bridge, "ttl": "30m"},
+             "network": {"preserveIP": True, "dns": [
+                 {"machine": "db", "hostname": "db.shop.drlab.example", "address": "ip", "ttl": 30},
+                 {"machine": "web", "hostname": "web.shop.drlab.example", "address": "ip", "ttl": 30}]}}}))
 EOF
 }
+
+vn_ip() { field "$1" "$2" '((o.get("status") or {}).get("network") or {}).get("virtualNetwork",{}).get("ip") or ""'; }
+dns_path() { echo "apis/externaldns.k8s.io/v1alpha1/namespaces/$1/dnsendpoints/dr-$PLAN"; }
+# dns NS -- "name=target ..." of the plan's DNSEndpoint, empty when none.
+dns() { kube_curl GET "$(dns_path "$1")" 2>/dev/null | json_eval '" ".join(sorted(e["dnsName"]+"="+",".join(e["targets"]) for e in o["spec"]["endpoints"]))' 2>/dev/null || true; }
 
 peer_label() {
   kube_curl PATCH "api/v1/namespaces/$SECRET_NS/secrets/$PEER_SECRET" "{\"metadata\":{\"labels\":{\"kairon.zyvor.dev/dr-peer-credentials\":$1}}}" "$MERGE" >/dev/null
@@ -169,7 +195,7 @@ cleanup() {
   # kairon-node deletes the backups' S3 objects first, so S3 and its
   # credentials Secret go last.
   for ns in "$SITE_A" "$SITE_B"; do
-    for r in machinebackuppolicies machinebackuprestores machinebackups machines; do
+    for r in machinebackuppolicies machinebackuprestores machinebackups machines virtualnetworks; do
       for n in $(kube_curl GET "$LAB_API/namespaces/$ns/$r" 2>/dev/null | json_eval '" ".join(i["metadata"]["name"] for i in o["items"])' 2>/dev/null); do
         kube_curl DELETE "$LAB_API/namespaces/$ns/$r/$n" >/dev/null 2>&1 || true
       done
@@ -187,6 +213,7 @@ cleanup() {
   rt rm -f kairon-dr-minio >/dev/null 2>&1 || true
   [[ -n "$S3_PID" ]] && { kill "$S3_PID" 2>/dev/null || true; rm -rf "$S3_DIR" "$S3_DIR.log"; }
   sudo -n ip link del "$BRIDGE" 2>/dev/null || true
+  [[ "$DNS_CRD_OURS" == 1 ]] && { kube_curl DELETE "apis/apiextensions.k8s.io/v1/customresourcedefinitions/$DNS_CRD" >/dev/null 2>&1 || true; }
 }
 trap cleanup EXIT
 
@@ -234,11 +261,36 @@ CA="$(kube_curl GET "api/v1/namespaces/$SECRET_NS/configmaps/kube-root-ca.crt" |
 kube_curl DELETE "api/v1/namespaces/$SECRET_NS/secrets/$PEER_SECRET" >/dev/null 2>&1 || true
 kube_curl POST "api/v1/namespaces/$SECRET_NS/secrets" "$(json '{"apiVersion":"v1","kind":"Secret","metadata":{"name":sys.argv[1],"labels":{"kairon.zyvor.dev/dr-peer-credentials":"true"}},"stringData":{"token":sys.argv[2],"ca.crt":sys.argv[3]}}' "$PEER_SECRET" "$TOKEN" "$CA")" >/dev/null
 
-for m in db web; do kube_curl POST "$LAB_API/namespaces/$SITE_A/machines" "$(machine_body "$m")" >/dev/null; done
-for m in db web; do
-  wait_until 600 "$SITE_A/$m Running" phase_is "$SITE_A" "$m" Running
-  wait_until 300 "$SITE_A/$m probe" probing "$SITE_A" "$m"
+if ! kube_exists "apis/apiextensions.k8s.io/v1/customresourcedefinitions/$DNS_CRD"; then
+  kube_curl POST apis/apiextensions.k8s.io/v1/customresourcedefinitions "$(python3 - <<'EOF'
+import json
+print(json.dumps({"apiVersion": "apiextensions.k8s.io/v1", "kind": "CustomResourceDefinition",
+    "metadata": {"name": "dnsendpoints.externaldns.k8s.io",
+                 "annotations": {"api-approved.kubernetes.io": "https://github.com/kubernetes-sigs/external-dns/pull/2007"}},
+    "spec": {"group": "externaldns.k8s.io", "scope": "Namespaced",
+             "names": {"kind": "DNSEndpoint", "listKind": "DNSEndpointList", "plural": "dnsendpoints", "singular": "dnsendpoint"},
+             "versions": [{"name": "v1alpha1", "served": True, "storage": True, "subresources": {"status": {}},
+                           "schema": {"openAPIV3Schema": {"type": "object", "x-kubernetes-preserve-unknown-fields": True}}}]}}))
+EOF
+)" >/dev/null
+  DNS_CRD_OURS=1
+  dns_crd_ready() { kube_curl GET "apis/externaldns.k8s.io/v1alpha1/namespaces/$SITE_A/dnsendpoints" >/dev/null 2>&1; }
+  wait_until 60 "DNSEndpoint CRD served" dns_crd_ready
+fi
+for ns in "$SITE_A" "$SITE_B"; do
+  kube_curl POST "$LAB_API/namespaces/$ns/virtualnetworks" "$(json '{"apiVersion":"kairon.zyvor.dev/v1","kind":"VirtualNetwork","metadata":{"name":"app"},"spec":{"cidr":sys.argv[1]}}' "$VN_CIDR")" >/dev/null
 done
+
+# web before db: A's allocation order is the reverse of the failover's.
+for m in web db; do
+  kube_curl POST "$LAB_API/namespaces/$SITE_A/machines" "$(machine_body "$m")" >/dev/null
+  has_ip() { [[ -n "$(vn_ip "$SITE_A" "$1")" ]]; }
+  wait_until 600 "$SITE_A/$m Running" phase_is "$SITE_A" "$m" Running
+  wait_until 120 "$SITE_A/$m address" has_ip "$m"
+done
+for m in db web; do wait_until 300 "$SITE_A/$m probe" probing "$SITE_A" "$m"; done
+A_DB_IP="$(vn_ip "$SITE_A" db)"; A_WEB_IP="$(vn_ip "$SITE_A" web)"
+lab_log "$SITE_A addresses: db $A_DB_IP, web $A_WEB_IP"
 kube_curl POST "$LAB_API/namespaces/$SITE_A/machineprotectionplans" "$(plan_body Primary "$SITE_B")" >/dev/null
 kube_curl POST "$LAB_API/namespaces/$SITE_B/machineprotectionplans" "$(plan_body Secondary "$SITE_A")" >/dev/null
 
@@ -258,6 +310,21 @@ if wait_until "$TIMEOUT" "$SITE_B imports restore points of db and web" both_poi
   fi
 else
   result replicate fail "no restore points on $SITE_B: $(st "$SITE_B" '.get("machines")')"
+fi
+
+# --- network ----------------------------------------------------------------
+WANT_DNS="db.shop.drlab.example=$A_DB_IP web.shop.drlab.example=$A_WEB_IP"
+a_published() { [[ "$(dns "$SITE_A")" == "$WANT_DNS" ]]; }
+b_net_ready() { [[ "$(plan_field "$SITE_B" 'cond("NetworkReady")')" == True ]]; }
+if [[ "${RESULT[replicate]}" == pass ]] && wait_until 120 "$SITE_A publishes DNS" a_published && wait_until 120 "$SITE_B NetworkReady" b_net_ready; then
+  pinned="$(st "$SITE_B" '.get("machines") and " ".join(sorted(m["name"]+"="+m["spec"]["network"]["virtualNetwork"].get("ip","") for m in o["status"]["machines"]))')"
+  if [[ -z "$(dns "$SITE_B")" && "$pinned" == "db=$A_DB_IP web=$A_WEB_IP" ]]; then
+    result network pass "$SITE_A publishes DNSEndpoint dr-$PLAN ($WANT_DNS); $SITE_B publishes none, mirrored specs pin $pinned, NetworkReady=True"
+  else
+    result network fail "B DNS '$(dns "$SITE_B")', B pinned '$pinned'"
+  fi
+else
+  result network fail "A DNS '$(dns "$SITE_A")' (want '$WANT_DNS'), B NetworkReady=$(plan_field "$SITE_B" 'cond("NetworkReady")'): $(st "$SITE_B" '.get("conditions") and next((c.get("message") for c in o["status"]["conditions"] if c["type"] == "NetworkReady"), "")')"
 fi
 
 run_phase() { st "$1" ".get('$2') and o['status']['$2'].get('phase') or ''"; }
@@ -307,6 +374,29 @@ if [[ "${RESULT[replicate]}" == pass ]]; then
     result dr-test fail "test run $(run_phase "$SITE_B" test): $(run_field "$SITE_B" test message)"
   fi
 
+  # --- scheduled-test -------------------------------------------------------
+  # Due test.every after the previous test started; it ends itself.
+  last_manual="$(st "$SITE_B" '.get("lastTest",{}).get("id")')"
+  kube_curl PATCH "$(plan_path "$SITE_B")" '{"spec":{"test":{"every":"5m"}}}' "$MERGE" >/dev/null
+  # Off again once one has started, so a test as long as every does not
+  # start the next one before this is read.
+  sched_started() { [[ "$(st "$SITE_B" '.get("test") and o["status"]["test"].get("scheduled")')" == True ]]; }
+  wait_until 900 "a scheduled DR test starts on $SITE_B" sched_started || true
+  kube_curl PATCH "$(plan_path "$SITE_B")" '{"spec":{"test":{"every":null}}}' "$MERGE" >/dev/null
+  sched_done() { [[ "$(st "$SITE_B" '.get("lastTest") and o["status"]["lastTest"].get("scheduled")')" == True ]] && ! exists "$SITE_B" db-drtest && ! exists "$SITE_B" web-drtest; }
+  if wait_until "$TIMEOUT" "a scheduled DR test on $SITE_B" sched_done; then
+    lt() { st "$SITE_B" ".get('lastTest',{}).get('$1')"; }
+    created="$(run_field "$SITE_B" test machines)"; restored="$(run_field "$SITE_B" test restored)"
+    if [[ "$(lt succeeded)" == True && "$(plan_field "$SITE_B" 'cond("LastTestSucceeded")')" == True && "$(lt id)" != "$last_manual" &&
+          "$created" == "['db-drtest', 'web-drtest']" && "$restored" == "['db', 'web']" ]]; then
+      result scheduled-test pass "test.every=5m after manual test $last_manual: test $(lt id) started by itself at $(run_field "$SITE_B" test startedAt), created and restored db-drtest and web-drtest, Running in $(lt rtoSeconds | cut -d. -f1)s, ended and removed by itself; lastTest.succeeded=True, LastTestSucceeded=True"
+    else
+      result scheduled-test fail "lastTest $(st "$SITE_B" '.get("lastTest")'), created $created, restored $restored"
+    fi
+  else
+    result scheduled-test fail "no finished scheduled test: test $(st "$SITE_B" '.get("test")'), lastTest $(st "$SITE_B" '.get("lastTest")')"
+  fi
+
   # --- consolidate ----------------------------------------------------------
   # Retention only consolidates bases older than its window, which takes
   # hours, so the drill requests the policy's synthetic full of web's newest
@@ -314,8 +404,17 @@ if [[ "${RESULT[replicate]}" == pass ]]; then
   # replication must be an incremental on the synthetic full, and no
   # further synthetic full may follow.
   web_backups() { kube_curl GET "$LAB_API/namespaces/$SITE_A/machinebackups?labelSelector=kairon.zyvor.dev/backup-policy%3Ddr-$PLAN,kairon.zyvor.dev/backup-machine%3Dweb"; }
-  synth="dr-$PLAN-web-synth-lab-$(date +%s)"
-  body="$(web_backups | python3 -c '
+  # A backup still in flight would become the newer point the next
+  # incremental chains from.
+  web_idle() { [[ "$(web_backups | json_eval 'len([b for b in o["items"] if (b.get("status") or {}).get("phase") not in ("Succeeded", "Failed")])')" == 0 ]]; }
+  synth_done() { [[ "$(web_backups | json_eval "next(((b.get('status') or {}).get('phase') or '' for b in o['items'] if b['metadata']['name'] == '$synth'), 'gone')")" =~ ^(Succeeded|Failed|gone)$ ]]; }
+  # A replication started before the synthetic full finished chains from
+  # the point it consolidates, and retention then drops it; try once more.
+  raced() { [[ "$(web_backups | json_eval "len([b for b in o['items'] if b['spec'].get('mode') != 'synthetic-full' and b['metadata']['creationTimestamp'] > next((x['metadata']['creationTimestamp'] for x in o['items'] if x['metadata']['name'] == '$synth'), '')])")" != 0 ]]; }
+  for attempt in 1 2; do
+    wait_until 600 "no backup of web in flight on $SITE_A" web_idle || true
+    synth="dr-$PLAN-web-synth-lab-$(date +%s)"
+    body="$(web_backups | python3 -c '
 import json, sys
 o, name = json.load(sys.stdin), sys.argv[1]
 ok = [b for b in o["items"] if (b.get("status") or {}).get("phase") == "Succeeded" and b["spec"].get("mode") != "synthetic-full"]
@@ -324,7 +423,12 @@ spec = dict(src["spec"], mode="synthetic-full", parent=src["metadata"]["name"])
 print(json.dumps({"apiVersion": src["apiVersion"], "kind": "MachineBackup",
                   "metadata": {"name": name, "labels": src["metadata"]["labels"]}, "spec": spec}))
 ' "$synth")"
-  kube_curl POST "$LAB_API/namespaces/$SITE_A/machinebackups" "$body" >/dev/null
+    kube_curl POST "$LAB_API/namespaces/$SITE_A/machinebackups" "$body" >/dev/null
+    wait_until 900 "$synth finished" synth_done || true
+    lab_log "$synth: $(web_backups | json_eval "next((json.dumps({k: (b.get('status') or {}).get(k) for k in ('phase', 'message', 'pointInTime', 'chain')}) for b in o['items'] if b['metadata']['name'] == '$synth'), 'gone')")"
+    raced || break
+    lab_log "attempt $attempt: a replication started while $synth was running"
+  done
   on_synth() {
     web_backups | json_eval "next((b['metadata']['name'] for b in o['items'] if b['spec'].get('parent') == '$synth' and (b.get('status') or {}).get('phase') == 'Succeeded'), '')"
   }
@@ -334,7 +438,7 @@ print(json.dumps({"apiVersion": src["apiVersion"], "kind": "MachineBackup",
     left="$(web_backups | json_eval "sorted(b['metadata']['name'] for b in o['items'] if b['metadata']['name'] != '$synth' and (b.get('status') or {}).get('pointInTime', '9') <= next(x['status']['pointInTime'] for x in o['items'] if x['metadata']['name'] == '$synth'))")"
     synths="$(web_backups | json_eval "len([b for b in o['items'] if b['spec'].get('mode') == 'synthetic-full'])")"
     if [[ "$synths" == 1 ]]; then
-      result consolidate pass "the next replication after $synth was an incremental on it, $(on_synth); no further synthetic full; older backups left: $left"
+      result consolidate pass "attempt $attempt: the next replication after $synth was an incremental on it, $(on_synth); no further synthetic full; older backups left: $left"
     else
       result consolidate fail "older backups left: $left; synthetic fulls: $synths"
     fi
@@ -376,6 +480,22 @@ print(json.dumps({"apiVersion": src["apiVersion"], "kind": "MachineBackup",
     peer_label '"true"'
     result failover fail "failover $(run_phase "$SITE_B" failover): $(run_field "$SITE_B" failover message)"
   fi
+
+  # --- preserve-ip, dns-move ------------------------------------------------
+  if [[ "${RESULT[failover]:-}" == pass ]]; then
+    b_ips="db=$(vn_ip "$SITE_B" db) web=$(vn_ip "$SITE_B" web)"
+    if [[ "$b_ips" == "db=$A_DB_IP web=$A_WEB_IP" ]]; then
+      result preserve-ip pass "db and web restored on $SITE_B with $SITE_A's addresses ($b_ips) although $SITE_B created db first; VirtualNetwork app on $SITE_B allocated them as requested"
+    else
+      result preserve-ip fail "$SITE_B $b_ips, $SITE_A db=$A_DB_IP web=$A_WEB_IP"
+    fi
+    moved() { [[ "$(dns "$SITE_B")" == "$WANT_DNS" && -z "$(dns "$SITE_A")" ]]; }
+    if wait_until 120 "DNSEndpoint moves to $SITE_B" moved; then
+      DNS_MOVE="failover: dr-$PLAN on $SITE_B only ($WANT_DNS), withdrawn on fenced $SITE_A"
+    else
+      result dns-move fail "after failover: A '$(dns "$SITE_A")', B '$(dns "$SITE_B")'"
+    fi
+  fi
 fi
 
 # --- failback (planned) -----------------------------------------------------
@@ -411,10 +531,20 @@ if [[ "${RESULT[failover]:-}" == pass ]]; then
   fi
 fi
 
+if [[ -n "${DNS_MOVE:-}" && "${RESULT[failback]:-}" == pass ]]; then
+  back() { [[ "$(dns "$SITE_A")" == "$WANT_DNS" && -z "$(dns "$SITE_B")" ]]; }
+  if wait_until 120 "DNSEndpoint moves back to $SITE_A" back; then
+    result dns-move pass "$DNS_MOVE; failback: on $SITE_A only again, withdrawn on $SITE_B"
+  else
+    result dns-move fail "after failback: A '$(dns "$SITE_A")', B '$(dns "$SITE_B")'"
+  fi
+fi
+
+CASES=(replicate network dr-test scheduled-test consolidate failover preserve-ip dns-move failback)
 echo
 echo "| Case | Result | Notes |"
 echo "|---|---|---|"
-for c in replicate dr-test consolidate failover failback; do
+for c in "${CASES[@]}"; do
   echo "| $c | ${RESULT[$c]:-not run} | ${NOTE[$c]:-an earlier case failed} |"
 done
-for c in replicate dr-test consolidate failover failback; do [[ "${RESULT[$c]:-}" == pass ]] || exit 1; done
+for c in "${CASES[@]}"; do [[ "${RESULT[$c]:-}" == pass ]] || exit 1; done

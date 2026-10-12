@@ -49,3 +49,17 @@ spec:
   test:
     bridge: drtest0
     ttl: 2h
+    every: 168h            # a scheduled DR test every week, on the standby
+  # db and web are on VirtualNetwork "app"; site B has one with the same
+  # name and CIDR. They come up there with the same addresses, and the
+  # DNSEndpoint dr-shop (for external-dns) moves to the active site.
+  network:
+    preserveIP: true
+    dns:
+      - machine: web
+        hostname: shop.example.com
+        address: floatingIP
+        ttl: 60
+      - machine: db
+        hostname: db.shop.internal.example.com
+        address: ip

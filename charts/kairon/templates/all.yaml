@@ -107,6 +107,12 @@ rules:
   - apiGroups: ["kairon.zyvor.dev"]
     resources: ["machinebackuppolicies", "machinebackuprestores"]
     verbs: ["create", "delete"]
+  - apiGroups: ["externaldns.k8s.io"]
+    # network.dns: the active site publishes a dr-<plan> DNSEndpoint for
+    # external-dns and the standby deletes its own
+    # (internal/controller/protection_network.go).
+    resources: ["dnsendpoints"]
+    verbs: ["get", "create", "patch", "delete"]
 {{ end }}
 {{ if or .Values.controller.cordonEvacuation.enabled .Values.controller.memoryPressureEvacuation.enabled .Values.controller.nodeMaintenance.enabled (eq (toString .Values.controller.drs.mode) "automatic") }}
   - apiGroups: ["kairon.zyvor.dev"]
