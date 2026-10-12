@@ -77,6 +77,8 @@ kaironctl connectivity test --machine --image PATH [--test-namespace default] [-
 kaironctl logs controller|node|ui|csi-node|csi-controller [--node N] [--pod P] [-c C] [--tail N] [--since 15m] [--previous] [-f]
 kaironctl events [-n NS | -A] [--warnings] [-w] [-o json|yaml]
 kaironctl sysdump [-o FILE] [--tail N] [--no-logs] [--no-crs]
+kaironctl diagnose machine NAME [--deep [--pcap 10s] [--pcap-filter F] [--memory-dump] [--no-redact] [--log-lines N] [-o FILE] [--timeout 20m]]
+kaironctl diagnose memory-dump MACHINE TOKEN [-o FILE]
 ```
 
 - **`doctor`** is read-only and prints a hint for every problem: API server, capable nodes (`kairon.zyvor.dev/capable=true`), the 19 core CRDs (present, `v1` storage), the Helm release, controller / node agent / dashboard workloads with `/readyz` probed on every pod through the API server proxy, the admission webhook (CA bundle, `failurePolicy`) and migrations parked in `NeedsRecovery`. It exits non-zero on any failure (`--strict`: on warnings too). `--pre-install` runs only the checks that apply before Kairon exists.
@@ -84,6 +86,7 @@ kaironctl sysdump [-o FILE] [--tail N] [--no-logs] [--no-crs]
 - **`logs`** streams every pod of a component; with several pods (the node agent runs one per node) lines are prefixed with the pod name.
 - **Binary/systemd installs** (`scripts/deploy-remote.sh`) have no controller Deployment or node DaemonSet in the namespace, so `doctor` reports those components as warnings ("cannot verify from the API", with a `systemctl status` hint) rather than failures, and `connectivity test` skips pod probes. Machine lifecycle Events (`PhaseRunning`, `PhaseStopped`, ...) are recorded in the Machine's own namespace: read them with `kaironctl events -n <namespace>` or `-A`.
 - **`sysdump`** writes a tar.gz with Helm values and manifest, workload and pod specs, events, nodes, Kairon resources, doctor output and recent logs. Values under credential-like keys, Secret data, container env values whose name looks secret, and Machine `spec.cloudInit` are replaced or omitted, and Secret documents are dropped from the manifest. Pod logs are included as written; review the bundle before sharing. It never overwrites an existing file.
+- **`diagnose machine`** prints the Machine's ranked causes. With `--deep` it writes an incident bundle: the Machine, its events, migrations, Node and NodeTopology, plus FluxVM's bundle from the node (QMP state, cgroup and pressure, console log, dataplane, optional pcap) fetched through kairon-ui. `--memory-dump` also dumps guest memory on the node (QEMU; pauses the guest); `diagnose memory-dump` downloads it and checks its sha256. Needs `KAIRON_UI_URL` and an administrator token; secrets are redacted unless `--no-redact`. See [guides/machine-incident-bundle.md](guides/machine-incident-bundle.md).
 
 ## Dashboard
 

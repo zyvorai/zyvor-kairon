@@ -90,6 +90,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /network-capture/{runtimeID}", s.handleNetworkCapture)
 	mux.HandleFunc("GET /network-capture/{runtimeID}", s.handleNetworkCaptures)
 	mux.HandleFunc("GET /network-capture/{runtimeID}/{token}", s.handleNetworkCaptureFile)
+	mux.HandleFunc("POST /diagnostics/{runtimeID}", s.handleStartDiagnostics)
+	mux.HandleFunc("GET /diagnostics/{runtimeID}/{token}", s.handleGetDiagnostics)
+	mux.HandleFunc("GET /diagnostics/{runtimeID}/{token}/{file}", s.handleDiagnosticsFile)
 	return mux
 }
 

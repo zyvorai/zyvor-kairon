@@ -133,6 +133,9 @@ user exists).
 | DELETE | `/api/v1/machines/{namespace}/{name}` | namespace |
 | GET | `/api/v1/machines/{namespace}/{name}` | namespace |
 | POST | `/api/v1/machines/{namespace}/{name}/agent-exec` | namespace |
+| POST | `/api/v1/machines/{namespace}/{name}/diagnostics` | namespace, admin |
+| GET | `/api/v1/machines/{namespace}/{name}/diagnostics/{token}` | namespace, admin |
+| GET | `/api/v1/machines/{namespace}/{name}/diagnostics/{token}/{file}` | namespace, admin |
 | POST | `/api/v1/machines/{namespace}/{name}/agent-file/get` | namespace |
 | POST | `/api/v1/machines/{namespace}/{name}/agent-file/put` | namespace |
 | GET | `/api/v1/machines/{namespace}/{name}/console` | console ticket |
@@ -353,6 +356,14 @@ identity gets `403`, and everyone else is filtered per namespace
 - **`POST .../disks`** with `{"action": "attach"|"detach", "name": "...", "claim": "pvc"}` and **`POST .../nics`** with `{"action": "add"|"remove", "name": "...", "bridge": "br0"}` edit `spec.disks` and `spec.network.extraInterfaces`; kairon-node applies them live. NICs need `spec.network.mode: tap`.
 - **`POST .../snapshot-schedules/.../trigger`** requests an immediate run, bypassing `spec.suspend`, as `kaironctl trigger` does.
 - **`POST .../machines/{ns}/{name}/backups`** with `{"quiesce": "auto"|"required"|"never", "name": "..."}` creates a `MachineBackup` (Atlas options stay in `kaironctl backup` and YAML). **`POST .../machinebackups/{ns}/{name}/restore`** with `{"machine": "...", "storageClass": "..."}` creates a `MachineBackupRestore`; its disk half waits until the target Machine is halted. **`DELETE .../machinebackups/{ns}/{name}`** removes a backup. These need the `create`/`delete` rules the chart and `deploy/rbac.yaml` now grant on `machinebackups` and `machinebackuprestores`.
+
+## Incident bundles
+
+These routes relay FluxVM's diagnostics jobs through the node's console relay (see [machine-incident-bundle.md](machine-incident-bundle.md)). They need an **administrator** account or the shared `KAIRON_UI_TOKEN`, which is root-equivalent on every route; other accounts get `403`. They return `501` when the node console relay is not configured.
+
+- **`POST .../machines/{ns}/{name}/diagnostics`** with `{"pcap_seconds": 0-30, "pcap_filter": "...", "memory_dump": false, "redact": true, "log_lines": 2000}` returns `202` and the job (`token`, `state: running`). FluxVM's `409` (a job already running) and `400` (memory dump refused: not QEMU, confidential, over the size cap, no disk space) are passed through.
+- **`GET .../diagnostics/{token}`** returns the job: `state` (`running`, `done`, `failed`), `sections`, `size_bytes`, `sha256` and, with a dump, `memory_dump` (`path` on the node, `size_bytes`, `sha256`, `paused_ms`).
+- **`GET .../diagnostics/{token}/bundle`** streams the node's tar.gz; **`.../memory-dump`** streams the ELF dump. Both are `409` until the job is done. Memory dump downloads are logged.
 
 ## Self-test
 
