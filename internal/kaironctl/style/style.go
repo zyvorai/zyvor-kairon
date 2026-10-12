@@ -132,7 +132,7 @@ func Phase(w io.Writer, phase string) string {
 		c = Yellow
 	case "Failed", "Error", "NeedsRecovery", "Unknown":
 		c = Red
-	case "Paused", "Halted", "Stopped", "Cancelled", "Suspended":
+	case "Paused", "Halted", "Hibernated", "Stopped", "Cancelled", "Suspended":
 		c = Cyan
 	default:
 		c = ""

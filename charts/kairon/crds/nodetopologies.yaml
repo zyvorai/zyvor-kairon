@@ -118,6 +118,21 @@ spec:
                       type: boolean
                     allocated:
                       type: boolean
+              hibernation:
+                type: object
+                properties:
+                  qemuVersion:
+                    type: string
+                  machineType:
+                    type: string
+                  cpuVendor:
+                    type: string
+                  cpuFlags:
+                    type: array
+                    items:
+                      type: string
+                  stateDir:
+                    type: string
               numaBinding:
                 type: boolean
               observedAt:

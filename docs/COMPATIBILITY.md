@@ -175,6 +175,23 @@ covered here.
 | Elastic memory: relief | pass | 2026-10-11 | Same node: target back to 0, reason `Relief`, `KaironMemoryPressure=False`; the guest was still deflating (255MiB actual) when the case ended |
 | Elastic memory: overcommit | pass | 2026-10-11 | Same node: two 18854Mi Machines (min 512Mi) on 31424Mi allocatable; the second stayed unscheduled ("insufficient memory") until the node got `memory-overcommit-ratio: 1.5`, then scheduled |
 
+## Hibernate
+
+Driven by [`scripts/lab-hibernate.sh`](../scripts/lab-hibernate.sh) against one
+node with a FluxVM that reports `host.hibernate`. The guest runs a cloud-init
+probe that writes a random marker to `/dev/shm` and prints a tick counter, its
+boot id and the marker to the serial console, so the image needs no guest
+agent. Hibernate stays Experimental until resume on another node has run on two
+real hosts sharing the hibernation directory and an RBD root disk.
+
+| Case | Last result | Date | Notes |
+|---|---|---|---|
+| Hibernate: hibernate | pass | 2026-10-12 | Single node (QEMU 10.2.1, `pc-q35-10.2`, k3s 1.35, Ubuntu 24.04 guest, 1Gi): Hibernated in 10s, 460 MiB of state, FluxVM record stopped with no pid |
+| Hibernate: capacity | pass | 2026-10-12 | Same node: no QEMU process left; host MemAvailable 10494 -> 11140 MiB |
+| Hibernate: resume | pass | 2026-10-12 | Same node: Running in 16s with `resumeNode` set to the node; tick 4 -> 6, same boot id and `/dev/shm` marker; `status.hibernation` cleared |
+| Hibernate: discard | pass | 2026-10-12 | Same node: `discard-hibernation` annotation gave a new boot id; annotation removed, `status.hibernation` cleared |
+| Hibernate: resume on another node | not run | 2026-10-12 | Needs two nodes sharing the hibernation directory and a shared root disk |
+
 ## Virtual networks
 
 Driven by [`scripts/lab-virtual-network.sh`](../scripts/lab-virtual-network.sh)

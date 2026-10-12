@@ -175,6 +175,8 @@ type Agent struct {
 	// VirtualNetwork configures VirtualNetwork sync and BGP (virtualnetwork.go).
 	VirtualNetwork VirtualNetworkConfig
 	vnet           vnetState
+	// hibernationSweptAt throttles sweepMovedHibernations.
+	hibernationSweptAt time.Time
 }
 
 func (a *Agent) Reconcile(ctx context.Context) error {
@@ -222,6 +224,7 @@ func (a *Agent) Reconcile(ctx context.Context) error {
 	if err := a.reconcileNetworkResources(ctx); err != nil {
 		return err
 	}
+	a.sweepMovedHibernations(ctx)
 	a.publishConfidentialCapability(ctx)
 	a.publishPinnableCPUs(ctx)
 	local := make(map[string]model.Machine, len(machines))
@@ -293,6 +296,9 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 	}
 	if m.DesiredPowerState() == "Halted" {
 		return a.ensureHalted(ctx, m)
+	}
+	if m.DesiredPowerState() == model.PowerStateHibernated {
+		return a.ensureHibernated(ctx, m)
 	}
 	// A template-based sandbox boots from FluxVM's own pre-baked template
 	// spec, not spec.image/spec.volumes at all -- skip resolving a boot
@@ -390,6 +396,10 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 
 	rec, err := a.current(ctx, m)
 	if err != nil {
+		return err
+	}
+	rec, handled, err := a.resumeGate(ctx, m, rec)
+	if handled || err != nil {
 		return err
 	}
 	if rec == nil && model.AnnotationTrue(m.Metadata, model.AnnotationAdoptOnly) {
@@ -512,6 +522,12 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 	status.RuntimeID = rec.ID()
 	status.GuestIP = rec.GuestIP
 	status.Message = ""
+	if rec.Hibernation == nil && status.Hibernation != nil {
+		status.Hibernation = nil
+		status.Conditions = model.SetCondition(status.Conditions, model.Condition{
+			Type: "Hibernated", Status: "False", Reason: "Resumed",
+		})
+	}
 	status.VolumeStagingPath = volStatus.StagingPath
 	status.VolumePublishPath = volStatus.PublishPath
 	status.VolumeHandle = volStatus.VolumeID
@@ -631,6 +647,7 @@ func (a *Agent) ensureStopped(ctx context.Context, m model.Machine) error {
 	status.Phase = "Stopped"
 	status.NodeName = a.NodeName
 	status.RuntimeID = ""
+	status.Hibernation = nil
 	status.GuestIP = ""
 	status.Network = nil
 	status.Message = ""
@@ -717,6 +734,13 @@ func (a *Agent) ensureHalted(ctx context.Context, m model.Machine) error {
 			return err
 		}
 	}
+	// Halted boots from disk on the next Running, so a saved state from
+	// Hibernated must not be resumed later.
+	if rec.Hibernation != nil {
+		if rec, err = a.Flux.DiscardHibernation(ctx, rec.ID()); err != nil {
+			return fmt.Errorf("discard hibernation: %w", err)
+		}
+	}
 	// Same reasoning and fail-closed posture as ensureStopped's own call:
 	// Halted's guest is powered off just the same (only the runtime
 	// record is kept, for a plain Start back to Running), so it's just as
@@ -734,6 +758,7 @@ func (a *Agent) ensureHalted(ctx context.Context, m model.Machine) error {
 	status.Phase = "Halted"
 	status.NodeName = a.NodeName
 	status.RuntimeID = rec.ID()
+	status.Hibernation = nil
 	status.GuestIP = ""
 	status.Network = nil
 	status.Message = ""
@@ -1464,6 +1489,12 @@ func (a *Agent) patchMachineStatusIfChanged(ctx context.Context, m model.Machine
 	}
 	if err := a.Kube.PatchMachineStatus(ctx, m.Namespace(), m.Metadata.Name, status); err != nil {
 		return err
+	}
+	// A merge patch leaves omitted fields alone; removing one takes null.
+	if m.Status.Hibernation != nil && status.Hibernation == nil {
+		if err := a.Kube.PatchMachineStatusFields(ctx, m.Namespace(), m.Metadata.Name, map[string]any{"hibernation": nil}); err != nil {
+			return err
+		}
 	}
 	// Best-effort Event so `kaironctl events` / `kubectl get events` show
 	// lifecycle transitions; a failure here must never fail reconcile.

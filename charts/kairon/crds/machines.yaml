@@ -401,6 +401,7 @@ spec:
                 - Stopped
                 - Paused
                 - Halted
+                - Hibernated
                 default: Running
               tenant:
                 type: string
@@ -834,6 +835,42 @@ spec:
                     format: date-time
                   message:
                     type: string
+              hibernation:
+                type: object
+                properties:
+                  node:
+                    type: string
+                  runtimeID:
+                    type: string
+                  stateBytes:
+                    type: integer
+                    format: int64
+                  stateDir:
+                    type: string
+                  hibernatedAt:
+                    type: string
+                    format: date-time
+                  sharedStorage:
+                    type: boolean
+                  resumeNode:
+                    type: string
+                  message:
+                    type: string
+                  host:
+                    type: object
+                    properties:
+                      qemuVersion:
+                        type: string
+                      machineType:
+                        type: string
+                      cpuVendor:
+                        type: string
+                      cpuFlags:
+                        type: array
+                        items:
+                          type: string
+                      stateDir:
+                        type: string
               memory:
                 type: object
                 properties:

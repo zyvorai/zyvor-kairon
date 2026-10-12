@@ -271,6 +271,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/pause", s.requireNamespace(namespaceFromPath, s.handlePowerMachine("Paused")))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/resume", s.requireNamespace(namespaceFromPath, s.handlePowerMachine("Running")))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/halt", s.requireNamespace(namespaceFromPath, s.handlePowerMachine("Halted")))
+	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/hibernate", s.requireNamespace(namespaceFromPath, s.handlePowerMachine("Hibernated")))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/priority", s.requireNamespace(namespaceFromPath, s.handleSetMachinePriority))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/fork", s.requireNamespace(namespaceFromPath, s.handleForkMachine))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/disks", s.requireNamespace(namespaceFromPath, s.handleHotplugDisk))

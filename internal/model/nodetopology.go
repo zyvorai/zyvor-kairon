@@ -33,8 +33,12 @@ type NodeTopologyStatus struct {
 	// NUMABinding is true when the node's FluxVM binds guest memory and
 	// pins vCPU threads; the scheduler refuses hard topology policies on
 	// a node without it.
-	NUMABinding bool       `json:"numaBinding,omitempty"`
-	ObservedAt  *time.Time `json:"observedAt,omitempty"`
+	NUMABinding bool `json:"numaBinding,omitempty"`
+	// Hibernation is set when the node's FluxVM can hibernate; the
+	// controller compares it with a Machine's saved state before resuming
+	// it here.
+	Hibernation *HibernationHostFacts `json:"hibernation,omitempty"`
+	ObservedAt  *time.Time            `json:"observedAt,omitempty"`
 }
 
 type TopologyNUMANode struct {

@@ -276,7 +276,7 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 	var pending []model.Machine
 	for _, m := range machines {
 		desired := m.DesiredPowerState()
-		if m.Metadata.DeletionTimestamp != nil || m.Spec.NodeName != "" || desired == "Stopped" || desired == "Halted" {
+		if m.Metadata.DeletionTimestamp != nil || m.Spec.NodeName != "" || model.PowerStateFreesCapacity(desired) {
 			continue
 		}
 		if _, waiting := volumesNotReady[m.Namespace()+"/"+m.Metadata.Name]; waiting {
@@ -292,6 +292,7 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	c.reconcileHibernatedResumes(ctx, machines, nodes, nodeLoad, topologies)
 
 	var unschedulable []model.Machine
 	for _, m := range pending {

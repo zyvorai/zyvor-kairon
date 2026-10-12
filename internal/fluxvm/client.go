@@ -65,6 +65,9 @@ type Record struct {
 		// VFIODevices are host PCI devices passed through to the guest.
 		VFIODevices []string `json:"vfio_devices,omitempty"`
 	} `json:"request,omitempty"`
+	// Hibernation is set while FluxVM holds the VM's saved state; the next
+	// Start resumes it.
+	Hibernation *Hibernation `json:"hibernation,omitempty"`
 }
 
 func (r Record) ID() string {

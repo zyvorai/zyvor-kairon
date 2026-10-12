@@ -272,9 +272,9 @@ func kaironTools(opts *Options, newKube func() (*kube.Client, error)) []mcp.Tool
 		},
 		{
 			Name:        "set_power_state",
-			Description: "Set a Machine's spec.powerState: Running (start/resume), Stopped, Paused or Halted. kairon-node applies it on its next tick.",
+			Description: "Set a Machine's spec.powerState: Running (start/resume), Stopped, Paused, Halted or Hibernated. kairon-node applies it on its next tick.",
 			Write:       true,
-			Schema:      refSchema(map[string]any{"state": mcp.String("desired power state", "Running", "Stopped", "Paused", "Halted")}, "state"),
+			Schema:      refSchema(map[string]any{"state": mcp.String("desired power state", "Running", "Stopped", "Paused", "Halted", "Hibernated")}, "state"),
 			Call: func(ctx context.Context, raw json.RawMessage) (string, error) {
 				var a struct {
 					machineRef
@@ -283,8 +283,8 @@ func kaironTools(opts *Options, newKube func() (*kube.Client, error)) []mcp.Tool
 				if err := decodeArgs(raw, &a); err != nil {
 					return "", err
 				}
-				if !contains([]string{"Running", "Stopped", "Paused", "Halted"}, a.State) {
-					return "", fmt.Errorf("state must be Running, Stopped, Paused or Halted")
+				if !contains([]string{"Running", "Stopped", "Paused", "Halted", "Hibernated"}, a.State) {
+					return "", fmt.Errorf("state must be Running, Stopped, Paused, Halted or Hibernated")
 				}
 				return withKube(ctx, mcpCallTimeout, func(ctx context.Context, kc *kube.Client) (string, error) {
 					ns := a.ns(nsDefault)
