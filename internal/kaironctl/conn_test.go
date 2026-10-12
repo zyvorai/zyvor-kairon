@@ -21,8 +21,13 @@ func clearKubeEnv(t *testing.T) {
 	t.Setenv("KAIRON_KUBE_URL", "")
 	t.Setenv("KAIRON_KUBE_TOKEN", "")
 	t.Setenv("KUBERNETES_SERVICE_HOST", "")
-	t.Setenv("KUBECONFIG", "")
-	t.Setenv("HOME", t.TempDir())
+	// client-go captures the home kubeconfig path when the package is
+	// initialised, so changing HOME here does not hide a real ~/.kube/config.
+	// Point KUBECONFIG at a file that does not exist instead: an empty value
+	// would fall back to that default file.
+	home := t.TempDir()
+	t.Setenv("KUBECONFIG", filepath.Join(home, "no-kubeconfig"))
+	t.Setenv("HOME", home)
 	kubeFlags.Kubeconfig, kubeFlags.Context = "", ""
 	t.Cleanup(func() { kubeFlags.Kubeconfig, kubeFlags.Context = "", "" })
 }
