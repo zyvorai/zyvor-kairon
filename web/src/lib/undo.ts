@@ -1,7 +1,7 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
 // SPDX-License-Identifier: Apache-2.0
 
-export type PowerAction = 'start' | 'stop' | 'pause' | 'resume' | 'halt';
+export type PowerAction = 'start' | 'stop' | 'pause' | 'resume' | 'halt' | 'hibernate';
 
 // undoFor returns the power action that reverses a just-completed one, or
 // undefined when there is no clean reverse. Start is not undoable with one
@@ -13,6 +13,8 @@ export function undoFor(action: PowerAction): PowerAction | undefined {
     case 'resume':
       return 'pause';
     case 'stop':
+      return 'start';
+    case 'hibernate':
       return 'start';
     default:
       return undefined;

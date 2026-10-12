@@ -238,7 +238,7 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
     setMsg('');
     try {
       await api(`/api/v1/machines/${encodeURIComponent(ns)}/${encodeURIComponent(name)}/${action}`, { method: 'POST' });
-      const done = { start: 'Started', stop: 'Stopped', pause: 'Paused', resume: 'Resumed', halt: 'Halted' }[action];
+      const done = { start: 'Started', stop: 'Stopped', pause: 'Paused', resume: 'Resumed', halt: 'Halted', hibernate: 'Hibernated' }[action];
       const back = isUndo ? undefined : undoFor(action);
       toast(`${done} ${name}`, 'ok', back ? () => void power(ref, back, true) : undefined);
       await refresh();
@@ -446,7 +446,9 @@ export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machin
               {m.status?.phase === 'Running' && <button onClick={() => power(refOf(m), 'pause')}>Pause</button>}
               {m.status?.phase === 'Paused' && <button onClick={() => power(refOf(m), 'resume')}>Resume</button>}
               {m.status?.phase === 'Running' && <button onClick={() => power(refOf(m), 'halt')}>Halt</button>}
+              {m.status?.phase === 'Running' && <button onClick={() => power(refOf(m), 'hibernate')}>Hibernate</button>}
               {m.status?.phase === 'Halted' && <button onClick={() => power(refOf(m), 'start')}>Resume</button>}
+              {m.status?.phase === 'Hibernated' && <button onClick={() => power(refOf(m), 'start')}>Resume</button>}
               {nsOf(m) === currentNamespace() && <button onClick={() => onMigrate(m.metadata.name)}>Migrate</button>}
               {nsOf(m) === currentNamespace() && <button onClick={() => onSnapshot(m.metadata.name)}>Snapshot</button>}
               <button className="danger" onClick={() => remove(refOf(m))}>Delete</button>

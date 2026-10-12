@@ -589,6 +589,9 @@ func describeMachine(ctx context.Context, kc *kube.Client, ns, name string) {
 	if line := elasticMemorySummary(m); line != "" {
 		fmt.Println(line)
 	}
+	if line := hibernationSummary(m); line != "" {
+		fmt.Println(line)
+	}
 	if m.Spec.Tenant != "" {
 		fence := "off"
 		if m.Metadata.Annotations["kairon.zyvor.dev/tenant-fence"] == "true" {
@@ -606,6 +609,27 @@ func describeMachine(ctx context.Context, kc *kube.Client, ns, name string) {
 // thing now" rather than "change this object's configuration." Only
 // snapshotschedule supports it today -- MigrationPolicy/
 // MachineDisruptionBudget/etc. have nothing analogous to "run this right
+
+// hibernationSummary is the one-line reading of status.hibernation.
+func hibernationSummary(m model.Machine) string {
+	h := m.Status.Hibernation
+	if h == nil {
+		return ""
+	}
+	where := "node-local"
+	if h.SharedStorage {
+		where = "shared storage, resumable on a compatible node"
+	}
+	line := fmt.Sprintf("hibernated on %s: %d MiB of saved state (%s), QEMU %s %s",
+		h.Node, h.StateBytes>>20, where, h.Host.QEMUVersion, h.Host.MachineType)
+	if h.ResumeNode != "" {
+		line += ", resuming on " + h.ResumeNode
+	}
+	if h.Message != "" {
+		line += ": " + h.Message
+	}
+	return line
+}
 
 // elasticMemorySummary is the one-line reading of status.memory: how much
 // of the guest's memory kairon-node has ballooned away and why.

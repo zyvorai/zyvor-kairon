@@ -992,6 +992,9 @@ type MachineStatus struct {
 	// Memory is the balloon state of a spec.resources.elasticMemory
 	// Machine, written by kairon-node when it changes the target.
 	Memory *MemoryStatus `json:"memory,omitempty"`
+	// Hibernation is set while the guest's state is saved
+	// (spec.powerState: Hibernated) and until it has resumed.
+	Hibernation *HibernationStatus `json:"hibernation,omitempty"`
 	// ResourceUsage is this Machine's cgroup-derived resource usage as of
 	// the last *meaningful* status write (FluxVM's GET /v1/vms/{id}/stats).
 	// High-frequency samples go to Prometheus (kairon_machine_resource_usage)

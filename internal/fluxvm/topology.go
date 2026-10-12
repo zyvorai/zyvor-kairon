@@ -22,6 +22,9 @@ type RuntimeHostCapability struct {
 	Balloon bool `json:"balloon"`
 	// Vnet: the eBPF virtual network dataplane (/v1/network/vnets).
 	Vnet bool `json:"vnet"`
+	// Hibernate: POST /v1/vms/{id}/hibernate, import-hibernated and
+	// /v1/host/hibernation.
+	Hibernate bool `json:"hibernate"`
 }
 
 // HostTopology is FluxVM's GET /v1/host/topology.

@@ -56,6 +56,14 @@ func (a *Agent) publishNodeTopology(ctx context.Context) {
 		return
 	}
 	status := fluxvm.NodeTopologyStatus(host, caps.Host.NUMABinding, a.VFIOAllowlist)
+	if caps.Host.Hibernate {
+		if facts, err := a.Flux.GetHostHibernation(ctx); err == nil {
+			f := facts.Model()
+			status.Hibernation = &f
+		} else {
+			a.log().Debug("FluxVM host hibernation read failed", "error", err)
+		}
+	}
 
 	s.mu.Lock()
 	unchanged := s.pubAt != (time.Time{}) && sameTopology(s.published, status) && time.Since(s.pubAt) < topologyRefresh

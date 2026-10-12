@@ -84,7 +84,7 @@ func MachineFootprint(m model.Machine) (cpu uint32, memMiB uint64) {
 // in internal/controller/controller.go), and already scheduled.
 func MachineCountsTowardQuota(m model.Machine) bool {
 	desired := m.DesiredPowerState()
-	return m.Metadata.DeletionTimestamp == nil && desired != "Stopped" && desired != "Halted" && m.Spec.NodeName != ""
+	return m.Metadata.DeletionTimestamp == nil && !model.PowerStateFreesCapacity(desired) && m.Spec.NodeName != ""
 }
 
 // admitQuota returns a non-empty blocker reason if scheduling m would push
