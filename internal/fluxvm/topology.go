@@ -20,6 +20,8 @@ type RuntimeHostCapability struct {
 	PCIBind     bool `json:"pciBind"`
 	// Balloon: QEMU balloon control and GET /v1/host/memory.
 	Balloon bool `json:"balloon"`
+	// Vnet: the eBPF virtual network dataplane (/v1/network/vnets).
+	Vnet bool `json:"vnet"`
 }
 
 // HostTopology is FluxVM's GET /v1/host/topology.

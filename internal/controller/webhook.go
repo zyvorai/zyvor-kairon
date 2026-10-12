@@ -292,6 +292,9 @@ func (c *Controller) validateMachineCreate(r *http.Request, req *admission.Reque
 	if err := model.ValidateCiliumAttach(m.Spec.Network); err != nil {
 		return admission.Deny(err.Error())
 	}
+	if err := model.ValidateMachineVirtualNetwork(m.Spec.Network); err != nil {
+		return admission.Deny(err.Error())
+	}
 	if err := tenantfence.CheckCreate(m.Spec.Tenant, m.Metadata.Annotations); err != nil {
 		return admission.Deny(err.Error())
 	}

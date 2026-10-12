@@ -21,6 +21,7 @@ v0.7.0 shipped without the multi-host live-migration claim. **Still open:**
 6. **Topology-aware placement** (`spec.topology`, `spec.devices`, `NodeTopology`) is experimental until the multi-NUMA, GPU+NIC and SR-IOV rows in [`COMPATIBILITY.md`](COMPATIBILITY.md#topology-aware-placement) run; only single-NUMA hosts have run in the lab. NUMA memory binding is enforced by QEMU, vCPU thread pinning is best-effort ([`guides/machine-topology.md`](guides/machine-topology.md)).
 
 7. **Elastic memory** (`spec.resources.elasticMemory`, the `kairon.zyvor.dev/memory-overcommit-ratio` node annotation, `KaironMemoryPressure`) is experimental until the `scripts/lab-elastic-memory.sh` rows in [`COMPATIBILITY.md`](COMPATIBILITY.md#elastic-memory) pass. QEMU only; reclaim is balloon-only and NUMA accounting still counts full memory ([`guides/machine-elastic-memory.md`](guides/machine-elastic-memory.md)).
+8. **Virtual networks** (`VirtualNetwork`, `spec.network.virtualNetwork`, kairon-node `--bgp-*`) are experimental until the cross-host rows in [`COMPATIBILITY.md`](COMPATIBILITY.md#virtual-networks) run on real nodes; cross-host Geneve forwarding has only run between netns-simulated hosts. IPv4 only, no in-network load balancer, no edge policy on vnet Machines, announce-only BGP ([`guides/virtual-networks.md`](guides/virtual-networks.md)).
 
 Out of band (not a code gate): CII Best Practices badge still needs human OAuth (Scorecard / issue tracker).
 

@@ -513,6 +513,16 @@ func buildCreateRequest(m model.Machine, defaultBackend string, vfioDevices []st
 	}
 	tenant := m.Namespace()
 	network := BuildNetworkMap(m.EffectiveNetwork())
+	if m.Spec.Network.VirtualNetwork != nil {
+		var vs *model.MachineVirtualNetworkStatus
+		if m.Status.Network != nil {
+			vs = m.Status.Network.VirtualNetwork
+		}
+		if vs == nil || vs.VNI == 0 || vs.IP == "" {
+			return CreateRequest{}, fmt.Errorf("spec.network.virtualNetwork %q: no address allocated yet", m.Spec.Network.VirtualNetwork.Name)
+		}
+		network["vnet"] = VnetAttach{VNI: vs.VNI, IP: vs.IP, PrefixLen: vs.PrefixLength, Gateway: vs.Gateway}
+	}
 	image := m.Spec.Image.Path
 	if m.Spec.Image.CatalogName != "" {
 		// FluxVM's own CreateVmRequest.image field already accepts a

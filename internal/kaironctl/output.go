@@ -86,6 +86,8 @@ func resourcePlural(resource string) (plural string, core bool, ok bool) {
 		return "networksecuritygroups", false, true
 	case "node", "nodes":
 		return "nodes", true, true
+	case "virtualnetwork", "virtualnetworks", "vnet", "vnets":
+		return "virtualnetworks", false, true
 	case "nodetopology", "nodetopologies", "knt":
 		return "nodetopologies", false, true
 	}

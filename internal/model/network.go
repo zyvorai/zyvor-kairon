@@ -102,6 +102,9 @@ type NetworkSpec struct {
 	// ExtraInterfaces are bridged NICs hot-added to the running guest
 	// (mode tap only) and hot-removed when dropped from this list.
 	ExtraInterfaces []ExtraInterface `json:"extraInterfaces,omitempty"`
+	// VirtualNetwork attaches the primary NIC to a VirtualNetwork in the
+	// Machine's namespace (mode tap, no bridge, no netns).
+	VirtualNetwork *MachineVirtualNetwork `json:"virtualNetwork,omitempty"`
 }
 
 // MaxExtraInterfaces is how many NICs fit next to the primary on FluxVM's
@@ -206,6 +209,9 @@ type MachineNetworkStatus struct {
 	Cilium    *MachineCiliumStatus    `json:"cilium,omitempty"`
 	// Edge is the VM-edge eBPF projection (identity, learn source, conntrack).
 	Edge *MachineEdgeStatus `json:"edge,omitempty"`
+	// VirtualNetwork is the spec.network.virtualNetwork attachment the
+	// runtime was created with.
+	VirtualNetwork *MachineVirtualNetworkStatus `json:"virtualNetwork,omitempty"`
 }
 
 // MachineEdgeStatus is the control-plane view of the FluxVM eBPF edge.
@@ -466,7 +472,10 @@ func DefaultMAC(namespace, name string) string {
 // MAC gets DefaultMAC, since FluxVM cannot create a netns NIC without one.
 func (m Machine) EffectiveNetwork() NetworkSpec {
 	n := m.Spec.Network
-	if n.Mode == "tap" && n.NetNS && n.MAC == "" {
+	if n.VirtualNetwork != nil {
+		n.Mode = "tap"
+	}
+	if n.Mode == "tap" && (n.NetNS || n.VirtualNetwork != nil) && n.MAC == "" {
 		n.MAC = DefaultMAC(m.Namespace(), m.Metadata.Name)
 	}
 	return n

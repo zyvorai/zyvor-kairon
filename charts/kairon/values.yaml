@@ -207,6 +207,24 @@ node:
     lowWatermarkMiB: 0
     highWatermarkMiB: 0
     psiSomeAvg10: 0
+  # VirtualNetwork dataplane (docs/guides/virtual-networks.md). kairon-node
+  # applies every VirtualNetwork with a Machine on this node to the local
+  # FluxVM. uplink is the host interface carrying egress SNAT and floating
+  # IPs (empty keeps networks internal); nodeIP is the Geneve underlay
+  # address (empty takes the Node's InternalIP).
+  virtualNetworks:
+    enabled: true
+    uplink: ""
+    nodeIP: ""
+    # Announce-only BGP speaker for floating IPs (and optionally Service
+    # Fabric VIPs). Off unless peers are set, e.g. "10.0.0.1=64512".
+    bgp:
+      peers: ""
+      localASN: 0
+      routerID: ""
+      nextHop: ""
+      advertiseServiceVIPs: false
+      advertisePrefixes: ""
 
 # Cilium cluster-network integration (all off by default). Requires a
 # cluster CNI that exposes cilium.io ExternalWorkload / CiliumNetworkPolicy.

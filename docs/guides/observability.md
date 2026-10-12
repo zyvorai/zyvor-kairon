@@ -36,6 +36,11 @@ component apiserver call visibility for free, labeled `method`
 | `kairon_topology_allocation_failures_total` | counter | `reason` | Scheduling attempts for `spec.topology`/`spec.devices` Machines that found no placement; `reason` is `TopologyUnsatisfiable`, `DRAAllocationPending` or `Unschedulable`. |
 | `kairon_node_numa_free_cpus` | gauge | `node`, `numa` | Pinnable CPUs not held by a Machine, per NUMA node, from each `NodeTopology`. See [topology-aware placement](machine-topology.md). |
 | `kairon_node_memory_pressure` | gauge | `node`, `state` | kairon-node only. 1 while host memory is under pressure (`state=pressure`), and while it is with every elastic-memory balloon at its minimum (`state=exhausted`, the `KaironMemoryPressure` condition). See [elastic memory](machine-elastic-memory.md). |
+| `kairon_node_virtual_networks` | gauge | — | kairon-node only. Virtual networks applied to the local FluxVM. See [virtual networks](virtual-networks.md). |
+| `kairon_node_virtual_network_endpoints` | gauge | `location` | kairon-node only. Endpoints of the applied networks on this node (`local`) and on other nodes (`remote`). |
+| `kairon_node_virtual_network_sync_errors_total` | counter | — | kairon-node only. Failed virtual network applies or listings against FluxVM. |
+| `kairon_node_bgp_session_up` | gauge | `peer` | kairon-node only. 1 while the BGP session to `peer` is Established. |
+| `kairon_node_bgp_advertised_prefixes` | gauge | `peer` | kairon-node only. Prefixes announced to `peer`. |
 | `kairon_machine_balloon_mib` | gauge | `namespace`, `machine`, `kind` | kairon-node only. Balloon size of an elastic-memory Machine: `kind=target` (asked) or `actual` (given back by the guest). |
 | `kairon_memory_reclaim_actions_total` | counter | `direction` | kairon-node only. Balloon changes, `inflate` or `deflate`. |
 

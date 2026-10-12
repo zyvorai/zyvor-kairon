@@ -781,6 +781,42 @@ func (c *Client) PatchMigrationPolicy(ctx context.Context, ns, name string, patc
 	return c.request(ctx, http.MethodPatch, namespacedObjectPath(ns, "migrationpolicies", name), patch, nil, "application/merge-patch+json")
 }
 
+func (c *Client) ListVirtualNetworks(ctx context.Context) ([]model.VirtualNetwork, error) {
+	var list model.VirtualNetworkList
+	err := c.request(ctx, http.MethodGet, "/apis/kairon.zyvor.dev/v1/virtualnetworks", nil, &list, "")
+	return list.Items, err
+}
+
+func (c *Client) ListVirtualNetworksNamespace(ctx context.Context, ns string) ([]model.VirtualNetwork, error) {
+	var list model.VirtualNetworkList
+	err := c.request(ctx, http.MethodGet, namespacePath(ns, "virtualnetworks"), nil, &list, "")
+	return list.Items, err
+}
+
+func (c *Client) GetVirtualNetwork(ctx context.Context, ns, name string) (model.VirtualNetwork, error) {
+	var v model.VirtualNetwork
+	err := c.request(ctx, http.MethodGet, namespacedObjectPath(ns, "virtualnetworks", name), nil, &v, "")
+	return v, err
+}
+
+func (c *Client) CreateVirtualNetwork(ctx context.Context, ns string, v model.VirtualNetwork) (model.VirtualNetwork, error) {
+	var out model.VirtualNetwork
+	err := c.request(ctx, http.MethodPost, namespacePath(ns, "virtualnetworks"), v, &out, "")
+	return out, err
+}
+
+func (c *Client) DeleteVirtualNetwork(ctx context.Context, ns, name string) error {
+	return c.request(ctx, http.MethodDelete, namespacedObjectPath(ns, "virtualnetworks", name), map[string]any{"apiVersion": "v1", "kind": "DeleteOptions", "propagationPolicy": "Foreground"}, nil, "")
+}
+
+func (c *Client) PatchVirtualNetwork(ctx context.Context, ns, name string, patch map[string]any) error {
+	return c.request(ctx, http.MethodPatch, namespacedObjectPath(ns, "virtualnetworks", name), patch, nil, "application/merge-patch+json")
+}
+
+func (c *Client) PatchVirtualNetworkStatus(ctx context.Context, ns, name string, status model.VirtualNetworkStatus) error {
+	return c.request(ctx, http.MethodPatch, namespacedObjectPath(ns, "virtualnetworks", name)+"/status", map[string]any{"status": status}, nil, "application/merge-patch+json")
+}
+
 func (c *Client) ListMachineBackupPolicies(ctx context.Context) ([]model.MachineBackupPolicy, error) {
 	var list model.MachineBackupPolicyList
 	err := c.request(ctx, http.MethodGet, "/apis/kairon.zyvor.dev/v1/machinebackuppolicies", nil, &list, "")

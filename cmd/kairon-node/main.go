@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -21,6 +22,7 @@ import (
 	"time"
 
 	"github.com/zyvorai/kairon/internal/agent"
+	"github.com/zyvorai/kairon/internal/bgp"
 	"github.com/zyvorai/kairon/internal/consoleproxy"
 	"github.com/zyvorai/kairon/internal/fluxvm"
 	"github.com/zyvorai/kairon/internal/health"
@@ -28,6 +30,7 @@ import (
 	"github.com/zyvorai/kairon/internal/macnode"
 	"github.com/zyvorai/kairon/internal/metrics"
 	"github.com/zyvorai/kairon/internal/migration"
+	"github.com/zyvorai/kairon/internal/model"
 	"github.com/zyvorai/kairon/internal/oteltrace"
 	"github.com/zyvorai/kairon/internal/tlsreload"
 )
@@ -106,6 +109,15 @@ func run() int {
 	memoryHighMiB := flag.Uint64("memory-high-watermark-mib", envUint("KAIRON_MEMORY_HIGH_WATERMARK_MIB", 0), "reclaim aims for this much MemAvailable and balloons deflate only above it; 0 (the default) is 20% of MemTotal, or twice --memory-low-watermark-mib when that is set")
 	memoryPSI := flag.Float64("memory-psi-some-avg10", envFloat("KAIRON_MEMORY_PSI_SOME_AVG10", 0), "host memory PSI some avg10 (percent) above this is memory pressure; 0 (the default) is 10")
 	memoryReclaimInterval := flag.Duration("memory-reclaim-interval", 0, "time between reclaim passes; 0 (the default) is 10s")
+	vnetSync := flag.Bool("virtual-networks", env("KAIRON_VIRTUAL_NETWORKS", "true") == "true", "apply VirtualNetworks with a Machine on this node to the local FluxVM (needs a FluxVM with host.vnet) -- see docs/guides/virtual-networks.md")
+	vnetUplink := flag.String("vnet-uplink", env("KAIRON_VNET_UPLINK", ""), "host interface carrying virtual network egress SNAT and floating IPs; empty keeps virtual networks closed on this node")
+	vnetNodeIP := flag.String("vnet-node-ip", env("KAIRON_VNET_NODE_IP", ""), "underlay address other nodes tunnel to and the SNAT address; empty takes the Node's InternalIP")
+	bgpPeers := flag.String("bgp-peers", env("KAIRON_BGP_PEERS", ""), "BGP peers to announce floating IPs to, addr=asn[,addr:port=asn]; empty (the default) disables the speaker")
+	bgpASN := flag.Uint("bgp-local-asn", uint(envUint("KAIRON_BGP_LOCAL_ASN", 0)), "this node's BGP AS number (required with --bgp-peers)")
+	bgpRouterID := flag.String("bgp-router-id", env("KAIRON_BGP_ROUTER_ID", ""), "BGP router ID; empty takes --vnet-node-ip or the Node's InternalIP")
+	bgpNextHop := flag.String("bgp-next-hop", env("KAIRON_BGP_NEXT_HOP", ""), "next hop announced for every prefix; empty is the router ID")
+	bgpServiceVIPs := flag.Bool("bgp-advertise-service-vips", env("KAIRON_BGP_ADVERTISE_SERVICE_VIPS", "false") == "true", "also announce the Service Fabric VIPs FluxVM marks for advertisement")
+	bgpPrefixes := flag.String("bgp-advertise-prefixes", env("KAIRON_BGP_ADVERTISE_PREFIXES", ""), "extra IPv4 prefixes to announce, comma-separated")
 	showVersion := flag.Bool("version", false, "print version")
 	flag.Parse()
 	if *showVersion {
@@ -177,6 +189,12 @@ func run() int {
 
 	configureConsole(ctx, log, fc, *consoleAddr, *consoleToken, *consoleTLSCert, *consoleTLSKey)
 
+	vnetCfg, err := configureVirtualNetworks(ctx, log, kc, node, *vnetSync, *vnetUplink, *vnetNodeIP, *bgpPeers, uint32(*bgpASN), *bgpRouterID, *bgpNextHop, *bgpServiceVIPs, *bgpPrefixes)
+	if err != nil {
+		log.Error("virtual networks", "error", err)
+		return 2
+	}
+
 	a := &agent.Agent{
 		NodeName:                     node,
 		Kube:                         kc,
@@ -210,15 +228,63 @@ func run() int {
 			PSISomeAvg10:     *memoryPSI,
 			Interval:         *memoryReclaimInterval,
 		},
-		Log:     log,
-		Metrics: rec,
-		Tracer:  oteltrace.FromEnv(),
+		VirtualNetwork: vnetCfg,
+		Log:            log,
+		Metrics:        rec,
+		Tracer:         oteltrace.FromEnv(),
 	}
 	if err := a.Run(ctx, *interval); err != nil && ctx.Err() == nil {
 		log.Error("agent stopped", "error", err)
 		return 1
 	}
 	return 0
+}
+
+// configureVirtualNetworks builds the VirtualNetwork sync settings and,
+// when peers are configured, the BGP speaker. The router ID falls back to
+// the node's underlay address.
+func configureVirtualNetworks(ctx context.Context, log *slog.Logger, kc *kube.Client, nodeName string, enabled bool, uplink, nodeIP, peersRaw string, asn uint32, routerID, nextHop string, serviceVIPs bool, prefixesRaw string) (agent.VirtualNetworkConfig, error) {
+	cfg := agent.VirtualNetworkConfig{Disabled: !enabled, Uplink: strings.TrimSpace(uplink), NodeIP: strings.TrimSpace(nodeIP), AdvertiseServiceVIPs: serviceVIPs}
+	for _, p := range splitList(prefixesRaw) {
+		pfx, err := netip.ParsePrefix(p)
+		if err != nil || !pfx.Addr().Is4() {
+			return cfg, fmt.Errorf("--bgp-advertise-prefixes: %q is not an IPv4 prefix", p)
+		}
+		cfg.AdvertisePrefixes = append(cfg.AdvertisePrefixes, pfx.Masked())
+	}
+	peers, err := bgp.ParsePeers(peersRaw)
+	if err != nil {
+		return cfg, err
+	}
+	if len(peers) == 0 {
+		return cfg, nil
+	}
+	id := strings.TrimSpace(routerID)
+	if id == "" {
+		id = cfg.NodeIP
+	}
+	if id == "" {
+		if n, err := kc.GetNode(ctx, nodeName); err == nil {
+			id = model.NodeInternalIP(n)
+		}
+	}
+	rid, err := netip.ParseAddr(id)
+	if err != nil {
+		return cfg, fmt.Errorf("BGP needs an IPv4 router ID: set --bgp-router-id or --vnet-node-ip (got %q)", id)
+	}
+	var nh netip.Addr
+	if strings.TrimSpace(nextHop) != "" {
+		if nh, err = netip.ParseAddr(strings.TrimSpace(nextHop)); err != nil {
+			return cfg, fmt.Errorf("--bgp-next-hop: %w", err)
+		}
+	}
+	sp, err := bgp.New(bgp.Config{LocalASN: asn, RouterID: rid, NextHop: nh, Peers: peers, Log: log.With("component", "bgp")})
+	if err != nil {
+		return cfg, err
+	}
+	cfg.BGP = sp
+	log.Info("BGP speaker configured", "asn", asn, "routerID", rid, "peers", len(peers))
+	return cfg, nil
 }
 
 func configureMigration(ctx context.Context, log *slog.Logger, cancel context.CancelFunc, nodeName string, fc *fluxvm.Client, addr, caPath, certPath, keyPath, serverName, stateDir, adapterSocket string, heartbeatTTL time.Duration, restores *migration.RestoreStore) (*migration.Client, migration.SourceDriver, error) {

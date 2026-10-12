@@ -77,7 +77,7 @@ rules:
     resources: ["events"]
     verbs: ["create"]
   - apiGroups: ["kairon.zyvor.dev"]
-    resources: ["machines", "machines/status", "machinemigrations", "machinemigrations/status", "machinesnapshots", "machinesnapshots/status", "machinenetworkpolicies", "machinenetworkpolicies/status", "networksecuritygroups", "networksecuritygroups/status", "machinequotas", "machinequotas/status", "machinesnapshotrestores", "machinesnapshotrestores/status", "machinesets", "machinesets/status", "machinepools", "machinepools/status", "machineclaims", "machineclaims/status", "migrationpolicies", "migrationpolicies/status", "machinebackups", "machinebackups/status", "machinebackuprestores", "machinebackuprestores/status"]
+    resources: ["machines", "machines/status", "machinemigrations", "machinemigrations/status", "machinesnapshots", "machinesnapshots/status", "machinenetworkpolicies", "machinenetworkpolicies/status", "networksecuritygroups", "networksecuritygroups/status", "machinequotas", "machinequotas/status", "machinesnapshotrestores", "machinesnapshotrestores/status", "machinesets", "machinesets/status", "machinepools", "machinepools/status", "machineclaims", "machineclaims/status", "migrationpolicies", "migrationpolicies/status", "machinebackups", "machinebackups/status", "machinebackuprestores", "machinebackuprestores/status", "virtualnetworks", "virtualnetworks/status"]
     verbs: ["get", "list", "watch", "patch"]
   - apiGroups: ["kairon.zyvor.dev"]
     # Read-only: MachineInstanceType is pure reference data
@@ -221,6 +221,11 @@ rules:
   - apiGroups: ["resource.k8s.io"]
     resources: ["resourceclaims"]
     verbs: ["get"]
+  # VirtualNetwork IPAM read when a Machine is created and the per-node
+  # FluxVM sync (internal/agent/virtualnetwork.go). Never written.
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["virtualnetworks"]
+    verbs: ["get", "list"]
   # The node's own hardware graph (internal/agent/topology.go).
   - apiGroups: ["kairon.zyvor.dev"]
     resources: ["nodetopologies", "nodetopologies/status"]
@@ -285,7 +290,7 @@ rules:
   # suspend/resume toggle, handleSuspendMachineSnapshotSchedule) -- all
   # already-shipped mutations that were equally broken.
   - apiGroups: ["kairon.zyvor.dev"]
-    resources: ["machinequotas", "machinedisruptionbudgets", "machineinstancetypes", "machineimages", "migrationpolicies", "machinepools", "machineclaims", "nodetopologies"]
+    resources: ["machinequotas", "machinedisruptionbudgets", "machineinstancetypes", "machineimages", "migrationpolicies", "machinepools", "machineclaims", "nodetopologies", "virtualnetworks"]
     verbs: ["get", "list", "watch"]
   # The dashboard creates and deletes backups and creates restores
   # (internal/uiapi/backups.go), same as `kaironctl backup`.

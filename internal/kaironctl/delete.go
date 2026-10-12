@@ -86,6 +86,8 @@ func canonicalKind(kind string) (string, error) {
 		return "networkpolicy", nil
 	case "securitygroup", "securitygroups", "networksecuritygroups":
 		return "securitygroup", nil
+	case "virtualnetwork", "virtualnetworks", "vnet", "vnets":
+		return "virtualnetwork", nil
 	default:
 		return "", fmt.Errorf("unknown resource %q", kind)
 	}
@@ -132,6 +134,8 @@ func deleteByKindName(ctx context.Context, kc *kube.Client, ns, kind, name strin
 		return canonical, kc.DeleteMachineBackupPolicy(ctx, ns, name)
 	case "networkpolicy":
 		return canonical, kc.DeleteMachineNetworkPolicy(ctx, ns, name)
+	case "virtualnetwork":
+		return canonical, kc.DeleteVirtualNetwork(ctx, ns, name)
 	case "securitygroup":
 		return canonical, kc.DeleteNetworkSecurityGroup(ctx, ns, name)
 	default:
@@ -268,6 +272,14 @@ func matchingNames(ctx context.Context, kc *kube.Client, ns, kind string, select
 		}
 	case "snapshotschedule", "snapshotschedules", "machinesnapshotschedules":
 		items, err := kc.ListMachineSnapshotSchedulesNamespace(ctx, ns)
+		if err != nil {
+			return nil, err
+		}
+		for _, it := range items {
+			names = appendIfMatch(names, it.Metadata.Name, it.Metadata.Labels, selector)
+		}
+	case "virtualnetwork", "virtualnetworks", "vnet", "vnets":
+		items, err := kc.ListVirtualNetworksNamespace(ctx, ns)
 		if err != nil {
 			return nil, err
 		}
