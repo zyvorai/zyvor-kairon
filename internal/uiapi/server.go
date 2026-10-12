@@ -372,6 +372,9 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/network-capture", s.requireNamespace(namespaceFromPath, s.handleNetworkCapture))
 	api.HandleFunc("GET /api/v1/machines/{namespace}/{name}/network-capture", s.requireNamespace(namespaceFromPath, s.handleNetworkCaptures))
 	api.HandleFunc("GET /api/v1/machines/{namespace}/{name}/network-capture/{token}", s.requireNamespace(namespaceFromPath, s.handleNetworkCaptureFile))
+	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/diagnostics", s.requireNamespace(namespaceFromPath, s.handleStartDiagnostics))
+	api.HandleFunc("GET /api/v1/machines/{namespace}/{name}/diagnostics/{token}", s.requireNamespace(namespaceFromPath, s.handleGetDiagnostics))
+	api.HandleFunc("GET /api/v1/machines/{namespace}/{name}/diagnostics/{token}/{file}", s.requireNamespace(namespaceFromPath, s.handleDiagnosticsFile))
 	// GET /api/v1/config reports server-wide feature flags (e.g.
 	// consoleEnabled), not per-namespace state -- not namespace-scoped.
 	api.HandleFunc("GET /api/v1/config", s.handleConfig)

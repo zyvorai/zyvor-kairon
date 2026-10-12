@@ -192,6 +192,27 @@ real hosts sharing the hibernation directory and an RBD root disk.
 | Hibernate: discard | pass | 2026-10-12 | Same node: `discard-hibernation` annotation gave a new boot id; annotation removed, `status.hibernation` cleared |
 | Hibernate: resume on another node | not run | 2026-10-12 | Needs two nodes sharing the hibernation directory and a shared root disk |
 
+## Incident bundles
+
+Driven by [`scripts/lab-incident-bundle.sh`](../scripts/lab-incident-bundle.sh)
+against one node, through kairon-ui and the node console relay. The guest gets
+two planted secrets through cloud-init (an `api_key=` file and a `password=`
+runcmd) and a probe printing a tick counter and its boot id to the serial
+console.
+
+| Case | Last result | Date | Notes |
+|---|---|---|---|
+| Incident bundle: auth | pass | 2026-10-12 | Single node (QEMU 10.2.1, k3s 1.35, Ubuntu 24.04 guest, 1Gi): POST diagnostics without a token is `401` |
+| Incident bundle: bundle | pass | 2026-10-12 | Same node: `kaironctl diagnose machine --deep --memory-dump --pcap 5s` in 5s, 43 KB, 56 files; 48 of 52 node sections ok (no balloon device; no eBPF dataplane, so no stats, flows or pcap) |
+| Incident bundle: redact | pass | 2026-10-12 | Same node: neither planted secret in any of the 56 files; 3 `redacted:sha256:` fingerprints |
+| Incident bundle: memory dump | pass | 2026-10-12 | Same node: 1040 MiB ELF core, guest paused 1099 ms; downloaded with `kaironctl diagnose memory-dump` through kairon-ui, sha256 matches, contains the guest kernel banner |
+| Incident bundle: continuity | pass | 2026-10-12 | Same node: probe ticked on (3 -> 9) in the same boot after the dump |
+| Incident bundle: busy | pass | 2026-10-12 | Same node: a second start while a dump job runs is `409` |
+| Incident bundle: admin session | pass | 2026-10-12 | Same node: an admin login session reads the job |
+| Incident bundle: cleanup | pass | 2026-10-12 | Same node: deleting the Machine removed its FluxVM diagnostics directory |
+| Incident bundle: packet capture | not run | 2026-10-12 | The lab's Machines are not on the eBPF dataplane, so FluxVM has no interface to capture on |
+| Incident bundle: non-admin account refused | not run | 2026-10-12 | The lab has no non-admin kairon-ui account; covered by `internal/uiapi` tests |
+
 ## Virtual networks
 
 Driven by [`scripts/lab-virtual-network.sh`](../scripts/lab-virtual-network.sh)
