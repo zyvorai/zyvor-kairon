@@ -79,6 +79,7 @@ HELM_SET_FLAGS = [
     "ui.token=test-token",
     "controller.cordonEvacuation.enabled=true",
     "controller.memoryPressureEvacuation.enabled=true",
+    "controller.dr.enabled=true",
     "node.livenessLease.enabled=true",
     "node.csi.chap.enabled=true",
     "node.cbtBackup.enabled=true",
@@ -125,7 +126,7 @@ VERB_PREFIXES = [
 COMPONENTS = {
     "kairon-controller": {
         "dirs": ["internal/controller", "internal/leaderelection", "cmd/kairon-controller"],
-        "rbac_names": ["kairon-controller", "kairon-controller-leader-election", "kairon-node-liveness-lease-reader"],
+        "rbac_names": ["kairon-controller", "kairon-controller-leader-election", "kairon-node-liveness-lease-reader", "kairon-controller-dr-peers"],
     },
     "kairon-node": {
         "dirs": ["internal/agent", "internal/nodeliveness", "cmd/kairon-node"],

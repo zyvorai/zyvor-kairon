@@ -67,11 +67,13 @@ rules:
   - apiGroups: [""]
     resources: ["nodes"]
     verbs: ["get", "list", "watch"]
+
   - apiGroups: [""]
     # Node maintenance mode cordons and uncordons the node and writes its
     # maintenance-state annotations (internal/controller/maintenance.go).
     resources: ["nodes"]
     verbs: ["patch"]
+
   - apiGroups: [""]
     # RecordEvent (internal/kube/client.go) posts a real core/v1 Event for
     # a quota-blocked Machine from admitQuota's blocker branch
@@ -141,10 +143,25 @@ rules:
     # namespace/tenant (internal/controller/tenantfence.go).
     resources: ["networksecuritygroups"]
     verbs: ["create", "delete"]
+
   - apiGroups: ["kairon.zyvor.dev"]
-    # Node maintenance mode (internal/controller/maintenance.go) migrates
-    # Machines off a node in maintenance; automatic DRS (drs.go) creates
-    # rebalancing migrations.
+    # MachineProtectionPlans (internal/controller/protection.go): the
+    # active site owns a dr-<plan> MachineBackupPolicy; failovers and DR
+    # tests create Machines and MachineBackupRestores, and a DR test
+    # deletes its copies when it ends.
+    resources: ["machineprotectionplans", "machineprotectionplans/status"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machinebackuppolicies", "machinebackuprestores"]
+    verbs: ["create", "delete"]
+
+
+  - apiGroups: ["kairon.zyvor.dev"]
+    # cordonEvacuation, memoryPressureEvacuation, nodeMaintenance and
+    # automatic DRS are the only reasons kairon-controller itself ever
+    # creates a MachineMigration -- see internal/controller/cordon.go,
+    # memoryevac.go, maintenance.go and drs.go. With all of them off, only
+    # kaironctl/kairon-ui do.
     resources: ["machinemigrations"]
     verbs: ["create"]
 
@@ -328,6 +345,17 @@ rules:
     resources: ["machinenetworkpolicies", "networksecuritygroups"]
     verbs: ["get", "list", "watch"]
 ---
+# MachineProtectionPlan peer credentials: a token and ca.crt for the peer
+# cluster's API, read from Secrets in this namespace only. The controller
+# also refuses any Secret not labelled kairon.zyvor.dev/dr-peer-credentials.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: kairon-controller-dr-peers, namespace: kairon-system}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata: {name: kairon-controller-leader-election, namespace: kairon-system}
@@ -377,6 +405,13 @@ metadata: {name: kairon-ui}
 roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: kairon-ui}
 subjects:
   - {kind: ServiceAccount, name: kairon-ui, namespace: kairon-system}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: kairon-controller-dr-peers, namespace: kairon-system}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: kairon-controller-dr-peers}
+subjects:
+  - {kind: ServiceAccount, name: kairon-controller, namespace: kairon-system}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

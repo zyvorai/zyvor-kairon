@@ -126,6 +126,7 @@ type Recorder struct {
 	memory    *memoryMetrics
 	vnet      *vnetMetrics
 	placement *placementMetrics
+	dr        *drMetrics
 
 	mu         sync.Mutex
 	phaseSince map[phaseKey]phaseState
@@ -256,6 +257,7 @@ func NewRecorder() *Recorder {
 	r.backup = newBackupMetrics(reg)
 	r.topology = newTopologyMetrics(reg)
 	r.placement = newPlacementMetrics(reg)
+	r.dr = newDRMetrics(reg)
 	return r
 }
 

@@ -65,7 +65,9 @@ type Controller struct {
 	// Maintenance drives node maintenance mode -- see maintenance.go.
 	Maintenance NodeMaintenance
 	// DRS rebalances Machines across nodes -- see drs.go.
-	DRS            DRS
+	DRS DRS
+	// DR runs MachineProtectionPlans -- see protection.go.
+	DR             DisasterRecovery
 	drsLastRun     time.Time
 	drsLastPlan    string
 	staleEvacMu    sync.Mutex
@@ -451,6 +453,9 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 
 	if err := c.reconcileMachineBackupPolicies(ctx, machines); err != nil {
 		c.Log.Error("machine backup policy reconciliation failed", "error", err)
+	}
+	if err := c.reconcileProtectionPlans(ctx, machines); err != nil {
+		c.Log.Error("machine protection plan reconciliation failed", "error", err)
 	}
 
 	c.reconcileAttestation(ctx, machines, nodes)

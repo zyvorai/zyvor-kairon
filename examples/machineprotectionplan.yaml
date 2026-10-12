@@ -1,0 +1,51 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: Apache-2.0
+
+# Cross-cluster disaster recovery (experimental): the same plan on two
+# clusters. Site A (role Primary) replicates db and web to S3 every 15
+# minutes; site B (role Secondary) mirrors their specs and restore points
+# from site A's API, and on failover restores db first, then web.
+#
+# kairon-controller on both sites runs with --dr-secret-namespace (Helm:
+# controller.dr.enabled=true) and, for DR tests, --dr-test-bridges=drtest0.
+# The peer credentials Secret lives in kairon-controller's namespace; see
+# deploy/dr-peer-rbac.yaml for the token. The S3 Secret is the same one
+# MachineBackupPolicy uses (labelled kairon.zyvor.dev/backup-credentials).
+#
+# Apply this on site A, and on site B with role: Secondary and peer.server
+# pointing at site A. Then, on site B:
+#   kaironctl dr test shop -n prod          # restore copies onto drtest0
+#   kaironctl dr test-end shop -n prod
+#   kaironctl dr failover shop -n prod --planned
+apiVersion: kairon.zyvor.dev/v1
+kind: MachineProtectionPlan
+metadata:
+  name: shop
+  namespace: prod
+spec:
+  role: Primary
+  machines:
+    - name: db
+    - name: web
+      dependsOn: [db]
+  replication:
+    interval: 15m
+    fullEvery: 7d
+    target:
+      s3:
+        endpoint: https://s3.dr.example.com
+        bucket: kairon-dr
+        prefix: shop
+        credentialsSecretRef: s3-backup
+    retention:
+      hourly: 24
+      daily: 7
+  objectives:
+    rpo: 30m
+    rto: 15m
+  peer:
+    server: https://api.site-b.example.com:6443
+    credentialsSecretRef: dr-peer-site-b
+  test:
+    bridge: drtest0
+    ttl: 2h

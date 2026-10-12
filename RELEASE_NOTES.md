@@ -38,6 +38,41 @@ match.
 Also new: `kaironctl selftest` and the dashboard Self-test page,
 `deploy-remote.sh --remote-build`, `--image-cache-dir`, `--self-test`.
 
+## Added: cross-cluster DR (experimental)
+
+A `MachineProtectionPlan` (`kmpp`) protects a group of Machines across two
+clusters. The same plan exists on both, each pointing at the other's API
+server through a credentials Secret in kairon-controller's namespace
+(`deploy/dr-peer-rbac.yaml` creates the ServiceAccount the peer uses). The
+active site backs the Machines up to S3 with incremental backups; the
+standby mirrors their specs and imports the restore points, and reports the
+RPO against `spec.rpo`. `kaironctl dr failover` on the standby brings the
+Machines up there in `dependsOn` waves from the newest restore points;
+`--planned` halts the active site first and takes final backups, so nothing
+is lost. An epoch fences the old site: when it reconnects and sees a higher
+epoch, it halts its Machines and stops replicating. `kaironctl dr test`
+restores copies into an isolated bridge while production keeps running.
+New metrics: `kairon_dr_rpo_seconds`, `kairon_dr_active`,
+`kairon_dr_peer_reachable`, `kairon_dr_last_rto_seconds` and
+`kairon_dr_last_data_loss_seconds`. Off by default; Helm
+`controller.dr.enabled`. No FluxVM change is needed.
+
+The lab ran both sites as two namespaces of one k3s cluster, sharing one S3
+gateway; two real clusters and a real network partition have not run. See
+`docs/guides/cross-cluster-dr.md` and the "Cross-cluster DR" section of
+`docs/COMPATIBILITY.md`.
+
+## Fixed: backup policy consolidation
+
+Retention consolidated a chain into a synthetic full whenever its base was
+not itself a kept point, which with hourly retention meant after almost
+every incremental: each one rewrote a full layer in S3 and deleted the
+chain before it. Retention now consolidates only bases older than its
+window (the longest of `hourly` hours, `daily` days and `monthly` months).
+And once a chain was consolidated, a `MachineBackupPolicy` ignored the
+synthetic full and took a new full every time; it now continues the chain
+with an incremental on it.
+
 ## Added: vGPU profiles and GPU health (experimental)
 
 `spec.devices[].profile` asks for a vGPU (mediated device) of a profile, such

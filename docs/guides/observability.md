@@ -42,6 +42,11 @@ component apiserver call visibility for free, labeled `method`
 | `kairon_node_maintenance_remaining_machines` | gauge | `node` | Machines still holding a VMM on a node in maintenance mode. |
 | `kairon_drs_imbalance_percent` | gauge | — | Gap between the most and least utilized node (reserved CPU or memory) in the last DRS round. See [DRS](node-maintenance-drs.md#drs-rebalancing). |
 | `kairon_drs_node_utilization_percent` | gauge | `node`, `resource` | Reserved `cpu`, `memory` and `max` share per node in the last DRS round. |
+| `kairon_dr_rpo_seconds` | gauge | `namespace`, `plan` | Age of the oldest of a protection plan's newest restore points. See [cross-cluster DR](cross-cluster-dr.md). |
+| `kairon_dr_active` | gauge | `namespace`, `plan` | 1 on the site that runs the plan's Machines. |
+| `kairon_dr_peer_reachable` | gauge | `namespace`, `plan` | 1 when the last call to the peer cluster succeeded. |
+| `kairon_dr_last_rto_seconds` | gauge | `namespace`, `plan`, `kind` | Start to every Machine Running for the last `failover` or `test`. |
+| `kairon_dr_last_data_loss_seconds` | gauge | `namespace`, `plan`, `kind` | Start of the last `failover` or `test` minus the oldest restore point it used. |
 | `kairon_drs_moves_total` | counter | `result` | DRS moves: `recommended`, `started` or `blocked` (disruption budget). |
 | `kairon_node_memory_pressure` | gauge | `node`, `state` | kairon-node only. 1 while host memory is under pressure (`state=pressure`), and while it is with every elastic-memory balloon at its minimum (`state=exhausted`, the `KaironMemoryPressure` condition). See [elastic memory](machine-elastic-memory.md). |
 | `kairon_node_virtual_networks` | gauge | — | kairon-node only. Virtual networks applied to the local FluxVM. See [virtual networks](virtual-networks.md). |

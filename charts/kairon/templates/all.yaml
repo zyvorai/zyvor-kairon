@@ -96,6 +96,18 @@ rules:
     # namespace/tenant (internal/controller/tenantfence.go).
     resources: ["networksecuritygroups"]
     verbs: ["create", "delete"]
+{{ if .Values.controller.dr.enabled }}
+  - apiGroups: ["kairon.zyvor.dev"]
+    # MachineProtectionPlans (internal/controller/protection.go): the
+    # active site owns a dr-<plan> MachineBackupPolicy; failovers and DR
+    # tests create Machines and MachineBackupRestores, and a DR test
+    # deletes its copies when it ends.
+    resources: ["machineprotectionplans", "machineprotectionplans/status"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machinebackuppolicies", "machinebackuprestores"]
+    verbs: ["create", "delete"]
+{{ end }}
 {{ if or .Values.controller.cordonEvacuation.enabled .Values.controller.memoryPressureEvacuation.enabled .Values.controller.nodeMaintenance.enabled (eq (toString .Values.controller.drs.mode) "automatic") }}
   - apiGroups: ["kairon.zyvor.dev"]
     # cordonEvacuation, memoryPressureEvacuation, nodeMaintenance and
@@ -171,6 +183,26 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata: {name: kairon-controller-leader-election, namespace: {{ .Release.Namespace }}}
 roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: kairon-controller-leader-election}
+subjects:
+  - {kind: ServiceAccount, name: kairon-controller, namespace: {{ .Release.Namespace }}}
+---
+{{ end }}
+{{ if .Values.controller.dr.enabled }}
+# MachineProtectionPlan peer credentials: a token and ca.crt for the peer
+# cluster's API, read from Secrets in this namespace only. The controller
+# also refuses any Secret not labelled kairon.zyvor.dev/dr-peer-credentials.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: kairon-controller-dr-peers, namespace: {{ .Release.Namespace }}}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: kairon-controller-dr-peers, namespace: {{ .Release.Namespace }}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: kairon-controller-dr-peers}
 subjects:
   - {kind: ServiceAccount, name: kairon-controller, namespace: {{ .Release.Namespace }}}
 ---
@@ -384,6 +416,10 @@ spec:
             - "--drs-max-moves={{ .Values.controller.drs.maxMoves }}"
             - "--drs-strategy={{ .Values.controller.drs.strategy }}"
             - "--drs-cooldown={{ .Values.controller.drs.cooldown }}"
+{{ if .Values.controller.dr.enabled }}
+            - "--dr-secret-namespace={{ .Release.Namespace }}"
+            - "--dr-test-bridges={{ .Values.controller.dr.testBridges | join "," }}"
+{{ end }}
             - "--cilium-attach={{ .Values.network.ciliumAttach.enabled }}"
             - "--cilium-policy-sync={{ .Values.network.ciliumPolicySync.enabled }}"
 {{ if .Values.node.livenessLease.enabled }}

@@ -127,12 +127,16 @@ For each selected Machine, kairon-controller:
   synthetic full is in flight;
 - takes a **full** when there is no chain yet, when `fullEvery` has passed,
   when `mode: full`, or after a backup failed with `fullRequired`;
-  otherwise an **incremental** on the newest successful backup;
+  otherwise an **incremental** on the newest successful backup, or on the
+  synthetic full that consolidated it (retention may have deleted every
+  other backup of the chain);
 - applies **GFS retention**: it keeps the newest point of each of the last
   `hourly` hours, `daily` days and `monthly` months (plus the newest point),
   and every backup those points need to restore;
 - **consolidates** with a synthetic full when a kept point's chain still
-  reaches back to a full that retention would otherwise drop: FluxVM reads the
+  reaches back to a full that retention would otherwise drop and that is
+  older than the retention window (the longest of `hourly` hours, `daily`
+  days and `monthly` months; a base inside it stays): FluxVM reads the
   chain from S3 and writes one standalone layer at that point (`mode:
   synthetic-full`, `parent:` the point). Once it succeeds, the older backups
   are no longer needed and are deleted. Incrementals after the point keep

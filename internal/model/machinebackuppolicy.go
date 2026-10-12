@@ -58,6 +58,11 @@ type BackupRetention struct {
 	Monthly int `json:"monthly,omitempty"`
 }
 
+// Window is how far back the longest GFS tier reaches.
+func (r BackupRetention) Window() time.Duration {
+	return max(time.Duration(r.Hourly)*time.Hour, time.Duration(r.Daily)*24*time.Hour, time.Duration(r.Monthly)*31*24*time.Hour)
+}
+
 type MachineBackupPolicyStatus struct {
 	Machines []PolicyMachineStatus `json:"machines,omitempty"`
 }
@@ -153,10 +158,16 @@ func PlanPolicyRun(spec MachineBackupPolicySpec, backups []MachineBackup, now ti
 	if err != nil {
 		return PolicyRun{}, err
 	}
-	var lastAttempt, lastOK, lastFull *MachineBackup
+	var lastAttempt, lastOK, lastFull, lastSynth *MachineBackup
 	for i := range backups {
 		b := &backups[i]
-		if b.Metadata.DeletionTimestamp != nil || b.BackupMode() == BackupModeSyntheticFull {
+		if b.Metadata.DeletionTimestamp != nil {
+			continue
+		}
+		if b.BackupMode() == BackupModeSyntheticFull {
+			if b.Status.Phase == BackupSucceeded && (lastSynth == nil || pointTime(*b).After(pointTime(*lastSynth))) {
+				lastSynth = b
+			}
 			continue
 		}
 		if !backupDone(*b) {
@@ -183,11 +194,29 @@ func PlanPolicyRun(spec MachineBackupPolicySpec, backups []MachineBackup, now ti
 	if spec.Suspend {
 		return PolicyRun{}, nil
 	}
+	// Retention may consolidate a chain into a synthetic full and delete the
+	// backups it replaced, the newest point included. The synthetic full is
+	// then the chain's base and newest point, and incrementals go on from it.
+	if lastSynth != nil && lastSynth.Status.Chain != nil {
+		if lastOK == nil || pointTime(*lastSynth).After(pointTime(*lastOK)) {
+			lastOK = lastSynth
+		}
+		if lastFull == nil || lastFull.Status.Chain == nil ||
+			lastFull.Status.Chain.ID != lastSynth.Status.Chain.ID && pointTime(*lastSynth).After(pointTime(*lastFull)) {
+			lastFull = lastSynth
+		}
+	}
 	if lastAttempt == nil {
-		return PolicyRun{Mode: BackupModeFull}, nil
+		if lastOK == nil {
+			return PolicyRun{Mode: BackupModeFull}, nil
+		}
+		lastAttempt = lastOK
 	}
 	fullRequired := lastAttempt.Status.Phase == BackupFailed && lastAttempt.Status.Disk != nil && lastAttempt.Status.Disk.FullRequired
 	next := lastAttempt.Metadata.CreationTimestamp.Add(incrEvery)
+	if lastAttempt == lastSynth {
+		next = pointTime(*lastSynth).Add(incrEvery)
+	}
 	if !fullRequired && now.Before(next) {
 		return PolicyRun{NextRun: next}, nil
 	}
@@ -341,7 +370,12 @@ func PlanRetention(backups []MachineBackup, r BackupRetention, now time.Time) Re
 	sort.Strings(plan.Held)
 
 	// A base no kept point wants, still needed through some kept point's
-	// path: consolidate the oldest such kept point.
+	// path: consolidate the oldest such kept point. Only bases older than
+	// the retention window count; one inside it was merely superseded in
+	// its GFS bucket, and consolidating it would rewrite a full layer (and
+	// delete the chain a DR standby may be restoring from) on every
+	// incremental.
+	horizon := now.Add(-r.Window())
 	var oldest string
 	for p := range keep {
 		start, ok := byName[p]
@@ -356,6 +390,9 @@ func PlanRetention(backups []MachineBackup, r BackupRetention, now time.Time) Re
 			}
 			if keep[point] || b.BackupMode() == BackupModeIncremental {
 				continue
+			}
+			if !pointTime(b).Before(horizon) {
+				break
 			}
 			if oldest == "" || pointTime(start).Before(pointTime(byName[oldest])) {
 				oldest = p
