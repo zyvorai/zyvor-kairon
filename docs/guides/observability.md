@@ -35,6 +35,11 @@ component apiserver call visibility for free, labeled `method`
 | `kairon_migration_adaptive_actions_total` | counter | `action` | Adaptive engine actions, such as `auto-converge`, `throttle`, `relax-downtime`, `bandwidth`, `postcopy`, `abort`, `tune-failed` and `postcopy-refused`. |
 | `kairon_topology_allocation_failures_total` | counter | `reason` | Scheduling attempts for `spec.topology`/`spec.devices` Machines that found no placement; `reason` is `TopologyUnsatisfiable`, `DRAAllocationPending` or `Unschedulable`. |
 | `kairon_node_numa_free_cpus` | gauge | `node`, `numa` | Pinnable CPUs not held by a Machine, per NUMA node, from each `NodeTopology`. See [topology-aware placement](machine-topology.md). |
+| `kairon_node_maintenance` | gauge | `node`, `state` | 1 while a node is in maintenance mode, `state` `Entering` or `InMaintenance`. See [node maintenance](node-maintenance-drs.md). |
+| `kairon_node_maintenance_remaining_machines` | gauge | `node` | Machines still holding a VMM on a node in maintenance mode. |
+| `kairon_drs_imbalance_percent` | gauge | — | Gap between the most and least utilized node (reserved CPU or memory) in the last DRS round. See [DRS](node-maintenance-drs.md#drs-rebalancing). |
+| `kairon_drs_node_utilization_percent` | gauge | `node`, `resource` | Reserved `cpu`, `memory` and `max` share per node in the last DRS round. |
+| `kairon_drs_moves_total` | counter | `result` | DRS moves: `recommended`, `started` or `blocked` (disruption budget). |
 | `kairon_node_memory_pressure` | gauge | `node`, `state` | kairon-node only. 1 while host memory is under pressure (`state=pressure`), and while it is with every elastic-memory balloon at its minimum (`state=exhausted`, the `KaironMemoryPressure` condition). See [elastic memory](machine-elastic-memory.md). |
 | `kairon_node_virtual_networks` | gauge | — | kairon-node only. Virtual networks applied to the local FluxVM. See [virtual networks](virtual-networks.md). |
 | `kairon_node_virtual_network_endpoints` | gauge | `location` | kairon-node only. Endpoints of the applied networks on this node (`local`) and on other nodes (`remote`). |

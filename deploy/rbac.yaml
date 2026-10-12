@@ -68,6 +68,11 @@ rules:
     resources: ["nodes"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
+    # Node maintenance mode cordons and uncordons the node and writes its
+    # maintenance-state annotations (internal/controller/maintenance.go).
+    resources: ["nodes"]
+    verbs: ["patch"]
+  - apiGroups: [""]
     # RecordEvent (internal/kube/client.go) posts a real core/v1 Event for
     # a quota-blocked Machine from admitQuota's blocker branch
     # (internal/controller/controller.go) -- so `kubectl describe
@@ -136,6 +141,12 @@ rules:
     # namespace/tenant (internal/controller/tenantfence.go).
     resources: ["networksecuritygroups"]
     verbs: ["create", "delete"]
+  - apiGroups: ["kairon.zyvor.dev"]
+    # Node maintenance mode (internal/controller/maintenance.go) migrates
+    # Machines off a node in maintenance; automatic DRS (drs.go) creates
+    # rebalancing migrations.
+    resources: ["machinemigrations"]
+    verbs: ["create"]
 
   - apiGroups: ["kairon.zyvor.dev"]
     # Read-only on the spec, deliberately no patch here: the admission

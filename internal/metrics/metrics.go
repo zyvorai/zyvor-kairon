@@ -122,9 +122,10 @@ type Recorder struct {
 	// S3 MachineBackups -- only registered by NewRecorder, see backup.go.
 	backup *backupMetrics
 	// Topology scheduler -- only registered by NewRecorder, see topology.go.
-	topology *topologyMetrics
-	memory   *memoryMetrics
-	vnet     *vnetMetrics
+	topology  *topologyMetrics
+	memory    *memoryMetrics
+	vnet      *vnetMetrics
+	placement *placementMetrics
 
 	mu         sync.Mutex
 	phaseSince map[phaseKey]phaseState
@@ -254,6 +255,7 @@ func NewRecorder() *Recorder {
 		r.quotaResource, r.disruptionBudgetStatus, r.machineSetStatus, r.reconcileDuration, r.reconcileErrors, r.reconcileItemErrors, r.webhookDecisions, r.apiRequestDuration)
 	r.backup = newBackupMetrics(reg)
 	r.topology = newTopologyMetrics(reg)
+	r.placement = newPlacementMetrics(reg)
 	return r
 }
 

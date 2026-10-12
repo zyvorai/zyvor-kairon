@@ -251,6 +251,10 @@ and the admission webhook already share (`internal/controller/cordon.go`):
   granted `create` on `machinemigrations` -- the Helm chart adds this
   automatically when `controller.cordonEvacuation.enabled` is true, since
   today only `kaironctl`/`kairon-ui` ever create one.
+- A node in maintenance mode (`kairon.zyvor.dev/maintenance=true`) is left
+  to maintenance, which applies the same budget check with its own
+  strategy and fallback -- see
+  [node maintenance mode](node-maintenance-drs.md).
 
 ## Real limits today (v1 of this feature)
 

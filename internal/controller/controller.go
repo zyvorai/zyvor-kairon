@@ -62,8 +62,14 @@ type Controller struct {
 	// StaleEvacuation, when Enabled, fences opted-in Machines off nodes
 	// attested dead -- see internal/controller/staleevac.go.
 	StaleEvacuation StaleEvacuation
-	staleEvacMu     sync.Mutex
-	staleEvacNoted  map[string]bool
+	// Maintenance drives node maintenance mode -- see maintenance.go.
+	Maintenance NodeMaintenance
+	// DRS rebalances Machines across nodes -- see drs.go.
+	DRS            DRS
+	drsLastRun     time.Time
+	drsLastPlan    string
+	staleEvacMu    sync.Mutex
+	staleEvacNoted map[string]bool
 	// CiliumAttach enables reconcile of CiliumExternalWorkload for Machines
 	// with spec.network.ciliumAttach. Off by default (Helm network.ciliumAttach).
 	CiliumAttach bool
@@ -449,8 +455,10 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 
 	c.reconcileAttestation(ctx, machines, nodes)
 	c.reconcileAgentStatus(ctx, machines, nodes)
+	c.reconcileNodeMaintenance(ctx, machines, nodes, migrations, nodeLoad)
 	c.reconcileCordonEvacuation(ctx, machines, nodes, migrations)
 	c.reconcileMemoryPressureEvacuation(ctx, machines, nodes, migrations)
+	c.reconcileDRS(ctx, machines, nodes, migrations)
 	c.detectUnreachableNodes(ctx, machines, nodes)
 	c.reconcileStaleEvacuation(ctx, machines, nodes, migrations)
 	if err := c.reconcileFleet(ctx, machines, nodes, migrations); err != nil {

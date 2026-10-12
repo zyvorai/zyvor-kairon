@@ -24,6 +24,7 @@ const DefaultCordonEvacuateMinRetryInterval = 2 * time.Minute
 // node's Machines start migrating on their own, without an operator
 // running `kaironctl evacuate` or `kubectl drain --force`-adjacent
 // tooling triggering it. See docs/guides/machine-disruption-budgets.md.
+// A node in maintenance mode is left to NodeMaintenance (maintenance.go).
 type CordonEvacuation struct {
 	Enabled bool
 	// Strategy mirrors MachineMigrationSpec.Strategy: cold|auto. Live is
@@ -77,7 +78,7 @@ func (c *Controller) reconcileCordonEvacuation(ctx context.Context, machines []m
 	}
 	cordoned := map[string]bool{}
 	for _, n := range nodes {
-		if n.Spec.Unschedulable {
+		if n.Spec.Unschedulable && !model.MaintenanceRequested(n) {
 			cordoned[n.Metadata.Name] = true
 		}
 	}

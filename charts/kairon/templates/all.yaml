@@ -20,6 +20,13 @@ rules:
   - apiGroups: [""]
     resources: ["nodes"]
     verbs: ["get", "list", "watch"]
+{{ if .Values.controller.nodeMaintenance.enabled }}
+  - apiGroups: [""]
+    # Node maintenance mode cordons and uncordons the node and writes its
+    # maintenance-state annotations (internal/controller/maintenance.go).
+    resources: ["nodes"]
+    verbs: ["patch"]
+{{ end }}
   - apiGroups: [""]
     # RecordEvent (internal/kube/client.go) posts a real core/v1 Event for
     # a quota-blocked Machine from admitQuota's blocker branch
@@ -89,12 +96,13 @@ rules:
     # namespace/tenant (internal/controller/tenantfence.go).
     resources: ["networksecuritygroups"]
     verbs: ["create", "delete"]
-{{ if or .Values.controller.cordonEvacuation.enabled .Values.controller.memoryPressureEvacuation.enabled }}
+{{ if or .Values.controller.cordonEvacuation.enabled .Values.controller.memoryPressureEvacuation.enabled .Values.controller.nodeMaintenance.enabled (eq (toString .Values.controller.drs.mode) "automatic") }}
   - apiGroups: ["kairon.zyvor.dev"]
-    # cordonEvacuation and memoryPressureEvacuation are the only reasons
-    # kairon-controller itself ever creates a MachineMigration -- see
-    # internal/controller/cordon.go and memoryevac.go. Without either
-    # enabled, only kaironctl/kairon-ui do.
+    # cordonEvacuation, memoryPressureEvacuation, nodeMaintenance and
+    # automatic DRS are the only reasons kairon-controller itself ever
+    # creates a MachineMigration -- see internal/controller/cordon.go,
+    # memoryevac.go, maintenance.go and drs.go. With all of them off, only
+    # kaironctl/kairon-ui do.
     resources: ["machinemigrations"]
     verbs: ["create"]
 {{ end }}
@@ -366,6 +374,16 @@ spec:
             - "--memory-pressure-evacuate-min-retry-interval={{ .Values.controller.memoryPressureEvacuation.minRetryInterval }}"
             - "--stale-evacuation={{ .Values.controller.staleEvacuation.enabled }}"
             - "--stale-evacuation-max-per-tick={{ .Values.controller.staleEvacuation.maxPerTick }}"
+            - "--node-maintenance={{ .Values.controller.nodeMaintenance.enabled }}"
+            - "--node-maintenance-max-parallel={{ .Values.controller.nodeMaintenance.maxParallel }}"
+            - "--node-maintenance-min-retry-interval={{ .Values.controller.nodeMaintenance.minRetryInterval }}"
+            - "--drs-mode={{ .Values.controller.drs.mode }}"
+            - "--drs-interval={{ .Values.controller.drs.interval }}"
+            - "--drs-threshold-percent={{ .Values.controller.drs.thresholdPercent }}"
+            - "--drs-min-improvement-percent={{ .Values.controller.drs.minImprovementPercent }}"
+            - "--drs-max-moves={{ .Values.controller.drs.maxMoves }}"
+            - "--drs-strategy={{ .Values.controller.drs.strategy }}"
+            - "--drs-cooldown={{ .Values.controller.drs.cooldown }}"
             - "--cilium-attach={{ .Values.network.ciliumAttach.enabled }}"
             - "--cilium-policy-sync={{ .Values.network.ciliumPolicySync.enabled }}"
 {{ if .Values.node.livenessLease.enabled }}
