@@ -268,6 +268,28 @@ agent.
 | NVMe-oF: in-cluster DaemonSets | not run | 2026-10-12 | The lab ran host-installed binaries; the chart is rendered and linted only |
 | NVMe-oF: two nodes | not run | 2026-10-12 | Storage node and Machine host were the same machine |
 
+## Node maintenance and DRS
+
+Driven by [`scripts/lab-maintenance.sh`](../scripts/lab-maintenance.sh) on
+one node, against a host-installed kairon-controller (run with
+`-drs-mode=recommend -drs-interval=10s` through a temporary systemd drop-in)
+and FluxVM. Enter and exit go through `kaironctl node maintenance`. One QEMU
+Machine prints a tick counter, its boot id and a `/dev/shm` marker to the
+serial console. With one node there is never a migration target, so these
+cases exercise the cordon, the fallbacks and exit, not migration.
+
+| Case | Last result | Date | Notes |
+|---|---|---|---|
+| Node maintenance: drs | pass | 2026-10-12 | Single node (k3s 1.35, QEMU 10.2.1): recommend mode exported `kairon_drs_node_utilization_percent` (8% reserved) and `kairon_drs_imbalance_percent` 0; `kaironctl drs plan` reported no moves with 1 eligible node |
+| Node maintenance: wait | pass | 2026-10-12 | Same node: cordoned and `Entering` in 17s with "1 with no eligible target node"; the Machine stayed Running, no MachineMigration was created, `MaintenanceEntering` Event recorded |
+| Node maintenance: stop | pass | 2026-10-12 | Same node: `--fallback stop` stopped the Machine and parked it (`from Running to Stopped`); its QEMU process was gone; `InMaintenance` in 15s with a `MaintenanceReady` Event and `kairon_node_maintenance{state="InMaintenance"} 1` |
+| Node maintenance: exit | pass | 2026-10-12 | Same node: exit uncordoned the node and the Machine was Running again in 69s in a fresh boot; parked annotation removed, `MaintenanceExited` Event |
+| Node maintenance: hibernate | pass | 2026-10-12 | Same node: `--fallback hibernate` hibernated the Machine and reached `InMaintenance` in 27s; exit resumed it in the same boot (same boot id and `/dev/shm` marker, tick 4 -> 12) |
+| Node maintenance: cordon | pass | 2026-10-12 | Same node: on a node the operator had cordoned, maintenance reached `InMaintenance` without marking the cordon as its own, and the node stayed cordoned after exit |
+| Node maintenance: migrate Machines to another node | not run | 2026-10-12 | Needs two nodes |
+| DRS: recommend or automatic moves | not run | 2026-10-12 | Needs two nodes |
+| Node maintenance and DRS: in-cluster chart RBAC | not run | 2026-10-12 | The lab controller ran with a cluster-admin token; the chart's new `patch` on nodes is checked by `scripts/check_rbac_coverage.py` only |
+
 ## Component versions (fill per run)
 
 | Piece | Version |

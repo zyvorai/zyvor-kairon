@@ -38,6 +38,31 @@ match.
 Also new: `kaironctl selftest` and the dashboard Self-test page,
 `deploy-remote.sh --remote-build`, `--image-cache-dir`, `--self-test`.
 
+## Added: node maintenance mode and DRS rebalancing (experimental)
+
+`kaironctl node maintenance enter NODE` puts a node into maintenance. The
+controller cordons it, migrates its Machines to other nodes (live, or cold
+for Machines live migration refuses), and applies `--fallback` to Machines no
+other node can take: `wait` (default), `stop` or `hibernate`. The node reports
+`Entering` and then `InMaintenance` in annotations, Events and the
+`kairon_node_maintenance` metric. `exit` uncordons the node if the controller
+cordoned it and restores every Machine it parked. It is on by default
+(`controller.nodeMaintenance.enabled`) and acts only on annotated nodes; the
+chart now grants the controller `patch` on nodes and `create` on
+machinemigrations while it is on.
+
+DRS (`-drs-mode`, Helm `controller.drs.mode`, default `off`) plans
+migrations that narrow the gap between the most and least utilized nodes,
+measured on reserved CPU and memory. Every move passes the scheduler's hard
+filters and disruption budgets, and each Machine has a cooldown. `recommend`
+records Events and `kairon_drs_*` metrics; `automatic` also creates the
+migrations, one round at a time. `kaironctl drs plan` shows the plan.
+
+On one node, maintenance (cordon, the three fallbacks, exit) and DRS
+recommend mode have run; migrating Machines away and DRS moves need two
+nodes and have not. See `docs/guides/node-maintenance-drs.md` and the "Node
+maintenance and DRS" section of `docs/COMPATIBILITY.md`.
+
 ## Added: NVMe-oF storage and raw Block volumes (experimental)
 
 Kairon's CSI driver now provisions NVMe-oF volumes as well as iSCSI. Set

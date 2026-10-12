@@ -72,6 +72,6 @@ there would end up running twice. --clear removes the annotation.`,
 	}
 	fence.Flags().StringVar(&reason, "reason", "", "out-of-band evidence the node is dead")
 	fence.Flags().BoolVar(&clear, "clear", false, "remove the attestation")
-	root.AddCommand(fence, newNodeTopologyCmd())
+	root.AddCommand(fence, newNodeTopologyCmd(), newNodeMaintenanceCmd())
 	return root
 }

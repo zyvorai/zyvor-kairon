@@ -58,6 +58,16 @@ func run() int {
 	memoryEvacuateStrategy := flag.String("memory-pressure-evacuate-strategy", "live", "migration strategy used by -memory-pressure-evacuate: live|auto|cold; with live, Machines with passthrough devices are skipped")
 	memoryEvacuateGrace := flag.Duration("memory-pressure-evacuate-grace", controller.DefaultMemoryEvacuateGrace, "how long KaironMemoryPressure must stay True before -memory-pressure-evacuate starts a migration")
 	memoryEvacuateMinRetryInterval := flag.Duration("memory-pressure-evacuate-min-retry-interval", controller.DefaultMemoryEvacuateMinRetryInterval, "minimum time between -memory-pressure-evacuate attempts for the same Machine")
+	nodeMaintenance := flag.Bool("node-maintenance", envBool("KAIRON_NODE_MAINTENANCE", true), "act on Nodes annotated kairon.zyvor.dev/maintenance=true: cordon, migrate their Machines away, park the ones with no target per kairon.zyvor.dev/maintenance-fallback, and undo it when the annotation is removed (see internal/controller/maintenance.go)")
+	nodeMaintenanceMaxParallel := flag.Int("node-maintenance-max-parallel", controller.DefaultMaintenanceMaxParallel, "most in-flight maintenance migrations per node")
+	nodeMaintenanceMinRetryInterval := flag.Duration("node-maintenance-min-retry-interval", controller.DefaultMaintenanceMinRetryInterval, "minimum time between maintenance migration attempts for the same Machine")
+	drsMode := flag.String("drs-mode", envDefault("KAIRON_DRS_MODE", controller.DRSModeOff), "rebalance Machines across nodes by reserved CPU/memory: off|recommend|automatic (see internal/controller/drs.go); recommend only records Events and metrics")
+	drsInterval := flag.Duration("drs-interval", controller.DefaultDRSInterval, "how often DRS plans a rebalancing round")
+	drsThreshold := flag.Int("drs-threshold-percent", scheduler.DefaultRebalanceThresholdPercent, "imbalance, in percentage points between the most and least utilized node, at which DRS plans moves")
+	drsMinImprovement := flag.Int("drs-min-improvement-percent", scheduler.DefaultRebalanceMinImprovementPercent, "how many points a single move must lower the imbalance by to be planned")
+	drsMaxMoves := flag.Int("drs-max-moves", scheduler.DefaultRebalanceMaxMoves, "most moves DRS plans per round")
+	drsStrategy := flag.String("drs-strategy", "live", "migration strategy for DRS moves: live|auto|cold; with live only Machines live migration can move are considered")
+	drsCooldown := flag.Duration("drs-cooldown", controller.DefaultDRSCooldown, "how long DRS leaves a Machine it moved in place")
 	staleEvacuation := flag.Bool("stale-evacuation", envBool("KAIRON_STALE_EVACUATION", false), "fence Machines annotated kairon.zyvor.dev/evacuate=true off NotReady nodes annotated kairon.zyvor.dev/node-fenced, so the scheduler places them again (see internal/controller/staleevac.go); off by default")
 	staleEvacuationMaxPerTick := flag.Int("stale-evacuation-max-per-tick", controller.DefaultStaleEvacuationMaxPerTick, "most Machines -stale-evacuation fences per reconcile tick")
 	ciliumAttach := flag.Bool("cilium-attach", envBool("KAIRON_CILIUM_ATTACH", false), "reconcile CiliumExternalWorkload for Machines with spec.network.ciliumAttach (requires Cilium CNI; off by default)")
@@ -87,6 +97,16 @@ func run() int {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	if (*webhookTLSCert == "") != (*webhookTLSKey == "") {
 		log.Error("secure startup refused", "reason", "-webhook-tls-cert and -webhook-tls-key must be set together")
+		return 1
+	}
+	if err := controller.ValidateDRSMode(*drsMode); err != nil {
+		log.Error("secure startup refused", "reason", err.Error())
+		return 1
+	}
+	switch *drsStrategy {
+	case "live", "auto", "cold":
+	default:
+		log.Error("secure startup refused", "reason", fmt.Sprintf("-drs-strategy %q: want live|auto|cold", *drsStrategy))
 		return 1
 	}
 	if *leaderElect && *leaderElectNamespace == "" {
@@ -154,6 +174,20 @@ func run() int {
 		StaleEvacuation: controller.StaleEvacuation{
 			Enabled:    *staleEvacuation,
 			MaxPerTick: *staleEvacuationMaxPerTick,
+		},
+		Maintenance: controller.NodeMaintenance{
+			Enabled:          *nodeMaintenance,
+			MaxParallel:      *nodeMaintenanceMaxParallel,
+			MinRetryInterval: *nodeMaintenanceMinRetryInterval,
+		},
+		DRS: controller.DRS{
+			Mode:                  *drsMode,
+			Interval:              *drsInterval,
+			ThresholdPercent:      *drsThreshold,
+			MinImprovementPercent: *drsMinImprovement,
+			MaxMoves:              *drsMaxMoves,
+			Strategy:              *drsStrategy,
+			Cooldown:              *drsCooldown,
 		},
 		CiliumAttach:               *ciliumAttach,
 		CiliumPolicySync:           *ciliumPolicySync,

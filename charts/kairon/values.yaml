@@ -59,6 +59,28 @@ controller:
     # default; see docs/guides/machine-fencing.md.
     enabled: false
     maxPerTick: 10
+  nodeMaintenance:
+    # Acts only on Nodes an operator annotates
+    # kairon.zyvor.dev/maintenance=true (`kaironctl node maintenance enter
+    # NODE`): cordon, migrate the node's Machines away, park the ones no
+    # other node can take per kairon.zyvor.dev/maintenance-fallback, and
+    # undo it on exit. Grants the controller "patch" on nodes and "create"
+    # on machinemigrations. See docs/guides/node-maintenance-drs.md.
+    enabled: true
+    maxParallel: 2
+    minRetryInterval: 2m
+  drs:
+    # Rebalances Machines across nodes by reserved CPU and memory.
+    # off | recommend (Events and metrics only) | automatic (creates
+    # MachineMigrations, one round at a time). See
+    # docs/guides/node-maintenance-drs.md.
+    mode: "off"
+    interval: 5m
+    thresholdPercent: 20
+    minImprovementPercent: 5
+    maxMoves: 1
+    strategy: live # live|auto|cold
+    cooldown: 1h
   resources:
     requests: {cpu: 50m, memory: 64Mi}
     limits: {cpu: 250m, memory: 128Mi}
