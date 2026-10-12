@@ -7,3 +7,10 @@ coverage.out
 .DS_Store
 .claude/
 .deploy-last
+
+# Stray build outputs at the repo root
+/kairon-controller
+/kairon-node
+/kairon-ui
+/kaironctl
+/kairon-migration-adapter-fluxvm

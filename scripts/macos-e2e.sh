@@ -89,5 +89,7 @@ for _ in $(seq 1 30); do ssh -i "$T/key" -o StrictHostKeyChecking=no -o UserKnow
 
 kubectl delete machine mac-e2e -n default --wait=true --timeout=120s >/dev/null
 sleep 5
-[[ "$(curl -fs "http://127.0.0.1:$PORT/v1/vms" | python3 -c 'import sys,json;print(len(json.load(sys.stdin)["items"]))')" == 0 ]] && ok "deleting the Machine removed the VM from FluxVM" || bad "VM still present"
+VMS_JSON="$T/vms.json"
+curl -fs -o "$VMS_JSON" "http://127.0.0.1:$PORT/v1/vms" || true
+[[ "$(python3 -c 'import sys,json;print(len(json.load(open(sys.argv[1]))["items"]))' "$VMS_JSON" 2>/dev/null)" == 0 ]] && ok "deleting the Machine removed the VM from FluxVM" || bad "VM still present"
 echo "PASS"

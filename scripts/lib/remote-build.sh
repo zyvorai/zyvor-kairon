@@ -54,15 +54,20 @@ if [[ -z "$go_bin" ]]; then
     file="go${need_go}.linux-${arch}.tar.gz"
     log "downloading Go $need_go ($arch) into $goroot"
     command -v python3 >/dev/null || die "python3 is required to look up the Go checksum"
-    sum="$(curl -fsSL "https://go.dev/dl/?mode=json&include=all" | python3 -c '
+    index="$(mktemp "$cache/godl-index.XXXXXX")"
+    curl -fsSL --retry 3 -o "$index" "https://go.dev/dl/?mode=json&include=all" || die "could not fetch the Go release index"
+    sum="$(python3 -c '
 import json, sys
 want = sys.argv[1]
-for rel in json.load(sys.stdin):
+with open(sys.argv[2]) as fh:
+    releases = json.load(fh)
+for rel in releases:
     for f in rel.get("files", []):
         if f.get("filename") == want:
             print(f["sha256"]); raise SystemExit
 raise SystemExit("no checksum listed for " + want)
-' "$file")" || die "could not find a published checksum for $file"
+' "$file" "$index")" || { rm -f "$index"; die "could not find a published checksum for $file"; }
+    rm -f "$index"
     tmp="$(mktemp -d "$cache/dl.XXXXXX")"
     fetch_verified "https://go.dev/dl/$file" "$sum" "$tmp/$file"
     mkdir -p "$goroot.part" && tar -xzf "$tmp/$file" -C "$goroot.part"
