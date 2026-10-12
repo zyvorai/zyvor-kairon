@@ -112,7 +112,7 @@ or `kaironctl disk attach db data --claim db-data` /
   device path (e.g. `/dev/vg0/data`); a **Filesystem**-mode PV attaches the
   `disk.img` inside its directory, as for boot volumes.
 - A **CSI**-backed PV works too, with Kairon's own driver
-  (`csi.kairon.zyvor.dev`, Filesystem mode) or any driver on the node's
+  (`csi.kairon.zyvor.dev`, Filesystem or Block mode) or any driver on the node's
   third-party allowlist (Filesystem or Block mode, with a `VolumeAttachment`
   when the driver needs one). kairon-node stages and publishes the volume
   under `<publishDir>/disks/<driver>/<machine>/<disk>`, attaches it, and

@@ -271,8 +271,9 @@ agentPlane:
     key: cosign.pub
 csiNode:
   # Kairon's own first-cut CSI node plugin (see internal/csinode,
-  # docs/guides/machine-storage-csi.md): one backend (iSCSI), no dynamic
-  # provisioning -- PersistentVolumes reference it statically. Off by
+  # docs/guides/machine-storage-csi.md): iSCSI or NVMe-oF, Filesystem or
+  # Block mode; PersistentVolumes reference it statically unless
+  # csiController provisions them. Off by
   # default; enabling it is what lets a Machine's spec.volumes[0]
   # reference a network-block (CSI-backed) PersistentVolume instead of
   # only hostPath/local ones. This is the one place Kairon's own images
@@ -300,7 +301,7 @@ csiNode:
   nodeSelector:
     kairon.zyvor.dev/capable: "true"
 csiController:
-  # Dynamic provisioning for csiNode's iSCSI backend (see
+  # Dynamic provisioning for csiNode's iSCSI and NVMe-oF backends (see
   # internal/csinode's ControllerServer, docs/guides/machine-storage-csi.md):
   # a StorageClass naming csi.kairon.zyvor.dev creates a real Linux LIO
   # backstore/target/LUN per PersistentVolumeClaim instead of an admin
@@ -328,6 +329,14 @@ csiController:
   # deliberately no default, the same "we don't guess your network
   # topology" posture migration.tlsServerName/console.tls already take.
   portal: ""
+  # NVMe-oF portals (see docs/guides/machine-storage-nvmeof.md): a
+  # comma-separated list of tcp:IP:PORT and rdma:IP:PORT addresses the
+  # kernel NVMe target (nvmet, driven through configfs, no nvme-cli)
+  # exports volumes on. Several of one transport are several paths to every
+  # volume; nodes connect all of them and native NVMe multipath (ANA) merges
+  # them. Empty leaves NVMe-oF off and every volume on iSCSI. Needs the
+  # nvmet plus nvmet_tcp / nvmet_rdma modules loaded on the storage node.
+  nvmePortals: ""
   # Local directory on the storage node each dynamically provisioned
   # volume's backing sparse file is created under.
   volumeDir: /var/lib/kairon/csi-volumes
@@ -411,6 +420,10 @@ csiController:
     # shrink verb; ext4/xfs online shrink isn't reliable enough to build
     # on regardless).
     allowVolumeExpansion: true
+    # StorageClass parameters, e.g. {transport: nvme-tcp} (or nvme-rdma) to
+    # provision NVMe-oF volumes; the default is iSCSI. A PVC with
+    # volumeMode: Block gets the raw device on either transport.
+    parameters: {}
 migration:
   # Secure peer preparation is opt-in until a Kairon migration adapter is installed.
   enabled: false

@@ -47,6 +47,9 @@ func newTestNodeServer(t *testing.T) *testNodeServerFixture {
 		statfsFn: func(path string) (VolumeStats, error) {
 			return VolumeStats{}, errors.New("statfsFn not stubbed for this test")
 		},
+		blockSizeFn: func(path string) (int64, error) { return 0, errors.New("blockSizeFn not stubbed") },
+		isDeviceFn:  func(path string) bool { return false },
+		nvme:        newNVMeHost(),
 	}
 	return f
 }

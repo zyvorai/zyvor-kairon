@@ -14,6 +14,23 @@ import (
 	"github.com/zyvorai/kairon/internal/model"
 )
 
+func TestBuildCreateRequestSharesMemoryForVhostUserBlk(t *testing.T) {
+	m := model.Machine{Spec: model.MachineSpec{
+		Image:     model.ImageSpec{Path: "/images/base.img"},
+		Resources: model.ResourceSpec{CPU: "1", Memory: "1Gi"},
+		Disks:     []model.MachineDisk{{Name: "a", IO: &model.DiskIO{Bus: "virtio-blk"}}},
+	}}
+	req, err := buildCreateRequest(m, "qemu", nil, nil)
+	if err != nil || req.SharedMemory {
+		t.Fatalf("virtio-blk only: shared_memory = %v, err = %v", req.SharedMemory, err)
+	}
+	m.Spec.Disks = append(m.Spec.Disks, model.MachineDisk{Name: "b", IO: &model.DiskIO{Bus: "vhost-user-blk"}})
+	req, err = buildCreateRequest(m, "qemu", nil, nil)
+	if err != nil || !req.SharedMemory {
+		t.Fatalf("with vhost-user-blk: shared_memory = %v, err = %v", req.SharedMemory, err)
+	}
+}
+
 func TestBuildCreateRequestInPlaceRBD(t *testing.T) {
 	m := model.Machine{Spec: model.MachineSpec{
 		Image:     model.ImageSpec{Path: "rbd/img", Storage: StorageCephRBDInPlace},

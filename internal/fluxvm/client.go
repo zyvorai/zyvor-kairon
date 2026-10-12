@@ -103,15 +103,24 @@ type CloudInitFile struct {
 // disk (no clone, never deleted by FluxVM).
 const StorageCephRBDInPlace = "ceph-rbd-in-place"
 
+// StorageShared boots a raw file or block device in place: no overlay, no
+// copy, writes go straight to it.
+const StorageShared = "shared"
+
 type CreateRequest struct {
-	Name      string `json:"name"`
-	Tenant    string `json:"tenant,omitempty"`
-	Backend   string `json:"backend"`
-	Image     string `json:"image"`
-	Storage   string `json:"storage,omitempty"`
-	Kernel    string `json:"kernel,omitempty"`
-	VCPUs     uint32 `json:"vcpus"`
-	MemoryMiB uint64 `json:"memory_mib"`
+	Name    string `json:"name"`
+	Tenant  string `json:"tenant,omitempty"`
+	Backend string `json:"backend"`
+	Image   string `json:"image"`
+	Storage string `json:"storage,omitempty"`
+	// RootDiskIO is FluxVM's root_disk_io (QEMU).
+	RootDiskIO *model.DiskIO `json:"root_disk_io,omitempty"`
+	// SharedMemory boots with shareable guest memory, which hot-adding a
+	// vhost-user-blk disk needs.
+	SharedMemory bool   `json:"shared_memory,omitempty"`
+	Kernel       string `json:"kernel,omitempty"`
+	VCPUs        uint32 `json:"vcpus"`
+	MemoryMiB    uint64 `json:"memory_mib"`
 	// MaxVCPUs/MaxMemoryMiB request more CPU/DIMM hotplug headroom than
 	// FluxVM's own default -- see model.ResourceSpec.MaxCPU/.MaxMemory's
 	// own doc comment. nil lets FluxVM pick its default, exactly as
@@ -590,6 +599,17 @@ func buildCreateRequest(m model.Machine, defaultBackend string, vfioDevices []st
 		}
 		payload.Storage = s
 	}
+	if io := m.Spec.Image.IO; io != nil {
+		if backend != "qemu" {
+			return CreateRequest{}, fmt.Errorf("spec.image.io requires the qemu backend; Machine resolves to backend %q", backend)
+		}
+		payload.RootDiskIO = io
+	}
+	for _, d := range m.Spec.Disks {
+		if d.IO != nil && d.IO.Bus == "vhost-user-blk" {
+			payload.SharedMemory = true
+		}
+	}
 	ci := m.Spec.CloudInit
 	if m.Spec.Network.StaticNetwork || ci.Hostname != "" || ci.User != "" || len(ci.SSHAuthorizedKeys) > 0 || len(ci.Packages) > 0 || len(ci.RunCmd) > 0 || len(ci.WriteFiles) > 0 {
 		var writeFiles []CloudInitFile
@@ -688,8 +708,12 @@ func (c *Client) ListDisks(ctx context.Context, id string) ([]Disk, error) {
 
 // AttachDisk attaches the existing image file or block device at path as
 // data disk name, hot-adding it when the VM is running.
-func (c *Client) AttachDisk(ctx context.Context, id, name, path string) error {
-	_, err := c.do(ctx, http.MethodPost, "/v1/vms/"+url.PathEscape(id)+"/disks", map[string]any{"name": name, "path": path})
+func (c *Client) AttachDisk(ctx context.Context, id, name, path string, io *model.DiskIO) error {
+	body := map[string]any{"name": name, "path": path}
+	if io != nil {
+		body["io"] = io
+	}
+	_, err := c.do(ctx, http.MethodPost, "/v1/vms/"+url.PathEscape(id)+"/disks", body)
 	return err
 }
 

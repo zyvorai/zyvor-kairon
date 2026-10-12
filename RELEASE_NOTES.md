@@ -38,6 +38,27 @@ match.
 Also new: `kaironctl selftest` and the dashboard Self-test page,
 `deploy-remote.sh --remote-build`, `--image-cache-dir`, `--self-test`.
 
+## Added: NVMe-oF storage and raw Block volumes (experimental)
+
+Kairon's CSI driver now provisions NVMe-oF volumes as well as iSCSI. Set
+`csiController.nvmePortals` (`tcp:IP:PORT`, `rdma:IP:PORT`) and give a
+StorageClass `transport: nvme-tcp` or `nvme-rdma`. The controller drives the
+kernel NVMe target through configfs, and the node plugin connects through
+`/dev/nvme-fabrics`, so no `nvme-cli` is needed. Every portal is a path, and
+native NVMe multipath merges them.
+
+`volumeMode: Block` now works on Kairon's own driver for both transports. A
+Block boot volume is seeded from `spec.image.source` and booted in place. A
+Block data disk attaches as the device itself. `spec.disks[].io` and
+`spec.image.io` choose the bus (`scsi`, `virtio-blk`, `vhost-user-blk`) and the
+`aio`, `cache`, `iothread` and `queues` settings. Machines report a
+`StoragePaths` condition.
+
+Needs FluxVM with per-disk `io`, `root_disk_io`, `disk_hotplug_ports` and the
+block-device cgroup allowlist. What ran is in the NVMe-oF section of
+`docs/COMPATIBILITY.md`; the limits (no DH-CHAP, soft-RoCE only, one node) are
+in `docs/guides/machine-storage-nvmeof.md`.
+
 ## Added: incident bundles (experimental)
 
 `kaironctl diagnose machine NAME --deep` writes one tar.gz for a Machine: its

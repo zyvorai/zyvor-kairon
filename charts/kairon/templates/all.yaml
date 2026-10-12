@@ -858,6 +858,10 @@ spec:
             - {name: publish-dir, mountPath: {{ .Values.node.csi.publishDir | quote }}, mountPropagation: Bidirectional}
             - {name: dev-dir, mountPath: /dev}
             - {name: modules-dir, mountPath: /lib/modules, readOnly: true}
+            # The NVMe-oF host NQN: /etc/nvme/hostnqn, else derived from the
+            # host's machine id, so it survives plugin restarts.
+            - {name: nvme-conf, mountPath: /etc/nvme, readOnly: true}
+            - {name: machine-id, mountPath: /etc/machine-id, readOnly: true}
       volumes:
         - name: plugin-dir
           hostPath:
@@ -879,6 +883,10 @@ spec:
           hostPath: {path: /dev, type: Directory}
         - name: modules-dir
           hostPath: {path: /lib/modules, type: Directory}
+        - name: nvme-conf
+          hostPath: {path: /etc/nvme, type: DirectoryOrCreate}
+        - name: machine-id
+          hostPath: {path: /etc/machine-id, type: File}
 ---
 # attachRequired: false regardless of whether csiController.enabled --
 # iSCSI volumes need no ControllerPublishVolume/ControllerUnpublishVolume
@@ -1033,6 +1041,9 @@ spec:
             - "--endpoint=unix:///csi/csi.sock"
             - "--portal={{ .Values.csiController.portal }}"
             - "--volume-dir={{ .Values.csiController.volumeDir }}"
+{{- if .Values.csiController.nvmePortals }}
+            - "--nvme-portals={{ .Values.csiController.nvmePortals }}"
+{{- end }}
           # Privileged: real Linux LIO/configfs target management
           # (internal/csinode/lio.go) needs this, the same tradeoff
           # csiNode's own container already makes for iSCSI initiation
@@ -1063,6 +1074,10 @@ provisioner: csi.kairon.zyvor.dev
 reclaimPolicy: {{ .Values.csiController.storageClass.reclaimPolicy }}
 volumeBindingMode: Immediate
 allowVolumeExpansion: {{ .Values.csiController.storageClass.allowVolumeExpansion }}
+{{- with .Values.csiController.storageClass.parameters }}
+parameters:
+{{ toYaml . | indent 2 }}
+{{- end }}
 {{ end }}
 {{ end }}
 {{ if .Values.ui.enabled }}

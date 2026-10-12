@@ -386,6 +386,27 @@ type ImageSpec struct {
 	// disk (e.g. ceph-rbd-in-place for an Atlas RBD volume). Never read
 	// from or written to the API, so a Machine author can't select it.
 	Storage string `json:"-"`
+	// IO tunes the root disk's I/O on the qemu backend: aio, cache,
+	// iothread and queues (the root is always virtio-blk). Creation-time
+	// only.
+	IO *DiskIO `json:"io,omitempty"`
+}
+
+// DiskIO is how FluxVM's QEMU attaches one disk and does its I/O. Unset
+// fields keep FluxVM's defaults (SCSI for data disks, writeback cache, the
+// thread pool, no iothread). See docs/guides/machine-storage-nvmeof.md.
+type DiskIO struct {
+	// Bus is scsi (default), virtio-blk, or vhost-user-blk (served by a
+	// per-disk qemu-storage-daemon). Data disks only.
+	Bus string `json:"bus,omitempty"`
+	// AIO is io_uring, native (needs cache none or directsync) or threads.
+	AIO string `json:"aio,omitempty"`
+	// Cache is none, writeback, writethrough, directsync or unsafe.
+	Cache string `json:"cache,omitempty"`
+	// IOThread gives the disk a dedicated QEMU iothread (virtio buses).
+	IOThread bool `json:"iothread,omitempty"`
+	// Queues is the number of virtio queues, 1-64 (virtio buses).
+	Queues int `json:"queues,omitempty"`
 }
 
 // ImageSource names a golden image kairon-node itself downloads into a
@@ -715,6 +736,8 @@ type MachineDisk struct {
 	// (/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_<name>).
 	Name      string `json:"name"`
 	ClaimName string `json:"claimName"`
+	// IO picks the bus and I/O options FluxVM attaches this disk with.
+	IO *DiskIO `json:"io,omitempty"`
 }
 
 // MachineCdrom is one read-only ISO attached as a SATA CD-ROM. Set either

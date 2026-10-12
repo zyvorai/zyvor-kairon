@@ -46,6 +46,8 @@ func run() int {
 	endpoint := flag.String("endpoint", env("CSI_ENDPOINT", "unix:///csi/csi.sock"), "CSI gRPC endpoint (unix:// only)")
 	portal := flag.String("portal", env("KAIRON_CSI_PORTAL", ""), "host:port initiators dial to reach volumes this Controller provisions -- this Controller's own node's real, cluster-reachable IP (or a stable VIP in front of it), never 0.0.0.0 (default: $KAIRON_CSI_PORTAL)")
 	volumeDir := flag.String("volume-dir", env("KAIRON_CSI_VOLUME_DIR", "/var/lib/kairon/csi-volumes"), "local directory each dynamically provisioned volume's backing sparse file is created under (default: $KAIRON_CSI_VOLUME_DIR)")
+	nvmePortals := flag.String("nvme-portals", env("KAIRON_CSI_NVME_PORTALS", ""), "comma-separated tcp:IP:PORT / rdma:IP:PORT addresses NVMe-oF volumes (StorageClass transport: nvme-tcp or nvme-rdma) are exported on; several of one transport are several paths to every volume. Empty disables NVMe-oF (default: $KAIRON_CSI_NVME_PORTALS)")
+	nvmetRoot := flag.String("nvmet-root", env("KAIRON_CSI_NVMET_ROOT", "/sys/kernel/config/nvmet"), "the kernel NVMe target's configfs directory (default: $KAIRON_CSI_NVMET_ROOT)")
 	showVersion := flag.Bool("version", false, "print version")
 	flag.Parse()
 	if *showVersion {
@@ -64,6 +66,16 @@ func run() int {
 	if err != nil {
 		log.Error("startup refused", "reason", err.Error())
 		return 1
+	}
+	if *nvmePortals != "" {
+		portals, err := csinode.ParseNVMePortals(*nvmePortals)
+		if err == nil {
+			err = controllerServer.EnableNVMe(portals, *nvmetRoot)
+		}
+		if err != nil {
+			log.Error("startup refused", "reason", err.Error())
+			return 1
+		}
 	}
 	// Idempotent restart: a prior instance's socket file surviving a
 	// crash-restart would otherwise make the new listener fail with
@@ -94,7 +106,7 @@ func run() int {
 		grpcServer.GracefulStop()
 	}()
 
-	log.Info("kairon-csi-controller listening", "endpoint", *endpoint, "portal", *portal, "volumeDir", *volumeDir, "driver", csinode.DriverName, "version", version)
+	log.Info("kairon-csi-controller listening", "endpoint", *endpoint, "portal", *portal, "nvmePortals", *nvmePortals, "volumeDir", *volumeDir, "driver", csinode.DriverName, "version", version)
 	if err := grpcServer.Serve(listener); err != nil {
 		log.Error("grpc serve", "error", err)
 		return 1
