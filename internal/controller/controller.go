@@ -236,6 +236,7 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 		return err
 	}
 	c.reconcileMachineSets(ctx, machineSets, machines)
+	c.reconcileVirtualNetworks(ctx, machines, nodes)
 
 	claims, err := c.Kube.ListMachineClaims(ctx)
 	if err != nil && !kube.IsNotFound(err) {

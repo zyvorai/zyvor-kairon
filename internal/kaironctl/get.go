@@ -178,6 +178,13 @@ func cmdGet(ctx context.Context, kc *kube.Client, args []string) {
 			}
 			fmt.Printf("%s\t%s\t%d\n", p.Metadata.Name, bw, p.Status.ActiveMigrations)
 		}
+	case "virtualnetwork", "virtualnetworks", "vnet", "vnets":
+		items, err := kc.ListVirtualNetworksNamespace(ctx, ns)
+		if err != nil {
+			fatal(err)
+		}
+		items = selectorFilter(items, selector, func(v model.VirtualNetwork) map[string]string { return v.Metadata.Labels })
+		printVirtualNetworks(os.Stdout, items)
 	case "backuppolicy", "backuppolicies", "machinebackuppolicies":
 		items, err := kc.ListMachineBackupPoliciesNamespace(ctx, ns)
 		if err != nil {

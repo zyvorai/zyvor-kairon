@@ -37,6 +37,35 @@ func TestBuildCreateRequestInPlaceRBD(t *testing.T) {
 	}
 }
 
+func TestBuildCreateRequestVirtualNetwork(t *testing.T) {
+	m := model.Machine{
+		Metadata: model.ObjectMeta{Name: "web", Namespace: "prod"},
+		Spec: model.MachineSpec{
+			Image:     model.ImageSpec{Path: "img"},
+			Resources: model.ResourceSpec{CPU: "1", Memory: "1Gi"},
+			Network:   model.NetworkSpec{VirtualNetwork: &model.MachineVirtualNetwork{Name: "app"}},
+		},
+	}
+	if _, err := buildCreateRequest(m, "qemu", nil, nil); err == nil || !strings.Contains(err.Error(), "no address allocated") {
+		t.Fatalf("unallocated: err=%v", err)
+	}
+	m.Status.Network = &model.MachineNetworkStatus{VirtualNetwork: &model.MachineVirtualNetworkStatus{Name: "app", VNI: 4096, IP: "10.50.0.2", PrefixLength: 24, Gateway: "10.50.0.1"}}
+	req, err := buildCreateRequest(m, "qemu", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(req.Network)
+	got := string(b)
+	for _, want := range []string{`"mode":"tap"`, `"mac":"` + model.DefaultMAC("prod", "web") + `"`, `"vnet":{"vni":4096,"ip":"10.50.0.2","prefix_len":24,"gateway":"10.50.0.1"}`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("network %s lacks %s", got, want)
+		}
+	}
+	if strings.Contains(got, "bridge") {
+		t.Fatalf("vnet NIC got a bridge: %s", got)
+	}
+}
+
 func TestEjectCdrom(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/v1/vms/u1/cdroms/install/eject" {

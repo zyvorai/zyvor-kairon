@@ -336,6 +336,27 @@ spec:
                           type: string
                           pattern: '^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$'
                           description: Defaults to a MAC derived from the Machine UID and name.
+                  virtualNetwork:
+                    type: object
+                    description: Attach the primary NIC to a VirtualNetwork in this namespace
+                      (mode tap, no bridge, no netns). See docs/guides/virtual-networks.md.
+                    required: [name]
+                    properties:
+                      name:
+                        type: string
+                        minLength: 1
+                      ip:
+                        type: string
+                        description: Requested address; empty takes the lowest free one.
+                        x-kubernetes-validations:
+                        - rule: isIP(self) && ip(self).family() == 4
+                          message: ip must be an IPv4 address
+                      floatingIP:
+                        type: string
+                        description: Public IPv4 address translated 1:1 to the Machine.
+                        x-kubernetes-validations:
+                        - rule: isIP(self) && ip(self).family() == 4
+                          message: floatingIP must be an IPv4 address
               cloudInit:
                 type: object
                 description: Operator-supplied guest customization forwarded to
@@ -992,6 +1013,24 @@ spec:
                         type: integer
                       blackholeWindowMs:
                         type: integer
+                  virtualNetwork:
+                    type: object
+                    description: The virtual network attachment the runtime was created with.
+                    properties:
+                      name:
+                        type: string
+                      vni:
+                        type: integer
+                      ip:
+                        type: string
+                      prefixLength:
+                        type: integer
+                      gateway:
+                        type: string
+                      mac:
+                        type: string
+                      floatingIP:
+                        type: string
   - name: v1beta1
     served: true
     storage: false

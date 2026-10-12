@@ -124,6 +124,7 @@ type Recorder struct {
 	// Topology scheduler -- only registered by NewRecorder, see topology.go.
 	topology *topologyMetrics
 	memory   *memoryMetrics
+	vnet     *vnetMetrics
 
 	mu         sync.Mutex
 	phaseSince map[phaseKey]phaseState
@@ -282,6 +283,7 @@ func NewNodeRecorder() *Recorder {
 	reg.MustRegister(r.machineUsageTimestamp)
 	r.edge = NewEdgeRecorder(reg)
 	r.memory = newMemoryMetrics(reg)
+	r.vnet = newVnetMetrics(reg)
 	return r
 }
 

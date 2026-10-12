@@ -30,7 +30,7 @@ rules:
     resources: ["events"]
     verbs: ["create"]
   - apiGroups: ["kairon.zyvor.dev"]
-    resources: ["machines", "machines/status", "machinemigrations", "machinemigrations/status", "machinesnapshots", "machinesnapshots/status", "machinenetworkpolicies", "machinenetworkpolicies/status", "networksecuritygroups", "networksecuritygroups/status", "machinequotas", "machinequotas/status", "machinesnapshotrestores", "machinesnapshotrestores/status", "machinesets", "machinesets/status", "machinepools", "machinepools/status", "machineclaims", "machineclaims/status", "migrationpolicies", "migrationpolicies/status", "machinebackups", "machinebackups/status", "machinebackuprestores", "machinebackuprestores/status"]
+    resources: ["machines", "machines/status", "machinemigrations", "machinemigrations/status", "machinesnapshots", "machinesnapshots/status", "machinenetworkpolicies", "machinenetworkpolicies/status", "networksecuritygroups", "networksecuritygroups/status", "machinequotas", "machinequotas/status", "machinesnapshotrestores", "machinesnapshotrestores/status", "machinesets", "machinesets/status", "machinepools", "machinepools/status", "machineclaims", "machineclaims/status", "migrationpolicies", "migrationpolicies/status", "machinebackups", "machinebackups/status", "machinebackuprestores", "machinebackuprestores/status", "virtualnetworks", "virtualnetworks/status"]
     verbs: ["get", "list", "watch", "patch"]
   - apiGroups: ["kairon.zyvor.dev"]
     # Read-only: MachineInstanceType is pure reference data
@@ -201,6 +201,11 @@ rules:
   - apiGroups: ["resource.k8s.io"]
     resources: ["resourceclaims"]
     verbs: ["get"]
+  # VirtualNetwork IPAM read when a Machine is created and the per-node
+  # FluxVM sync (internal/agent/virtualnetwork.go). Never written.
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["virtualnetworks"]
+    verbs: ["get", "list"]
   # The node's own hardware graph (internal/agent/topology.go).
   - apiGroups: ["kairon.zyvor.dev"]
     resources: ["nodetopologies", "nodetopologies/status"]
@@ -633,6 +638,17 @@ spec:
             - "--memory-low-watermark-mib={{ .Values.node.memoryReclaim.lowWatermarkMiB }}"
             - "--memory-high-watermark-mib={{ .Values.node.memoryReclaim.highWatermarkMiB }}"
             - "--memory-psi-some-avg10={{ .Values.node.memoryReclaim.psiSomeAvg10 }}"
+            - "--virtual-networks={{ .Values.node.virtualNetworks.enabled }}"
+            - "--vnet-uplink={{ .Values.node.virtualNetworks.uplink }}"
+            - "--vnet-node-ip={{ .Values.node.virtualNetworks.nodeIP }}"
+{{ if .Values.node.virtualNetworks.bgp.peers }}
+            - "--bgp-peers={{ .Values.node.virtualNetworks.bgp.peers }}"
+            - "--bgp-local-asn={{ required "node.virtualNetworks.bgp.localASN is required with bgp.peers" .Values.node.virtualNetworks.bgp.localASN }}"
+            - "--bgp-router-id={{ .Values.node.virtualNetworks.bgp.routerID }}"
+            - "--bgp-next-hop={{ .Values.node.virtualNetworks.bgp.nextHop }}"
+            - "--bgp-advertise-service-vips={{ .Values.node.virtualNetworks.bgp.advertiseServiceVIPs }}"
+            - "--bgp-advertise-prefixes={{ .Values.node.virtualNetworks.bgp.advertisePrefixes }}"
+{{ end }}
 {{ if .Values.node.cpuPinning.enabled }}
             - "--reserved-cpus={{ required "node.cpuPinning.reservedCPUs is required when node.cpuPinning.enabled (kubelet's reserved CPU list, e.g. 0-1)" .Values.node.cpuPinning.reservedCPUs }}"
             - "--cpu-manager-state=/kairon-cpustate/cpu_manager_state"
@@ -1186,7 +1202,7 @@ rules:
   # suspend/resume toggle, handleSuspendMachineSnapshotSchedule) -- all
   # already-shipped mutations that were equally broken.
   - apiGroups: ["kairon.zyvor.dev"]
-    resources: ["machinequotas", "machinedisruptionbudgets", "machineinstancetypes", "machineimages", "migrationpolicies", "machinepools", "machineclaims", "nodetopologies"]
+    resources: ["machinequotas", "machinedisruptionbudgets", "machineinstancetypes", "machineimages", "migrationpolicies", "machinepools", "machineclaims", "nodetopologies", "virtualnetworks"]
     verbs: ["get", "list", "watch"]
   # The dashboard creates and deletes backups and creates restores
   # (internal/uiapi/backups.go), same as `kaironctl backup`.

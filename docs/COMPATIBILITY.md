@@ -175,6 +175,33 @@ covered here.
 | Elastic memory: relief | pass | 2026-10-11 | Same node: target back to 0, reason `Relief`, `KaironMemoryPressure=False`; the guest was still deflating (255MiB actual) when the case ended |
 | Elastic memory: overcommit | pass | 2026-10-11 | Same node: two 18854Mi Machines (min 512Mi) on 31424Mi allocatable; the second stayed unscheduled ("insufficient memory") until the node got `memory-overcommit-ratio: 1.5`, then scheduled |
 
+## Virtual networks
+
+Driven by [`scripts/lab-virtual-network.sh`](../scripts/lab-virtual-network.sh)
+on one node with a FluxVM that reports `host.vnet` and kairon-node started
+with `--vnet-uplink`. It creates two `VirtualNetwork`s with the same CIDR
+(one with egress SNAT) and three Machines. The guests run a cloud-init probe
+loop and report to their serial console, so the image needs no guest agent.
+The uplink program ran on the node's SSH uplink ahead of Cilium's
+`cil_from_netdev` for the whole run, and was detached when the last network
+was removed. FluxVM's root-gated `vnet_netns` test separately routes across
+two netns-simulated hosts over Geneve, and checks floating-IP DNAT and
+egress, anti-spoofing and SNAT for TCP. Virtual networks stay Experimental
+until the cross-host, floating-IP and BGP rows run on real nodes.
+
+| Case | Last result | Date | Notes |
+|---|---|---|---|
+| Virtual network: ipam | pass | 2026-10-12 | Single node (kernel 7.0, QEMU 10.2.1, k3s 1.35, Ubuntu 24.04 guests, Cilium on the uplink): two networks on 10.88.0.0/24 got VNIs 4096 and 4097; a1 10.88.0.10, a2 10.88.0.11, b1 10.88.0.10 (overlapping) as requested; `status.network.virtualNetwork` set |
+| Virtual network: same-host | pass | 2026-10-12 | Same node: a1 and a2 ping each other on VNI 4096 |
+| Virtual network: gateway | pass | 2026-10-12 | Same node: a1 pings the distributed gateway 10.88.0.1 |
+| Virtual network: isolation | pass | 2026-10-12 | Same node: b1 (VNI 4097, a1's address) failed all 6 pings to a2's 10.88.0.11 while a1 reached it |
+| Virtual network: snat | pass | 2026-10-12 | Same node: a1 reached 1.1.1.1 by ping and HTTP, translated to the node's uplink address |
+| Virtual network: closed | pass | 2026-10-12 | Same node: b1 (no `egressSNAT`) failed all 6 pings to 1.1.1.1 |
+| Virtual network: cleanup | pass | 2026-10-12 | Same node: after the Machines were deleted, kairon-node removed both VNIs from FluxVM and the uplink program was detached |
+| Virtual network: cross-host | not run | — | Needs two nodes; Geneve between hosts has only run between netns-simulated hosts (FluxVM `vnet_netns`) |
+| Virtual network: floating-ip | not run | — | Needs a public address routed to the node; covered only by FluxVM `vnet_netns` |
+| Virtual network: bgp | not run | — | Needs a BGP router; the speaker is unit-tested against a fake peer |
+
 ## Component versions (fill per run)
 
 | Piece | Version |

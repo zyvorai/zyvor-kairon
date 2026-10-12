@@ -72,6 +72,9 @@ func cmdDescribe(ctx context.Context, kc *kube.Client, args []string) {
 	case "backuppolicy", "backuppolicies", "machinebackuppolicies":
 		describeBackupPolicy(ctx, kc, ns, name)
 		return
+	case "virtualnetwork", "virtualnetworks", "vnet", "vnets":
+		describeVirtualNetwork(ctx, kc, ns, name)
+		return
 	case "backup", "backups", "machinebackups":
 		describeBackup(ctx, kc, ns, name)
 		return

@@ -172,6 +172,9 @@ type Agent struct {
 	// MemoryReclaim tunes the elastic-memory reclaim loop (memory.go).
 	MemoryReclaim MemoryReclaimConfig
 	memory        memoryState
+	// VirtualNetwork configures VirtualNetwork sync and BGP (virtualnetwork.go).
+	VirtualNetwork VirtualNetworkConfig
+	vnet           vnetState
 }
 
 func (a *Agent) Reconcile(ctx context.Context) error {
@@ -438,6 +441,12 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 			return err
 		}
 		vfioDevices = mergeBDFs(vfioDevices, topologyDevices)
+		if err := model.ValidateMachineVirtualNetwork(m.Spec.Network); err != nil {
+			return err
+		}
+		if err := a.attachVirtualNetwork(ctx, &m); err != nil {
+			return err
+		}
 		boot := m
 		if m.Spec.TopologyAllocation == nil || len(m.Spec.TopologyAllocation.NUMANodes) == 0 {
 			// Hotplugged vCPUs and DIMMs are not NUMA-bound, so a bound
@@ -1487,6 +1496,10 @@ func (a *Agent) Run(ctx context.Context, interval time.Duration) error {
 
 	go a.watchAssigned(ctx, kick)
 	go a.runMemoryReclaim(ctx)
+	go a.runVirtualNetworkSync(ctx)
+	if a.VirtualNetwork.BGP != nil {
+		go a.VirtualNetwork.BGP.Run(ctx)
+	}
 
 	t := time.NewTicker(interval)
 	defer t.Stop()

@@ -1,0 +1,125 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: virtualnetworks.kairon.zyvor.dev
+spec:
+  group: kairon.zyvor.dev
+  scope: Namespaced
+  names:
+    plural: virtualnetworks
+    singular: virtualnetwork
+    kind: VirtualNetwork
+    shortNames:
+    - vnet
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    subresources: &subresources
+      status: {}
+    additionalPrinterColumns: &columns
+    - name: CIDR
+      type: string
+      jsonPath: .spec.cidr
+    - name: VNI
+      type: integer
+      jsonPath: .status.vni
+    - name: SNAT
+      type: boolean
+      jsonPath: .spec.egressSNAT
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+    schema: &schema
+      openAPIV3Schema:
+        type: object
+        description: An isolated IPv4 network for Machines, routed by FluxVM's eBPF
+          dataplane and carried between nodes in Geneve. See docs/guides/virtual-networks.md.
+        required:
+        - spec
+        properties:
+          spec:
+            type: object
+            required:
+            - cidr
+            x-kubernetes-validations:
+            - rule: '!has(oldSelf.vni) || (has(self.vni) && self.vni == oldSelf.vni)'
+              message: spec.vni is immutable once set
+            properties:
+              cidr:
+                type: string
+                description: IPv4 prefix of the network, /8 to /29.
+                x-kubernetes-validations:
+                - rule: isCIDR(self) && cidr(self).ip().family() == 4 && cidr(self).prefixLength() >= 8 && cidr(self).prefixLength() <= 29
+                  message: cidr must be an IPv4 CIDR with a prefix length of 8 to 29
+              gateway:
+                type: string
+                description: Distributed gateway address; defaults to the first host address of cidr.
+                x-kubernetes-validations:
+                - rule: isIP(self) && ip(self).family() == 4
+                  message: gateway must be an IPv4 address
+              vni:
+                type: integer
+                minimum: 1
+                maximum: 16777215
+                description: Pins the network identifier; empty allocates one at or above 4096.
+              egressSNAT:
+                type: boolean
+                description: Let Machines reach addresses outside cidr, translated to the
+                  node's address on its uplink (kairon-node --vnet-uplink).
+          status:
+            type: object
+            properties:
+              phase:
+                type: string
+              message:
+                type: string
+              vni:
+                type: integer
+              gateway:
+                type: string
+              observedGeneration:
+                type: integer
+                format: int64
+              allocations:
+                type: array
+                nullable: true
+                description: The network's IPAM, one entry per attached Machine.
+                items:
+                  type: object
+                  required: [machine, ip, mac]
+                  properties:
+                    machine:
+                      type: string
+                    ip:
+                      type: string
+                    mac:
+                      type: string
+                    floatingIP:
+                      type: string
+                    node:
+                      type: string
+                    nodeIP:
+                      type: string
+  - name: v1beta1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1beta1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema
+  - name: v1alpha1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1alpha1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema

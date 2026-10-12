@@ -1,0 +1,49 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: Apache-2.0
+#
+# An isolated IPv4 network with egress SNAT and two Machines on it, one
+# with a floating IP. See docs/guides/virtual-networks.md.
+apiVersion: kairon.zyvor.dev/v1
+kind: VirtualNetwork
+metadata:
+  name: app
+  namespace: default
+spec:
+  cidr: 10.50.0.0/24
+  egressSNAT: true
+---
+apiVersion: kairon.zyvor.dev/v1
+kind: Machine
+metadata:
+  name: app-web
+  namespace: default
+spec:
+  runtime:
+    backend: qemu
+  resources:
+    cpu: "1"
+    memory: 1Gi
+  image:
+    path: /var/lib/fluxvm/images/ubuntu-24.04.qcow2
+  network:
+    virtualNetwork:
+      name: app
+      floatingIP: 203.0.113.10
+---
+apiVersion: kairon.zyvor.dev/v1
+kind: Machine
+metadata:
+  name: app-db
+  namespace: default
+spec:
+  runtime:
+    backend: qemu
+  resources:
+    cpu: "1"
+    memory: 1Gi
+  image:
+    path: /var/lib/fluxvm/images/ubuntu-24.04.qcow2
+  network:
+    virtualNetwork:
+      name: app
+      ip: 10.50.0.20

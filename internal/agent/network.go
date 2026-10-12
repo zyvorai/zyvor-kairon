@@ -460,6 +460,9 @@ func (a *Agent) projectNetworkStatus(ctx context.Context, m model.Machine, rec *
 	status.GuestIP = guestIP
 	status.GuestIPs = guestIPs
 	netStatus := &model.MachineNetworkStatus{GuestIP: guestIP, GuestIPs: guestIPs, TapName: rec.TapName}
+	if m.Status.Network != nil && m.Spec.Network.VirtualNetwork != nil {
+		netStatus.VirtualNetwork = m.Status.Network.VirtualNetwork
+	}
 	dp, err := a.Flux.NetworkStatus(ctx, rec.ID())
 	if err != nil {
 		// Soft-fail when dataplane endpoints are unavailable (legacy FluxVM).
