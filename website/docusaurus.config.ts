@@ -52,7 +52,7 @@ const config: Config = {
         },
         blog: false,
         theme: {
-          customCss: './src/css/custom.css',
+          customCss: ['./src/css/custom.css', './src/css/zv.css'],
         },
       } satisfies Preset.Options,
     ],
@@ -78,6 +78,7 @@ const config: Config = {
           position: 'right',
           label: 'Docs',
         },
+        {to: '/deploy', label: 'Deploy', position: 'right'},
         {to: '/gallery', label: 'Gallery', position: 'right'},
         {
           href: 'https://github.com/zyvorai/zyvor-kairon',
@@ -92,6 +93,7 @@ const config: Config = {
         {
           title: 'Docs',
           items: [
+            {label: 'Deploy', to: '/deploy'},
             {label: 'Getting started', to: '/docs/getting-started'},
             {label: 'What ships', to: '/docs/WHAT_SHIPS'},
             {label: 'Status', to: '/docs/STATUS'},
