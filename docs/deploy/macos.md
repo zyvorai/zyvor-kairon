@@ -19,4 +19,5 @@ is scheduled to it, boots, reports `status.guestIP`, accepts SSH and is removed 
 clusters and Intel Macs.
 
 The full walk-through, defaults and honest limits are in [Kairon on macOS](../macos.md) and
-[Mac clusters](../macos-cluster.md).
+[Mac clusters](../macos-cluster.md). For several Macs (capability scheduling and private networks across Macs over
+Thunderbolt, run against simulated Macs so far), see [Mac Fabric](../guides/mac-fabric.md).

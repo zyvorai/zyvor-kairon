@@ -338,6 +338,34 @@ returns to.
 | DR: separate or replicated buckets per site | not run | 2026-10-12 | Both sites used one bucket |
 | DR: real network partition between sites | not run | 2026-10-12 | Site loss was simulated by unlabelling the peer Secret |
 
+## Mac Fabric
+
+Driven by [`scripts/lab-mac-fabric.sh`](../scripts/lab-mac-fabric.sh) on the one-node Linux lab cluster with a
+host-installed kairon-controller. The lab has no Macs. The script creates three Mac Nodes through the API, with the
+labels, annotations, vm-only taint and Ready heartbeat kairon-node publishes:
+
+- mac-a: M4 Max, macOS 26, Rosetta, nested virtualization, Thunderbolt fabric `lab`.
+- mac-b: M3, macOS 15, Rosetta, nested virtualization, fabric `lab`.
+- mac-c: M1, macOS 14, no Rosetta, no Thunderbolt.
+
+No agent runs for them, so nothing boots. The overlay cases run `macnode.OverlaySync`, the code kairon-node runs on a
+Mac, once for each simulated Mac, writing into temporary directories.
+
+| Case | Last result | Date | Notes |
+|---|---|---|---|
+| Mac Fabric: capability scheduling | pass | 2026-10-12 | k3s 1.35: `minChipGeneration: 4` placed on mac-a; M3+, macOS 15+ and nested placed on mac-b; `minChipGeneration: 5` and Rosetta pinned to mac-c stayed Pending with the per-node reason |
+| Mac Fabric: backend isolation | pass | 2026-10-12 | Same cluster: the API rejected `spec.apple` on qemu (422); a vz Machine pinned to the Linux node stayed Pending ("the vz backend needs a Mac"); a qemu Machine pinned to a Mac stayed Pending ("a Mac runs only the vz backend", or the vm-only taint without a toleration) |
+| Mac Fabric: MacNetwork allocation | pass | 2026-10-12 | Same cluster: a fabric network got 10.89.192.0/24, port 48192, mac-a .2-.31 and mac-b .32-.61 over their Thunderbolt addresses; a plain one got 10.89.193.0/24, port 48193 and all three Macs over InternalIP, 20 hosts each |
+| Mac Fabric: membership scheduling | pass | 2026-10-12 | Same cluster: a Machine on the fabric network was placed on a member; pinned to mac-c it stayed Pending ("not a member of MacNetwork fab"); a missing network stayed Pending ("not found") |
+| Mac Fabric: overlay files | pass | 2026-10-12 | Same cluster: the three Macs' `overlay.json` had the right subnet, slice, port and the other members as peers; key files matched between Macs and were 0600; an entry and key Kairon did not write were kept |
+| Mac Fabric: key rotation | pass | 2026-10-12 | Same cluster: `spec.keyEpoch: 1` gave status `keyEpoch` 1 and `previousKeyEpoch` 0; both members' key files listed the new key first and the unchanged epoch-0 key second |
+| Mac Fabric: a Mac leaving | pass | 2026-10-12 | Same cluster: removing mac-b's fabric label left mac-a the only member with the same slice and subnet; mac-b's entry and key were removed. This run found `"peers": null` for a lone member, which FluxVM's parser rejects; fixed to `[]` |
+| Mac Fabric: `kaironctl mac` | pass | 2026-10-12 | Same cluster: `mac nodes` listed chip, cores, macOS, Rosetta, nested, Thunderbolt and fabric; `mac network` showed subnet, port and members |
+| Mac Fabric: vz Machines booting on several Macs | not run | 2026-10-12 | Needs Macs |
+| Mac Fabric: Rosetta and nested virtualization inside a guest | not run | 2026-10-12 | Needs an M3 or later Mac with macOS 15 or later |
+| Mac Fabric: MacNetwork traffic between Macs over Thunderbolt | not run | 2026-10-12 | Needs two cabled Macs running FluxVM |
+| Mac Fabric: capability and Thunderbolt discovery on real Macs | not run | 2026-10-12 | `discover_darwin.go` is vetted for darwin/arm64 but has not run on a Mac since this change |
+
 ## Component versions (fill per run)
 
 | Piece | Version |

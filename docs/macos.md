@@ -54,6 +54,12 @@ Two more settings are specific to Node registration:
   value, including `1`, turns it off.
 - `KAIRON_MLX_URL` (flag `--mlx-url`): a loopback OpenAI-compatible endpoint for this Mac's MLX runtime (Velora). When set,
   the Node gets the `kairon.zyvor.dev/mlx=true` label and a `kairon.zyvor.dev/inference-url` annotation. Empty by default.
+- `KAIRON_THUNDERBOLT_FABRIC` (`--thunderbolt-fabric`), `KAIRON_MAC_FABRIC_SECRET_FILE` (`--mac-fabric-secret-file`) and
+  `FLUXVM_VZ_OVERLAY_CONFIG` (`--mac-overlay-config`, default `~/.config/fluxvm/overlay.json`): Thunderbolt fabric
+  membership and `MacNetwork` overlay sync. See [Mac Fabric](guides/mac-fabric.md).
+
+The Node also carries the Mac's chip, macOS version, Rosetta, nested virtualization and Thunderbolt Bridge as labels
+and annotations ([Mac Fabric](guides/mac-fabric.md)).
 
 The migration and CSI directories exist as defaults, but migration and CSI are not verified on macOS (see above).
 
@@ -83,6 +89,7 @@ natively with `KAIRON_KUBE_URL`, `KAIRON_KUBE_TOKEN` (a ServiceAccount token) an
 ## Honest limits
 
 - Kairon stores all state in a Kubernetes API, so a Mac still needs a cluster to talk to; this port does not remove that.
-- Machines on a Mac get NAT networking only. The address is in `status.guestIP`; there are no port forwards.
+- Machines on a Mac get NAT networking, plus a card on each `MacNetwork` in `spec.apple.networks`
+  ([Mac Fabric](guides/mac-fabric.md)). The NAT address is in `status.guestIP`; there are no port forwards.
 - Memory is accounted from the Node's allocatable figure and Kairon's own Machine requests; macOS can still page under pressure.
 - Linux-only features (eBPF edge, migration, CPU pinning, VFIO) remain Linux-only.

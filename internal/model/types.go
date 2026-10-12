@@ -242,10 +242,13 @@ type MachineSpec struct {
 	// is the only action: Paused still consumes node capacity. See
 	// internal/scheduler.SortByPriorityDesc and
 	// docs/guides/machine-placement.md.
-	Priority  int32           `json:"priority,omitempty"`
-	Placement PlacementSpec   `json:"placement,omitempty"`
-	Security  SecuritySpec    `json:"security,omitempty"`
-	Volumes   []MachineVolume `json:"volumes,omitempty"`
+	Priority  int32         `json:"priority,omitempty"`
+	Placement PlacementSpec `json:"placement,omitempty"`
+	// Apple asks for Apple silicon features on the vz backend. See
+	// docs/guides/mac-fabric.md.
+	Apple    *AppleSpec      `json:"apple,omitempty"`
+	Security SecuritySpec    `json:"security,omitempty"`
+	Volumes  []MachineVolume `json:"volumes,omitempty"`
 	// Disks are PVC-backed block disks hot-attached to the running guest
 	// as SCSI disks (serial = name), added and removed live as this list
 	// changes. See MachineDisk.

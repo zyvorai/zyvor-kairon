@@ -65,6 +65,15 @@ func macSupport(rel string) string {
 	return filepath.Join(home, "Library", "Application Support", rel)
 }
 
+// macHome is a path under the user's home directory.
+func macHome(rel string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(os.TempDir(), "kairon", rel)
+	}
+	return filepath.Join(home, rel)
+}
+
 // run returns the process exit code rather than calling os.Exit directly,
 // so every deferred cleanup (e.g. cancel()) actually runs before exit.
 func run() int {
@@ -105,6 +114,9 @@ func run() int {
 	cpuManagerState := flag.String("cpu-manager-state", env("KAIRON_CPU_MANAGER_STATE", "/var/lib/kubelet/cpu_manager_state"), "kubelet cpu_manager_state file; exclusive pod CPUs listed there are kept off the pinnable set")
 	registerNode := flag.Bool("register-node", env("KAIRON_REGISTER_NODE", fmt.Sprint(runtime.GOOS == "darwin")) == "true", "create and heartbeat this host's Kubernetes Node object (a Mac has no kubelet to do it); on by default on macOS")
 	mlxURL := flag.String("mlx-url", env("KAIRON_MLX_URL", ""), "loopback OpenAI-compatible endpoint of this Mac's MLX runtime (Velora); when set the Node gets the kairon.zyvor.dev/mlx=true label and an inference-url annotation")
+	tbFabric := flag.String("thunderbolt-fabric", env("KAIRON_THUNDERBOLT_FABRIC", ""), "name of the group of Macs cabled together over Thunderbolt; with a Thunderbolt Bridge address the Node gets kairon.zyvor.dev/thunderbolt-fabric=<name> and MacNetworks with spec.fabric run over it")
+	fabricSecretFile := flag.String("mac-fabric-secret-file", env("KAIRON_MAC_FABRIC_SECRET_FILE", ""), "file with the secret every Mac shares, from which MacNetwork keys are derived; empty leaves MacNetworks off on this Mac (docs/guides/mac-fabric.md)")
+	overlayConfig := flag.String("mac-overlay-config", env("FLUXVM_VZ_OVERLAY_CONFIG", macHome(".config/fluxvm/overlay.json")), "FluxVM's overlay.json, which kairon-node writes for the MacNetworks this Mac belongs to")
 	memoryReclaim := flag.Bool("memory-reclaim", env("KAIRON_MEMORY_RECLAIM", "true") == "true", "balloon spec.resources.elasticMemory Machines down toward their minimum under host memory pressure and set the KaironMemoryPressure Node condition when nothing is left to reclaim (needs a FluxVM with host.balloon) -- see docs/guides/machine-elastic-memory.md")
 	memoryLowMiB := flag.Uint64("memory-low-watermark-mib", envUint("KAIRON_MEMORY_LOW_WATERMARK_MIB", 0), "host MemAvailable below this is memory pressure; 0 (the default) is 10% of MemTotal")
 	memoryHighMiB := flag.Uint64("memory-high-watermark-mib", envUint("KAIRON_MEMORY_HIGH_WATERMARK_MIB", 0), "reclaim aims for this much MemAvailable and balloons deflate only above it; 0 (the default) is 20% of MemTotal, or twice --memory-low-watermark-mib when that is set")
@@ -152,10 +164,31 @@ func run() int {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 	if *registerNode {
-		info := macnode.Discover()
-		info.MLXURL = *mlxURL
-		log.Info("registering this host as a Kubernetes Node", "node", node, "arch", info.Arch, "cpus", info.CPUs, "memoryMiB", info.MemoryMiB, "address", info.InternalIP)
-		go macnode.Run(ctx, kc, node, info, 10*time.Second, func(err error) { log.Error("node registration", "error", err) })
+		discover := func(ctx context.Context) macnode.Info {
+			info := macnode.Discover()
+			info.MLXURL = *mlxURL
+			info.ThunderboltFabric = *tbFabric
+			if h, err := fc.AppleHost(ctx); err == nil {
+				info.Rosetta = h.Rosetta == "installed"
+				info.NestedVirtualization = h.NestedVirtualization
+				if h.OSVersion != "" {
+					info.MacOSVersion = h.OSVersion
+				}
+			}
+			return info
+		}
+		var sync func(context.Context) error
+		if *fabricSecretFile != "" {
+			secret, err := os.ReadFile(*fabricSecretFile)
+			if err != nil || len(strings.TrimSpace(string(secret))) < 32 {
+				log.Error("mac fabric secret: need at least 32 characters", "file", *fabricSecretFile, "error", err)
+				return 2
+			}
+			sync = macnode.OverlaySync{API: kc, Node: node, Path: *overlayConfig, Secret: []byte(strings.TrimSpace(string(secret)))}.Sync
+		}
+		info := discover(ctx)
+		log.Info("registering this host as a Kubernetes Node", "node", node, "arch", info.Arch, "cpus", info.CPUs, "memoryMiB", info.MemoryMiB, "address", info.InternalIP, "chip", info.Chip, "thunderbolt", info.ThunderboltAddresses)
+		go macnode.Run(ctx, kc, node, discover, 10*time.Second, sync, func(err error) { log.Error("node registration", "error", err) })
 	}
 
 	hs := &health.Server{Metrics: rec.Handler()}

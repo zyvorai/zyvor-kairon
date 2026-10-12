@@ -2845,6 +2845,8 @@ spec:
               message: "spec.resources.elasticMemory needs the qemu backend"
             - rule: "(has(self.resources) && has(self.resources.elasticMemory)) == (has(oldSelf.resources) && has(oldSelf.resources.elasticMemory))"
               message: "spec.resources.elasticMemory cannot be added or removed after creation"
+            - rule: "!has(self.apple) || !has(self.runtime) || !has(self.runtime.backend) || self.runtime.backend in ['auto', 'vz']"
+              message: "spec.apple needs the vz backend"
             properties:
               nodeName:
                 type: string
@@ -3315,6 +3317,27 @@ spec:
                         effect:
                           type: string
                           enum: ["NoSchedule", "PreferNoSchedule", "NoExecute"]
+              apple:
+                description: Apple silicon features for the vz backend (docs/guides/mac-fabric.md).
+                type: object
+                properties:
+                  minChipGeneration:
+                    type: integer
+                    minimum: 1
+                  minMacOSVersion:
+                    type: integer
+                    minimum: 11
+                  rosetta:
+                    type: boolean
+                  nestedVirtualization:
+                    type: boolean
+                  networks:
+                    description: MacNetworks in the Machine's namespace.
+                    type: array
+                    maxItems: 8
+                    items:
+                      type: string
+                      minLength: 1
               security:
                 type: object
                 description: secureBoot needs the qemu backend; tpm needs
@@ -4305,6 +4328,117 @@ spec:
                 format: date-time
               lastHandledTriggerTime:
                 type: string
+  - name: v1beta1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1beta1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema
+  - name: v1alpha1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1alpha1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: macnetworks.kairon.zyvor.dev
+spec:
+  group: kairon.zyvor.dev
+  scope: Namespaced
+  names:
+    plural: macnetworks
+    singular: macnetwork
+    kind: MacNetwork
+    shortNames:
+    - kmn
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    subresources: &subresources
+      status: {}
+    additionalPrinterColumns: &columns
+    - name: Fabric
+      type: string
+      jsonPath: .spec.fabric
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    - name: Subnet
+      type: string
+      jsonPath: .status.subnet
+    - name: Port
+      type: integer
+      jsonPath: .status.port
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+    schema: &schema
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              fabric:
+                description: Only Macs labelled kairon.zyvor.dev/thunderbolt-fabric=<fabric>, over their Thunderbolt addresses. Empty is every Mac, over its InternalIP.
+                type: string
+                maxLength: 63
+              mtu:
+                type: integer
+                minimum: 1280
+                maximum: 9000
+              hostsPerNode:
+                type: integer
+                minimum: 1
+                maximum: 253
+              keyEpoch:
+                description: Raise to rotate the network key; the previous one stays valid until the next rotation.
+                type: integer
+                minimum: 0
+          status:
+            type: object
+            properties:
+              phase:
+                type: string
+              name:
+                type: string
+              subnet:
+                type: string
+              subnetIndex:
+                type: integer
+              port:
+                type: integer
+              mtu:
+                type: integer
+              keyEpoch:
+                type: integer
+              previousKeyEpoch:
+                type: integer
+              message:
+                type: string
+              members:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    node:
+                      type: string
+                    hosts:
+                      type: array
+                      items:
+                        type: integer
+                    address:
+                      type: string
+                    underlay:
+                      type: string
   - name: v1beta1
     served: true
     storage: false

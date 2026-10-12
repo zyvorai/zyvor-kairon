@@ -9,22 +9,33 @@
 package macnode
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"net"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/zyvorai/kairon/internal/kube"
 	"github.com/zyvorai/kairon/internal/model"
 )
 
-// Label and annotation keys published on the Mac Node.
+// Label and annotation keys published on the Mac Node; the Apple capability keys are in internal/model.
 const (
-	LabelBackendVZ     = "kairon.zyvor.dev/backend.vz"
+	LabelBackendVZ     = model.LabelBackendVZ
 	LabelMLX           = "kairon.zyvor.dev/mlx"
 	AnnotationInferURL = "kairon.zyvor.dev/inference-url"
 	// TaintVMOnly keeps ordinary pods off the node: it has no kubelet, only Kairon Machines run there.
-	TaintVMOnly = "kairon.zyvor.dev/vm-only"
+	TaintVMOnly = model.TaintVMOnly
+)
+
+// optionalLabels and optionalAnnotations are removed from the Node when the Mac stops reporting them.
+var (
+	optionalLabels = []string{LabelMLX, model.LabelAppleChip, model.LabelAppleChipGeneration, model.LabelMacOSVersion,
+		model.LabelVZRosetta, model.LabelVZNested, model.LabelThunderbolt, model.LabelThunderboltFabric}
+	optionalAnnotations = []string{AnnotationInferURL, model.AnnotationAppleModel, model.AnnotationAppleCores,
+		model.AnnotationThunderboltInterface, model.AnnotationThunderboltAddresses}
 )
 
 // Info describes the Mac. Discover fills it; tests construct it directly.
@@ -36,6 +47,23 @@ type Info struct {
 	InternalIP string
 	// MLXURL, when set, is the loopback OpenAI-compatible endpoint of Velora's MLX runtime on this Mac.
 	MLXURL string
+
+	// Chip is machdep.cpu.brand_string ("Apple M4 Max"), Model is hw.model ("Mac16,9").
+	Chip  string
+	Model string
+	// PerformanceCores and EfficiencyCores are hw.perflevel0/1.physicalcpu.
+	PerformanceCores int
+	EfficiencyCores  int
+	// MacOSVersion is kern.osproductversion, or FluxVM's report of it.
+	MacOSVersion string
+	// Rosetta and NestedVirtualization come from FluxVM's /v1/host/apple.
+	Rosetta              bool
+	NestedVirtualization bool
+	// ThunderboltInterface is the Thunderbolt Bridge's BSD name and ThunderboltAddresses its IPv4 addresses.
+	ThunderboltInterface string
+	ThunderboltAddresses []string
+	// ThunderboltFabric names the Macs cabled together over Thunderbolt (kairon-node --thunderbolt-fabric).
+	ThunderboltFabric string
 }
 
 // SystemReserveMiB is the memory left to macOS and the user's own apps: at least 3 GiB or a quarter of RAM.
@@ -75,14 +103,129 @@ func Labels(name string, i Info) map[string]string {
 	if i.MLXURL != "" {
 		l[LabelMLX] = "true"
 	}
+	if chip, gen, ok := model.ParseAppleChip(i.Chip); ok {
+		l[model.LabelAppleChip] = chip
+		l[model.LabelAppleChipGeneration] = strconv.Itoa(gen)
+	}
+	if v := model.MacOSMajor(i.MacOSVersion); v != "" {
+		l[model.LabelMacOSVersion] = v
+	}
+	if i.Rosetta {
+		l[model.LabelVZRosetta] = "true"
+	}
+	if i.NestedVirtualization {
+		l[model.LabelVZNested] = "true"
+	}
+	if len(i.ThunderboltAddresses) > 0 {
+		l[model.LabelThunderbolt] = "true"
+		if i.ThunderboltFabric != "" {
+			l[model.LabelThunderboltFabric] = i.ThunderboltFabric
+		}
+	}
 	return l
+}
+
+// Annotations returns the annotations the Mac Node carries.
+func Annotations(i Info) map[string]string {
+	a := map[string]string{}
+	if i.MLXURL != "" {
+		a[AnnotationInferURL] = i.MLXURL
+	}
+	if i.Model != "" {
+		a[model.AnnotationAppleModel] = i.Model
+	}
+	if i.PerformanceCores > 0 {
+		a[model.AnnotationAppleCores] = fmt.Sprintf("%dP+%dE", i.PerformanceCores, i.EfficiencyCores)
+	}
+	if len(i.ThunderboltAddresses) > 0 {
+		a[model.AnnotationThunderboltInterface] = i.ThunderboltInterface
+		a[model.AnnotationThunderboltAddresses] = strings.Join(i.ThunderboltAddresses, ",")
+	}
+	return a
+}
+
+// metadataPatch sets the labels and annotations, and removes the optional ones the Mac no longer reports.
+func metadataPatch(name string, i Info) map[string]any {
+	labels, annotations := map[string]any{}, map[string]any{}
+	for _, k := range optionalLabels {
+		labels[k] = nil
+	}
+	for _, k := range optionalAnnotations {
+		annotations[k] = nil
+	}
+	for k, v := range Labels(name, i) {
+		labels[k] = v
+	}
+	for k, v := range Annotations(i) {
+		annotations[k] = v
+	}
+	return map[string]any{"metadata": map[string]any{"labels": labels, "annotations": annotations}}
+}
+
+// HardwarePort is one entry of `networksetup -listallhardwareports`.
+type HardwarePort struct {
+	Port   string
+	Device string
+}
+
+// ParseHardwarePorts reads `networksetup -listallhardwareports`.
+func ParseHardwarePorts(out string) []HardwarePort {
+	var ports []HardwarePort
+	var cur HardwarePort
+	sc := bufio.NewScanner(strings.NewReader(out))
+	for sc.Scan() {
+		k, v, ok := strings.Cut(sc.Text(), ":")
+		if !ok {
+			continue
+		}
+		v = strings.TrimSpace(v)
+		switch strings.TrimSpace(k) {
+		case "Hardware Port":
+			cur = HardwarePort{Port: v}
+		case "Device":
+			if cur.Port != "" {
+				cur.Device = v
+				ports = append(ports, cur)
+				cur = HardwarePort{}
+			}
+		}
+	}
+	return ports
+}
+
+// ThunderboltBridge is the Thunderbolt Bridge's BSD name ("bridge0"), or "".
+func ThunderboltBridge(ports []HardwarePort) string {
+	for _, p := range ports {
+		if p.Port == "Thunderbolt Bridge" {
+			return p.Device
+		}
+	}
+	return ""
+}
+
+// InterfaceIPv4 returns the IPv4 addresses on the interface called name.
+func InterfaceIPv4(name string) []string {
+	ifc, err := net.InterfaceByName(name)
+	if err != nil {
+		return nil
+	}
+	addrs, _ := ifc.Addrs()
+	var out []string
+	for _, a := range addrs {
+		if ipn, ok := a.(*net.IPNet); ok {
+			if ip := ipn.IP.To4(); ip != nil {
+				out = append(out, ip.String())
+			}
+		}
+	}
+	return out
 }
 
 // BuildNode is the object POSTed when the Node does not exist yet.
 func BuildNode(name string, i Info) map[string]any {
 	meta := map[string]any{"name": name, "labels": Labels(name, i)}
-	if i.MLXURL != "" {
-		meta["annotations"] = map[string]string{AnnotationInferURL: i.MLXURL}
+	if a := Annotations(i); len(a) > 0 {
+		meta["annotations"] = a
 	}
 	return map[string]any{
 		"apiVersion": "v1",
@@ -132,11 +275,7 @@ func Register(ctx context.Context, api API, name string, i Info, now time.Time) 
 			return fmt.Errorf("creating node %s: %w", name, err)
 		}
 	} else {
-		meta := map[string]any{"labels": Labels(name, i)}
-		if i.MLXURL != "" {
-			meta["annotations"] = map[string]string{AnnotationInferURL: i.MLXURL}
-		}
-		if err := api.PatchNode(ctx, name, map[string]any{"metadata": meta}); err != nil {
+		if err := api.PatchNode(ctx, name, metadataPatch(name, i)); err != nil {
 			return fmt.Errorf("refreshing node %s: %w", name, err)
 		}
 	}
@@ -147,10 +286,17 @@ func Register(ctx context.Context, api API, name string, i Info, now time.Time) 
 }
 
 // Run registers the node and heartbeats until ctx ends. Errors are reported through onError and retried next tick.
-func Run(ctx context.Context, api API, name string, i Info, every time.Duration, onError func(error)) {
+// discover runs every tick, so capabilities and Thunderbolt addresses that change are picked up; after each
+// registration, sync (when set) runs too.
+func Run(ctx context.Context, api API, name string, discover func(context.Context) Info, every time.Duration, sync func(context.Context) error, onError func(error)) {
 	tick := func() {
-		if err := Register(ctx, api, name, i, time.Now()); err != nil && onError != nil {
+		if err := Register(ctx, api, name, discover(ctx), time.Now()); err != nil && onError != nil {
 			onError(err)
+		}
+		if sync != nil {
+			if err := sync(ctx); err != nil && onError != nil {
+				onError(err)
+			}
 		}
 	}
 	tick()

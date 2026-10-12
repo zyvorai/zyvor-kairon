@@ -245,6 +245,7 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 	}
 	c.reconcileMachineSets(ctx, machineSets, machines)
 	c.reconcileVirtualNetworks(ctx, machines, nodes)
+	macNetworks := c.reconcileMacNetworks(ctx, nodes)
 
 	claims, err := c.Kube.ListMachineClaims(ctx)
 	if err != nil && !kube.IsNotFound(err) {
@@ -305,7 +306,7 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 	var unschedulable []model.Machine
 	for _, m := range pending {
 		key := m.Namespace() + "/" + m.Metadata.Name
-		topo := scheduler.TopologyInput{Nodes: topologies, DRA: draPlacements[key]}
+		topo := scheduler.TopologyInput{Nodes: topologies, DRA: draPlacements[key], MacNetworks: macNetworks}
 		node, err := c.Scheduler.ChooseTopology(m, nodes, machines, nodeLoad, topo)
 		if err != nil {
 			unschedulable = append(unschedulable, m)

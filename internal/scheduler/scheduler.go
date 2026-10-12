@@ -50,6 +50,8 @@ type TopologyInput struct {
 	// Nodes is every node's NodeTopology by node name.
 	Nodes map[string]model.NodeTopology
 	DRA   DRAPlacement
+	// MacNetworks are the MacNetworks by namespace/name.
+	MacNetworks map[string]model.MacNetwork
 }
 
 // DRAPlacement is what DRA already decided for a Machine's deviceClaims.
@@ -78,6 +80,9 @@ func (s Scheduler) ChooseTopology(m model.Machine, nodes []model.Node, machines 
 		ok, reason := s.eligible(m, n, nodes, machines, load[n.Metadata.Name])
 		if ok {
 			ok, reason = topologyEligible(m, n, machines, topo)
+		}
+		if ok {
+			ok, reason = appleEligible(m, n, topo)
 		}
 		if ok {
 			preSkew = append(preSkew, n)
@@ -323,6 +328,9 @@ func (s Scheduler) eligible(m model.Machine, n model.Node, nodes []model.Node, m
 	for _, taint := range n.Spec.Taints {
 		if taint.Effect != model.TaintEffectNoSchedule && taint.Effect != model.TaintEffectNoExecute {
 			continue // PreferNoSchedule is soft -- see score's own penalty, not a hard filter
+		}
+		if taint.Key == model.TaintVMOnly && wantsVZ(m) {
+			continue
 		}
 		if !toleratesTaint(m.Spec.Placement.Tolerations, taint) {
 			return false, fmt.Sprintf("untolerated %s taint %s", taint.Effect, taintKV(taint))
