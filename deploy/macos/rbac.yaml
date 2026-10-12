@@ -14,6 +14,11 @@ rules:
   - apiGroups: [""]
     resources: ["nodes/status"]
     verbs: ["patch"]
+  # MacNetworks this Mac belongs to, written into FluxVM's overlay.json (internal/macnode/overlay.go). The keys are
+  # derived on the Mac and never stored in the API.
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["macnetworks"]
+    verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

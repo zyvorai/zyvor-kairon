@@ -171,6 +171,8 @@ type CreateRequest struct {
 	// Balloon adds a virtio-balloon (spec.resources.elasticMemory), QEMU
 	// only.
 	Balloon *BalloonSpec `json:"balloon,omitempty"`
+	// Apple carries spec.apple (vz only).
+	Apple *AppleRequest `json:"apple,omitempty"`
 }
 
 // Cdrom is one FluxVM CreateVmRequest.cdroms entry.
@@ -482,6 +484,8 @@ func buildCreateRequest(m model.Machine, defaultBackend string, vfioDevices []st
 		if err := checkAppleBackend(m, cpu, mem, maxVCPUs, maxMemoryMiB, vfioDevices); err != nil {
 			return CreateRequest{}, err
 		}
+	} else if m.Spec.Apple != nil {
+		return CreateRequest{}, fmt.Errorf("spec.apple needs the vz backend; Machine resolves to backend %q", backend)
 	}
 	if r := m.Spec.Resources; (r.NUMANode != nil || r.CPUSet != "" || r.Hugepages) && backend != "qemu" {
 		return CreateRequest{}, fmt.Errorf("spec.resources.numaNode/cpuSet/hugepages require the qemu backend (FluxVM only supports them there); Machine resolves to backend %q", backend)
@@ -565,6 +569,7 @@ func buildCreateRequest(m model.Machine, defaultBackend string, vfioDevices []st
 		TPM:           m.Spec.Security.TPM,
 		SharedFolders: sharedFolders,
 		Balloon:       balloon,
+		Apple:         appleRequest(m),
 	}
 	if m.Spec.Image.DiskSize != "" {
 		gib, err := model.ParseDiskSizeGiB(m.Spec.Image.DiskSize)

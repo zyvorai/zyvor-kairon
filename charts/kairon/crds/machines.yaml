@@ -62,6 +62,8 @@ spec:
               message: "spec.resources.elasticMemory needs the qemu backend"
             - rule: "(has(self.resources) && has(self.resources.elasticMemory)) == (has(oldSelf.resources) && has(oldSelf.resources.elasticMemory))"
               message: "spec.resources.elasticMemory cannot be added or removed after creation"
+            - rule: "!has(self.apple) || !has(self.runtime) || !has(self.runtime.backend) || self.runtime.backend in ['auto', 'vz']"
+              message: "spec.apple needs the vz backend"
             properties:
               nodeName:
                 type: string
@@ -532,6 +534,27 @@ spec:
                         effect:
                           type: string
                           enum: ["NoSchedule", "PreferNoSchedule", "NoExecute"]
+              apple:
+                description: Apple silicon features for the vz backend (docs/guides/mac-fabric.md).
+                type: object
+                properties:
+                  minChipGeneration:
+                    type: integer
+                    minimum: 1
+                  minMacOSVersion:
+                    type: integer
+                    minimum: 11
+                  rosetta:
+                    type: boolean
+                  nestedVirtualization:
+                    type: boolean
+                  networks:
+                    description: MacNetworks in the Machine's namespace.
+                    type: array
+                    maxItems: 8
+                    items:
+                      type: string
+                      minLength: 1
               security:
                 type: object
                 description: secureBoot needs the qemu backend; tpm needs

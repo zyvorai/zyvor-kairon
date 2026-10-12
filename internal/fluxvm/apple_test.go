@@ -71,6 +71,26 @@ func TestAppleBackendRejectsLinuxOnlyFeaturesWithAClearMessage(t *testing.T) {
 	}
 }
 
+func TestAppleSpecBecomesFluxVMsAppleBlock(t *testing.T) {
+	m := macMachine()
+	m.Spec.Apple = &model.AppleSpec{Rosetta: true, NestedVirtualization: true, MinChipGeneration: 3, Networks: []string{"shard-net"}}
+	req, err := buildCreateRequest(m, "qemu", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := req.Apple; a == nil || !a.Rosetta || !a.NestedVirtualization || len(a.Networks) != 1 || a.Networks[0].Name != model.MacNetworkName("dev", "shard-net") {
+		t.Fatalf("apple = %+v", req.Apple)
+	}
+	m.Spec.Apple = &model.AppleSpec{MinChipGeneration: 3}
+	if req, _ := buildCreateRequest(m, "qemu", nil, nil); req.Apple != nil {
+		t.Fatalf("placement-only spec.apple sent %+v", req.Apple)
+	}
+	m.Spec.Runtime.Backend = "qemu"
+	if _, err := buildCreateRequest(m, "qemu", nil, nil); err == nil || !strings.Contains(err.Error(), "vz backend") {
+		t.Fatalf("spec.apple on qemu: err = %v", err)
+	}
+}
+
 func TestAppleCapabilityTableMatchesWhatTheCheckEnforces(t *testing.T) {
 	var supported, unsupported int
 	for _, c := range AppleCapabilities {

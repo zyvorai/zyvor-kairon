@@ -38,6 +38,40 @@ match.
 Also new: `kaironctl selftest` and the dashboard Self-test page,
 `deploy-remote.sh --remote-build`, `--image-cache-dir`, `--self-test`.
 
+## Added: Mac Fabric (experimental)
+
+kairon-node on a Mac now publishes its capabilities on the Node:
+- labels: `apple-chip`, `apple-chip-generation`, `macos-version`, `vz.rosetta`, `vz.nested-virtualization`,
+  `thunderbolt` and `thunderbolt-fabric`;
+- annotations: the model, the performance and efficiency cores, and the Thunderbolt Bridge addresses.
+
+Rosetta, nested virtualization and the macOS version come from FluxVM's `GET /v1/host/apple`.
+
+Scheduling:
+- A Machine's new `spec.apple` asks for a minimum chip generation and macOS version, Rosetta, nested
+  virtualization, and `networks`; the scheduler filters Macs on these.
+- vz Machines go only to Macs and tolerate their `vm-only` taint automatically. Other backends never go to a Mac.
+
+The new `MacNetwork` CRD (`kmn`) is a private Layer-2 network for vz Machines across Macs:
+- kairon-controller gives it a subnet in `10.89.192-254.0/24`, a UDP port, and each member Mac a stable slice of
+  guest addresses.
+- With `spec.fabric` it runs over the Thunderbolt Bridge addresses of the Macs started with
+  `--thunderbolt-fabric`.
+- kairon-node with `--mac-fabric-secret-file` writes FluxVM's `overlay.json` and per-network keys, derived on each
+  Mac from a shared secret so no key is stored in the API.
+
+Also:
+- `kaironctl mac nodes|networks|network`.
+- The dashboard's Nodes page has a Platform column and Mac details.
+- `deploy/macos/rbac.yaml` gives kairon-node read access to `macnetworks`.
+
+No FluxVM change is needed. Do not run FluxVM's fleet agent overlay sync on the same Mac (use `--no-overlay-sync`).
+
+The lab has no Macs. `scripts/lab-mac-fabric.sh` ran on a Linux cluster with three simulated Mac Nodes:
+capability scheduling, backend isolation, network allocation, membership scheduling, the overlay files, key rotation
+and a Mac leaving a network all passed. Booting on real Macs and traffic between them have not run. See
+`docs/guides/mac-fabric.md` and the "Mac Fabric" section of `docs/COMPATIBILITY.md`.
+
 ## Added: cross-cluster DR (experimental)
 
 A `MachineProtectionPlan` (`kmpp`) protects a group of Machines across two

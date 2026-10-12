@@ -6,6 +6,8 @@
 #
 #   studio-1  Mac Studio, also serves models (kairon-node --mlx-url ...): gets a gateway VM next to the models
 #   mini-1    Mac mini: gets a small CI runner
+#   studio-2, studio-3  Mac Studios cabled over Thunderbolt, kairon-node --thunderbolt-fabric=studio-rack
+#             --mac-fabric-secret-file=...: two workers on one private network across them (docs/guides/mac-fabric.md)
 ---
 apiVersion: kairon.zyvor.dev/v1
 kind: Machine
@@ -64,3 +66,74 @@ spec:
       - key: kairon.zyvor.dev/vm-only
         operator: Exists
         effect: NoSchedule
+---
+apiVersion: kairon.zyvor.dev/v1
+kind: MacNetwork
+metadata:
+  name: rack-net
+  namespace: default
+spec:
+  fabric: studio-rack
+  mtu: 9000
+---
+apiVersion: kairon.zyvor.dev/v1
+kind: Machine
+metadata:
+  name: worker-0
+  namespace: default
+  labels:
+    app: rack-worker
+spec:
+  image:
+    path: /Users/you/Library/Application Support/FluxVM/images/debian-13-arm64.raw
+  resources:
+    cpu: "4"
+    memory: 16Gi
+  runtime:
+    backend: vz
+  powerState: Running
+  cloudInit:
+    hostname: worker-0
+    user: velora
+    sshAuthorizedKeys:
+      - ssh-ed25519 AAAA... you@mac
+  apple:
+    minChipGeneration: 3
+    rosetta: true
+    networks: [rack-net]
+  placement:
+    antiAffinity:
+      - labelSelector:
+          app: rack-worker
+        topologyKey: kubernetes.io/hostname
+---
+apiVersion: kairon.zyvor.dev/v1
+kind: Machine
+metadata:
+  name: worker-1
+  namespace: default
+  labels:
+    app: rack-worker
+spec:
+  image:
+    path: /Users/you/Library/Application Support/FluxVM/images/debian-13-arm64.raw
+  resources:
+    cpu: "4"
+    memory: 16Gi
+  runtime:
+    backend: vz
+  powerState: Running
+  cloudInit:
+    hostname: worker-1
+    user: velora
+    sshAuthorizedKeys:
+      - ssh-ed25519 AAAA... you@mac
+  apple:
+    minChipGeneration: 3
+    rosetta: true
+    networks: [rack-net]
+  placement:
+    antiAffinity:
+      - labelSelector:
+          app: rack-worker
+        topologyKey: kubernetes.io/hostname

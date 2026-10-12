@@ -10,6 +10,7 @@ import Inspector, { KV } from '../components/Inspector';
 import NodeTools from '../components/NodeTools';
 import NodeTopologyPanel from '../components/NodeTopologyPanel';
 import EmptyHint from '../components/EmptyHint';
+import { macDetails, platformSummary } from '../lib/mac';
 import { barTone, formatCores, formatMiB, memoryLimitMiB, NodeCapacity, pct } from '../lib/capacity';
 
 function Bar({ used, total, label }: { used: number; total: number; label: string }) {
@@ -94,6 +95,7 @@ export default function Nodes() {
           emptyText={<EmptyHint what="nodes visible to this cluster" namespaced={false} hint="Label a node to make it eligible: kubectl label node NAME kairon.zyvor.dev/capable=true. kaironctl doctor lists what is missing." />}
           columns={[
             { header: 'Name', render: (n) => n.metadata.name },
+            { header: 'Platform', render: (n) => platformSummary(n) },
             { header: 'Ready', render: (n) => <span className={badgeClass(nodeReadyStatus(n))}>{nodeReadyStatus(n)}</span> },
             { header: 'Unschedulable', render: (n) => (n.spec?.unschedulable ? 'true' : 'false') },
             { header: 'Taints', render: (n) => nodeTaintsSummary(n) },
@@ -161,6 +163,7 @@ export default function Nodes() {
               ['Memory', usage[selected] ? formatBytes(usage[selected].memoryBytes) : undefined],
               ['Memory overcommit', cap[selected]?.memoryOvercommitRatio && cap[selected].memoryOvercommitRatio! > 1 ? `${cap[selected].memoryOvercommitRatio}x` : undefined],
               ['Guaranteed memory', cap[selected]?.guaranteedMemoryMiB !== undefined ? formatMiB(cap[selected].guaranteedMemoryMiB!) : undefined],
+              ...macDetails(items.find((x) => x.metadata.name === selected)),
             ]}
           />
           <NodeTopologyPanel node={selected} />

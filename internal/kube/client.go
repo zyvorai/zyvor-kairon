@@ -888,6 +888,16 @@ func (c *Client) PatchMachineProtectionPlan(ctx context.Context, ns, name string
 	return c.request(ctx, http.MethodPatch, namespacedObjectPath(ns, "machineprotectionplans", name), patch, nil, "application/merge-patch+json")
 }
 
+func (c *Client) ListMacNetworks(ctx context.Context) ([]model.MacNetwork, error) {
+	var list model.MacNetworkList
+	err := c.request(ctx, http.MethodGet, "/apis/kairon.zyvor.dev/v1/macnetworks", nil, &list, "")
+	return list.Items, err
+}
+
+func (c *Client) PatchMacNetworkStatus(ctx context.Context, ns, name string, status model.MacNetworkStatus) error {
+	return c.request(ctx, http.MethodPatch, namespacedObjectPath(ns, "macnetworks", name)+"/status", map[string]any{"status": status}, nil, "application/merge-patch+json")
+}
+
 func (c *Client) PatchMachineProtectionPlanStatus(ctx context.Context, ns, name string, status model.MachineProtectionPlanStatus) error {
 	return c.request(ctx, http.MethodPatch, namespacedObjectPath(ns, "machineprotectionplans", name)+"/status", map[string]any{"status": status}, nil, "application/merge-patch+json")
 }
