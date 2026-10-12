@@ -54,6 +54,7 @@ try:
         "machinebackups.kairon.zyvor.dev",
         "machinebackuprestores.kairon.zyvor.dev",
         "machinebackuppolicies.kairon.zyvor.dev",
+        "machineprotectionplans.kairon.zyvor.dev",
         "nodetopologies.kairon.zyvor.dev",
         "virtualnetworks.kairon.zyvor.dev",
     }

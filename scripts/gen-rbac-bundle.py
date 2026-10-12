@@ -28,6 +28,7 @@ HEADER = (
 SETS = [
     "ui.enabled=true",
     "fleet.enabled=true",
+    "controller.dr.enabled=true",
     "webhook.enabled=true",
     "webhook.tlsSecretName=ci-webhook-tls",
     "webhook.caBundle=Y2ktY2EtYnVuZGxl",

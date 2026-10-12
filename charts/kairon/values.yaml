@@ -81,6 +81,16 @@ controller:
     maxMoves: 1
     strategy: live # live|auto|cold
     cooldown: 1h
+  dr:
+    # Runs MachineProtectionPlans: replicate Machines to a peer cluster,
+    # fail over and back, DR tests. Grants the controller create/delete on
+    # machinebackuppolicies, machinebackuprestores and
+    # machineprotectionplans, and get on Secrets labelled
+    # kairon.zyvor.dev/dr-peer-credentials=true in the release namespace.
+    # See docs/guides/cross-cluster-dr.md.
+    enabled: false
+    # Isolated host bridges (no uplink) DR tests may attach copies to.
+    testBridges: []
   resources:
     requests: {cpu: 50m, memory: 64Mi}
     limits: {cpu: 250m, memory: 128Mi}

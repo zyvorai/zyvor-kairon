@@ -1,0 +1,39 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: Apache-2.0
+#
+# What a MachineProtectionPlan's peer site may do on this cluster: read the
+# plan and post a planned-failover handoff on it, read the protected
+# Machines' specs, and list the replication backups. Apply it on each site,
+# bind it in every namespace that holds a plan, and give the other site a
+# token for the ServiceAccount:
+#
+#   kubectl apply -f deploy/dr-peer-rbac.yaml
+#   kubectl -n prod create rolebinding kairon-dr-peer --clusterrole=kairon-dr-peer \
+#     --serviceaccount=kairon-system:kairon-dr-peer
+#   kubectl -n kairon-system create token kairon-dr-peer --duration=8760h
+#
+# On the other site, store that token (and this API server's CA) in a Secret
+# in kairon-controller's namespace:
+#
+#   kubectl -n kairon-system create secret generic dr-peer-site-a \
+#     --from-literal=token=... --from-file=ca.crt=site-a-ca.crt
+#   kubectl -n kairon-system label secret dr-peer-site-a kairon.zyvor.dev/dr-peer-credentials=true
+#
+# See docs/guides/cross-cluster-dr.md.
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: kairon-dr-peer, namespace: kairon-system}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: kairon-dr-peer}
+rules:
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machineprotectionplans"]
+    verbs: ["get", "patch"]
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machines"]
+    verbs: ["get"]
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machinebackups"]
+    verbs: ["list"]

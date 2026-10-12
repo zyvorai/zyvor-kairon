@@ -103,7 +103,7 @@ Starts a proxy on `127.0.0.1` that forwards to the `kairon-ui` Service through t
 ## Resources & power
 
 ```text
-kaironctl get [machines|migrations|snapshots|restores|quotas|budgets|machinesets|machinepools|machineclaims|instancetypes|migrationpolicies|snapshotschedules|networkpolicies|securitygroups|backups|backuprestores|nodes|nodetopologies] [--selector k=v]
+kaironctl get [machines|migrations|snapshots|restores|quotas|budgets|machinesets|machinepools|machineclaims|instancetypes|migrationpolicies|snapshotschedules|networkpolicies|securitygroups|backups|backuprestores|protectionplans|nodes|nodetopologies] [--selector k=v]
 kaironctl describe [RESOURCE] NAME   # machine: adds an elastic-memory line from status.memory
 kaironctl create NAME --image PATH [--cpu N] [--memory SIZE] [--backend qemu|…]
                  [--forward hostPort:guestPort[/proto]] [--hostname NAME] [--user NAME]
@@ -196,6 +196,18 @@ kaironctl backuppolicy get [NAME] | describe NAME | suspend NAME | resume NAME |
 `backuppolicy`. See [guides/machine-backup.md](guides/machine-backup.md) and,
 for incremental S3 backups,
 [guides/machine-backup-incremental.md](guides/machine-backup-incremental.md).
+
+### Cross-cluster DR (experimental)
+
+```text
+kaironctl dr get [PLAN] [-n NS]
+kaironctl dr status PLAN [-n NS]
+kaironctl dr failover PLAN [--planned] [-n NS]   # on the standby; --planned also fails back
+kaironctl dr test PLAN [-n NS]                   # copies on the isolated test bridge
+kaironctl dr test-end PLAN [-n NS]
+```
+
+See [guides/cross-cluster-dr.md](guides/cross-cluster-dr.md).
 
 ## Images
 

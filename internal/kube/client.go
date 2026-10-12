@@ -85,6 +85,23 @@ func FromEnvironment() (*Client, error) {
 }
 
 func New(baseURL, token, caPath string, insecure bool) (*Client, error) {
+	var pem []byte
+	if caPath != "" && !insecure {
+		var err error
+		if pem, err = os.ReadFile(caPath); err != nil {
+			return nil, fmt.Errorf("read CA file %s: %w", caPath, err)
+		}
+	}
+	c, err := NewWithCA(baseURL, token, pem, insecure)
+	if err != nil && caPath != "" {
+		return nil, fmt.Errorf("invalid CA file %s", caPath)
+	}
+	return c, err
+}
+
+// NewWithCA is New with the CA bundle in memory; an empty caPEM uses the
+// system roots.
+func NewWithCA(baseURL, token string, caPEM []byte, insecure bool) (*Client, error) {
 	// Reuse connections across reconciliation bursts, but release idle
 	// sockets. Keep proxy behavior unchanged and allow long-lived watches.
 	tr := &http.Transport{
@@ -96,14 +113,10 @@ func New(baseURL, token, caPath string, insecure bool) (*Client, error) {
 		ForceAttemptHTTP2:     true,
 		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: insecure}, // #nosec G402 - opt-in dev mode
 	}
-	if caPath != "" && !insecure {
-		pem, err := os.ReadFile(caPath)
-		if err != nil {
-			return nil, fmt.Errorf("read CA file %s: %w", caPath, err)
-		}
+	if len(caPEM) > 0 && !insecure {
 		pool := x509.NewCertPool()
-		if !pool.AppendCertsFromPEM(pem) {
-			return nil, fmt.Errorf("invalid CA file %s", caPath)
+		if !pool.AppendCertsFromPEM(caPEM) {
+			return nil, fmt.Errorf("invalid CA bundle")
 		}
 		tr.TLSClientConfig.RootCAs = pool
 	}
@@ -851,6 +864,32 @@ func (c *Client) PatchMachineBackupPolicy(ctx context.Context, ns, name string, 
 
 func (c *Client) PatchMachineBackupPolicyStatus(ctx context.Context, ns, name string, status model.MachineBackupPolicyStatus) error {
 	return c.request(ctx, http.MethodPatch, namespacedObjectPath(ns, "machinebackuppolicies", name)+"/status", map[string]any{"status": status}, nil, "application/merge-patch+json")
+}
+
+func (c *Client) ListMachineProtectionPlans(ctx context.Context) ([]model.MachineProtectionPlan, error) {
+	var list model.MachineProtectionPlanList
+	err := c.request(ctx, http.MethodGet, "/apis/kairon.zyvor.dev/v1/machineprotectionplans", nil, &list, "")
+	return list.Items, err
+}
+
+func (c *Client) ListMachineProtectionPlansNamespace(ctx context.Context, ns string) ([]model.MachineProtectionPlan, error) {
+	var list model.MachineProtectionPlanList
+	err := c.request(ctx, http.MethodGet, namespacePath(ns, "machineprotectionplans"), nil, &list, "")
+	return list.Items, err
+}
+
+func (c *Client) GetMachineProtectionPlan(ctx context.Context, ns, name string) (model.MachineProtectionPlan, error) {
+	var p model.MachineProtectionPlan
+	err := c.request(ctx, http.MethodGet, namespacedObjectPath(ns, "machineprotectionplans", name), nil, &p, "")
+	return p, err
+}
+
+func (c *Client) PatchMachineProtectionPlan(ctx context.Context, ns, name string, patch map[string]any) error {
+	return c.request(ctx, http.MethodPatch, namespacedObjectPath(ns, "machineprotectionplans", name), patch, nil, "application/merge-patch+json")
+}
+
+func (c *Client) PatchMachineProtectionPlanStatus(ctx context.Context, ns, name string, status model.MachineProtectionPlanStatus) error {
+	return c.request(ctx, http.MethodPatch, namespacedObjectPath(ns, "machineprotectionplans", name)+"/status", map[string]any{"status": status}, nil, "application/merge-patch+json")
 }
 
 func (c *Client) ListMachineSnapshotSchedules(ctx context.Context) ([]model.MachineSnapshotSchedule, error) {

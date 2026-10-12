@@ -68,6 +68,15 @@ func TestPlanPolicyRunPicksTheMode(t *testing.T) {
 		{name: "plain failure then incremental", backups: append(chain[:2:2], plainFail), now: 3 * time.Hour, mode: BackupModeIncremental, parent: "i1"},
 		{name: "in flight", backups: append(chain[:2:2], cbt("i2", BackupModeIncremental, "i1", "c1", 2*time.Hour, BackupRunning)), now: 5 * time.Hour, waiting: "i2"},
 		{name: "synthesis in flight", backups: append(chain[:2:2], cbt("s1", BackupModeSyntheticFull, "i1", "c1", 2*time.Hour, "")), now: 5 * time.Hour, waiting: "s1"},
+		// Retention consolidated f0+i1 into s1 and deleted both.
+		{name: "consolidated chain not due", backups: []MachineBackup{cbt("s1", BackupModeSyntheticFull, "i1", "c1", time.Hour, ok)}, now: time.Hour + 30*time.Minute},
+		{name: "incremental on a synthetic full", backups: []MachineBackup{cbt("s1", BackupModeSyntheticFull, "i1", "c1", time.Hour, ok)}, now: 2 * time.Hour, mode: BackupModeIncremental, parent: "s1"},
+		{name: "incremental after a synthetic full", backups: []MachineBackup{
+			cbt("s1", BackupModeSyntheticFull, "i1", "c1", time.Hour, ok), cbt("i2", BackupModeIncremental, "s1", "c1", 2*time.Hour, ok),
+		}, now: 3 * time.Hour, mode: BackupModeIncremental, parent: "i2"},
+		{name: "consolidated chain fullEvery elapsed", backups: []MachineBackup{cbt("s1", BackupModeSyntheticFull, "i1", "c1", time.Hour, ok)}, now: 25 * time.Hour, mode: BackupModeFull},
+		{name: "a kept full still bounds the chain", backups: append(chain[:2:2], cbt("s1", BackupModeSyntheticFull, "i1", "c1", time.Hour, ok)), now: 24 * time.Hour, mode: BackupModeFull},
+		{name: "failed synthetic full is no base", backups: []MachineBackup{cbt("s1", BackupModeSyntheticFull, "i1", "c1", time.Hour, BackupFailed)}, now: 2 * time.Hour, mode: BackupModeFull},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := PlanPolicyRun(spec, tc.backups, t0.Add(tc.now))
@@ -151,6 +160,25 @@ func TestRetentionKeepsDependenciesAndAsksForASyntheticFull(t *testing.T) {
 	plan = PlanRetention(backups, r, t0.Add(4*day))
 	if len(plan.Delete) != 0 || plan.Synthesize != "" {
 		t.Fatalf("steady state: %+v", plan)
+	}
+}
+
+func TestRetentionLeavesBasesInsideTheWindow(t *testing.T) {
+	ok := BackupSucceeded
+	backups := []MachineBackup{
+		cbt("f0", BackupModeFull, "", "c1", 0, ok),
+		cbt("i1", BackupModeIncremental, "f0", "c1", 10*time.Minute, ok),
+		cbt("i2", BackupModeIncremental, "i1", "c1", 20*time.Minute, ok),
+	}
+	// Only i2 is kept (newest of its hour), but f0 is still inside the
+	// 24h window: no synthetic full, nothing deleted.
+	plan := PlanRetention(backups, BackupRetention{Hourly: 24}, t0.Add(30*time.Minute))
+	if len(plan.Delete) != 0 || plan.Synthesize != "" {
+		t.Fatalf("inside the window: %+v", plan)
+	}
+	plan = PlanRetention(backups, BackupRetention{Hourly: 24}, t0.Add(25*time.Hour))
+	if plan.Synthesize != "i2" {
+		t.Fatalf("outside the window: %+v", plan)
 	}
 }
 

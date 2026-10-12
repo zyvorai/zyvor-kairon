@@ -88,6 +88,8 @@ func run() int {
 	attestVerify := flag.Bool("attestation-verify", envDefault("KAIRON_ATTESTATION_VERIFY", "true") == "true", "verify SEV-SNP reports (AMD KDS chain) and TDX quotes for Machines requesting confidential compute; false leaves them unsealed")
 	attestAllowDebug := flag.Bool("attestation-allow-debug", false, "accept debug-enabled confidential guests (lab only: the host can read their memory)")
 	attestWriters := flag.String("attestation-writers", os.Getenv("KAIRON_ATTESTATION_WRITERS"), "comma-separated usernames the webhook lets set attestation-verified/attestation-nonce; empty allows any kairon-controller service account")
+	drSecretNamespace := flag.String("dr-secret-namespace", os.Getenv("KAIRON_DR_SECRET_NAMESPACE"), "namespace holding MachineProtectionPlan peer credential Secrets (labelled kairon.zyvor.dev/dr-peer-credentials=true); empty leaves plans unable to reach their peer")
+	drTestBridges := flag.String("dr-test-bridges", os.Getenv("KAIRON_DR_TEST_BRIDGES"), "comma-separated isolated host bridges a MachineProtectionPlan DR test may attach its copies to; empty refuses DR tests")
 	showVersion := flag.Bool("version", false, "print version")
 	flag.Parse()
 	if *showVersion {
@@ -188,6 +190,10 @@ func run() int {
 			MaxMoves:              *drsMaxMoves,
 			Strategy:              *drsStrategy,
 			Cooldown:              *drsCooldown,
+		},
+		DR: controller.DisasterRecovery{
+			SecretNamespace: *drSecretNamespace,
+			TestBridges:     splitList(*drTestBridges),
 		},
 		CiliumAttach:               *ciliumAttach,
 		CiliumPolicySync:           *ciliumPolicySync,
@@ -311,4 +317,14 @@ func envBool(k string, d bool) bool {
 	default:
 		return d
 	}
+}
+
+func splitList(v string) []string {
+	var out []string
+	for _, s := range strings.Split(v, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }

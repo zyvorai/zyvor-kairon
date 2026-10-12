@@ -76,6 +76,10 @@ func (c *Controller) reconcileMachineBackup(ctx context.Context, b model.Machine
 		}
 		return nil
 	}
+	// A restore point imported from a DR peer was taken there.
+	if b.Replicated() {
+		return nil
+	}
 	switch b.Status.Phase {
 	case model.BackupSucceeded, model.BackupFailed:
 		return nil

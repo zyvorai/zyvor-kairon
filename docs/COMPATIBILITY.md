@@ -314,6 +314,30 @@ virt-handler removed instances it had not created, so the run had its
 | vGPU: MIG-backed profiles, nvidia-smi health and VRAM | not run | 2026-10-12 | Needs an NVIDIA MIG-capable GPU |
 | GPU health: Unhealthy GPU skipped by the scheduler | not run | 2026-10-12 | Needs a GPU with AER or ECC errors; unit-tested |
 
+## Cross-cluster DR
+
+Driven by [`scripts/lab-dr.sh`](../scripts/lab-dr.sh) on one node against a
+host-installed kairon-controller (with `--dr-secret-namespace` and
+`--dr-test-bridges=drtest0`) and FluxVM. The two sites are two namespaces,
+`dr-a` and `dr-b`, on the same k3s cluster: each one's peer is the same API
+server, reached with a `kairon-dr-peer` ServiceAccount token. Both share one
+bucket on versitygw 1.8.0 (POSIX backend). Site loss is simulated by
+unlabelling the peer credentials Secret, not by a network partition. Site A
+runs db and web (web depends on db); each guest fsyncs a generation and
+timestamp every 2s, so a restored guest reports the instant its disk
+returns to.
+
+| Case | Last result | Date | Notes |
+|---|---|---|---|
+| DR: replicate | pass | 2026-10-12 | Single node (k3s 1.35, QEMU 10.2.1), policy every 5m: dr-b imported 2 restore points 86s after the plan was created; RPO 69s, `RPOMet=True` |
+| DR: test | pass | 2026-10-12 | Same node: `kaironctl dr test` started copies of db and web on the isolated bridge `drtest0` in 145s; their last writes were within 1s of the restore points; dr-a kept running; `dr test-end` removed the copies |
+| DR: consolidate | pass | 2026-10-12 | Same node: after a policy synthetic full of web, the next replication was an incremental on it and retention made no further synthetic full |
+| DR: failover | pass | 2026-10-12 | Same node, sites cut off: db then web Running on dr-b, RTO 184s (objective 10m), data loss 48s; restored disks within 1s of the restore points; dr-a kept running while cut off and was fenced 7s after reconnecting (Machines Halted, policy deleted, epoch 2) |
+| DR: failback | pass | 2026-10-12 | Same node: planned failover back to dr-a in 226s; dr-b halted and took final backups, db's last write on dr-b (generation 271) was on dr-a, data loss 0s; dr-b standby at epoch 3 |
+| DR: two real clusters | not run | 2026-10-12 | Needs a second cluster; the lab's sites share one API server |
+| DR: separate or replicated buckets per site | not run | 2026-10-12 | Both sites used one bucket |
+| DR: real network partition between sites | not run | 2026-10-12 | Site loss was simulated by unlabelling the peer Secret |
+
 ## Component versions (fill per run)
 
 | Piece | Version |
