@@ -386,6 +386,34 @@ sessions and `GET .../network-capture/{token}` downloads the pcap
   kairon-node and kairon-ui); otherwise 501. Calling FluxVM directly
   requires its admin role.
 
+## Incident bundles (`.../diagnostics`, `kaironctl diagnose machine --deep`)
+
+`POST /api/v1/machines/{ns}/{name}/diagnostics` starts a FluxVM bundle job;
+`GET .../diagnostics/{token}` polls it and `.../{token}/bundle` and
+`.../{token}/memory-dump` download the files (`internal/uiapi/incident.go`,
+relayed through `internal/consoleproxy`).
+
+- **Admin only, stricter than packet capture.** A memory dump holds
+  everything in guest RAM (keys, tokens, plaintext), and `--no-redact` keeps
+  cloud-init and secret env. The routes need namespace access and either a
+  `ui.auth.users[].admin` account or the shared `KAIRON_UI_TOKEN`, which is
+  already root-equivalent on every route; other accounts get 403.
+- **Redaction is pattern-based and on by default.** Values under
+  credential-like keys and Machine `spec.cloudInit` are fingerprinted
+  (`redacted:sha256:<16 hex>`), and text after `password=`, `token:`,
+  `Bearer ` and similar is replaced. A secret the guest prints without such a
+  key word, packet captures and memory dumps are not redacted. Review a bundle
+  before sharing it.
+- **Memory dumps stay on the node** under FluxVM's `diagnostics_dir`
+  (owner-only), capped by `diagnostics_max_memory_dump_mib`, refused for
+  confidential VMs, and removed with the VM. kairon-ui logs every start and
+  every dump download; FluxVM audits starts, finishes and deletes. The guest
+  is paused while the dump is written.
+- **Integrity**: kaironctl checks the node bundle and the dump against the
+  sha256 FluxVM recorded and drops a node part that does not match.
+- **Off unless diagnostics are enabled** (`KAIRON_NODE_CONSOLE_TOKEN` on
+  kairon-node and kairon-ui); otherwise 501.
+
 ## MCP server for AI agents (`kaironctl mcp serve`)
 
 Full tool list and setup: [`docs/guides/hermes-mcp.md`](docs/guides/hermes-mcp.md).

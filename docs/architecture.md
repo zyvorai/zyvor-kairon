@@ -188,6 +188,17 @@ deliberately distinct from `Stopped`, and both scheduler capacity
 accounting and `MachineQuota` treat it the same way they already treat
 `Stopped`. See [guides/machine-halt.md](guides/machine-halt.md).
 
+Incident bundles are split between the two sides
+(`internal/kaironctl/incident.go`): kaironctl writes the cluster half
+(Machine, events, migrations, Node, NodeTopology, the ranked causes) itself,
+and starts FluxVM's asynchronous `POST /v1/vms/{id}/diagnostics` job through
+`internal/uiapi/incident.go` -> `internal/consoleproxy/incident.go` ->
+`internal/fluxvm/incident.go`, polls it, downloads the node tar.gz, checks
+its sha256 and nests it under `node/`. FluxVM collects the QMP, cgroup,
+console and dataplane state and an optional memory dump on the node; the
+dump stays there and is fetched on demand. See
+[guides/machine-incident-bundle.md](guides/machine-incident-bundle.md).
+
 A second, backend-agnostic guest-exec channel is now wrapped too:
 `POST /v1/vms/{id}/agent` (`internal/fluxvm.Client.AgentExec`) rides the
 same bespoke vsock guest agent guest file access already uses

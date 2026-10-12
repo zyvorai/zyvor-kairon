@@ -91,3 +91,8 @@ recommended routine pause/resume replacement.
 - **Pressure/cpuset are point-in-time snapshots**, not a time series --
   for history, use Prometheus/external monitoring against the node's own
   cgroup filesystem, not these endpoints.
+
+For a full snapshot of a misbehaving Machine (these readings plus QMP state,
+console log, dataplane, events and an optional memory dump in one tar.gz),
+use `kaironctl diagnose machine NAME --deep`; see
+[machine-incident-bundle.md](machine-incident-bundle.md).
