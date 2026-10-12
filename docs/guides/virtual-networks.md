@@ -31,6 +31,22 @@ and VLAN. That path is unchanged.
 4. **kairon-node's BGP speaker** (opt-in) announces the floating IPs of
    local Machines, and optionally the Service Fabric VIPs, to your routers.
 
+```mermaid
+flowchart LR
+  subgraph A["Node A"]
+    g1["Machine 10.0.0.4"] --- t1["vnet tap<br/>eBPF"]
+  end
+  subgraph B["Node B"]
+    g2["Machine 10.0.0.5"] --- t2["vnet tap<br/>eBPF"]
+  end
+  t1 -->|"same host: bpf_redirect"| g1b["Machine 10.0.0.6"]
+  t1 -->|"Geneve, VNI N, UDP 6081"| t2
+  t1 -->|"egressSNAT"| up["uplink"]
+  ctl["kairon-controller<br/>IPAM: VNI, address, MAC"] -.-> A
+  ctl -.-> B
+```
+
+
 What the datapath does, per packet:
 
 - **Same host:** the tap program answers ARP for every address on the

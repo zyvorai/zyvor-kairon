@@ -29,6 +29,18 @@ in [`COMPATIBILITY.md`](../COMPATIBILITY.md#elastic-memory).
 4. **kairon-controller** (opt-in, `--memory-pressure-evacuate`) migrates
    Machines off a node whose condition stays True.
 
+```mermaid
+flowchart TD
+  sched["Scheduler packs by guaranteed minimum<br/>up to the node overcommit ratio"] --> run["Elastic Machines run with a virtio-balloon"]
+  run --> loop{"kairon-node, every 10 s<br/>host MemAvailable and PSI"}
+  loop -->|"below low watermark"| infl["Inflate balloons toward minimums"]
+  loop -->|"above high watermark"| defl["Deflate: give memory back"]
+  infl -->|"all balloons at minimum"| press["Node condition KaironMemoryPressure=True"]
+  press --> avoid["Scheduler avoids the node"]
+  press -.->|"opt-in"| evac["Controller live-migrates Machines away"]
+```
+
+
 ## Making a Machine elastic
 
 ```yaml

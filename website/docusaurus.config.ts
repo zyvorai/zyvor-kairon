@@ -24,6 +24,7 @@ const config: Config = {
 
   markdown: {
     format: 'md',
+    mermaid: true,
     hooks: {
       onBrokenMarkdownLinks: 'warn',
     },
@@ -33,6 +34,8 @@ const config: Config = {
     defaultLocale: 'en',
     locales: ['en'],
   },
+
+  themes: ['@docusaurus/theme-mermaid'],
 
   staticDirectories: ['static', '../docs/ux'],
 

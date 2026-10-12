@@ -16,6 +16,18 @@ kaironctl selftest                      # standard profile
 kaironctl selftest --list               # every check and what it needs
 ```
 
+```mermaid
+flowchart LR
+  start(["kaironctl selftest<br/>or dashboard Self-test"]) --> cp["control-plane"]
+  cp --> boot["boot<br/>pull + verify CirrOS, DHCP or login:"]
+  boot --> q["quick: console-log, power"]
+  q --> s["standard: network, pause-resume,<br/>hotplug-cpu, observability"]
+  s --> f["full: nic-hotplug, disk-hotplug,<br/>snapshot-restore, fork, cold-migration"]
+  f --> rep["PASS / FAIL / SKIP table<br/>skips say which flag enables them"]
+  boot -. "fails" .-> ev["evidence: console, controller + node logs, events"]
+```
+
+
 ## Profiles
 
 | Profile | Adds | Typical time |

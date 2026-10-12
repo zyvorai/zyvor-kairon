@@ -5,9 +5,9 @@
 # Adapted from ../fabric/scripts/deploy-remote.sh for kairon's architecture:
 # kairon-node/kairon-controller are not self-contained daemons (they require
 # a reachable Kubernetes API, see internal/kube/client.go) and kairon is Go
-# with zero third-party deps, so unlike fabric this script cross-compiles
-# locally and ships static binaries instead of syncing source and building
-# on the remote host.
+# with zero third-party deps. By default this script cross-compiles locally
+# and ships static binaries; with --remote-build it copies a source tarball
+# and compiles on the host instead (nothing is built on this machine).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -42,9 +42,9 @@ become ready -- see --kube-url below. A service that starts but reports
 "not ready" because no cluster is configured yet is expected, not a bug.
 
 Optionally also deploys kairon-controller (--with-controller) and/or the
-kairon-ui web dashboard (--with-ui). --with-ui is the one component that
-needs a local Node.js/npm toolchain (to build web/dist) -- every other
-component and mode of this script stays Node-free.
+kairon-ui web dashboard (--with-ui). Locally, --with-ui is the one component
+that needs a Node.js/npm toolchain (to build web/dist); with --remote-build
+that build happens on the host and this machine needs neither Node nor Go.
 
 By default everything is cross-compiled on your machine with
   CGO_ENABLED=0 GOOS=linux GOARCH=<arch> go build
@@ -227,9 +227,8 @@ Flags:
   --ssh-port=N            SSH port (default 22, env SSH_PORT).
   -h, --help              Show this help.
 
-Not present here (and why): fabric's --quick / remote-build modes --
-kairon has no remote toolchain step to skip, everything is built locally
-and shipped as a static binary. fabric's --bind / --open-firewall --
+Not present here (and why): fabric's --quick mode -- kairon has no
+separate toolchain step to skip. fabric's --bind / --open-firewall --
 kairon-node's health port is a private liveness/readiness probe, not a
 public API to expose.
 

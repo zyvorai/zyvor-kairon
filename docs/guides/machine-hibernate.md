@@ -48,6 +48,18 @@ Or `kaironctl hibernate db`, or the dashboard's **Hibernate** button. Resume wit
    is then deleted and `status.hibernation` cleared (`Hibernated=False`,
    reason `Resumed`).
 
+```mermaid
+stateDiagram-v2
+  [*] --> Running
+  Running --> Hibernated: powerState Hibernated<br/>RAM + device state to disk, QEMU exits
+  Hibernated --> Running: powerState Running<br/>same node, same boot
+  Hibernated --> Running: another node<br/>only with shared storage and matching manifest
+  Hibernated --> Blocked: import fails
+```
+
+A hibernated Machine holds no scheduler or quota capacity until it resumes.
+
+
 ## Where it resumes
 
 - **Its own node**, when that node is ready and has room again (the capacity

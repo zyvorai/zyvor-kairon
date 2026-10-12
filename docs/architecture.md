@@ -16,6 +16,15 @@ Kairon separates Kubernetes orchestration from VM execution. Kubernetes is the s
 - `kaironctl`: thin Kubernetes API client; it never bypasses the controllers.
 - `kairon-ui` (optional): a web dashboard (`internal/uiapi` Go backend + `web/` React SPA) that is itself just another Kubernetes API client, same standing as `kaironctl` -- no privileged side channel, no second source of truth.
 
+```mermaid
+flowchart LR
+  user["kaironctl, dashboard, MCP"] --> api["Kubernetes API<br/>(source of truth)"]
+  api --> ctl["kairon-controller<br/>places Machines, runs migrations,<br/>snapshots, quotas, IPAM"]
+  api --> node["kairon-node<br/>per host: reconcile into FluxVM,<br/>mTLS migration peer, console relay"]
+  node --> flux["FluxVM REST<br/>127.0.0.1:7788"] --> vmm["QEMU / Cloud Hypervisor /<br/>Firecracker / FluxVM"]
+  node -. "optional" .-> adapter["migration adapter<br/>(unix socket)"]
+```
+
 ## Cold migration
 
 ```text

@@ -71,6 +71,10 @@ kaironctl version [--server] [-o text|json|yaml]
 
 ```text
 kaironctl doctor [--pre-install] [--strict] [-o json|yaml]
+kaironctl selftest [--profile quick|standard|full] [--only IDS] [--skip IDS] [--list] [--no-vm]
+                 [--image PATH | --image-url URL --image-digest sha256:...] [--bridge NAME] [--pvc NAME]
+                 [--ui-url URL --ui-token TOKEN] [--keep] [--cleanup] [--strict] [--log-file PATH] [-o json]
+                 # boots a CirrOS VM and checks it end to end: guides/selftest.md
 kaironctl connectivity test [-n kairon-system] [--timeout 30s] [-o json|yaml]
 kaironctl connectivity test --machine --image PATH [--test-namespace default] [--cpu 1] [--memory 512Mi]
                  [--backend qemu] [--network user] [--machine-timeout 3m] [--keep]

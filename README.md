@@ -35,10 +35,17 @@
 
 ## What's new
 
-New since v0.6.0 (current: v0.9.1):
+New since v0.6.0 (latest tag: v0.9.1; the first rows below are on `main`, not yet in a tag):
 
 | | |
 |---|---|
+| **Self-test: is it all working?** | `kaironctl selftest` (or the dashboard's Self-test page) boots a tiny CirrOS VM and proves power, network, hotplug, snapshot-restore and more, with live coloured logs and a PASS / FAIL / SKIP table. `deploy-remote.sh --self-test` runs it right after a deploy. [Guide →](docs/guides/selftest.md) |
+| **Deploy without building locally** | `deploy-remote.sh --remote-build` copies a small source tarball and compiles on the host, so a laptop needs no Go, no Node and no build cache. [Fastest path →](docs/getting-started.md#fastest-path) |
+| **HTTPS by default** | The dashboard and the VNC console relay serve TLS out of the box (generated or bring-your-own certificate); plain HTTP is a named opt-out. [Dashboard guide →](docs/guides/kairon-ui-dashboard.md#https) |
+| **Hibernate (experimental)** | `spec.powerState: Hibernated` saves RAM and device state to disk and frees the node; resume continues the same boot, on its own node or a compatible one with shared storage. [Guide →](docs/guides/machine-hibernate.md) |
+| **Virtual networks (experimental)** | `VirtualNetwork`: isolated IPv4 networks routed in eBPF with a Geneve overlay, per-network gateway, egress SNAT and floating IPs. [Guide →](docs/guides/virtual-networks.md) |
+| **Elastic memory (experimental)** | Run more Machine memory than the node has: guaranteed minimums, a virtio-balloon reclaim loop and a `KaironMemoryPressure` signal the scheduler respects. [Guide →](docs/guides/machine-elastic-memory.md) |
+| **Topology-aware placement (experimental)** | NUMA, GPU, NIC and NVMe locality: the scheduler picks the node, exact CPUs, NUMA memory and PCI devices together. [Guide →](docs/guides/machine-topology.md) |
 | **Incident bundles (experimental)** | `kaironctl diagnose machine --deep`: one redacted tar.gz with the Machine's cluster state plus QMP, cgroup, console, dataplane and pcap from its node, and an opt-in guest memory dump. [Guide →](docs/guides/machine-incident-bundle.md) |
 | **Lifecycle, diagnostics and namespaces (v0.9)** | `kaironctl doctor`, `connectivity test`, `logs`, `events`, `sysdump`, `config`, `history`/`rollback`; `kaironctl upgrade` keeps your previous Helm values. The dashboard has a namespace selector, an all-namespaces Machines view and bulk Start/Stop. [Release notes →](RELEASE_NOTES.md) |
 | **`v1` API and new dashboard** | `kairon.zyvor.dev/v1` is the storage version (`v1beta1`/`v1alpha1` served, deprecated). The dashboard is redesigned and gains Storage (Atlas), Pools & claims, Images and Backups pages; `kairon-ui` now listens on `:18082`. [Guide →](docs/guides/kairon-ui-dashboard.md) |
@@ -209,9 +216,26 @@ More pages: [gallery](https://zyvorai.github.io/zyvor-kairon/gallery). Screensho
 |---|---|---|
 | `kairon-controller` | `:32301` health, `:8443` webhook | Placement, migration state machine, fencing, snapshots, quotas and budgets |
 | `kairon-node` | `:32302` health, `:9443` mTLS peer, `:8090` console | Per-host agent: FluxVM lifecycle, eBPF policy, live-migration peer, edge Warning events, confidential-capability label |
-| `kairon-ui` | `:18082` | Optional dashboard: Machines, migrations, snapshots, Storage (Atlas), Pools & claims, Images, Backups, Network panel, VNC console; see [dashboard guide](docs/guides/kairon-ui-dashboard.md) |
+| `kairon-ui` | `:18082` (HTTPS) | Optional dashboard: Machines, migrations, snapshots, Storage (Atlas), Pools & claims, Images, Backups, Network panel, VNC console; see [dashboard guide](docs/guides/kairon-ui-dashboard.md) |
 | `kaironctl` | — | CLI and `kubectl kairon` plugin, embedded Helm installer, MCP server |
 | FluxVM | `127.0.0.1:7788` | The VMM layer on each host: QEMU, Cloud Hypervisor, Firecracker, FluxVM |
+
+```mermaid
+flowchart TB
+  subgraph clients["Clients"]
+    cli["kaironctl / kubectl kairon"]
+    dash["Dashboard (HTTPS)"]
+    agent["AI agents via MCP"]
+  end
+  clients --> api["Kubernetes API<br/>Machine, MachineMigration, VirtualNetwork, ..."]
+  api <--> ctl["kairon-controller<br/>placement, migration state machine,<br/>quota, IPAM, backup policy"]
+  api <--> ui["kairon-ui"]
+  api <--> node["kairon-node<br/>one per VM host"]
+  node -->|"REST on 127.0.0.1"| flux["FluxVM<br/>QEMU, Cloud Hypervisor,<br/>Firecracker, FluxVM"]
+  flux --> kvm["KVM + eBPF edge"]
+  node <-->|"mTLS peer"| node2["kairon-node on another host"]
+  flux --> s3[("S3 backups")]
+```
 
 Full write-up: [ARCHITECTURE.md](ARCHITECTURE.md) · [docs/architecture.md](docs/architecture.md) · architecture illustration: [docs/assets/readme-architecture.jpg](docs/assets/readme-architecture.jpg)
 
@@ -236,12 +260,15 @@ kaironctl create demo --image /var/lib/fluxvm/images/ubuntu.qcow2 --cpu 2 --memo
 
 The production profile pins image tags to `Chart.AppVersion` and turns on the webhook, namespace isolation, network default-deny and migration data-plane TLS. Images: `ghcr.io/zyvorai/kairon-{controller,node,ui}`, signed with checksums and SBOM.
 
-From your laptop to a bare-metal host (cross-compiled locally, shipped as static binaries):
+From your laptop to a bare-metal host, built on the host so your laptop needs no Go or Node, with a smoke test at the end:
 
 ```bash
-./scripts/deploy-remote.sh user@host                                      # kairon-node + kaironctl
-./scripts/deploy-remote.sh user@host --with-controller --with-ui --with-console
+./scripts/deploy-remote.sh user@host --remote-build --with-controller --with-ui --with-console --self-test=quick
 ```
+
+Without `--remote-build` the binaries are cross-compiled locally and shipped as static files. Either way the dashboard and the console relay are HTTPS. [All flags and the deploy flow →](docs/getting-started.md#fastest-path)
+
+Then, on any install: `kaironctl doctor` checks the control plane and `kaironctl selftest` boots a CirrOS VM to prove it end to end.
 
 <details>
 <summary><strong>From source, kind, or raw manifests</strong></summary>
@@ -253,7 +280,7 @@ helm upgrade --install kairon ./charts/kairon -n kairon-system --create-namespac
 # or: kaironctl install   (embedded Helm SDK, no helm binary needed)
 ```
 
-Raw manifests: `kubectl apply -f deploy/crd.yaml -f deploy/rbac.yaml -f deploy/controller.yaml -f deploy/node.yaml`.
+Raw manifests: `kubectl apply -f deploy/crd.yaml -f deploy/rbac.yaml -f deploy/controller.yaml -f deploy/node.yaml`, plus `deploy/ui.yaml` for the dashboard and `deploy/rbac-cbt-backup.yaml` only if you enable [incremental S3 backups](docs/guides/machine-backup-incremental.md).
 
 </details>
 
