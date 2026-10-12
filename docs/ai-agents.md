@@ -293,6 +293,11 @@ These are prompts that work well and the tool calls they lead to.
    With a model configured it adds a short summary; the causes are the
    same either way.
 
+   For the evidence behind it (QMP state, console log, dataplane, events),
+   an administrator runs `kaironctl diagnose machine job-7 --deep`; there is
+   no MCP tool for incident bundles
+   ([guides/machine-incident-bundle.md](guides/machine-incident-bundle.md)).
+
 **"Why can't web reach api.example.com?"**
 
 1. `list_machines` finds `web` and its node.

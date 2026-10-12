@@ -38,6 +38,19 @@ match.
 Also new: `kaironctl selftest` and the dashboard Self-test page,
 `deploy-remote.sh --remote-build`, `--image-cache-dir`, `--self-test`.
 
+## Added: incident bundles (experimental)
+
+`kaironctl diagnose machine NAME --deep` writes one tar.gz for a Machine: its
+Kubernetes state (Machine, events, migrations, Node, NodeTopology, the ranked
+causes) and FluxVM's bundle from its node (QMP state, cgroup and PSI, console
+log, dataplane, optional `--pcap`). `--memory-dump` also dumps guest memory on
+the node (QEMU; the guest pauses while it is written) and
+`kaironctl diagnose memory-dump` downloads it with a sha256 check. Secrets are
+redacted by default (`--no-redact` keeps them). Needs FluxVM with
+`/v1/vms/{id}/diagnostics`, the node console relay (`KAIRON_NODE_CONSOLE_TOKEN`)
+and an administrator `KAIRON_UI_TOKEN` or account. See
+`docs/guides/machine-incident-bundle.md`.
+
 # Kairon v0.9.1
 
 Released 2026-10-11.
