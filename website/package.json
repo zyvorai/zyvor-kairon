@@ -50,6 +50,7 @@
   "overrides": {
     "http-cache-semantics": "4.3.0",
     "image-size": "2.0.4",
+    "katex": "^0.18.2",
     "postcss-selector-parser": "7.1.6",
     "serialize-javascript": "7.0.5",
     "tinypool": "2.1.2",

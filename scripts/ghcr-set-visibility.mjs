@@ -128,7 +128,16 @@ async function ensureSignedIn(page, org) {
 }
 
 // Returns "changed", "already", or throws with a reason.
+// Escapes a string for literal use inside a RegExp.
+const escapeRegExp = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 async function setVisibility(page, org, pkg, visibility) {
+  // visibility is interpolated into regular expressions below; accept only the
+  // values GitHub knows, and escape it anyway.
+  if (!VISIBILITIES.includes(visibility)) {
+    throw new Error(`visibility must be one of ${VISIBILITIES.join(', ')} (got ${JSON.stringify(visibility)})`);
+  }
+  const vis = escapeRegExp(visibility);
   await page.goto(settingsURL(org, pkg), { waitUntil: 'domcontentloaded' });
   const change = page.getByRole('button', { name: 'Change visibility' });
   await change.waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {
@@ -136,10 +145,10 @@ async function setVisibility(page, org, pkg, visibility) {
   });
   const current = page.getByText(/This package is currently (public|private|internal)/i).first();
   const text = (await current.textContent().catch(() => '')) || '';
-  if (new RegExp(`currently ${visibility}`, 'i').test(text)) return 'already';
+  if (new RegExp(`currently ${vis}`, 'i').test(text)) return 'already';
 
   await change.click();
-  const radio = page.getByRole('radio', { name: new RegExp(`^${visibility}`, 'i') });
+  const radio = page.getByRole('radio', { name: new RegExp(`^${vis}`, 'i') });
   await radio.waitFor({ state: 'visible', timeout: 10_000 });
   if (await radio.isDisabled()) {
     throw new Error(`"${visibility}" is disabled by organization administrators (Org settings -> Packages -> Package creation)`);
@@ -149,7 +158,7 @@ async function setVisibility(page, org, pkg, visibility) {
   await page.getByRole('button', { name: /I understand the consequences/i }).click();
   await page.waitForLoadState('domcontentloaded');
   await page
-    .getByText(new RegExp(`currently ${visibility}`, 'i'))
+    .getByText(new RegExp(`currently ${vis}`, 'i'))
     .first()
     .waitFor({ state: 'visible', timeout: 15_000 })
     .catch(() => {
