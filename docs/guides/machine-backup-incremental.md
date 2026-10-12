@@ -11,6 +11,19 @@ This is **experimental** until the lab rows in
 [`COMPATIBILITY.md`](../COMPATIBILITY.md#incremental-s3-backups) pass. The
 plain on-node backup in [machine-backup.md](machine-backup.md) is unchanged.
 
+```mermaid
+flowchart LR
+  pol["MachineBackupPolicy<br/>schedule + GFS retention"] --> b1["Full backup<br/>all clusters"]
+  b1 --> b2["Incremental 1<br/>only clusters written since parent"]
+  b2 --> b3["Incremental 2"]
+  b1 --> s3[("S3 bucket<br/>AWS, MinIO, Ceph RGW, Atlas")]
+  b2 --> s3
+  b3 --> s3
+  disk["qcow2 disks owned by FluxVM<br/>persistent dirty bitmap"] -.->|"changed blocks"| b2
+  disk -.-> b3
+```
+
+
 ## What it needs
 
 | Requirement | Why |

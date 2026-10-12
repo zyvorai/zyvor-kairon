@@ -44,10 +44,28 @@ const FeatureList: FeatureItem[] = [
     to: '/docs/CLI',
   },
   {
+    title: 'Deploy in one command',
+    description:
+      'deploy-remote.sh --remote-build compiles on the host, so a laptop needs no Go or Node. Add --self-test and a CirrOS VM proves it all works.',
+    to: '/docs/getting-started#fastest-path',
+  },
+  {
+    title: 'Self-test, HTTPS by default',
+    description:
+      'kaironctl selftest and a dashboard page boot a tiny VM and check power, network, hotplug and snapshots. TLS is on for the dashboard and console.',
+    to: '/docs/guides/selftest',
+  },
+  {
+    title: 'Hibernate, elastic memory, vnets',
+    description:
+      'Experimental: save a running VM to disk, overcommit memory with a balloon, and route isolated IPv4 networks in eBPF with a Geneve overlay.',
+    to: '/docs/guides/machine-hibernate',
+  },
+  {
     title: 'Go standard library only',
     description:
       'No client-go, no generated deep call stacks — kairon-controller and kairon-node stay small enough to audit. Opt-in OIDC/CSI are the only exceptions.',
-    to: 'https://github.com/zyvorai/kairon/blob/main/SECURITY.md',
+    to: 'https://github.com/zyvorai/zyvor-kairon/blob/main/SECURITY.md',
   },
 ];
 

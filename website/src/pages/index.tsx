@@ -38,13 +38,44 @@ function HomepageHeader() {
             </Link>
             <Link
               className="button button--outline button--lg button--secondary"
-              to="https://github.com/zyvorai/kairon">
+              to="https://github.com/zyvorai/zyvor-kairon">
               View on GitHub
             </Link>
           </div>
         </div>
       </div>
     </header>
+  );
+}
+
+function DeployStrip() {
+  return (
+    <section className="padding-vert--lg">
+      <div className="container">
+        <Reveal>
+          <div className="text--center">
+            <Heading as="h2">One command to a working cluster of VMs</Heading>
+            <p>
+              Build on the host (your laptop needs no Go or Node), install
+              over HTTPS, then boot a tiny CirrOS VM to prove it works.
+            </p>
+          </div>
+          <pre style={{maxWidth: 1000, margin: '0 auto'}}>
+            <code>
+              {`./scripts/deploy-remote.sh user@host --remote-build \\
+    --with-controller --with-ui --with-console --self-test=quick`}
+            </code>
+          </pre>
+          <p className="text--center">
+            <Link to="/docs/getting-started#fastest-path">
+              See the deploy flow and every flag →
+            </Link>{' '}
+            ·{' '}
+            <Link to="/docs/guides/selftest">What the self-test checks →</Link>
+          </p>
+        </Reveal>
+      </div>
+    </section>
   );
 }
 
@@ -185,11 +216,11 @@ function TrustBand() {
           </div>
           <div className={styles.trustBadges}>
             <img
-              src="https://github.com/zyvorai/kairon/actions/workflows/ci.yml/badge.svg"
+              src="https://github.com/zyvorai/zyvor-kairon/actions/workflows/ci.yml/badge.svg"
               alt="CI status"
             />
             <img
-              src="https://img.shields.io/github/license/zyvorai/kairon"
+              src="https://img.shields.io/github/license/zyvorai/zyvor-kairon"
               alt="Apache 2.0 license"
             />
             <img
@@ -235,6 +266,7 @@ export default function Home(): ReactNode {
       description="Kairon is Zyvor's Apache-2.0 control plane for running virtual machines on Kubernetes through FluxVM — no virt-launcher Pod, no libvirt.">
       <HomepageHeader />
       <main>
+        <DeployStrip />
         <ProblemStatement />
         <DashboardPreview />
         <Reveal>

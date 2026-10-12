@@ -13,6 +13,44 @@ title: Getting started
 - CSI snapshot stack for `MachineSnapshot`.
 - Kubernetes DRA plus administrator-approved BDFs for VFIO.
 
+## Fastest path
+
+Pick the row that matches what you have. Every path ends the same way: a tiny
+CirrOS VM boots and the result is a PASS / FAIL / SKIP table.
+
+| You have | Run | Time |
+|---|---|---|
+| A Kubernetes cluster and `kubectl` | `kaironctl install` then `kubectl label node NODE kairon.zyvor.dev/capable=true` then `kaironctl selftest --profile quick` | minutes |
+| One Linux host with k3s and SSH access | `./scripts/deploy-remote.sh user@host --remote-build --with-controller --with-ui --with-console --self-test=quick` | the first compile is the long part |
+| A laptop with little disk | the same command: `--remote-build` copies a small source tarball and compiles on the host, so nothing is built locally | |
+
+```mermaid
+flowchart LR
+  you["Your machine<br/>needs ssh and tar, no Go or Node"] -->|"source tarball, --remote-build"| host
+  subgraph host["Target host: Linux + k3s + FluxVM"]
+    build["Go + Node toolchain<br/>cached in ~/.cache/kairon-build"] --> bins["kairon-node, kairon-controller,<br/>kairon-ui, kaironctl"]
+    bins --> units["systemd units<br/>+ HTTPS certs in /etc/kairon"]
+    units --> st["kaironctl selftest<br/>boots CirrOS, checks power,<br/>network, hotplug, snapshot"]
+  end
+  st --> res["PASS / FAIL / SKIP<br/>script exit code"]
+  units --> dash["https://HOST:PORT dashboard<br/>Self-test page"]
+```
+
+What the useful flags do:
+
+| Flag | Effect |
+|---|---|
+| `--remote-build` | Compile on the host (Go, and Node for the dashboard, are cached and checksum-verified); this machine builds nothing |
+| `--self-test[=quick\|standard\|full]` | Run `kaironctl selftest` on the host afterwards; its result is the script's exit code |
+| `--image-cache-dir=PATH` | Where kairon-node caches downloaded images (the self-test needs one) |
+| `--with-controller --with-ui --with-console` | Also install the controller, the HTTPS dashboard and the TLS-protected VNC relay |
+| `--console-insecure-http` | Opt out of TLS on the console relay hop (HTTPS is the default) |
+| `--dry-run` | Print the resolved plan; no SSH, no build, no writes |
+
+Everything the install exposes is HTTPS by default: the dashboard serves TLS
+(self-signed until you give it `ui.tls.secretName`) and the console relay is
+TLS-pinned. Plain HTTP is always an explicitly named opt-out.
+
 ## Install
 
 Preferred: `kaironctl` embeds the Helm chart, so no separate `helm` binary or chart checkout is required.
@@ -204,7 +242,7 @@ Bare-metal alternative:
 scripts/deploy-remote.sh sus@80.79.5.173 --with-controller --with-ui --with-console
 ```
 
-Installs `kairon-ui` as a systemd service alongside `kairon-node`/`kairon-controller`; a dashboard token is auto-generated and printed once at the end of the run. Requires `npm` locally to build `web/dist` -- the only place this script needs Node.js. `--with-console` (optionally `--console-port=N`, otherwise auto-picked if the default collides) generates the shared console token and wires it into both services' systemd env files. Add `--console-tls` to also enable TLS on that hop -- with no `--console-tls-cert`/`-key`/`-ca`, a private CA and server certificate are generated locally and installed on the remote host automatically (SAN list is a best-effort guess at the host's own addresses; if kairon-ui's console button fails with a TLS error afterward, regenerate with explicit `--console-tls-cert`/`-key`/`-ca` covering the right one), or pass those three yourself to bring your own.
+Installs `kairon-ui` as a systemd service alongside `kairon-node`/`kairon-controller`; a dashboard token is auto-generated and printed once at the end of the run. Building `web/dist` needs `npm` on the machine that builds it -- your own by default, or the host itself with `--remote-build`, in which case nothing is built locally. `--with-console` (optionally `--console-port=N`, otherwise auto-picked if the default collides) generates the shared console token and wires it into both services' systemd env files. That hop is TLS by default (`--console-tls` is kept only for old scripts; `--console-insecure-http` opts out) -- with no `--console-tls-cert`/`-key`/`-ca`, a private CA and server certificate are generated locally and installed on the remote host automatically (SAN list is a best-effort guess at the host's own addresses; if kairon-ui's console button fails with a TLS error afterward, regenerate with explicit `--console-tls-cert`/`-key`/`-ca` covering the right one), or pass those three yourself to bring your own.
 
 **Redeploy caveats (confirmed on `80.79.5.173`):**
 

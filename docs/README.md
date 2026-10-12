@@ -13,6 +13,8 @@ The root [README](https://github.com/zyvorai/zyvor-kairon/blob/main/README.md) i
 |---|---|
 | See the product landing | [Root README](https://github.com/zyvorai/zyvor-kairon/blob/main/README.md) |
 | Install and run a first Machine | [getting-started.md](getting-started.md) |
+| Deploy to a host in one command, no local build | [getting-started.md#fastest-path](getting-started.md#fastest-path) |
+| Check that it all works | [guides/selftest.md](guides/selftest.md) (`kaironctl selftest`) |
 | Ten-minute architecture tour | [../ARCHITECTURE.md](https://github.com/zyvorai/zyvor-kairon/blob/main/ARCHITECTURE.md) |
 | Deep architecture reference | [architecture.md](architecture.md) |
 | Full feature inventory | [WHAT_SHIPS.md](WHAT_SHIPS.md) |

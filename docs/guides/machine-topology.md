@@ -26,6 +26,21 @@ in [`COMPATIBILITY.md`](../COMPATIBILITY.md#topology-aware-placement).
    `vfio-pci` (`POST /v1/host/pci/bind`) and passes them through. It then
    records what FluxVM actually applied in `status.appliedTopology`.
 
+```mermaid
+flowchart LR
+  subgraph host["Each VM host"]
+    sys["sysfs: NUMA, PCI, SR-IOV"] --> flux["FluxVM<br/>GET /v1/host/topology"]
+    flux --> node["kairon-node"]
+  end
+  node -->|"publishes"| nt[("NodeTopology<br/>one per node")]
+  nt --> ctl["kairon-controller<br/>topology allocator"]
+  m["Machine<br/>spec.topology, spec.devices"] --> ctl
+  ctl -->|"one patch"| alloc["spec.nodeName<br/>allocatedCpuSet<br/>topologyAllocation"]
+  alloc --> node
+  node -->|"numa request, vfio-pci bind"| flux
+  node -->|"status.appliedTopology"| m
+```
+
 ```bash
 kaironctl get nodetopologies
 kaironctl node topology worker-1
