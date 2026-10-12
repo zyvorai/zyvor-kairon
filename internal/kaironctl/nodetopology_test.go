@@ -49,3 +49,40 @@ func TestPrintNodeTopologyTree(t *testing.T) {
 		t.Fatalf("NodeTopology is cluster-scoped, got %s", got)
 	}
 }
+
+func TestPrintNodeTopologyVGPU(t *testing.T) {
+	u := "5a3c1d2e-0000-5000-8000-000000000001"
+	nt := model.NodeTopology{Metadata: model.ObjectMeta{Name: "w1"}}
+	nt.Status.NUMANodes = []model.TopologyNUMANode{{ID: 0, CPUs: "0-7", MemoryMiB: 16384}}
+	nt.Status.Devices = []model.TopologyDevice{
+		{BDF: "0000:86:00.0", Class: "gpu", Vendor: "10de", Device: "2330", PCIeRoot: "pci0000:85", VRAMGiB: 80,
+			Health: model.DeviceUnhealthy, HealthReasons: []string{"1 fatal PCIe AER errors"}, Allocatable: true},
+	}
+	nt.Status.MediatedDevices = []model.TopologyMediatedParent{
+		{Parent: "0000:3b:00.0", Class: "gpu", Vendor: "10de", Device: "20b5", VRAMMiB: 40960, Allocatable: true,
+			Types: []model.TopologyMediatedType{{ID: "nvidia-558", Name: "GRID A100-3-20C", Available: 1, FramebufferMiB: 20480, MIGSlices: 3, MIGMemoryGiB: 20}}},
+		{Parent: "mbochs", Class: "gpu", Types: []model.TopologyMediatedType{{ID: "mbochs-small", Name: "mbochs-small", Available: 63, FramebufferMiB: 4}}, Instances: []string{u}},
+	}
+	m := model.Machine{Metadata: model.ObjectMeta{Name: "desk", Namespace: "vdi"}}
+	m.Spec.NodeName = "w1"
+	m.Spec.TopologyAllocation = &model.TopologyAllocation{Devices: []model.AllocatedDevice{
+		{Name: "gpu", Parent: "mbochs", Profile: "mbochs-small", UUID: u, FramebufferMiB: 4},
+	}}
+	var b bytes.Buffer
+	printNodeTopology(&b, nt, []model.Machine{m})
+	out := b.String()
+	for _, want := range []string{
+		"gpu 0000:86:00.0 10de:2330 root pci0000:85 80GiB [Unhealthy: 1 fatal PCIe AER errors]",
+		"vGPU parents",
+		"├── 0000:3b:00.0 10de:20b5 40960MiB",
+		`│   └── nvidia-558 "GRID A100-3-20C" 20480MiB MIG 3 slices/20GiB available 1`,
+		"└── mbochs (virtual) [not in --mdev-parents]",
+		"    ├── mbochs-small 4MiB available 63",
+		"    └── instance " + u + " -> vdi/desk",
+		"GPU memory: 4MiB allocated of 123136MiB",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in:\n%s", want, out)
+		}
+	}
+}

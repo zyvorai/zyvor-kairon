@@ -612,6 +612,7 @@ spec:
             - "--image-root={{ .Values.node.imageRoot }}"
             - "--image-cache-dir={{ .Values.node.imageCacheDir }}"
             - "--vfio-allowlist={{ .Values.node.vfioAllowlist }}"
+            - "--mdev-parents={{ .Values.node.mdevParents }}"
 {{ if .Values.migration.enabled }}
             - "--migration-addr=:{{ .Values.migration.port }}"
             - "--migration-port={{ .Values.migration.port }}"

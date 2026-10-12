@@ -25,6 +25,10 @@ type RuntimeHostCapability struct {
 	// Hibernate: POST /v1/vms/{id}/hibernate, import-hibernated and
 	// /v1/host/hibernation.
 	Hibernate bool `json:"hibernate"`
+	// Mdev: /v1/host/mdev, and vfio_devices takes mediated device UUIDs.
+	Mdev bool `json:"mdev"`
+	// GPUHealth: GET /v1/host/gpus/health.
+	GPUHealth bool `json:"gpuHealth"`
 }
 
 // HostTopology is FluxVM's GET /v1/host/topology.

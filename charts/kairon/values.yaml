@@ -131,6 +131,10 @@ node:
   imageCacheDir: ""
   # Comma-separated PCI BDFs, e.g. 0000:65:00.0. Empty is fail-closed for DeviceClaims.
   vfioAllowlist: ""
+  # Mediated device (vGPU) parents the scheduler may create instances on:
+  # comma-separated PCI BDFs or names (e.g. mbochs). Empty allows every
+  # parent FluxVM reports.
+  mdevParents: ""
   nodeSelector:
     kairon.zyvor.dev/capable: "true"
   # csi: how kairon-node reaches kairon-csi-node's local Unix socket to

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -56,6 +57,19 @@ func (a *Agent) publishNodeTopology(ctx context.Context) {
 		return
 	}
 	status := fluxvm.NodeTopologyStatus(host, caps.Host.NUMABinding, a.VFIOAllowlist)
+	var mdev *fluxvm.HostMdev
+	if caps.Host.Mdev {
+		if mdev, err = a.Flux.GetHostMdev(ctx); err != nil {
+			a.log().Debug("FluxVM mdev read failed", "error", err)
+		}
+	}
+	var health []fluxvm.HostGPUHealth
+	if caps.Host.GPUHealth {
+		if health, err = a.Flux.GetHostGPUHealth(ctx); err != nil {
+			a.log().Debug("FluxVM GPU health read failed", "error", err)
+		}
+	}
+	fluxvm.ApplyGPUInventory(&status, mdev, health, a.MdevParents)
 	if caps.Host.Hibernate {
 		if facts, err := a.Flux.GetHostHibernation(ctx); err == nil {
 			f := facts.Model()
@@ -120,14 +134,22 @@ func sameTopology(a, b model.NodeTopologyStatus) bool {
 	return reflect.DeepEqual(strip(a), strip(b))
 }
 
-// topologyVFIODevices returns the BDFs of spec.topologyAllocation's
-// devices, bound to vfio-pci. Each must be in this node's allowlist.
+// topologyVFIODevices returns spec.topologyAllocation's devices as FluxVM
+// vfio_devices: whole devices by BDF, bound to vfio-pci and each in this
+// node's allowlist, and mediated devices by UUID, created first.
 func (a *Agent) topologyVFIODevices(ctx context.Context, m model.Machine) ([]string, error) {
 	if m.Spec.TopologyAllocation == nil || len(m.Spec.TopologyAllocation.Devices) == 0 {
 		return nil, nil
 	}
 	var out []string
 	for _, d := range m.Spec.TopologyAllocation.Devices {
+		if d.Mediated() {
+			if err := a.Flux.CreateMdev(ctx, d.Parent, d.Profile, d.UUID); err != nil {
+				return nil, fmt.Errorf("create %s vGPU %s on %s (%s): %w", d.Profile, d.UUID, d.Parent, d.Name, err)
+			}
+			out = append(out, strings.ToLower(d.UUID))
+			continue
+		}
 		bdf, err := NormalizeBDF(d.BDF)
 		if err != nil {
 			return nil, fmt.Errorf("spec.topologyAllocation device %s: %w", d.Name, err)
@@ -141,6 +163,39 @@ func (a *Agent) topologyVFIODevices(ctx context.Context, m model.Machine) ([]str
 		out = append(out, bdf)
 	}
 	return out, nil
+}
+
+// releaseMediatedDevices removes the Machine's mediated devices once its
+// VM is gone, returning their framebuffer to the parent.
+func (a *Agent) releaseMediatedDevices(ctx context.Context, m model.Machine) error {
+	if m.Spec.TopologyAllocation == nil {
+		return nil
+	}
+	for _, d := range m.Spec.TopologyAllocation.Devices {
+		if !d.Mediated() {
+			continue
+		}
+		if err := a.Flux.RemoveMdev(ctx, strings.ToLower(d.UUID)); err != nil {
+			return fmt.Errorf("remove vGPU %s (%s): %w", d.UUID, d.Name, err)
+		}
+	}
+	return nil
+}
+
+// ParseMdevParents parses --mdev-parents; empty means every parent.
+func ParseMdevParents(raw string) map[string]struct{} {
+	var out map[string]struct{}
+	for _, p := range strings.Split(raw, ",") {
+		p = strings.ToLower(strings.TrimSpace(p))
+		if p == "" {
+			continue
+		}
+		if out == nil {
+			out = map[string]struct{}{}
+		}
+		out[p] = struct{}{}
+	}
+	return out
 }
 
 func mergeBDFs(a, b []string) []string {

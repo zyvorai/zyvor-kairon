@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -30,6 +31,9 @@ type NodeTopologyList struct {
 type NodeTopologyStatus struct {
 	NUMANodes []TopologyNUMANode `json:"numaNodes,omitempty"`
 	Devices   []TopologyDevice   `json:"devices,omitempty"`
+	// MediatedDevices are the devices that can create vfio-mdev
+	// instances (vGPU), with the profiles they offer.
+	MediatedDevices []TopologyMediatedParent `json:"mediatedDevices,omitempty"`
 	// NUMABinding is true when the node's FluxVM binds guest memory and
 	// pins vCPU threads; the scheduler refuses hard topology policies on
 	// a node without it.
@@ -88,6 +92,58 @@ type TopologyDevice struct {
 	Allocatable bool `json:"allocatable"`
 	// Allocated means FluxVM already has the device in some VM.
 	Allocated bool `json:"allocated,omitempty"`
+	// Health is Healthy, Degraded or Unhealthy (GPUs, from FluxVM's
+	// GET /v1/host/gpus/health). The scheduler never picks an Unhealthy
+	// device.
+	Health        string   `json:"health,omitempty"`
+	HealthReasons []string `json:"healthReasons,omitempty"`
+}
+
+const (
+	DeviceHealthy   = "Healthy"
+	DeviceDegraded  = "Degraded"
+	DeviceUnhealthy = "Unhealthy"
+)
+
+// TopologyMediatedParent is a device that creates mediated devices: a
+// vGPU-capable GPU (Parent is its PCI address) or a virtual parent such as
+// the kernel's mbochs sample (Parent is its name, no PCI IDs).
+type TopologyMediatedParent struct {
+	Parent   string `json:"parent"`
+	Class    string `json:"class"`
+	Vendor   string `json:"vendor,omitempty"`
+	Device   string `json:"device,omitempty"`
+	NUMANode *int   `json:"numaNode,omitempty"`
+	PCIeRoot string `json:"pcieRoot,omitempty"`
+	// VRAMMiB is the parent's video memory when the host reports it.
+	VRAMMiB       int64    `json:"vramMiB,omitempty"`
+	Health        string   `json:"health,omitempty"`
+	HealthReasons []string `json:"healthReasons,omitempty"`
+	// Allocatable is false for parents outside kairon-node's
+	// --mdev-parents.
+	Allocatable bool                   `json:"allocatable"`
+	Types       []TopologyMediatedType `json:"types,omitempty"`
+	// Instances are the UUIDs of mediated devices that exist on it now.
+	Instances []string `json:"instances,omitempty"`
+}
+
+// TopologyMediatedType is one vGPU profile.
+type TopologyMediatedType struct {
+	// ID is the mdev type, e.g. nvidia-558 or mbochs-small.
+	ID string `json:"id"`
+	// Name is the vendor's profile name, e.g. "GRID A100-3-20C".
+	Name string `json:"name,omitempty"`
+	// Available is how many more instances the parent can create.
+	Available      int   `json:"available"`
+	FramebufferMiB int64 `json:"framebufferMiB,omitempty"`
+	// MIGSlices and MIGMemoryGiB are set for MIG-backed profiles.
+	MIGSlices    int `json:"migSlices,omitempty"`
+	MIGMemoryGiB int `json:"migMemoryGiB,omitempty"`
+}
+
+// Matches reports whether profile names this type, by ID or by name.
+func (t TopologyMediatedType) Matches(profile string) bool {
+	return t.ID == profile || (t.Name != "" && strings.EqualFold(t.Name, profile))
 }
 
 const (
@@ -124,8 +180,13 @@ type MachineDevice struct {
 	// Model is a PCI device ID, e.g. "2330".
 	Model string `json:"model,omitempty"`
 	Count int    `json:"count,omitempty"`
-	// MinMemory is the least GPU memory per device, e.g. "40Gi".
+	// MinMemory is the least GPU memory per device, e.g. "40Gi". With
+	// Profile it is compared with the profile's framebuffer.
 	MinMemory string `json:"minMemory,omitempty"`
+	// Profile asks for mediated devices (vGPU) of this type instead of
+	// whole devices: an mdev type ID (nvidia-558, mbochs-small) or the
+	// vendor's profile name ("GRID A100-3-20C", MIG-backed or not).
+	Profile string `json:"profile,omitempty"`
 	// VirtualFunction takes SR-IOV virtual functions instead of whole
 	// devices.
 	VirtualFunction bool `json:"virtualFunction,omitempty"`
@@ -151,11 +212,22 @@ type AllocatedNUMANode struct {
 }
 
 type AllocatedDevice struct {
-	Name     string `json:"name"`
+	Name string `json:"name"`
+	// BDF is the device, or a mediated device's parent when that is a
+	// PCI device.
 	BDF      string `json:"bdf"`
 	NUMANode *int   `json:"numaNode,omitempty"`
 	PCIeRoot string `json:"pcieRoot,omitempty"`
+	// Parent, Profile and UUID describe a mediated device: kairon-node
+	// creates UUID of type Profile on Parent before the VM starts.
+	Parent         string `json:"parent,omitempty"`
+	Profile        string `json:"profile,omitempty"`
+	UUID           string `json:"uuid,omitempty"`
+	FramebufferMiB int64  `json:"framebufferMiB,omitempty"`
 }
+
+// Mediated reports whether the allocation is a mediated device.
+func (d AllocatedDevice) Mediated() bool { return d.UUID != "" }
 
 // AppliedTopology is what FluxVM reported after the VM started.
 type AppliedTopology struct {
@@ -196,6 +268,7 @@ func (s MachineSpec) HardTopology() bool {
 
 var deviceNameRE = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$`)
 var pciIDRE = regexp.MustCompile(`^[0-9a-f]{4}$`)
+var profileRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._:-]{0,63}$`)
 
 var vendorNames = map[string]string{
 	"nvidia":   "10de",
@@ -270,6 +343,17 @@ func ValidateTopology(s MachineSpec) error {
 		}
 		if d.Model != "" && !pciIDRE.MatchString(d.Model) {
 			return fmt.Errorf("%s.model %q: want a 4 hex digit PCI device ID", at, d.Model)
+		}
+		if d.Profile != "" {
+			if d.Class != DeviceClassGPU && d.Class != DeviceClassAccelerator {
+				return fmt.Errorf("%s.profile only applies to class gpu or accelerator", at)
+			}
+			if d.VirtualFunction {
+				return fmt.Errorf("%s.profile and virtualFunction are exclusive", at)
+			}
+			if !profileRE.MatchString(d.Profile) {
+				return fmt.Errorf("%s.profile %q: want an mdev type ID or profile name of at most 64 characters", at, d.Profile)
+			}
 		}
 		if d.MinMemory != "" {
 			if d.Class != DeviceClassGPU {
