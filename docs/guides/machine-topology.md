@@ -122,6 +122,11 @@ Each `spec.devices` entry asks for `count` (default 1) devices of a
   with the Machine's CPUs. `samePcieRoot` puts every `samePcieRoot` device
   of the Machine under one PCIe root, for GPU-to-NIC peer to peer.
 
+A vGPU parent that is not a PCI device (such as `mbochs`) counts as its own
+PCIe root, so `samePcieRoot` instances share that parent.
+[Accelerator profiles](accelerator-profiles.md) give these fields a name
+that Machines reference with `spec.accelerators`.
+
 A device is never handed out twice: devices in another Machine's
 `spec.topologyAllocation`, or already in a FluxVM VM, are skipped, and so
 are `Unhealthy` devices and vGPU parents.

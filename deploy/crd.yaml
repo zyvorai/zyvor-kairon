@@ -923,6 +923,180 @@ spec:
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
+  name: machineacceleratorprofiles.kairon.zyvor.dev
+spec:
+  group: kairon.zyvor.dev
+  scope: Cluster
+  names:
+    plural: machineacceleratorprofiles
+    singular: machineacceleratorprofile
+    kind: MachineAcceleratorProfile
+    shortNames:
+    - kmap
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    subresources: &subresources
+      status: {}
+    additionalPrinterColumns: &columns
+    - name: Class
+      type: string
+      jsonPath: .spec.class
+    - name: Count
+      type: integer
+      jsonPath: .spec.count
+    - name: Profile
+      type: string
+      jsonPath: .spec.profile
+    - name: Ready
+      type: string
+      jsonPath: .status.conditions[?(@.type=="Ready")].status
+    - name: Capacity
+      type: integer
+      jsonPath: .status.capacity
+    - name: Machines
+      type: integer
+      jsonPath: .status.machines
+    schema: &schema
+      openAPIV3Schema:
+        type: object
+        description: A named accelerator shape Machines ask for with
+          spec.accelerators. kairon-controller copies it into the Machine's
+          spec.devices once, before scheduling. See
+          docs/guides/accelerator-profiles.md.
+        required:
+        - spec
+        properties:
+          spec:
+            type: object
+            x-kubernetes-validations:
+              - rule: "!has(self.memory) || !has(self.memory.minimumPerDevice) || !has(self.class) || self.class == 'gpu'"
+                message: memory.minimumPerDevice only applies to class gpu
+            properties:
+              class:
+                type: string
+                enum: [gpu, accelerator]
+                description: Default gpu.
+              vendor:
+                type: string
+                maxLength: 16
+                description: A PCI vendor ID (10de) or nvidia, amd, intel.
+              model:
+                type: string
+                pattern: '^[0-9a-f]{4}$'
+                maxLength: 4
+              profile:
+                type: string
+                description: vGPU (mediated device) instances of this type
+                  instead of whole devices - an mdev type ID or the vendor's
+                  profile name.
+                pattern: '^[A-Za-z0-9][A-Za-z0-9 ._:-]{0,63}$'
+                maxLength: 64
+              count:
+                type: integer
+                minimum: 1
+                maximum: 16
+              topology:
+                type: object
+                properties:
+                  p2pRequired:
+                    type: boolean
+                    description: Every device under one PCIe root (one
+                      parent for vGPU instances of a non-PCI parent).
+                  sameNuma:
+                    type: boolean
+              memory:
+                type: object
+                properties:
+                  minimumPerDevice:
+                    type: string
+                    maxLength: 16
+              nic:
+                type: object
+                description: NICs under the same PCIe root as the
+                  accelerators, for GPUDirect RDMA.
+                properties:
+                  vendor:
+                    type: string
+                    maxLength: 16
+                  model:
+                    type: string
+                    pattern: '^[0-9a-f]{4}$'
+                    maxLength: 4
+                  virtualFunction:
+                    type: boolean
+                  count:
+                    type: integer
+                    minimum: 1
+                    maximum: 16
+              migration:
+                type: object
+                properties:
+                  required:
+                    type: boolean
+                    description: Passthrough and vGPU devices cannot
+                      live-migrate yet; a profile with required true is
+                      not Ready.
+          status:
+            type: object
+            properties:
+              observedGeneration:
+                type: integer
+                format: int64
+              capacity:
+                type: integer
+              machines:
+                type: integer
+              nodes:
+                type: array
+                items:
+                  type: object
+                  required: [node, fits]
+                  properties:
+                    node:
+                      type: string
+                    fits:
+                      type: integer
+                    reason:
+                      type: string
+              conditions:
+                type: array
+                items:
+                  type: object
+                  required: [type, status]
+                  properties:
+                    type:
+                      type: string
+                    status:
+                      type: string
+                    reason:
+                      type: string
+                    message:
+                      type: string
+                    lastTransitionTime:
+                      type: string
+                      format: date-time
+  - name: v1beta1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1beta1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema
+  - name: v1alpha1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1alpha1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
   name: machinebackuppolicies.kairon.zyvor.dev
 spec:
   group: kairon.zyvor.dev
@@ -3574,6 +3748,25 @@ spec:
                       items:
                         type: string
                         enum: [sameNuma, samePcieRoot]
+              accelerators:
+                type: array
+                description: MachineAcceleratorProfiles to expand into
+                  spec.devices before scheduling. See
+                  docs/guides/accelerator-profiles.md.
+                maxItems: 4
+                x-kubernetes-list-type: map
+                x-kubernetes-list-map-keys: [name]
+                items:
+                  type: object
+                  required: [name, profile]
+                  properties:
+                    name:
+                      type: string
+                      pattern: '^[a-z0-9]([a-z0-9-]{0,26}[a-z0-9])?$'
+                      maxLength: 28
+                    profile:
+                      type: string
+                      maxLength: 63
               topologyAllocation:
                 type: object
                 description: Set by kairon-controller together with nodeName.

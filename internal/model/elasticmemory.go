@@ -21,7 +21,7 @@ func ValidateElasticMemory(s MachineSpec) error {
 	if s.Resources.Hugepages {
 		return fmt.Errorf("spec.resources.elasticMemory cannot be combined with hugepages: hugepage memory is pinned")
 	}
-	if len(s.Devices) > 0 || len(s.DeviceClaims) > 0 {
+	if len(s.Devices) > 0 || len(s.DeviceClaims) > 0 || len(s.Accelerators) > 0 {
 		return fmt.Errorf("spec.resources.elasticMemory cannot be combined with passthrough devices: VFIO pins guest memory")
 	}
 	minMiB, err := ParseMemoryMiB(e.Min)

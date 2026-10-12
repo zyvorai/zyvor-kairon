@@ -1,0 +1,46 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: Apache-2.0
+
+# Two NVIDIA GPUs with at least 40Gi each under one PCIe root on one NUMA
+# node, plus a Mellanox VF on the same root for GPUDirect RDMA. See
+# docs/guides/accelerator-profiles.md.
+apiVersion: kairon.zyvor.dev/v1
+kind: MachineAcceleratorProfile
+metadata:
+  name: a100-pair-rdma
+spec:
+  class: gpu
+  vendor: nvidia
+  count: 2
+  topology:
+    p2pRequired: true
+    sameNuma: true
+  memory:
+    minimumPerDevice: 40Gi
+  nic:
+    vendor: mellanox
+    virtualFunction: true
+---
+# Two vGPU instances of one profile on one GPU.
+apiVersion: kairon.zyvor.dev/v1
+kind: MachineAcceleratorProfile
+metadata:
+  name: a100-3g-pair
+spec:
+  profile: GRID A100-3-20C
+  count: 2
+  topology:
+    p2pRequired: true
+---
+apiVersion: kairon.zyvor.dev/v1
+kind: Machine
+metadata:
+  name: trainer
+spec:
+  image: {path: /var/lib/fluxvm/images/ubuntu-noble-base.img}
+  resources: {cpu: "16", memory: 64Gi, cpuPinning: true, hugepages: true}
+  topology: {policy: single-numa-node, hugepageSize: 1Gi}
+  runtime: {backend: qemu}
+  accelerators:
+    - name: train
+      profile: a100-pair-rdma

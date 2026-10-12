@@ -69,6 +69,16 @@ func (p MediatedParent) Free(t model.TopologyMediatedType, extraMiB int64, extra
 // PCI reports whether the parent is a PCI device (Parent is its BDF).
 func (p MediatedParent) PCI() bool { return p.Vendor != "" }
 
+// root is the parent's PCIe root for samePcieRoot. A parent with no PCIe
+// root (a virtual parent such as mbochs) is a root of its own, so its
+// instances can only share it with each other.
+func (p MediatedParent) root() string {
+	if p.PCIeRoot != "" {
+		return p.PCIeRoot
+	}
+	return "mdev:" + p.Parent
+}
+
 type Graph struct {
 	NUMANodes []NUMANode
 	Devices   []Device
@@ -648,9 +658,7 @@ func pickDevices(g Graph, reqs []model.MachineDevice, allowed map[int]bool) ([]m
 			roots[d.PCIeRoot] = true
 		}
 		for _, p := range g.Mediated {
-			if p.PCIeRoot != "" {
-				roots[p.PCIeRoot] = true
-			}
+			roots[p.root()] = true
 		}
 		names := make([]string, 0, len(roots))
 		for r := range roots {
@@ -789,7 +797,7 @@ func pickMediated(g Graph, req model.MachineDevice, allowed map[int]bool, root s
 		if req.Model != "" && !strings.EqualFold(p.Device, req.Model) {
 			continue
 		}
-		if root != "" && p.PCIeRoot != root {
+		if root != "" && p.root() != root {
 			continue
 		}
 		if allowed != nil && !allowed[p.NUMA] {
@@ -857,6 +865,49 @@ func pickMediated(g Graph, req model.MachineDevice, allowed map[int]bool, root s
 		}
 	}
 	return out, ""
+}
+
+// DeviceCapacity is how many times reqs fit on g's free devices, up to
+// limit, ignoring CPUs and memory. When fewer than limit fit, reason says
+// what the next one lacks.
+func DeviceCapacity(g Graph, reqs []model.MachineDevice, limit int) (int, string) {
+	devices := append([]Device(nil), g.Devices...)
+	mediated := make([]MediatedParent, len(g.Mediated))
+	for i, p := range g.Mediated {
+		p.Pending = map[string]int{}
+		for k, v := range g.Mediated[i].Pending {
+			p.Pending[k] = v
+		}
+		mediated[i] = p
+	}
+	g.Devices, g.Mediated = devices, mediated
+	for n := 0; n < limit; n++ {
+		picked, reason := pickDevices(g, reqs, nil)
+		if reason != "" {
+			return n, reason
+		}
+		taken := map[string]bool{}
+		for _, d := range picked {
+			if d.Profile == "" {
+				taken[d.BDF] = true
+				continue
+			}
+			for i := range g.Mediated {
+				if g.Mediated[i].Parent == d.Parent {
+					g.Mediated[i].PendingMiB += d.FramebufferMiB
+					g.Mediated[i].Pending[d.Profile]++
+				}
+			}
+		}
+		kept := g.Devices[:0:0]
+		for _, d := range g.Devices {
+			if !taken[d.BDF] {
+				kept = append(kept, d)
+			}
+		}
+		g.Devices = kept
+	}
+	return limit, ""
 }
 
 // VRAM is a node's GPU memory and the part Machines are allocated.

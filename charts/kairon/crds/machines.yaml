@@ -760,6 +760,25 @@ spec:
                       items:
                         type: string
                         enum: [sameNuma, samePcieRoot]
+              accelerators:
+                type: array
+                description: MachineAcceleratorProfiles to expand into
+                  spec.devices before scheduling. See
+                  docs/guides/accelerator-profiles.md.
+                maxItems: 4
+                x-kubernetes-list-type: map
+                x-kubernetes-list-map-keys: [name]
+                items:
+                  type: object
+                  required: [name, profile]
+                  properties:
+                    name:
+                      type: string
+                      pattern: '^[a-z0-9]([a-z0-9-]{0,26}[a-z0-9])?$'
+                      maxLength: 28
+                    profile:
+                      type: string
+                      maxLength: 63
               topologyAllocation:
                 type: object
                 description: Set by kairon-controller together with nodeName.

@@ -314,6 +314,33 @@ virt-handler removed instances it had not created, so the run had its
 | vGPU: MIG-backed profiles, nvidia-smi health and VRAM | not run | 2026-10-12 | Needs an NVIDIA MIG-capable GPU |
 | GPU health: Unhealthy GPU skipped by the scheduler | not run | 2026-10-12 | Needs a GPU with AER or ECC errors; unit-tested |
 
+## Accelerator profiles
+
+Driven by [`scripts/lab-accel.sh`](../scripts/lab-accel.sh) on the same
+node and `mbochs` driver as the GPU and vGPU rows: four 64 MiB
+`mbochs-large` instances fit in its 256 MiB pool. Host-installed
+kairon-controller from this change, kairon-node and FluxVM. KubeVirt's
+`DisableMDEVConfiguration` feature gate was on for the run and reverted
+afterwards. An earlier run without it failed: virt-handler removed one of a
+running Machine's two instances from sysfs. The guest probe then never
+printed, and a later run counted the missing instance as still pending, so
+the profile reported capacity 0 instead of 1.
+
+| Case | Last result | Date | Notes |
+|---|---|---|---|
+| Accelerator profile: profile-status | pass | 2026-10-12 | Single node (kernel 7.0.0-34, QEMU 10.2.1, k3s 1.35): pair profile (2 `mbochs-large`, `p2pRequired`, `sameNuma`) `Ready=True`, `Available=True`, capacity 2 on the node; `migration.required` profile `Ready=False/LiveMigrationUnsupported`; 1Gi-per-device profile `Available=False/NoCapacity`: `needs 1 gpu profile mbochs-large with 1Gi, 0 free` |
+| Accelerator profile: crd-validation | pass | 2026-10-12 | Same node: class `accelerator` with `memory.minimumPerDevice` refused with 422 |
+| Accelerator profile: expand-boot | pass | 2026-10-12 | Same node: a Machine with `accelerators: [{name: vga, profile: <pair>}]` got annotation `vga=<pair>@1` and one `spec.devices` entry (2 `mbochs-large`, `sameNuma` + `samePcieRoot`), two instances on `mbochs`, Running in 78s; the guest saw 2 display functions with a 64 MiB BAR0 |
+| Accelerator profile: capacity | pass | 2026-10-12 | Same node: the pair profile then had capacity 1 and 1 Machine, in status and in `kairon_accelerator_profile_capacity` / `_machines` |
+| Accelerator profile: unavailable | pass | 2026-10-12 | Same node: Machines naming a missing profile and the live-migration profile stayed Pending with `AcceleratorProfileUnavailable` and no node |
+| Accelerator profile: unsatisfiable | pass | 2026-10-12 | Same node: a Machine with the 1Gi profile was expanded and stayed Pending with `TopologyUnsatisfiable: ... needs 1 gpu profile mbochs-large with 1Gi, 0 free` |
+| Accelerator profile: snapshot | pass | 2026-10-12 | Same node: changing the pair profile's count from 2 to 1 (generation 2) left the running Machine's `spec.devices`, annotation and both instances as they were |
+| Accelerator profile: delete | pass | 2026-10-12 | Same node: deleting the Machine removed both instances; the profile (now count 1) reported capacity 4 and 0 Machines |
+| Accelerator profile: whole GPUs with `p2pRequired` under one PCIe root | not run | 2026-10-12 | Needs two allowlisted GPUs; unit-tested |
+| Accelerator profile: RDMA NIC next to the GPUs | not run | 2026-10-12 | Needs a GPU and a NIC under one PCIe root; unit-tested |
+| Accelerator profile: `sameNuma` on a multi-NUMA host | not run | 2026-10-12 | Lab host has one NUMA node |
+| Accelerator profile: NVIDIA vGPU or MIG profile | not run | 2026-10-12 | Needs an NVIDIA GPU |
+
 ## Cross-cluster DR
 
 Driven by [`scripts/lab-dr.sh`](../scripts/lab-dr.sh) on one node against a

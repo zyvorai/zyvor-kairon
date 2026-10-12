@@ -115,6 +115,8 @@ func cmdDescribe(ctx context.Context, kc *kube.Client, args []string) {
 		out, err = kc.GetNode(ctx, name)
 	case "nodetopology", "nodetopologies", "knt":
 		out, err = kc.GetNodeTopology(ctx, name)
+	case "acceleratorprofile", "acceleratorprofiles", "machineacceleratorprofile", "machineacceleratorprofiles", "kmap":
+		out, err = kc.GetMachineAcceleratorProfile(ctx, name)
 	default:
 		fatal(fmt.Errorf("unknown resource %q", kind))
 		return
