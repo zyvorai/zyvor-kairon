@@ -127,13 +127,14 @@ func TestResolveCSIVolumeThirdPartyBlockModePublishesDevice(t *testing.T) {
 	}
 }
 
-func TestResolveCSIVolumeOwnDriverRejectsBlockMode(t *testing.T) {
+func TestResolveCSIVolumeOwnDriverAcceptsBlockMode(t *testing.T) {
 	a := &Agent{CSIStagingDir: t.TempDir(), CSIPublishDir: t.TempDir()}
 	m := model.Machine{Metadata: model.ObjectMeta{Name: "db", Namespace: "prod"}}
 	pv := testThirdPartyCSIPV("pv-1", csinode.DriverName, "iqn")
 	pv.Spec.VolumeMode = "Block"
-	if _, _, err := a.resolveCSIVolume(context.Background(), m, pv); err == nil || !strings.Contains(err.Error(), "Block-mode") {
-		t.Fatalf("expected a Block-mode error, got %v", err)
+	// Block mode gets as far as the node plugin, which this agent lacks.
+	if _, _, err := a.resolveCSIVolume(context.Background(), m, pv); err == nil || strings.Contains(err.Error(), "Block-mode") || !strings.Contains(err.Error(), "no CSI socket") {
+		t.Fatalf("expected only the missing-socket error, got %v", err)
 	}
 }
 

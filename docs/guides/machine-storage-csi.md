@@ -2,7 +2,8 @@
 
 `csiNode.enabled` (Helm chart, off by default) deploys Kairon's own
 first-cut CSI node plugin, so a Machine's `spec.volumes[0]` can boot from
-a real network-block volume (iSCSI, in this first cut) instead of only a
+a real network-block volume (iSCSI, or NVMe-oF as described in
+[machine-storage-nvmeof.md](machine-storage-nvmeof.md)) instead of only a
 `hostPath`/`local` `PersistentVolume` that already names an attach-ready
 directory -- see [`docs/guides/machine-storage.md`](machine-storage.md)
 for the rest of the PVC-backed-boot-disk feature this extends.
@@ -38,12 +39,14 @@ PVC instead -- see "Setup" below for the static path and
 The two are independent: `csiNode` alone (the original, still fully
 supported path) never requires `csiController` at all.
 
-**One backend: iSCSI**, via `open-iscsi`'s `iscsiadm` CLI -- the most
-broadly available network-block protocol with a stable, scriptable Linux
-initiator, not a Ceph/EBS-specific choice that would need its own client
-library and its own real cluster to test against. Ceph RBD, EBS, or
-anything else would need its own separate backend implementation; nothing
-here is a generic multi-backend framework.
+**Two protocols: iSCSI and NVMe-oF.** iSCSI goes through `open-iscsi`'s
+`iscsiadm` CLI, the most widely available network-block protocol with a
+stable, scriptable Linux initiator. NVMe-oF (`nvme-tcp`, `nvme-rdma`)
+uses the kernel target and initiator directly, with no CLI; see
+[machine-storage-nvmeof.md](machine-storage-nvmeof.md). A StorageClass
+picks one with its `transport` parameter. Both export sparse files from
+one storage node. Ceph RBD, EBS or any other backend would need its own
+separate implementation; nothing here is a generic multi-backend framework.
 
 **Kairon's own Machine boot-disk path never goes through kubelet's Pod
 volume machinery.** A `Machine` is a CRD object, not a Pod -- there's no
@@ -169,7 +172,8 @@ parameters (the default) preserves demo mode exactly as before.
 
 ## Real limits today (first cut)
 
-- **iSCSI only.** No Ceph RBD, EBS, or any other network-block backend.
+- **iSCSI and NVMe-oF only.** No Ceph RBD, EBS, or any other network-block
+  backend.
 - **Dynamic provisioning (`csiController.enabled`) is single-storage-node
   only.** One Controller replica, pinned via `nodeSelector` to whichever
   node is this cluster's storage node -- no topology-aware placement
@@ -182,8 +186,12 @@ parameters (the default) preserves demo mode exactly as before.
   racing the same LIO target -- not real HA/failover on its own, since
   this Controller's `hostPath`/`hostNetwork`/LIO configfs are still tied
   to one physical storage node regardless of replica count.
-- **No raw block mode.** Only `Filesystem`-mode, mount-type volumes --
-  matches every other Kairon boot-disk source.
+- **Raw block mode** works on both protocols. A `volumeMode: Block`
+  volume is published as its device node. A Machine boots from that
+  device in place (`storage: shared` in FluxVM), with the image written
+  onto it on first boot, or attaches it as a data disk. Raw block for
+  iSCSI is unit-tested only; the NVMe-oF path ran in the lab
+  (see [machine-storage-nvmeof.md](machine-storage-nvmeof.md)).
 - **Volume expansion is supported for dynamically provisioned volumes**
   (`csiController.enabled`, `StorageClass.allowVolumeExpansion: true`):
   growing a PVC's `spec.resources.requests.storage` grows the LIO
@@ -206,6 +214,8 @@ parameters (the default) preserves demo mode exactly as before.
   comment). Fails closed rather than fabricating a number: a
   `volume_path` that isn't currently a mount point returns `NotFound`, and
   a real `statfs(2)` error returns `Internal` -- never a guessed value.
+  For NVMe-oF volumes, kairon-node reports path health itself, as the
+  Machine's `StoragePaths` condition.
   `NodeGetVolumeHealth` remains unimplemented (the CSI spec's own
   `Unimplemented` response) -- it's a newer, far-less-adopted alpha RPC
   with no comparable orchestrator-side consumer to justify it yet.

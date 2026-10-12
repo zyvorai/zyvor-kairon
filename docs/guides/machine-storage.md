@@ -52,8 +52,12 @@ spec:
 
 Seeding only happens when `disk.img` is missing or empty: an existing disk
 is never overwritten, so republishing the image or restarting the Machine
-can't clobber it. Filesystem-mode volumes only; a Block-mode volume fails
-with a clear error (write the image to the device yourself).
+can't clobber it. A Block-mode volume of Kairon's own CSI driver gets the
+image written onto the device instead, only while its first MiB is still
+zero, and boots from the device in place. A qcow2 image needs `qemu-img`
+on kairon-node's `PATH` for this, so the kairon-node container image
+takes raw images only
+(see [machine-storage-nvmeof.md](machine-storage-nvmeof.md)).
 
 ## Real limits today
 

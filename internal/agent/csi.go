@@ -28,6 +28,9 @@ type csiVolumeStatus struct {
 	// MachineStatus.VolumeDriver's own doc comment -- or a third-party
 	// driver name (see resolveThirdPartyCSIVolume).
 	Driver string
+	// Block is a Block-mode volume of Kairon's own driver: the boot path is
+	// its /dev node, which FluxVM boots in place (storage shared).
+	Block bool
 }
 
 // csiNodeClient lazily dials CSISocketPath and caches the connection on
@@ -73,17 +76,25 @@ func (a *Agent) resolveCSIVolume(ctx context.Context, m model.Machine, pv model.
 		}
 		return "", csiVolumeStatus{}, fmt.Errorf("PersistentVolume %s names CSI driver %q -- only Kairon's own driver (%q) or a driver listed in this node's third-party allowlist can be used as a Machine boot disk", pv.Metadata.Name, src.Driver, csinode.DriverName)
 	}
-	if pv.Spec.VolumeMode == "Block" {
-		return "", csiVolumeStatus{}, fmt.Errorf("PersistentVolume %s is Block-mode, which Kairon's own CSI driver does not serve; use a Filesystem-mode volume or a third-party driver", pv.Metadata.Name)
-	}
+	block := pv.Spec.VolumeMode == "Block"
 	if a.CSIStagingDir == "" || a.CSIPublishDir == "" {
 		return "", csiVolumeStatus{}, fmt.Errorf("this node has no CSI staging/publish directory configured -- see docs/guides/machine-storage-csi.md")
 	}
 
+	bootPath := func(publish string) (string, error) {
+		if block {
+			return realBlockDevice(publish)
+		}
+		return filepath.Join(publish, bootDiskFileName), nil
+	}
 	status := m.Status
 	if status.VolumeStagingPath != "" && status.VolumePublishPath != "" && status.VolumeHandle == src.VolumeHandle {
-		return filepath.Join(status.VolumePublishPath, bootDiskFileName), csiVolumeStatus{
-			StagingPath: status.VolumeStagingPath, PublishPath: status.VolumePublishPath, VolumeID: status.VolumeHandle,
+		path, err := bootPath(status.VolumePublishPath)
+		if err != nil {
+			return "", csiVolumeStatus{}, err
+		}
+		return path, csiVolumeStatus{
+			StagingPath: status.VolumeStagingPath, PublishPath: status.VolumePublishPath, VolumeID: status.VolumeHandle, Block: block,
 		}, nil
 	}
 
@@ -97,6 +108,9 @@ func (a *Agent) resolveCSIVolume(ctx context.Context, m model.Machine, pv model.
 	volumeCapability := &csi.VolumeCapability{
 		AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{FsType: src.FSType}},
 		AccessMode: &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER},
+	}
+	if block {
+		volumeCapability.AccessType = &csi.VolumeCapability_Block{Block: &csi.VolumeCapability_BlockVolume{}}
 	}
 
 	chapSecrets, err := a.resolveCSIChapSecrets(ctx, src)
@@ -123,7 +137,11 @@ func (a *Agent) resolveCSIVolume(ctx context.Context, m model.Machine, pv model.
 		return "", csiVolumeStatus{}, fmt.Errorf("NodePublishVolume for PersistentVolume %s: %w", pv.Metadata.Name, err)
 	}
 
-	return filepath.Join(publish, bootDiskFileName), csiVolumeStatus{StagingPath: staging, PublishPath: publish, VolumeID: src.VolumeHandle}, nil
+	path, err := bootPath(publish)
+	if err != nil {
+		return "", csiVolumeStatus{}, err
+	}
+	return path, csiVolumeStatus{StagingPath: staging, PublishPath: publish, VolumeID: src.VolumeHandle, Block: block}, nil
 }
 
 // teardownCSIVolume unpublishes and unstages a Machine's CSI-backed

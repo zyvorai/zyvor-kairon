@@ -68,7 +68,7 @@ func (a *Agent) reconcileDisks(ctx context.Context, m model.Machine, rec *fluxvm
 			volumes[d.Name] = *vol
 		}
 		if err == nil {
-			err = a.Flux.AttachDisk(ctx, rec.ID(), d.Name, path)
+			err = a.Flux.AttachDisk(ctx, rec.ID(), d.Name, path, d.IO)
 		}
 		if err != nil {
 			errs = append(errs, fmt.Errorf("attach disk %q: %w", d.Name, err))
@@ -140,7 +140,8 @@ func (a *Agent) resolveDiskPath(ctx context.Context, m model.Machine, d model.Ma
 	}
 	if src := pv.Spec.CSI; src != nil {
 		if known.VolumeHandle == src.VolumeHandle && known.Driver == src.Driver {
-			return diskVolumePath(known), &known, nil
+			path, err := diskVolumePath(known)
+			return path, &known, err
 		}
 		if known.VolumeHandle != "" {
 			return "", nil, fmt.Errorf("disk %q already has CSI volume %s published; remove the disk from spec.disks before pointing it at another claim", d.Name, known.VolumeHandle)
@@ -149,7 +150,8 @@ func (a *Agent) resolveDiskPath(ctx context.Context, m model.Machine, d model.Ma
 		if err != nil {
 			return "", nil, err
 		}
-		return diskVolumePath(v), &v, nil
+		path, err := diskVolumePath(v)
+		return path, &v, err
 	}
 	dir, err := hostDirForPV(pv)
 	if err != nil {

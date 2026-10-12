@@ -240,6 +240,34 @@ until the cross-host, floating-IP and BGP rows run on real nodes.
 | Virtual network: floating-ip | not run | — | Needs a public address routed to the node; covered only by FluxVM `vnet_netns` |
 | Virtual network: bgp | not run | — | Needs a BGP router; the speaker is unit-tested against a fake peer |
 
+## NVMe-oF storage
+
+Driven by [`scripts/lab-nvmeof.sh`](../scripts/lab-nvmeof.sh) on one node,
+which is both the storage node and the Machine host. A dummy interface
+carries two tcp portals, and soft-RoCE (`rdma_rxe`) on the same interface
+carries an rdma portal. The first four cases drive the CSI Controller and
+Node servers in-process against the real kernel target and initiator. The
+rest go through `kairon-csi-node`, a host-installed `kairon-node` and
+FluxVM. The Machine downloads its qcow2 image from a loopback HTTP server
+(`spec.image.source`), and kairon-node writes it onto the empty Block
+volume with `qemu-img`. The guest prints a tick counter, its root device
+and its disk sizes to the serial console, so the image needs no guest
+agent.
+
+| Case | Last result | Date | Notes |
+|---|---|---|---|
+| NVMe-oF: tcp | pass | 2026-10-12 | Single node (kernel 7.0.0-34, `nvme_core.multipath=Y`): Filesystem volume over 2 tcp portals, ext4, online expand to 463 MiB; 2 of 2 paths live, ANA optimized |
+| NVMe-oF: ana | pass | 2026-10-12 | Same node: one portal's ANA group set inaccessible showed 1 of 2 paths usable; a 1 MiB write+fsync went through |
+| NVMe-oF: failover | pass | 2026-10-12 | Same node: volume unexported from one portal; a 1 MiB write+fsync took 2 ms over the other path; the path reconnected on re-export |
+| NVMe-oF: rdma | pass | 2026-10-12 | Same node: raw Block volume over nvme-rdma (soft-RoCE); a 4 KiB pattern at 64 MiB written through the published device read back with O_DIRECT |
+| NVMe-oF: block-boot | pass | 2026-10-12 | Same node (QEMU 10.2.1, k3s 1.35, Ubuntu 24.04 guest): 4 GiB nvme-tcp Block PV seeded from a qcow2 image; QEMU root on `/dev/nvme0n1` (FluxVM `storage: shared`), guest root `/dev/vda1` |
+| NVMe-oF: io | pass | 2026-10-12 | Same node: over QMP, the virtio-blk data disk has an iothread, `num-queues=2` and `cache.direct` (cache none), and FluxVM records `aio: io_uring` (QMP does not report aio). The vhost-user-blk disk has `num-queues=2` on one `qemu-storage-daemon`. The guest sees both 1 GiB disks |
+| NVMe-oF: paths | pass | 2026-10-12 | Same node: `StoragePaths` True, then `PathsDegraded` with one portal unexported, then True after re-export; the guest kept ticking |
+| NVMe-oF: raw image onto a Block volume | not run | 2026-10-12 | The containerized kairon-node's path (no `qemu-img`); unit-tested only. The lab host's disk was too full for a 3.5 GiB raw copy |
+| NVMe-oF: rdma on a real RDMA NIC | not run | 2026-10-12 | soft-RoCE only in this lab |
+| NVMe-oF: in-cluster DaemonSets | not run | 2026-10-12 | The lab ran host-installed binaries; the chart is rendered and linted only |
+| NVMe-oF: two nodes | not run | 2026-10-12 | Storage node and Machine host were the same machine |
+
 ## Component versions (fill per run)
 
 | Piece | Version |

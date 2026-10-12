@@ -49,7 +49,9 @@ const snapshotSubdir = ".snapshots"
 var volumeNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
 // ControllerServer implements the CSI Controller service for Kairon's
-// iSCSI backend -- dynamic provisioning, first cut. Served by the
+// iSCSI and NVMe-oF backends -- dynamic provisioning, first cut. NVMe-oF
+// volumes (StorageClass transport nvme-tcp or nvme-rdma) are served by
+// the kernel NVMe target instead of LIO; see createNVMeVolume. Served by the
 // separate kairon-csi-controller binary/Deployment (internal/csinode's
 // package doc comment explains why it shares this package with
 // NodeServer rather than living apart). CreateVolume/DeleteVolume drive a
@@ -84,6 +86,25 @@ type ControllerServer struct {
 	// created under -- must exist and be writable, no default (an
 	// operator-chosen path, not something this driver invents).
 	VolumeDir string
+
+	// NVMePortals are the addresses NVMe-oF volumes (StorageClass
+	// parameter transport: nvme-tcp or nvme-rdma) are exported on; every
+	// portal of the volume's transport is one path to it. Empty disables
+	// NVMe-oF.
+	NVMePortals []NVMePortal
+
+	nvmet *nvmetClient
+}
+
+// EnableNVMe turns on NVMe-oF provisioning through the kernel target's
+// configfs at root (normally /sys/kernel/config/nvmet).
+func (s *ControllerServer) EnableNVMe(portals []NVMePortal, root string) error {
+	if len(portals) == 0 {
+		return fmt.Errorf("at least one NVMe-oF portal is required")
+	}
+	s.NVMePortals = portals
+	s.nvmet = &nvmetClient{Root: root}
+	return nil
 }
 
 // NewControllerServer builds a ControllerServer against the real
@@ -146,7 +167,8 @@ func chapCredentialsFromSecrets(secrets map[string]string) (chapCredentials, err
 	return c, nil
 }
 
-// CreateVolume provisions a new iSCSI target/LUN backed by a fresh
+// CreateVolume provisions a new iSCSI target/LUN (or, for an NVMe-oF
+// transport parameter, an nvmet subsystem) backed by a fresh
 // sparse file (or, when VolumeContentSource names a snapshot this
 // Controller's own CreateSnapshot produced, a copy of that snapshot's
 // content instead), and returns the volume_id/volume_context NodeServer's
@@ -166,9 +188,17 @@ func (s *ControllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		return nil, status.Error(codes.InvalidArgument, "volume_capabilities is required")
 	}
 	for _, cap := range req.GetVolumeCapabilities() {
-		if cap.GetMount() == nil {
-			return nil, status.Error(codes.InvalidArgument, "only mount-type volumes are supported (no raw block mode) in this first cut")
+		if cap.GetMount() == nil && cap.GetBlock() == nil {
+			return nil, status.Error(codes.InvalidArgument, "volume capability needs a mount or block access type")
 		}
+	}
+	transport := req.GetParameters()[volumeAttrTransport]
+	if transport != "" && transport != transportISCSI {
+		t, err := parseNVMeTransport(transport)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		return s.createNVMeVolume(ctx, req, name, t)
 	}
 
 	sizeBytes := req.GetCapacityRange().GetRequiredBytes()
@@ -263,6 +293,9 @@ func (s *ControllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolu
 	if req.GetVolumeId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "volume_id is required")
 	}
+	if ref, err := decodeAnyVolumeID(req.GetVolumeId()); err == nil && ref.nvme != nil {
+		return s.deleteNVMeVolume(*ref.nvme)
+	}
 	cfg, err := decodeVolumeID(req.GetVolumeId())
 	if err != nil {
 		return &csi.DeleteVolumeResponse{}, nil
@@ -301,6 +334,9 @@ func (s *ControllerServer) ControllerExpandVolume(ctx context.Context, req *csi.
 	sizeBytes := req.GetCapacityRange().GetRequiredBytes()
 	if sizeBytes <= 0 {
 		return nil, status.Error(codes.InvalidArgument, "capacity_range.required_bytes must be set")
+	}
+	if ref, err := decodeAnyVolumeID(req.GetVolumeId()); err == nil && ref.nvme != nil {
+		return s.expandNVMeVolume(*ref.nvme, sizeBytes)
 	}
 	cfg, err := decodeVolumeID(req.GetVolumeId())
 	if err != nil {
@@ -364,11 +400,10 @@ func (s *ControllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 			SizeBytes: info.Size(), CreationTime: timestamppb.New(info.ModTime()), ReadyToUse: true,
 		}}, nil
 	}
-	cfg, err := decodeVolumeID(req.GetSourceVolumeId())
+	volName, ok, err := volumeNameFromID(req.GetSourceVolumeId())
 	if err != nil {
 		return nil, status.Errorf(codes.NotFound, "source volume %q: %v", req.GetSourceVolumeId(), err)
 	}
-	volName, ok := nameFromIQN(cfg.IQN)
 	if !ok {
 		return nil, status.Errorf(codes.NotFound, "source volume %q was not dynamically provisioned by this Controller", req.GetSourceVolumeId())
 	}
@@ -423,4 +458,153 @@ func splitPortal(portal string) (host, port string, err error) {
 		return "", "", fmt.Errorf("portal %q must be host:port: %w", portal, err)
 	}
 	return host, port, nil
+}
+
+// volumeNameFromID is the CreateVolume name behind a volume_id of either
+// backend; ok is false for a statically provisioned volume.
+func volumeNameFromID(id string) (name string, ok bool, err error) {
+	ref, err := decodeAnyVolumeID(id)
+	if err != nil {
+		return "", false, err
+	}
+	if ref.nvme != nil {
+		name, ok = nameFromNQN(ref.nvme.NQN)
+		return name, ok, nil
+	}
+	name, ok = nameFromIQN(ref.iscsi.IQN)
+	return name, ok, nil
+}
+
+// prepareBackingFile creates name's backing file at sizeBytes, from the
+// snapshot req names when it names one. Returns the final size.
+func (s *ControllerServer) prepareBackingFile(ctx context.Context, req *csi.CreateVolumeRequest, name string, sizeBytes int64) (int64, error) {
+	backingPath := s.backingFilePath(name)
+	if src := req.GetVolumeContentSource().GetSnapshot(); src != nil {
+		snapshotID := src.GetSnapshotId()
+		if !volumeNamePattern.MatchString(snapshotID) {
+			return 0, status.Errorf(codes.NotFound, "snapshot %q not found", snapshotID)
+		}
+		info, err := os.Stat(s.snapshotFilePath(snapshotID))
+		if err != nil {
+			return 0, status.Errorf(codes.NotFound, "snapshot %q: %v", snapshotID, err)
+		}
+		if sizeBytes < info.Size() {
+			sizeBytes = info.Size()
+		}
+		if _, err := os.Stat(backingPath); os.IsNotExist(err) {
+			if err := s.lio.copyFile(ctx, s.snapshotFilePath(snapshotID), backingPath); err != nil {
+				return 0, status.Error(codes.Internal, err.Error())
+			}
+		}
+	}
+	f, err := os.OpenFile(backingPath, os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return 0, status.Errorf(codes.Internal, "create backing file for %s: %v", name, err)
+	}
+	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
+	if err != nil {
+		return 0, status.Error(codes.Internal, err.Error())
+	}
+	if info.Size() < sizeBytes {
+		if err := f.Truncate(sizeBytes); err != nil {
+			return 0, status.Errorf(codes.Internal, "size backing file for %s: %v", name, err)
+		}
+	} else {
+		sizeBytes = info.Size()
+	}
+	return sizeBytes, nil
+}
+
+// createNVMeVolume serves a sparse backing file as namespace 1 of a new
+// nvmet subsystem, exported on every configured portal of transport t.
+func (s *ControllerServer) createNVMeVolume(ctx context.Context, req *csi.CreateVolumeRequest, name string, t nvmeTransport) (*csi.CreateVolumeResponse, error) {
+	if s.nvmet == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "transport %s: this controller has no NVMe-oF portals (-nvme-portals)", t)
+	}
+	// A portal's nvmet port id is its position in NVMePortals, so it stays
+	// the same for every volume.
+	var portals []string
+	ports := map[int]NVMePortal{}
+	for i, p := range s.NVMePortals {
+		if p.Transport == t {
+			portals = append(portals, p.addr())
+			ports[nvmetPortIDBase+i] = p
+		}
+	}
+	if len(portals) == 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "transport %s: no %s portal is configured (-nvme-portals)", t, t.kernel())
+	}
+	if req.GetSecrets()[secretKeyUsername] != "" {
+		return nil, status.Error(codes.InvalidArgument, "NVMe-oF volumes do not support CHAP secrets (no DH-CHAP yet)")
+	}
+	sizeBytes := req.GetCapacityRange().GetRequiredBytes()
+	if sizeBytes <= 0 {
+		sizeBytes = defaultVolumeSizeBytes
+	}
+	sizeBytes, err := s.prepareBackingFile(ctx, req, name, sizeBytes)
+	if err != nil {
+		return nil, err
+	}
+	nqn := nqnPrefix + name
+	if err := s.nvmet.ensureSubsystem(nqn, s.backingFilePath(name)); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	for id, p := range ports {
+		if err := s.nvmet.ensurePort(id, p); err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		if err := s.nvmet.linkPort(id, nqn); err != nil {
+			return nil, status.Errorf(codes.Internal, "portal %s: %v", p.addr(), err)
+		}
+	}
+	cfg := nvmeConfig{Transport: t, NQN: nqn, Portals: portals}
+	return &csi.CreateVolumeResponse{Volume: &csi.Volume{
+		VolumeId:      encodeNVMeVolumeID(cfg),
+		CapacityBytes: sizeBytes,
+		ContentSource: req.GetVolumeContentSource(),
+		VolumeContext: map[string]string{
+			volumeAttrTransport: string(t),
+			volumeAttrNQN:       nqn,
+			volumeAttrPortals:   strings.Join(portals, ","),
+		},
+	}}, nil
+}
+
+func (s *ControllerServer) deleteNVMeVolume(cfg nvmeConfig) (*csi.DeleteVolumeResponse, error) {
+	name, ok := nameFromNQN(cfg.NQN)
+	if !ok || s.nvmet == nil {
+		return &csi.DeleteVolumeResponse{}, nil
+	}
+	if err := s.nvmet.deleteSubsystem(cfg.NQN); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if err := os.Remove(s.backingFilePath(name)); err != nil && !os.IsNotExist(err) {
+		return nil, status.Errorf(codes.Internal, "remove backing file for %s: %v", name, err)
+	}
+	return &csi.DeleteVolumeResponse{}, nil
+}
+
+// expandNVMeVolume grows the backing file and has nvmet re-read its size;
+// connected hosts get a namespace-changed notice.
+func (s *ControllerServer) expandNVMeVolume(cfg nvmeConfig, sizeBytes int64) (*csi.ControllerExpandVolumeResponse, error) {
+	name, ok := nameFromNQN(cfg.NQN)
+	if !ok || s.nvmet == nil {
+		return nil, status.Errorf(codes.NotFound, "volume %s was not dynamically provisioned by this Controller", cfg.NQN)
+	}
+	path := s.backingFilePath(name)
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, status.Errorf(codes.NotFound, "backing file for %s: %v", name, err)
+	}
+	if info.Size() >= sizeBytes {
+		return &csi.ControllerExpandVolumeResponse{CapacityBytes: info.Size(), NodeExpansionRequired: true}, nil
+	}
+	if err := os.Truncate(path, sizeBytes); err != nil {
+		return nil, status.Errorf(codes.Internal, "grow backing file for %s: %v", name, err)
+	}
+	if err := s.nvmet.revalidateSize(cfg.NQN); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &csi.ControllerExpandVolumeResponse{CapacityBytes: sizeBytes, NodeExpansionRequired: true}, nil
 }

@@ -350,6 +350,11 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 		} else if bootDisk, vs, err = a.resolveBootDiskPath(ctx, m); err != nil {
 			return err
 		}
+		if vs.Block && vs.Driver == "" {
+			// A Block volume of Kairon's own driver is the disk itself;
+			// a local qcow2 overlay would keep the writes on this node.
+			m.Spec.Image.Storage = fluxvm.StorageShared
+		}
 		if bootDisk == "" {
 			return fmt.Errorf("spec.image.path or spec.volumes[0] is required")
 		}
@@ -551,6 +556,9 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 	attachedDisks, diskVolumes, attachedIfaces, devErr := a.reconcileDevices(ctx, m, rec)
 	status.AttachedDisks = attachedDisks
 	status.DiskVolumes = diskVolumes
+	if cond, ok := a.storagePathsCondition(status); ok {
+		status.Conditions = model.SetCondition(status.Conditions, cond)
+	}
 	status.AttachedInterfaces = attachedIfaces
 	if devErr != nil {
 		a.Log.Error("device hotplug reconcile failed", "namespace", m.Namespace(), "machine", m.Metadata.Name, "error", devErr)

@@ -132,6 +132,22 @@ spec:
                     minLength: 1
                     description: Grow the root disk to this size (e.g. 60Gi)
                       at creation. Required with blank.
+                  io:
+                    type: object
+                    description: QEMU I/O options for the root disk (always virtio-blk). See docs/guides/machine-storage-nvmeof.md.
+                    properties:
+                      aio:
+                        type: string
+                        enum: [io_uring, native, threads]
+                      cache:
+                        type: string
+                        enum: [none, writeback, writethrough, directsync, unsafe]
+                      iothread:
+                        type: boolean
+                      queues:
+                        type: integer
+                        minimum: 1
+                        maximum: 64
               resources:
                 type: object
                 properties:
@@ -608,7 +624,7 @@ spec:
                           type: boolean
               disks:
                 type: array
-                description: PVC-backed block disks hot-attached to the running guest as SCSI disks (serial = name) and detached when removed. hostPath/local PVs only; Block mode attaches the device, Filesystem mode the disk.img inside it. See docs/guides/machine-hotplug.md.
+                description: PVC-backed block disks hot-attached to the running guest (SCSI by default, serial = name; io.bus picks virtio-blk or vhost-user-blk) and detached when removed. Block mode attaches the device, Filesystem mode the disk.img inside it. See docs/guides/machine-hotplug.md.
                 maxItems: 16
                 x-kubernetes-list-type: map
                 x-kubernetes-list-map-keys: [name]
@@ -625,6 +641,28 @@ spec:
                     claimName:
                       type: string
                       minLength: 1
+                    io:
+                      type: object
+                      description: QEMU disk I/O options. See docs/guides/machine-storage-nvmeof.md.
+                      properties:
+                        bus:
+                          type: string
+                          enum: [scsi, virtio-blk, vhost-user-blk]
+                        aio:
+                          type: string
+                          enum: [io_uring, native, threads]
+                        cache:
+                          type: string
+                          enum: [none, writeback, writethrough, directsync, unsafe]
+                        iothread:
+                          type: boolean
+                        queues:
+                          type: integer
+                          minimum: 1
+                          maximum: 64
+                      x-kubernetes-validations:
+                      - rule: "!has(self.aio) || self.aio != 'native' || (has(self.cache) && (self.cache == 'none' || self.cache == 'directsync'))"
+                        message: "aio native needs cache none or directsync"
               deviceClaims:
                 type: array
                 items:

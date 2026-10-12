@@ -5,6 +5,8 @@ package csinode
 
 import (
 	"context"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -26,12 +28,23 @@ const DriverName = "csi.kairon.zyvor.dev"
 // group it runs as to read a Machine's raw disk image directory.
 const stagingDirPerm = 0o750
 
-// NodeServer implements the CSI Node service for Kairon's first-cut,
-// iSCSI-only network-block driver -- see docs/guides/machine-storage-csi.md
-// for the full design, including why this breaks Go-stdlib-only (a real
-// iSCSI initiator and filesystem tooling aren't hand-rolled) and its
-// current, real limits (iSCSI only, mount-type volumes only -- no raw
-// block mode, no volume health reporting).
+// stagedDeviceLink is the symlink a Block volume's staging directory holds,
+// pointing at the real /dev node. Publish bind-mounts that device, and
+// kairon-node reads the link to hand FluxVM a /dev path.
+const stagedDeviceLink = "device"
+
+// StagedDevicePath is where a Block volume staged at stagingPath records
+// its device.
+func StagedDevicePath(stagingPath string) string {
+	return filepath.Join(stagingPath, stagedDeviceLink)
+}
+
+// NodeServer implements the CSI Node service for Kairon's first-cut
+// network-block driver, iSCSI or NVMe-oF, Filesystem or Block mode -- see
+// docs/guides/machine-storage-csi.md for the full design, including why
+// this breaks Go-stdlib-only (a real iSCSI initiator and filesystem
+// tooling aren't hand-rolled) and its current, real limits, and
+// docs/guides/machine-storage-nvmeof.md for NVMe-oF.
 //
 // A PersistentVolume this driver serves can come from either of two
 // places now: an admin still can create one statically (spec.csi.
@@ -70,6 +83,24 @@ type NodeServer struct {
 	mountFn      func(source, target, fsType string, flags uintptr, data string) error
 	unmountFn    func(target string) error
 	statfsFn     func(path string) (VolumeStats, error)
+	blockSizeFn  func(path string) (int64, error)
+	isDeviceFn   func(path string) bool
+
+	nvme *nvmeHost
+}
+
+func blockSize(path string) (int64, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = f.Close() }()
+	return f.Seek(0, io.SeekEnd)
+}
+
+func isDevice(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.Mode()&os.ModeDevice != 0
 }
 
 // NewNodeServer builds a NodeServer against the real CommandRunner and
@@ -80,6 +111,7 @@ func NewNodeServer(nodeID string, runner CommandRunner) *NodeServer {
 	return &NodeServer{
 		NodeID: nodeID, Runner: runner, iscsi: &iscsiClient{run: runner},
 		isMountPoint: IsMountPoint, mountFn: mount, unmountFn: unmount, statfsFn: statfs,
+		blockSizeFn: blockSize, isDeviceFn: isDevice, nvme: newNVMeHost(),
 	}
 }
 
@@ -131,60 +163,109 @@ func (s *NodeServer) NodeGetVolumeStats(_ context.Context, req *csi.NodeGetVolum
 	if !mounted {
 		return nil, status.Errorf(codes.NotFound, "volume path %s is not a mounted volume", path)
 	}
-	stats, err := s.statfsFn(path)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "statfs %s: %v", path, err)
-	}
-	return &csi.NodeGetVolumeStatsResponse{
-		Usage: []*csi.VolumeUsage{
+	resp := &csi.NodeGetVolumeStatsResponse{}
+	if s.isDeviceFn(path) {
+		size, err := s.blockSizeFn(path)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "size of %s: %v", path, err)
+		}
+		resp.Usage = []*csi.VolumeUsage{{Unit: csi.VolumeUsage_BYTES, Total: size}}
+	} else {
+		stats, err := s.statfsFn(path)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "statfs %s: %v", path, err)
+		}
+		resp.Usage = []*csi.VolumeUsage{
 			{Unit: csi.VolumeUsage_BYTES, Total: stats.TotalBytes, Used: stats.UsedBytes, Available: stats.AvailableBytes},
 			{Unit: csi.VolumeUsage_INODES, Total: stats.TotalInodes, Used: stats.UsedInodes, Available: stats.AvailableInodes},
-		},
-	}, nil
+		}
+	}
+	return resp, nil
 }
 
-// NodeStageVolume logs in to the requested iSCSI target/LUN, formats it
-// if it has no existing filesystem, and mounts it at staging_target_path
-// -- idempotent, per the CSI spec's own requirement (see IsMountPoint).
+// NodeStageVolume attaches the volume (iSCSI login, or an NVMe-oF connect
+// on every portal) and then, for a mount volume, formats it if it has no
+// filesystem and mounts it at staging_target_path; for a Block volume it
+// records the device in a symlink there instead. Idempotent, per the CSI
+// spec's own requirement (see IsMountPoint).
 func (s *NodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
 	if req.GetVolumeId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "volume_id is required")
 	}
-	if req.GetStagingTargetPath() == "" {
+	staging := req.GetStagingTargetPath()
+	if staging == "" {
 		return nil, status.Error(codes.InvalidArgument, "staging_target_path is required")
 	}
+	block := req.GetVolumeCapability().GetBlock() != nil
 	mountCap := req.GetVolumeCapability().GetMount()
-	if mountCap == nil {
-		return nil, status.Error(codes.InvalidArgument, "only mount-type volumes are supported (no raw block mode) in this first cut")
+	if mountCap == nil && !block {
+		return nil, status.Error(codes.InvalidArgument, "volume_capability needs a mount or block access type")
 	}
-	cfg, err := parseISCSIConfig(req.GetVolumeContext(), req.GetSecrets())
+	ctxTransport := req.GetVolumeContext()[volumeAttrTransport]
+	// A static PersistentVolume may carry only the volume handle, which
+	// names the NVMe-oF target in full.
+	ref, idErr := decodeAnyVolumeID(req.GetVolumeId())
+	idNVMe := idErr == nil && ref.nvme != nil
+	nvme := (ctxTransport != "" && ctxTransport != transportISCSI) || (ctxTransport == "" && idNVMe)
+	var iscsiCfg iscsiConfig
+	var nvmeCfg nvmeConfig
+	var err error
+	switch {
+	case nvme && ctxTransport == "":
+		nvmeCfg = *ref.nvme
+	case nvme:
+		nvmeCfg, err = parseNVMeConfig(req.GetVolumeContext())
+	default:
+		iscsiCfg, err = parseISCSIConfig(req.GetVolumeContext(), req.GetSecrets())
+	}
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	if mountCap.GetFsType() != "" {
-		cfg.FSType = mountCap.GetFsType()
+
+	if block {
+		if target, err := os.Readlink(StagedDevicePath(staging)); err == nil && s.isDeviceFn(target) {
+			return &csi.NodeStageVolumeResponse{}, nil
+		}
+	} else {
+		already, err := s.isMountPoint(staging)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "check staging path: %v", err)
+		}
+		if already {
+			return &csi.NodeStageVolumeResponse{}, nil
+		}
 	}
 
-	already, err := s.isMountPoint(req.GetStagingTargetPath())
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "check staging path: %v", err)
-	}
-	if already {
-		return &csi.NodeStageVolumeResponse{}, nil
-	}
-
-	device, err := s.iscsi.login(ctx, cfg)
-	if err != nil {
+	var device string
+	fsType := defaultFSType
+	if nvme {
+		if device, err = s.nvme.connect(ctx, nvmeCfg); err != nil {
+			return nil, status.Errorf(codes.Internal, "nvme connect for volume %s: %v", req.GetVolumeId(), err)
+		}
+	} else if device, err = s.iscsi.login(ctx, iscsiCfg); err != nil {
 		return nil, status.Errorf(codes.Internal, "iscsi login for volume %s: %v", req.GetVolumeId(), err)
 	}
-	if err := ensureFormatted(ctx, s.Runner, device, cfg.FSType); err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-	if err := os.MkdirAll(req.GetStagingTargetPath(), stagingDirPerm); err != nil {
+	if err := os.MkdirAll(staging, stagingDirPerm); err != nil {
 		return nil, status.Errorf(codes.Internal, "create staging directory: %v", err)
 	}
-	if err := s.mountFn(device, req.GetStagingTargetPath(), cfg.FSType, 0, ""); err != nil {
-		return nil, status.Errorf(codes.Internal, "mount %s at %s: %v", device, req.GetStagingTargetPath(), err)
+	if block {
+		link := StagedDevicePath(staging)
+		if err := os.Remove(link); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, status.Errorf(codes.Internal, "replace %s: %v", link, err)
+		}
+		if err := os.Symlink(device, link); err != nil {
+			return nil, status.Errorf(codes.Internal, "record staged device: %v", err)
+		}
+		return &csi.NodeStageVolumeResponse{}, nil
+	}
+	if mountCap.GetFsType() != "" {
+		fsType = mountCap.GetFsType()
+	}
+	if err := ensureFormatted(ctx, s.Runner, device, fsType); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if err := s.mountFn(device, staging, fsType, 0, ""); err != nil {
+		return nil, status.Errorf(codes.Internal, "mount %s at %s: %v", device, staging, err)
 	}
 	return &csi.NodeStageVolumeResponse{}, nil
 }
@@ -204,16 +285,29 @@ func (s *NodeServer) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVo
 	if req.GetVolumePath() == "" {
 		return nil, status.Error(codes.InvalidArgument, "volume_path is required")
 	}
-	cfg, err := decodeVolumeID(req.GetVolumeId())
+	ref, err := decodeAnyVolumeID(req.GetVolumeId())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	if err := s.iscsi.rescan(ctx, cfg); err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+	var device string
+	if ref.nvme != nil {
+		if err := s.nvme.rescan(ref.nvme.NQN); err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		if device = s.nvme.namespaceDevice(ref.nvme.NQN); device == "" {
+			return nil, status.Errorf(codes.Internal, "no block device for volume %s", req.GetVolumeId())
+		}
+	} else {
+		if err := s.iscsi.rescan(ctx, *ref.iscsi); err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		if device, err = filepath.EvalSymlinks(devicePathFunc(*ref.iscsi)); err != nil {
+			return nil, status.Errorf(codes.Internal, "resolve device for volume %s: %v", req.GetVolumeId(), err)
+		}
 	}
-	device, err := filepath.EvalSymlinks(devicePathFunc(cfg))
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "resolve device for volume %s: %v", req.GetVolumeId(), err)
+	// A Block volume has no filesystem here; the consumer sees the new size.
+	if req.GetVolumeCapability().GetBlock() != nil || s.isDeviceFn(req.GetVolumePath()) {
+		return &csi.NodeExpandVolumeResponse{}, nil
 	}
 	if err := growFilesystem(ctx, s.Runner, device, req.GetVolumePath()); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
@@ -241,11 +335,20 @@ func (s *NodeServer) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstage
 			return nil, status.Errorf(codes.Internal, "unmount %s: %v", req.GetStagingTargetPath(), err)
 		}
 	}
-	cfg, err := decodeVolumeID(req.GetVolumeId())
+	if err := os.Remove(StagedDevicePath(req.GetStagingTargetPath())); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, status.Errorf(codes.Internal, "remove staged device link: %v", err)
+	}
+	ref, err := decodeAnyVolumeID(req.GetVolumeId())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	if err := s.iscsi.logout(ctx, cfg); err != nil {
+	if ref.nvme != nil {
+		if err := s.nvme.disconnect(ref.nvme.NQN); err != nil {
+			return nil, status.Errorf(codes.Internal, "nvme disconnect: %v", err)
+		}
+		return &csi.NodeUnstageVolumeResponse{}, nil
+	}
+	if err := s.iscsi.logout(ctx, *ref.iscsi); err != nil {
 		return nil, status.Errorf(codes.Internal, "iscsi logout: %v", err)
 	}
 	return &csi.NodeUnstageVolumeResponse{}, nil
@@ -275,11 +378,28 @@ func (s *NodeServer) NodePublishVolume(_ context.Context, req *csi.NodePublishVo
 	if already {
 		return &csi.NodePublishVolumeResponse{}, nil
 	}
-	if err := os.MkdirAll(req.GetTargetPath(), stagingDirPerm); err != nil {
+	source := req.GetStagingTargetPath()
+	if req.GetVolumeCapability().GetBlock() != nil {
+		// A Block volume is published as its device node bind-mounted
+		// over a file at target_path.
+		device, err := filepath.EvalSymlinks(StagedDevicePath(source))
+		if err != nil {
+			return nil, status.Errorf(codes.FailedPrecondition, "volume is not staged as a block device: %v", err)
+		}
+		if err := os.MkdirAll(filepath.Dir(req.GetTargetPath()), stagingDirPerm); err != nil {
+			return nil, status.Errorf(codes.Internal, "create target parent: %v", err)
+		}
+		f, err := os.OpenFile(req.GetTargetPath(), os.O_CREATE|os.O_RDONLY, 0o640)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "create target file: %v", err)
+		}
+		_ = f.Close()
+		source = device
+	} else if err := os.MkdirAll(req.GetTargetPath(), stagingDirPerm); err != nil {
 		return nil, status.Errorf(codes.Internal, "create target directory: %v", err)
 	}
-	if err := s.mountFn(req.GetStagingTargetPath(), req.GetTargetPath(), "", bindMountFlag, ""); err != nil {
-		return nil, status.Errorf(codes.Internal, "bind mount %s at %s: %v", req.GetStagingTargetPath(), req.GetTargetPath(), err)
+	if err := s.mountFn(source, req.GetTargetPath(), "", bindMountFlag, ""); err != nil {
+		return nil, status.Errorf(codes.Internal, "bind mount %s at %s: %v", source, req.GetTargetPath(), err)
 	}
 	if req.GetReadonly() {
 		// Linux ignores most flags (MS_RDONLY included) on the initial
@@ -310,6 +430,10 @@ func (s *NodeServer) NodeUnpublishVolume(_ context.Context, req *csi.NodeUnpubli
 		if err := s.unmountFn(req.GetTargetPath()); err != nil {
 			return nil, status.Errorf(codes.Internal, "unmount %s: %v", req.GetTargetPath(), err)
 		}
+	}
+	// A Block volume's target is the file Publish created for the bind mount.
+	if fi, err := os.Stat(req.GetTargetPath()); err == nil && fi.Mode().IsRegular() && fi.Size() == 0 {
+		_ = os.Remove(req.GetTargetPath())
 	}
 	return &csi.NodeUnpublishVolumeResponse{}, nil
 }

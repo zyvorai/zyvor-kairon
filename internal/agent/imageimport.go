@@ -4,6 +4,7 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
@@ -13,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -136,12 +138,13 @@ func writeSparseFile(path string, size int64) error {
 // populateBootVolume seeds an empty spec.volumes[0] boot disk: with the
 // cached image at sourcePath, or (sourcePath empty) a blank raw disk of
 // sizeGiB. An existing non-empty disk is never touched, so this only ever
-// runs before a Machine's first boot. Block-mode volumes aren't seeded.
+// runs before a Machine's first boot. A Block-mode volume gets the image
+// written onto the device (see seedBlockDevice).
 func populateBootVolume(bootDisk, sourcePath string, sizeGiB uint64) error {
 	fi, err := os.Stat(bootDisk)
 	switch {
 	case err == nil && fi.Mode()&os.ModeDevice != 0:
-		return fmt.Errorf("spec.volumes[0] is a Block-mode volume: Kairon only seeds Filesystem-mode boot volumes from spec.image.source/blank; write the image to the device yourself")
+		return seedBlockDevice(bootDisk, sourcePath)
 	case err == nil && fi.Size() > 0:
 		return nil
 	case err != nil && !os.IsNotExist(err):
@@ -154,6 +157,80 @@ func populateBootVolume(bootDisk, sourcePath string, sizeGiB uint64) error {
 		return writeSparseFile(bootDisk, int64(sizeGiB)<<30)
 	}
 	return copyFileAtomic(sourcePath, bootDisk)
+}
+
+// qemuImg is the qemu-img binary seedBlockDevice runs for a qcow2 image; a
+// var for tests.
+var qemuImg = "qemu-img"
+
+// qcow2Magic starts every qcow2 image.
+var qcow2Magic = []byte{'Q', 'F', 'I', 0xfb}
+
+// seedBlockDevice writes the image at sourcePath onto device as raw, but
+// only while the device's first MiB is still all zeros -- a device that
+// already holds anything (an earlier seed, a guest's own writes) is never
+// overwritten. A blank Machine (no sourcePath) needs nothing written. A
+// raw image is copied as is; a qcow2 one needs qemu-img, which the
+// distroless kairon-node image does not have.
+func seedBlockDevice(device, sourcePath string) error {
+	if sourcePath == "" {
+		return nil
+	}
+	f, err := os.Open(device)
+	if err != nil {
+		return fmt.Errorf("open boot device %s: %w", device, err)
+	}
+	head := make([]byte, 1<<20)
+	n, err := io.ReadFull(f, head)
+	_ = f.Close()
+	if err != nil && err != io.ErrUnexpectedEOF {
+		return fmt.Errorf("read boot device %s: %w", device, err)
+	}
+	for _, b := range head[:n] {
+		if b != 0 {
+			return nil
+		}
+	}
+	src, err := os.Open(sourcePath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = src.Close() }()
+	magic := make([]byte, len(qcow2Magic))
+	if _, err := io.ReadFull(src, magic); err != nil && err != io.ErrUnexpectedEOF {
+		return fmt.Errorf("read image %s: %w", sourcePath, err)
+	}
+	if !bytes.Equal(magic, qcow2Magic) {
+		return copyOntoDevice(src, device)
+	}
+	if _, err := exec.LookPath(qemuImg); err != nil {
+		return fmt.Errorf("writing a qcow2 image onto Block volume %s needs qemu-img on kairon-node's PATH, which the kairon-node container image does not have; use a raw image (spec.image.source.format: raw)", device)
+	}
+	out, err := exec.Command(qemuImg, "convert", "-n", "-O", "raw", sourcePath, device).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("write image onto boot device %s: %w: %s", device, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// copyOntoDevice writes all of src onto device from offset 0 and syncs.
+func copyOntoDevice(src *os.File, device string) error {
+	if _, err := src.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	dst, err := os.OpenFile(device, os.O_WRONLY, 0)
+	if err != nil {
+		return fmt.Errorf("open boot device %s: %w", device, err)
+	}
+	if _, err := io.CopyBuffer(dst, src, make([]byte, 1<<20)); err != nil {
+		_ = dst.Close()
+		return fmt.Errorf("write image onto boot device %s: %w", device, err)
+	}
+	if err := dst.Sync(); err != nil {
+		_ = dst.Close()
+		return fmt.Errorf("sync boot device %s: %w", device, err)
+	}
+	return dst.Close()
 }
 
 func copyFileAtomic(src, dst string) error {

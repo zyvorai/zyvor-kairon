@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 
@@ -15,12 +18,35 @@ import (
 	"github.com/zyvorai/kairon/internal/model"
 )
 
-// diskVolumePath is the path FluxVM attaches for a published disk volume.
-func diskVolumePath(v model.DiskVolume) string {
+// diskVolumePath is the path FluxVM attaches for a published disk volume:
+// disk.img in a Filesystem volume, or the /dev node behind a Block one
+// (FluxVM only takes block devices by their /dev path).
+func diskVolumePath(v model.DiskVolume) (string, error) {
 	if v.Block {
-		return v.PublishPath
+		return realBlockDevice(v.PublishPath)
 	}
-	return filepath.Join(v.PublishPath, bootDiskFileName)
+	return filepath.Join(v.PublishPath, bootDiskFileName), nil
+}
+
+// sysDevBlock maps major:minor to block device names; a var for tests.
+var sysDevBlock = "/sys/dev/block"
+
+// realBlockDevice returns the /dev path of the block device node at path
+// (a CSI publish target is the device bind-mounted over a file).
+func realBlockDevice(path string) (string, error) {
+	var st unix.Stat_t
+	if err := unix.Stat(path, &st); err != nil {
+		return "", fmt.Errorf("stat %s: %w", path, err)
+	}
+	if st.Mode&unix.S_IFMT != unix.S_IFBLK {
+		return "", fmt.Errorf("%s is not a block device", path)
+	}
+	rdev := uint64(st.Rdev) //nolint:unconvert // int32 on darwin
+	link, err := os.Readlink(filepath.Join(sysDevBlock, fmt.Sprintf("%d:%d", unix.Major(rdev), unix.Minor(rdev))))
+	if err != nil {
+		return "", fmt.Errorf("find the device behind %s: %w", path, err)
+	}
+	return filepath.Join("/dev", filepath.Base(link)), nil
 }
 
 // diskCSIClient returns the node client for driver: Kairon's own driver or
@@ -45,9 +71,6 @@ func (a *Agent) publishDiskCSI(ctx context.Context, m model.Machine, disk string
 	}
 	block := pv.Spec.VolumeMode == "Block"
 	own := src.Driver == csinode.DriverName
-	if own && block {
-		return model.DiskVolume{}, fmt.Errorf("PersistentVolume %s is Block-mode, which Kairon's own CSI driver does not serve", pv.Metadata.Name)
-	}
 	client, err := a.diskCSIClient(src.Driver)
 	if err != nil {
 		return model.DiskVolume{}, err
@@ -144,3 +167,41 @@ func (a *Agent) teardownDiskVolumes(ctx context.Context, m model.Machine) error 
 	}
 	return nil
 }
+
+// storagePathsCondition is the StoragePaths condition for a Machine whose
+// boot or data volumes include NVMe-oF volumes of Kairon's own driver on
+// this node: True while every portal of every such volume has a live path.
+// ok is false when the Machine has none.
+func (a *Agent) storagePathsCondition(status model.MachineStatus) (model.Condition, bool) {
+	var ids []string
+	if status.VolumeHandle != "" && status.VolumeDriver == "" {
+		ids = append(ids, status.VolumeHandle)
+	}
+	for _, v := range status.DiskVolumes {
+		if v.Driver == csinode.DriverName && v.Node == a.NodeName {
+			ids = append(ids, v.VolumeHandle)
+		}
+	}
+	var msgs []string
+	degraded, found := false, false
+	for _, id := range ids {
+		abnormal, msg, ok := nvmePathCondition(id)
+		if !ok {
+			continue
+		}
+		found = true
+		degraded = degraded || abnormal
+		msgs = append(msgs, msg)
+	}
+	if !found {
+		return model.Condition{}, false
+	}
+	cond := model.Condition{Type: "StoragePaths", Status: "True", Reason: "AllPathsLive", Message: strings.Join(msgs, " | ")}
+	if degraded {
+		cond.Status, cond.Reason = "False", "PathsDegraded"
+	}
+	return cond, true
+}
+
+// nvmePathCondition is csinode.NVMePathCondition; a var for tests.
+var nvmePathCondition = csinode.NVMePathCondition

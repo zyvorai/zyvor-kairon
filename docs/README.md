@@ -55,6 +55,7 @@ The root [README](https://github.com/zyvorai/zyvor-kairon/blob/main/README.md) i
 | [`guides/kairon-ui-oidc.md`](guides/kairon-ui-oidc.md) | OIDC/SSO setup, the Authorization Code + PKCE flow, and why it breaks Go-stdlib-only |
 | [`guides/kairon-ui-console-rbac.md`](guides/kairon-ui-console-rbac.md) | Real Kubernetes RBAC (`machines/console` + `SubjectAccessReview`) for console access, opt-in alongside the annotation allowlist |
 | [`guides/machine-storage.md`](guides/machine-storage.md) · [`guides/machine-storage-csi.md`](guides/machine-storage-csi.md) | PVC-backed boot disks; Kairon's own first-cut iSCSI CSI driver and why it breaks Go-stdlib-only |
+| [`guides/machine-storage-nvmeof.md`](guides/machine-storage-nvmeof.md) | NVMe-oF volumes (`nvme-tcp`, `nvme-rdma`, native multipath), raw Block boot in place, per-disk QEMU I/O and the `StoragePaths` condition (experimental) |
 | [`guides/machine-storage-atlas.md`](guides/machine-storage-atlas.md) | `spec.volumes[].atlas`: controller provisions Machine disks through Atlas (PVC or raw RBD), gates scheduling on readiness, releases after runtime cleanup |
 | [`guides/machine-storage-thirdparty-csi.md`](guides/machine-storage-thirdparty-csi.md) | `node.thirdPartyCSIDrivers`: `kairon-node` as a generic CSI client against an allowlisted third-party driver, including `attachRequired` drivers (VolumeAttachment) and namespace-allowlisted node secrets |
 | [`guides/migrate-from-vmware.md`](guides/migrate-from-vmware.md) | Moving VMware VMs to Kairon: `kaironctl import ova`, offline virtio repair, checklist |

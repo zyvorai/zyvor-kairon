@@ -104,7 +104,7 @@ func TestCreateVolumeRejectsInvalidName(t *testing.T) {
 	}
 }
 
-func TestCreateVolumeRejectsBlockOnlyCapability(t *testing.T) {
+func TestCreateVolumeAcceptsBlockOnlyCapability(t *testing.T) {
 	s := newTestControllerServer(t, newFakeCommandRunner())
 	req := &csi.CreateVolumeRequest{
 		Name: "pvc-abc123",
@@ -112,8 +112,8 @@ func TestCreateVolumeRejectsBlockOnlyCapability(t *testing.T) {
 			AccessType: &csi.VolumeCapability_Block{Block: &csi.VolumeCapability_BlockVolume{}},
 		}},
 	}
-	if _, err := s.CreateVolume(context.Background(), req); err == nil {
-		t.Fatal("expected raw block mode to be rejected in this first cut")
+	if _, err := s.CreateVolume(context.Background(), req); err != nil {
+		t.Fatalf("raw block mode: %v", err)
 	}
 }
 
