@@ -78,6 +78,9 @@ const config: Config = {
           position: 'right',
           label: 'Docs',
         },
+        {to: '/features', label: 'Features', position: 'right'},
+        {to: '/use-cases', label: 'Use cases', position: 'right'},
+        {to: '/compare', label: 'Compare', position: 'right'},
         {to: '/deploy', label: 'Deploy', position: 'right'},
         {to: '/gallery', label: 'Gallery', position: 'right'},
         {
@@ -94,6 +97,8 @@ const config: Config = {
           title: 'Docs',
           items: [
             {label: 'Deploy', to: '/deploy'},
+            {label: 'Use cases', to: '/use-cases'},
+            {label: 'Compare with KubeVirt', to: '/compare'},
             {label: 'Getting started', to: '/docs/getting-started'},
             {label: 'What ships', to: '/docs/WHAT_SHIPS'},
             {label: 'Status', to: '/docs/STATUS'},
