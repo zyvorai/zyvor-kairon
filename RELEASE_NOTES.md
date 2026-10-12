@@ -38,6 +38,30 @@ match.
 Also new: `kaironctl selftest` and the dashboard Self-test page,
 `deploy-remote.sh --remote-build`, `--image-cache-dir`, `--self-test`.
 
+## Added: vGPU profiles and GPU health (experimental)
+
+`spec.devices[].profile` asks for a vGPU (mediated device) of a profile, such
+as NVIDIA `GRID A100-3-20C`, instead of a whole GPU. kairon-node publishes
+each node's mdev parents, profiles and free instances in `NodeTopology`
+`status.mediatedDevices` (limit them with `--mdev-parents`, Helm
+`node.mdevParents`). The scheduler places profiles by free instances and
+GPU memory and gives each a UUID that is stable for the Machine.
+kairon-node creates the instance through FluxVM when the Machine starts
+and removes it when it stops or is deleted. MIG-backed profiles carry their
+slices and memory.
+
+GPUs carry `health` (`Healthy`, `Degraded`, `Unhealthy`) from FluxVM's AER,
+PCIe link and `nvidia-smi` checks; `Unhealthy` GPUs and vGPU parents are not
+handed out. New metrics: `kairon_gpu_vram_mib`, `kairon_gpu_devices` and
+`kairon_vgpu_available_instances`. `kaironctl node topology` shows vGPU
+parents, health and GPU memory. Needs FluxVM with `/v1/host/mdev`.
+
+On one node with the kernel's `mbochs` sample driver, inventory, health,
+boot with a vGPU, accounting, stop, start and delete have run. NVIDIA vGPU
+and MIG need NVIDIA hardware and have not. On nodes that also run KubeVirt,
+turn off its mdev management. See `docs/guides/gpu-vgpu.md` and the "GPU
+and vGPU" section of `docs/COMPATIBILITY.md`.
+
 ## Added: node maintenance mode and DRS rebalancing (experimental)
 
 `kaironctl node maintenance enter NODE` puts a node into maintenance. The

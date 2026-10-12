@@ -52,6 +52,10 @@ func TestValidateTopology(t *testing.T) {
 		{"bad vendor", MachineSpec{Devices: []MachineDevice{{Name: "g", Class: "gpu", Vendor: "acme"}}}, "vendor"},
 		{"minMemory on nic", MachineSpec{Devices: []MachineDevice{{Name: "n", Class: "nic", MinMemory: "1Gi"}}}, "minMemory"},
 		{"bad alignment", MachineSpec{Devices: []MachineDevice{{Name: "n", Class: "nic", Alignment: []string{"sameSocket"}}}}, "alignment"},
+		{"vgpu profile", MachineSpec{Devices: []MachineDevice{{Name: "g", Class: "gpu", Profile: "GRID A100-3-20C", MinMemory: "16Gi", Count: 2}}}, ""},
+		{"profile on nic", MachineSpec{Devices: []MachineDevice{{Name: "n", Class: "nic", Profile: "x"}}}, "profile only applies"},
+		{"profile with VF", MachineSpec{Devices: []MachineDevice{{Name: "g", Class: "gpu", Profile: "nvidia-558", VirtualFunction: true}}}, "exclusive"},
+		{"profile with a path", MachineSpec{Devices: []MachineDevice{{Name: "g", Class: "gpu", Profile: "../create"}}}, "profile"},
 	}
 	for _, c := range cases {
 		err := ValidateTopology(c.spec)

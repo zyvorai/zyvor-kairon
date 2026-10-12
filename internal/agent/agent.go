@@ -38,7 +38,10 @@ type Agent struct {
 	DefaultBackend string
 	ImageRoot      string
 	VFIOAllowlist  map[string]struct{}
-	MigrationPeer  *migration.Client
+	// MdevParents limits which mediated device parents NodeTopology marks
+	// allocatable; nil allows all.
+	MdevParents   map[string]struct{}
+	MigrationPeer *migration.Client
 	// Restores is shared with the destination migration server. Nil skips
 	// conntrack result projection.
 	Restores         *migration.RestoreStore
@@ -641,6 +644,11 @@ func (a *Agent) ensureStopped(ctx context.Context, m model.Machine) error {
 			return err
 		}
 	}
+	if m.Status.Phase != "Stopped" {
+		if err := a.releaseMediatedDevices(ctx, m); err != nil {
+			return err
+		}
+	}
 	// Deregister before status.guestIP is cleared below -- once it's gone
 	// from status there's nothing left to tell FluxVM's Service Fabric to
 	// remove. Fails closed: a real error here returns before the status
@@ -819,6 +827,9 @@ func (a *Agent) cleanup(ctx context.Context, m model.Machine) error {
 		if err := a.Flux.Delete(ctx, m.Status.RuntimeID); err != nil {
 			return err
 		}
+	}
+	if err := a.releaseMediatedDevices(ctx, m); err != nil {
+		return err
 	}
 	// Same "don't finish deleting until this succeeds" posture as the
 	// FluxVM runtime delete above -- a failed unpublish/unstage leaves

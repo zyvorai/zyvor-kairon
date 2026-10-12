@@ -75,6 +75,7 @@ func run() int {
 	imageRoot := flag.String("image-root", env("KAIRON_IMAGE_ROOT", osDefault("/var/lib/fluxvm/images", macSupport("FluxVM/images"))), "allowed root for Machine image paths")
 	imageCacheDir := flag.String("image-cache-dir", env("KAIRON_IMAGE_CACHE_DIR", ""), "directory kairon-node downloads/caches spec.image.source images into, keyed by digest -- empty (the default) refuses any Machine that sets spec.image.source; see docs/guides/machine-image-import.md")
 	vfioAllowlistRaw := flag.String("vfio-allowlist", env("KAIRON_VFIO_ALLOWLIST", ""), "comma-separated PCI BDFs this node permits for DRA-backed VFIO passthrough")
+	mdevParentsRaw := flag.String("mdev-parents", env("KAIRON_MDEV_PARENTS", ""), "comma-separated mediated device parents (PCI BDFs or names such as mbochs) the scheduler may create vGPUs on; empty allows every parent")
 	migrationAddr := flag.String("migration-addr", env("KAIRON_MIGRATION_ADDR", ":9443"), "mTLS migration peer listen address")
 	migrationCA := flag.String("migration-ca", env("KAIRON_MIGRATION_CA", ""), "CA PEM used to verify Kairon node peers")
 	migrationCert := flag.String("migration-cert", env("KAIRON_MIGRATION_CERT", ""), "node migration TLS certificate PEM")
@@ -203,6 +204,7 @@ func run() int {
 		ImageRoot:                    *imageRoot,
 		ImageCacheDir:                *imageCacheDir,
 		VFIOAllowlist:                vfioAllowlist,
+		MdevParents:                  agent.ParseMdevParents(*mdevParentsRaw),
 		MigrationPeer:                peer,
 		Restores:                     restores,
 		SourceMigrator:               source,

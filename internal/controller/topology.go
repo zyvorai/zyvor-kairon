@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/zyvorai/kairon/internal/kube"
+	"github.com/zyvorai/kairon/internal/metrics"
 	"github.com/zyvorai/kairon/internal/model"
 	"github.com/zyvorai/kairon/internal/scheduler"
 	"github.com/zyvorai/kairon/internal/topology"
@@ -31,6 +32,7 @@ func (c *Controller) nodeTopologies(ctx context.Context, nodes []model.Node, mac
 	}
 	if c.Metrics != nil {
 		free := map[string]map[int]int{}
+		gpus := map[string]metrics.NodeGPUs{}
 		for _, n := range nodes {
 			nt, ok := out[n.Metadata.Name]
 			if !ok {
@@ -42,10 +44,45 @@ func (c *Controller) nodeTopologies(ctx context.Context, nodes []model.Node, mac
 				byNUMA[numa.ID] = len(numa.FreeCPUs)
 			}
 			free[n.Metadata.Name] = byNUMA
+			if ng, ok := nodeGPUs(nt, n.Metadata.Name, machines); ok {
+				gpus[n.Metadata.Name] = ng
+			}
 		}
 		c.Metrics.ObserveNUMAFreeCPUs(free)
+		c.Metrics.ObserveGPUs(gpus)
 	}
 	return out, nil
+}
+
+// nodeGPUs summarizes a NodeTopology's GPUs for metrics; ok is false when
+// the node has none.
+func nodeGPUs(nt model.NodeTopology, node string, machines []model.Machine) (metrics.NodeGPUs, bool) {
+	g := metrics.NodeGPUs{ByHealth: map[string]int{}, VGPUAvailable: map[[2]string]int{}}
+	health := func(h string) string {
+		if h == "" {
+			return "Unknown"
+		}
+		return h
+	}
+	parents := map[string]bool{}
+	for _, p := range nt.Status.MediatedDevices {
+		parents[p.Parent] = true
+		g.ByHealth[health(p.Health)]++
+		for _, t := range p.Types {
+			g.VGPUAvailable[[2]string{p.Parent, t.ID}] = t.Available
+		}
+	}
+	for _, d := range nt.Status.Devices {
+		if d.Class == model.DeviceClassGPU && !parents[d.BDF] {
+			g.ByHealth[health(d.Health)]++
+		}
+	}
+	if len(g.ByHealth) == 0 {
+		return g, false
+	}
+	v := topology.VRAMUsage(nt, node, machines)
+	g.VRAMTotalMiB, g.VRAMAllocatedMiB = v.TotalMiB, v.AllocatedMiB
+	return g, true
 }
 
 // unschedulableReason is the Scheduled condition reason for a Choose

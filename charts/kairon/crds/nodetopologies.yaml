@@ -118,6 +118,66 @@ spec:
                       type: boolean
                     allocated:
                       type: boolean
+                    health:
+                      type: string
+                      enum: [Healthy, Degraded, Unhealthy]
+                    healthReasons:
+                      type: array
+                      items:
+                        type: string
+              mediatedDevices:
+                type: array
+                items:
+                  type: object
+                  required: [parent, class, allocatable]
+                  properties:
+                    parent:
+                      type: string
+                    class:
+                      type: string
+                    vendor:
+                      type: string
+                    device:
+                      type: string
+                    numaNode:
+                      type: integer
+                    pcieRoot:
+                      type: string
+                    vramMiB:
+                      type: integer
+                      format: int64
+                    health:
+                      type: string
+                      enum: [Healthy, Degraded, Unhealthy]
+                    healthReasons:
+                      type: array
+                      items:
+                        type: string
+                    allocatable:
+                      type: boolean
+                    types:
+                      type: array
+                      items:
+                        type: object
+                        required: [id, available]
+                        properties:
+                          id:
+                            type: string
+                          name:
+                            type: string
+                          available:
+                            type: integer
+                          framebufferMiB:
+                            type: integer
+                            format: int64
+                          migSlices:
+                            type: integer
+                          migMemoryGiB:
+                            type: integer
+                    instances:
+                      type: array
+                      items:
+                        type: string
               hibernation:
                 type: object
                 properties:

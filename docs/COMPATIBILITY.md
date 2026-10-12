@@ -290,6 +290,30 @@ cases exercise the cordon, the fallbacks and exit, not migration.
 | DRS: recommend or automatic moves | not run | 2026-10-12 | Needs two nodes |
 | Node maintenance and DRS: in-cluster chart RBAC | not run | 2026-10-12 | The lab controller ran with a cluster-admin token; the chart's new `patch` on nodes is checked by `scripts/check_rbac_coverage.py` only |
 
+## GPU and vGPU
+
+Driven by [`scripts/lab-vgpu.sh`](../scripts/lab-vgpu.sh) on one node with
+the kernel's `mbochs` sample mdev driver standing in for a vGPU host driver:
+a virtual parent with three display profiles (4, 16 and 64 MiB) sharing a
+256 MiB pool. Host-installed kairon-controller, kairon-node and FluxVM. The
+guest prints the count of `1234:1111` display functions and the size of
+BAR0 to the serial console. KubeVirt also runs on the lab cluster, and its
+virt-handler removed instances it had not created, so the run had its
+`DisableMDEVConfiguration` feature gate on (reverted afterwards).
+
+| Case | Last result | Date | Notes |
+|---|---|---|---|
+| vGPU: inventory | pass | 2026-10-12 | Single node (kernel 7.0.0-34, QEMU 10.2.1, k3s 1.35): FluxVM `/v1/host/mdev` listed mbochs-small 4 MiB/64 free, medium 16/16, large 64/4; kairon-node published the same in `NodeTopology` `mediatedDevices` |
+| vGPU: health | pass | 2026-10-12 | Same node: FluxVM judged the onboard VGA `0000:04:00.0` healthy and `NodeTopology` carried `Healthy` on the device |
+| vGPU: boot | pass | 2026-10-12 | Same node: a Machine asking for `profile: mbochs-small` was Running in 76s with allocation `mbochs`/UUID; FluxVM `vfio_devices` held the UUID, QEMU had `sysfsdev=/sys/bus/mdev/devices/<uuid>`, and the guest saw one display function with a 4 MiB BAR0 |
+| vGPU: accounting | pass | 2026-10-12 | Same node: a second Machine asking for 4 mbochs-large stayed Pending with `TopologyUnsatisfiable: needs 4 gpu profile mbochs-large, 3 free`; `kairon_vgpu_available_instances{mbochs-small}` 63, `kairon_gpu_vram_mib` allocated 4 of 256 |
+| vGPU: stop | pass | 2026-10-12 | Same node: stopping removed the instance; mbochs-small back to 64 free, mbochs-large 4 |
+| vGPU: start | pass | 2026-10-12 | Same node: starting re-created the same UUID, QEMU held it and the guest saw the 4 MiB vGPU again |
+| vGPU: delete | pass | 2026-10-12 | Same node: deleting the Machine removed the instance; mbochs-small 64 free |
+| vGPU: NVIDIA vGPU profiles on a real GPU | not run | 2026-10-12 | Needs an NVIDIA GPU with the vGPU host driver |
+| vGPU: MIG-backed profiles, nvidia-smi health and VRAM | not run | 2026-10-12 | Needs an NVIDIA MIG-capable GPU |
+| GPU health: Unhealthy GPU skipped by the scheduler | not run | 2026-10-12 | Needs a GPU with AER or ECC errors; unit-tested |
+
 ## Component versions (fill per run)
 
 | Piece | Version |

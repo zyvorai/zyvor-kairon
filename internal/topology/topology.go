@@ -8,6 +8,7 @@
 package topology
 
 import (
+	"crypto/sha1" //nolint:gosec // a name-based UUID, not a security digest
 	"fmt"
 	"sort"
 	"strings"
@@ -34,9 +35,44 @@ type Device struct {
 	NUMA int
 }
 
+// MediatedParent is an allocatable, not Unhealthy vGPU parent.
+type MediatedParent struct {
+	model.TopologyMediatedParent
+	// NUMA is the parent's NUMA node, or -1 when unknown.
+	NUMA int
+	// PendingMiB and Pending (by type) are instances other Machines are
+	// allocated that the parent does not list yet, so its available
+	// counts do not include them.
+	PendingMiB int64
+	Pending    map[string]int
+}
+
+// Free is how many more instances of t fit on p after pending ones and
+// extraMiB of framebuffer / extraN instances of t picked by this request.
+// With a known framebuffer the parent is treated as one memory pool, which
+// is exact for the kernel's mbochs and NVIDIA's mixed-size vGPU, and
+// optimistic for parents that allow one profile at a time (FluxVM's
+// create is the final word there).
+func (p MediatedParent) Free(t model.TopologyMediatedType, extraMiB int64, extraN int) int {
+	var n int64
+	if t.FramebufferMiB > 0 {
+		n = (int64(t.Available)*t.FramebufferMiB - p.PendingMiB - extraMiB) / t.FramebufferMiB
+	} else {
+		n = int64(t.Available - p.Pending[t.ID] - extraN)
+	}
+	if n < 0 {
+		return 0
+	}
+	return int(n)
+}
+
+// PCI reports whether the parent is a PCI device (Parent is its BDF).
+func (p MediatedParent) PCI() bool { return p.Vendor != "" }
+
 type Graph struct {
 	NUMANodes []NUMANode
 	Devices   []Device
+	Mediated  []MediatedParent
 	// Binding is true when FluxVM on the node binds guest NUMA memory.
 	Binding bool
 }
@@ -50,6 +86,9 @@ type Request struct {
 	// RequiredNUMA are host NUMA nodes the Machine's CPUs must include,
 	// from DRA-allocated devices.
 	RequiredNUMA []int
+	// Seed makes mediated device UUIDs stable for one Machine: its UID,
+	// or namespace/name.
+	Seed string
 }
 
 type Allocation struct {
@@ -89,6 +128,10 @@ func RequestFor(m model.Machine) (Request, error) {
 		MemoryMiB: int64(mem),
 		Policy:    m.Spec.TopologyPolicy(),
 		Devices:   m.Spec.Devices,
+		Seed:      m.Metadata.UID,
+	}
+	if r.Seed == "" {
+		r.Seed = m.Namespace() + "/" + m.Metadata.Name
 	}
 	if m.Spec.Topology != nil {
 		r.HugepageSize = m.Spec.Topology.HugepageSize
@@ -109,6 +152,16 @@ func BuildGraph(nt model.NodeTopology, node model.Node, machines []model.Machine
 	usedMem := map[int]int64{}
 	usedPages := map[int]map[string]int64{}
 	usedBDF := map[string]bool{}
+	instances := map[string]bool{}
+	mdevParent := map[string]bool{}
+	for _, p := range nt.Status.MediatedDevices {
+		mdevParent[p.Parent] = true
+		for _, u := range p.Instances {
+			instances[strings.ToLower(u)] = true
+		}
+	}
+	pendingMiB := map[string]int64{}
+	pending := map[string]map[string]int{}
 	for _, o := range machines {
 		if o.Spec.NodeName != node.Metadata.Name || o.Metadata.DeletionTimestamp != nil {
 			continue
@@ -138,7 +191,18 @@ func BuildGraph(nt model.NodeTopology, node model.Node, machines []model.Machine
 			usedMem[n.ID] += n.MemoryMiB
 		}
 		for _, d := range a.Devices {
-			usedBDF[d.BDF] = true
+			if !d.Mediated() {
+				usedBDF[d.BDF] = true
+				continue
+			}
+			if instances[strings.ToLower(d.UUID)] {
+				continue
+			}
+			pendingMiB[d.Parent] += d.FramebufferMiB
+			if pending[d.Parent] == nil {
+				pending[d.Parent] = map[string]int{}
+			}
+			pending[d.Parent][d.Profile]++
 		}
 	}
 
@@ -163,19 +227,34 @@ func BuildGraph(nt model.NodeTopology, node model.Node, machines []model.Machine
 		})
 	}
 	sort.Slice(g.NUMANodes, func(i, j int) bool { return g.NUMANodes[i].ID < g.NUMANodes[j].ID })
+	numaOf := func(n *int) int {
+		switch {
+		case n != nil:
+			return *n
+		case len(g.NUMANodes) == 1:
+			return g.NUMANodes[0].ID
+		}
+		return -1
+	}
+	// A vGPU parent runs the vendor's host driver, so it cannot also go
+	// to a guest whole.
 	for _, d := range nt.Status.Devices {
-		if !d.Allocatable || d.Allocated || usedBDF[d.BDF] {
+		if !d.Allocatable || d.Allocated || usedBDF[d.BDF] || d.Health == model.DeviceUnhealthy || mdevParent[d.BDF] {
 			continue
 		}
-		numa := -1
-		if d.NUMANode != nil {
-			numa = *d.NUMANode
-		} else if len(g.NUMANodes) == 1 {
-			numa = g.NUMANodes[0].ID
-		}
-		g.Devices = append(g.Devices, Device{TopologyDevice: d, NUMA: numa})
+		g.Devices = append(g.Devices, Device{TopologyDevice: d, NUMA: numaOf(d.NUMANode)})
 	}
 	sort.Slice(g.Devices, func(i, j int) bool { return g.Devices[i].BDF < g.Devices[j].BDF })
+	for _, p := range nt.Status.MediatedDevices {
+		if !p.Allocatable || p.Health == model.DeviceUnhealthy {
+			continue
+		}
+		g.Mediated = append(g.Mediated, MediatedParent{
+			TopologyMediatedParent: p, NUMA: numaOf(p.NUMANode),
+			PendingMiB: pendingMiB[p.Parent], Pending: pending[p.Parent],
+		})
+	}
+	sort.Slice(g.Mediated, func(i, j int) bool { return g.Mediated[i].Parent < g.Mediated[j].Parent })
 	return g
 }
 
@@ -208,8 +287,35 @@ const (
 )
 
 // Allocate places r on g. It returns the allocation and a locality score
-// (0-100), or a reason when nothing fits.
+// (0-100), or a reason when nothing fits. Mediated devices get UUIDs
+// derived from r.Seed, so placing the same Machine again names the same
+// instances.
 func Allocate(g Graph, r Request) (Allocation, int, string) {
+	a, score, reason := place(g, r)
+	if reason != "" {
+		return a, score, reason
+	}
+	nth := map[string]int{}
+	for i, d := range a.Devices {
+		if d.Profile == "" {
+			continue
+		}
+		a.Devices[i].UUID = MediatedUUID(r.Seed, d.Name, nth[d.Name])
+		nth[d.Name]++
+	}
+	return a, score, ""
+}
+
+// MediatedUUID is the name-based (version 5 layout) UUID of the n-th
+// instance of device request name for seed.
+func MediatedUUID(seed, name string, n int) string {
+	h := sha1.Sum([]byte(fmt.Sprintf("kairon-mdev\x00%s\x00%s\x00%d", seed, name, n)))
+	h[6] = h[6]&0x0f | 0x50
+	h[8] = h[8]&0x3f | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", h[0:4], h[4:6], h[6:8], h[8:10], h[10:16])
+}
+
+func place(g Graph, r Request) (Allocation, int, string) {
 	hard := r.Policy == model.TopologyPolicyRestricted || r.Policy == model.TopologyPolicySingleNUMANode
 	if hard && !g.Binding {
 		return Allocation{}, 0, "the node's FluxVM cannot bind guest NUMA memory"
@@ -480,6 +586,9 @@ func describe(req model.MachineDevice) string {
 	if req.VirtualFunction {
 		s += " VF"
 	}
+	if req.Profile != "" {
+		s += " profile " + req.Profile
+	}
 	if req.Vendor != "" {
 		s += " vendor " + req.Vendor
 	}
@@ -490,6 +599,30 @@ func describe(req model.MachineDevice) string {
 		s += " with " + req.MinMemory
 	}
 	return s
+}
+
+// usage is what one allocation has picked so far: whole devices by BDF,
+// and mediated framebuffer by parent and instances by parent/type.
+type usage struct {
+	bdf     map[string]bool
+	mdevMiB map[string]int64
+	mdevN   map[string]int
+}
+
+func newUsage() *usage {
+	return &usage{bdf: map[string]bool{}, mdevMiB: map[string]int64{}, mdevN: map[string]int{}}
+}
+
+func (u *usage) merge(o *usage) {
+	for k := range o.bdf {
+		u.bdf[k] = true
+	}
+	for k, v := range o.mdevMiB {
+		u.mdevMiB[k] += v
+	}
+	for k, v := range o.mdevN {
+		u.mdevN[k] += v
+	}
 }
 
 // pickDevices chooses devices for every request, lowest BDF first. allowed
@@ -507,12 +640,17 @@ func pickDevices(g Graph, reqs []model.MachineDevice, allowed map[int]bool) ([]m
 			rest = append(rest, r)
 		}
 	}
-	used := map[string]bool{}
+	used := newUsage()
 	var out []model.AllocatedDevice
 	if len(rooted) > 0 {
 		roots := map[string]bool{}
 		for _, d := range g.Devices {
 			roots[d.PCIeRoot] = true
+		}
+		for _, p := range g.Mediated {
+			if p.PCIeRoot != "" {
+				roots[p.PCIeRoot] = true
+			}
 		}
 		names := make([]string, 0, len(roots))
 		for r := range roots {
@@ -521,7 +659,7 @@ func pickDevices(g Graph, reqs []model.MachineDevice, allowed map[int]bool) ([]m
 		sort.Strings(names)
 		found := false
 		for _, root := range names {
-			tryUsed := map[string]bool{}
+			tryUsed := newUsage()
 			var picked []model.AllocatedDevice
 			ok := true
 			for _, req := range rooted {
@@ -533,9 +671,7 @@ func pickDevices(g Graph, reqs []model.MachineDevice, allowed map[int]bool) ([]m
 				picked = append(picked, p...)
 			}
 			if ok {
-				for b := range tryUsed {
-					used[b] = true
-				}
+				used.merge(tryUsed)
 				out = append(out, picked...)
 				found = true
 				break
@@ -566,16 +702,24 @@ func localSuffix(allowed map[int]bool) string {
 	return " on the chosen NUMA nodes"
 }
 
+func minMemoryMiB(req model.MachineDevice) uint64 {
+	if req.MinMemory == "" {
+		return 0
+	}
+	mib, _ := model.ParseMemoryMiB(req.MinMemory)
+	return mib
+}
+
 // pickOne picks req.Count devices for one request, optionally under one
 // PCIe root, all on one NUMA node when sameNuma is set.
-func pickOne(g Graph, req model.MachineDevice, allowed map[int]bool, root string, used map[string]bool) ([]model.AllocatedDevice, string) {
-	var minMiB uint64
-	if req.MinMemory != "" {
-		minMiB, _ = model.ParseMemoryMiB(req.MinMemory)
+func pickOne(g Graph, req model.MachineDevice, allowed map[int]bool, root string, used *usage) ([]model.AllocatedDevice, string) {
+	if req.Profile != "" {
+		return pickMediated(g, req, allowed, root, used)
 	}
+	minMiB := minMemoryMiB(req)
 	var cands []Device
 	for _, d := range g.Devices {
-		if used[d.BDF] || !matches(d, req, minMiB) {
+		if used.bdf[d.BDF] || !matches(d, req, minMiB) {
 			continue
 		}
 		if root != "" && d.PCIeRoot != root {
@@ -613,7 +757,7 @@ func pickOne(g Graph, req model.MachineDevice, allowed map[int]bool, root string
 	}
 	out := make([]model.AllocatedDevice, 0, need)
 	for _, d := range cands[:need] {
-		used[d.BDF] = true
+		used.bdf[d.BDF] = true
 		ad := model.AllocatedDevice{Name: req.Name, BDF: d.BDF, PCIeRoot: d.PCIeRoot}
 		if d.NUMA >= 0 {
 			n := d.NUMA
@@ -622,4 +766,153 @@ func pickOne(g Graph, req model.MachineDevice, allowed map[int]bool, root string
 		out = append(out, ad)
 	}
 	return out, ""
+}
+
+type mediatedCand struct {
+	parent MediatedParent
+	typ    model.TopologyMediatedType
+	free   int
+}
+
+// pickMediated picks req.Count instances of req.Profile, filling the
+// lowest-named parent before the next one.
+func pickMediated(g Graph, req model.MachineDevice, allowed map[int]bool, root string, used *usage) ([]model.AllocatedDevice, string) {
+	minMiB := minMemoryMiB(req)
+	var cands []mediatedCand
+	for _, p := range g.Mediated {
+		if p.Class != req.Class {
+			continue
+		}
+		if req.Vendor != "" && !strings.EqualFold(p.Vendor, model.PCIVendorID(req.Vendor)) {
+			continue
+		}
+		if req.Model != "" && !strings.EqualFold(p.Device, req.Model) {
+			continue
+		}
+		if root != "" && p.PCIeRoot != root {
+			continue
+		}
+		if allowed != nil && !allowed[p.NUMA] {
+			continue
+		}
+		for _, t := range p.Types {
+			if !t.Matches(req.Profile) || (minMiB > 0 && uint64(t.FramebufferMiB) < minMiB) {
+				continue
+			}
+			if free := p.Free(t, used.mdevMiB[p.Parent], used.mdevN[p.Parent+"/"+t.ID]); free > 0 {
+				cands = append(cands, mediatedCand{parent: p, typ: t, free: free})
+			}
+			break
+		}
+	}
+	need := req.DeviceCount()
+	if req.Aligned(model.AlignSameNUMA) {
+		byNode := map[int][]mediatedCand{}
+		total := map[int]int{}
+		var ids []int
+		for _, c := range cands {
+			if c.parent.NUMA < 0 {
+				continue
+			}
+			if _, ok := byNode[c.parent.NUMA]; !ok {
+				ids = append(ids, c.parent.NUMA)
+			}
+			byNode[c.parent.NUMA] = append(byNode[c.parent.NUMA], c)
+			total[c.parent.NUMA] += c.free
+		}
+		sort.Ints(ids)
+		cands = nil
+		for _, id := range ids {
+			if total[id] >= need {
+				cands = byNode[id]
+				break
+			}
+		}
+	}
+	free := 0
+	for _, c := range cands {
+		free += c.free
+	}
+	if free < need {
+		return nil, fmt.Sprintf("needs %s, %d free%s", describe(req), free, localSuffix(allowed))
+	}
+	out := make([]model.AllocatedDevice, 0, need)
+	for _, c := range cands {
+		for k := 0; k < c.free && len(out) < need; k++ {
+			p := c.parent
+			used.mdevMiB[p.Parent] += c.typ.FramebufferMiB
+			used.mdevN[p.Parent+"/"+c.typ.ID]++
+			ad := model.AllocatedDevice{
+				Name: req.Name, PCIeRoot: p.PCIeRoot,
+				Parent: p.Parent, Profile: c.typ.ID, FramebufferMiB: c.typ.FramebufferMiB,
+			}
+			if p.PCI() {
+				ad.BDF = p.Parent
+			}
+			if p.NUMA >= 0 {
+				n := p.NUMA
+				ad.NUMANode = &n
+			}
+			out = append(out, ad)
+		}
+	}
+	return out, ""
+}
+
+// VRAM is a node's GPU memory and the part Machines are allocated.
+type VRAM struct {
+	TotalMiB     int64
+	AllocatedMiB int64
+}
+
+// VRAMUsage adds up nt's GPU memory: whole GPUs by their VRAM, vGPU parents
+// by their reported VRAM or, when the host does not say, by what their
+// existing instances use plus the largest free profile pool. Allocated is
+// whole GPUs held by Machines on the node plus their vGPU framebuffers.
+func VRAMUsage(nt model.NodeTopology, node string, machines []model.Machine) VRAM {
+	whole := map[string]int64{}
+	for _, d := range nt.Status.Devices {
+		if d.Class == model.DeviceClassGPU {
+			whole[d.BDF] = int64(d.VRAMGiB) * 1024
+		}
+	}
+	existing := map[string]int64{}
+	var v VRAM
+	for _, o := range machines {
+		if o.Spec.NodeName != node || o.Metadata.DeletionTimestamp != nil || o.Spec.TopologyAllocation == nil {
+			continue
+		}
+		for _, d := range o.Spec.TopologyAllocation.Devices {
+			if d.Mediated() {
+				v.AllocatedMiB += d.FramebufferMiB
+				existing[d.Parent+"/"+strings.ToLower(d.UUID)] = d.FramebufferMiB
+				continue
+			}
+			v.AllocatedMiB += whole[d.BDF]
+		}
+	}
+	for _, p := range nt.Status.MediatedDevices {
+		total := p.VRAMMiB
+		if total == 0 {
+			total = whole[p.Parent]
+		}
+		if total == 0 {
+			var pool int64
+			for _, t := range p.Types {
+				if s := int64(t.Available) * t.FramebufferMiB; s > pool {
+					pool = s
+				}
+			}
+			for _, u := range p.Instances {
+				pool += existing[p.Parent+"/"+strings.ToLower(u)]
+			}
+			total = pool
+		}
+		v.TotalMiB += total
+		delete(whole, p.Parent)
+	}
+	for _, mib := range whole {
+		v.TotalMiB += mib
+	}
+	return v
 }

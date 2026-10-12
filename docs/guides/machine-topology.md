@@ -114,6 +114,8 @@ Each `spec.devices` entry asks for `count` (default 1) devices of a
 - **`vendor`** is a PCI vendor ID (`10de`) or `nvidia`, `amd`, `intel`,
   `mellanox`. **`model`** is a PCI device ID.
 - **`minMemory`** is the least GPU memory per device.
+- **`profile`** asks for a vGPU (mediated device) of that profile instead
+  of a whole device; see [vGPU profiles](gpu-vgpu.md).
 - **`virtualFunction: true`** takes SR-IOV VFs only; otherwise whole
   devices (never VFs).
 - **`alignment`**: `sameNuma` keeps the entry's devices on one NUMA node
@@ -121,7 +123,8 @@ Each `spec.devices` entry asks for `count` (default 1) devices of a
   of the Machine under one PCIe root, for GPU-to-NIC peer to peer.
 
 A device is never handed out twice: devices in another Machine's
-`spec.topologyAllocation`, or already in a FluxVM VM, are skipped.
+`spec.topologyAllocation`, or already in a FluxVM VM, are skipped, and so
+are `Unhealthy` devices and vGPU parents.
 `spec.devices` need the qemu backend. They live next to DRA
 `spec.deviceClaims`, and the passed-through BDFs are merged.
 

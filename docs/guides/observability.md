@@ -35,6 +35,9 @@ component apiserver call visibility for free, labeled `method`
 | `kairon_migration_adaptive_actions_total` | counter | `action` | Adaptive engine actions, such as `auto-converge`, `throttle`, `relax-downtime`, `bandwidth`, `postcopy`, `abort`, `tune-failed` and `postcopy-refused`. |
 | `kairon_topology_allocation_failures_total` | counter | `reason` | Scheduling attempts for `spec.topology`/`spec.devices` Machines that found no placement; `reason` is `TopologyUnsatisfiable`, `DRAAllocationPending` or `Unschedulable`. |
 | `kairon_node_numa_free_cpus` | gauge | `node`, `numa` | Pinnable CPUs not held by a Machine, per NUMA node, from each `NodeTopology`. See [topology-aware placement](machine-topology.md). |
+| `kairon_gpu_vram_mib` | gauge | `node`, `state` | GPU memory per node: `total` from `NodeTopology`, `allocated` to Machines' whole GPUs and vGPU framebuffers. See [vGPU](gpu-vgpu.md). |
+| `kairon_gpu_devices` | gauge | `node`, `health` | GPUs per health state: `Healthy`, `Degraded`, `Unhealthy` or `Unknown`. |
+| `kairon_vgpu_available_instances` | gauge | `node`, `parent`, `profile` | Free mediated-device instances per profile, as last reported by the node. |
 | `kairon_node_maintenance` | gauge | `node`, `state` | 1 while a node is in maintenance mode, `state` `Entering` or `InMaintenance`. See [node maintenance](node-maintenance-drs.md). |
 | `kairon_node_maintenance_remaining_machines` | gauge | `node` | Machines still holding a VMM on a node in maintenance mode. |
 | `kairon_drs_imbalance_percent` | gauge | — | Gap between the most and least utilized node (reserved CPU or memory) in the last DRS round. See [DRS](node-maintenance-drs.md#drs-rebalancing). |

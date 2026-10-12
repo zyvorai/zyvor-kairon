@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/zyvorai/kairon/internal/model"
+	"github.com/zyvorai/kairon/internal/topology"
 )
 
 func newNodeTopologyCmd() *cobra.Command {
@@ -57,6 +58,10 @@ func printNodeTopology(w io.Writer, nt model.NodeTopology, machines []model.Mach
 			cpuOwner[n.ID] = append(cpuOwner[n.ID], fmt.Sprintf("%s cpus=%s mem=%dMiB", ref, n.CPUs, n.MemoryMiB))
 		}
 		for _, d := range a.Devices {
+			if d.Mediated() {
+				devOwner[strings.ToLower(d.UUID)] = ref
+				continue
+			}
 			devOwner[d.BDF] = ref
 		}
 	}
@@ -97,6 +102,69 @@ func printNodeTopology(w io.Writer, nt model.NodeTopology, machines []model.Mach
 			_, _ = fmt.Fprintf(w, "    %s%s\n", b, deviceLine(d, devOwner[d.BDF]))
 		}
 	}
+	printMediated(w, nt, devOwner)
+	if v := topology.VRAMUsage(nt, nt.Metadata.Name, machines); v.TotalMiB > 0 || v.AllocatedMiB > 0 {
+		_, _ = fmt.Fprintf(w, "GPU memory: %dMiB allocated of %dMiB\n", v.AllocatedMiB, v.TotalMiB)
+	}
+}
+
+func printMediated(w io.Writer, nt model.NodeTopology, owner map[string]string) {
+	if len(nt.Status.MediatedDevices) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "vGPU parents")
+	for i, p := range nt.Status.MediatedDevices {
+		branch, pad := treeBranch(i == len(nt.Status.MediatedDevices)-1)
+		head := p.Parent
+		if p.Vendor != "" {
+			head += fmt.Sprintf(" %s:%s", p.Vendor, p.Device)
+		} else {
+			head += " (virtual)"
+		}
+		if p.VRAMMiB > 0 {
+			head += fmt.Sprintf(" %dMiB", p.VRAMMiB)
+		}
+		head += healthSuffix(p.Health, p.HealthReasons)
+		if !p.Allocatable {
+			head += " [not in --mdev-parents]"
+		}
+		_, _ = fmt.Fprintf(w, "%s%s\n", branch, head)
+		var lines []string
+		for _, t := range p.Types {
+			l := t.ID
+			if t.Name != "" && t.Name != t.ID {
+				l += fmt.Sprintf(" %q", t.Name)
+			}
+			if t.FramebufferMiB > 0 {
+				l += fmt.Sprintf(" %dMiB", t.FramebufferMiB)
+			}
+			if t.MIGSlices > 0 {
+				l += fmt.Sprintf(" MIG %d slices/%dGiB", t.MIGSlices, t.MIGMemoryGiB)
+			}
+			lines = append(lines, l+fmt.Sprintf(" available %d", t.Available))
+		}
+		for _, u := range p.Instances {
+			l := "instance " + u
+			if o := owner[strings.ToLower(u)]; o != "" {
+				l += " -> " + o
+			}
+			lines = append(lines, l)
+		}
+		for j, l := range lines {
+			b, _ := treeBranch(j == len(lines)-1)
+			_, _ = fmt.Fprintf(w, "%s%s%s\n", pad, b, l)
+		}
+	}
+}
+
+func healthSuffix(h string, reasons []string) string {
+	if h == "" || h == model.DeviceHealthy {
+		return ""
+	}
+	if len(reasons) == 0 {
+		return " [" + h + "]"
+	}
+	return " [" + h + ": " + strings.Join(reasons, "; ") + "]"
 }
 
 func treeBranch(last bool) (string, string) {
@@ -129,6 +197,7 @@ func deviceLine(d model.TopologyDevice, owner string) string {
 	if d.VRAMGiB > 0 {
 		s += fmt.Sprintf(" %dGiB", d.VRAMGiB)
 	}
+	s += healthSuffix(d.Health, d.HealthReasons)
 	switch {
 	case owner != "":
 		s += " -> " + owner
