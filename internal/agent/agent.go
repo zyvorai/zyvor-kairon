@@ -570,6 +570,13 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 	if freshlyCreated || restarted || m.Status.AppliedTopology == nil || m.Status.NodeName != a.NodeName {
 		status.AppliedTopology = a.appliedTopology(ctx, m, rec, mergeBDFs(rec.Request.VFIODevices, nil))
 	}
+	forceThrottles := freshlyCreated || restarted || m.Status.NodeName != a.NodeName
+	appliedThrottles, throttleErr := a.reconcileDiskThrottles(ctx, m, rec, status.AttachedDisks, forceThrottles)
+	status.AppliedDiskThrottles = appliedThrottles
+	if throttleErr != nil {
+		a.Log.Error("disk throttle reconcile failed", "namespace", m.Namespace(), "machine", m.Metadata.Name, "error", throttleErr)
+		status.Message = throttleErr.Error()
+	}
 	appliedLimits, limitsErr := a.reconcileResourceLimits(ctx, m, rec)
 	status.AppliedResourceLimits = appliedLimits
 	if limitsErr != nil {

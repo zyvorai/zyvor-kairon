@@ -268,6 +268,31 @@ agent.
 | NVMe-oF: in-cluster DaemonSets | not run | 2026-10-12 | The lab ran host-installed binaries; the chart is rendered and linted only |
 | NVMe-oF: two nodes | not run | 2026-10-12 | Storage node and Machine host were the same machine |
 
+## Disk QoS
+
+Driven by [`scripts/lab-qos.sh`](../scripts/lab-qos.sh) on one node with
+host-installed kairon-controller, kairon-node and FluxVM from this change.
+The Machine's data disk is a 1 GiB raw file behind a hostPath PV. The guest
+measures 4 KiB direct I/O on both disks for one second and prints the rates
+to the serial console. QEMU's default burst lets one-second samples run
+5–15% over the limit. All cases below passed in one run, with load average
+24–32 from other workloads on the host. In an earlier run the
+`ch-virtiofs` case failed once: Cloud Hypervisor exited with `Cannot create
+virtio-rng device: Operation not permitted`. Two manual retries and the
+next full run passed.
+
+| Case | Last result | Date | Notes |
+|---|---|---|---|
+| Disk QoS: crd-validation | pass | 2026-10-13 | Single node (kernel 7.0.0-34, QEMU 10.2.1, k3s 1.35): `iopsTotal` with `iopsRead` and a throttle on a vhost-user-blk disk both rejected with 422 |
+| Disk QoS: fluxvm-boot | pass | 2026-10-13 | Same node, FluxVM API only: QMP shows root 300 IOPS and 50 MiB/s after create; a live PUT to 350 IOPS and a hot-added data disk with 150 read / 120 write IOPS both survive stop/start (new QEMU pid) |
+| Disk QoS: ch-virtiofs | pass | 2026-10-13 | Same node, Cloud Hypervisor v53.0: a VM with a virtiofs share stays up after 20 s and `ch-remote info` lists `fs0@virtiofs-0.sock`. Before this change FluxVM passed `dax=off`, which v53 rejects, and still reported the VM running |
+| Disk QoS: boot | pass | 2026-10-13 | Same node: Machine with root 200 IOPS and data disk 10 MiB/s; `status.appliedDiskThrottles` and QMP match; guest 207 IOPS on root, 11151 KiB/s on the data disk |
+| Disk QoS: live-change | pass | 2026-10-13 | Same node: raised to 400 IOPS and 20 MiB/s; same QEMU pid; guest 428 IOPS, 22288 KiB/s |
+| Disk QoS: lift | pass | 2026-10-13 | Same node: `image.io: null` lifts the root limit in QMP and status; guest root 17997 IOPS |
+| Disk QoS: recreate | pass | 2026-10-13 | Same node: root limit back, then `Stopped` → `Running`; the new FluxVM runtime's create request carries `root_disk_io.throttle` and QMP shows 200 IOPS |
+| Disk QoS: limits across live migration | not run | 2026-10-13 | One lab node; QEMU does not migrate throttles, so kairon-node reapplies them on the target (unit-tested only) |
+| virtiofs DAX | not supported | 2026-10-13 | QEMU 10.2.1 `vhost-user-fs-pci` has no `cache-size`; Cloud Hypervisor v53 `--fs` has no `dax` |
+
 ## Node maintenance and DRS
 
 Driven by [`scripts/lab-maintenance.sh`](../scripts/lab-maintenance.sh) on

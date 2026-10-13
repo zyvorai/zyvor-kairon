@@ -72,6 +72,26 @@ capability scheduling, backend isolation, network allocation, membership schedul
 and a Mac leaving a network all passed. Booting on real Macs and traffic between them have not run. See
 `docs/guides/mac-fabric.md` and the "Mac Fabric" section of `docs/COMPATIBILITY.md`.
 
+## Added: per-disk I/O QoS
+
+`spec.image.io.throttle` (root disk) and `spec.disks[].io.throttle` cap a
+disk's IOPS and bandwidth on the `qemu` backend: `iopsTotal` or
+`iopsRead`/`iopsWrite`, `bpsTotal` or `bpsRead`/`bpsWrite`, and bursts with
+`iopsTotalMax`/`bpsTotalMax` for `burstSeconds`. The CRD refuses
+combinations QEMU would refuse and a throttle on a `vhost-user-blk` disk.
+Changing or removing a limit on a running Machine takes effect without a
+restart; `status.appliedDiskThrottles` shows what kairon-node last set.
+
+Needs FluxVM with `DiskIo.throttle` and
+`PUT /v1/vms/{id}/disks/{name}/throttle`. An older FluxVM refuses a create
+or attach that carries a throttle (unknown field) and returns 404 for the
+live update; Machines without a throttle are unaffected.
+
+virtiofs DAX is not part of this: QEMU 10.2's `vhost-user-fs-pci` has no
+`cache-size` and Cloud Hypervisor v53's `--fs` has no `dax`. See
+`docs/guides/disk-qos.md` and the "Disk QoS" section of
+`docs/COMPATIBILITY.md`.
+
 ## Added: accelerator profiles (experimental)
 
 A cluster-scoped `MachineAcceleratorProfile` names an accelerator shape:
