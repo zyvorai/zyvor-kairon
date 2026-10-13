@@ -101,7 +101,8 @@ from `disk.img` on the mounted filesystem, as before.
 `directsync`, `unsafe`), `iothread` and `queues` (1-64). Unset fields keep
 FluxVM's defaults. The options apply on the `qemu` backend only and are
 passed to FluxVM unchanged. Its API guide covers what each one does in
-QEMU.
+QEMU. `io.throttle` caps a disk's IOPS and bandwidth and can be changed on
+a running Machine; see [disk QoS](disk-qos.md).
 
 A `vhost-user-blk` disk is served by its own `qemu-storage-daemon` rather
 than by QEMU. When a Machine lists one, Kairon creates the VM with

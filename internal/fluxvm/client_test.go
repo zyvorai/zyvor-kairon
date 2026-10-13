@@ -6,6 +6,7 @@ package fluxvm
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -815,4 +816,52 @@ func mustBuild(t *testing.T, m model.Machine) CreateRequest {
 		t.Fatal(err)
 	}
 	return req
+}
+
+func TestRootDiskThrottleUsesFluxVMFieldNames(t *testing.T) {
+	m := model.Machine{Spec: model.MachineSpec{
+		Image: model.ImageSpec{Path: "/images/base.img", IO: &model.DiskIO{
+			Cache:    "none",
+			Throttle: &model.DiskThrottle{IOPSTotal: 500, IOPSTotalMax: 1000, BurstSeconds: 5},
+		}},
+		Resources: model.ResourceSpec{CPU: "1", Memory: "1Gi"},
+	}}
+	req, err := buildCreateRequest(m, "qemu", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(req.RootDiskIO)
+	want := `{"cache":"none","throttle":{"iops_total":500,"iops_total_max":1000,"burst_seconds":5}}`
+	if string(b) != want {
+		t.Fatalf("root_disk_io = %s, want %s", b, want)
+	}
+	if WireDiskThrottle(&model.DiskThrottle{}) != nil {
+		t.Fatal("an empty throttle should be sent as null")
+	}
+}
+
+func TestSetDiskThrottle(t *testing.T) {
+	var path, body string
+	fs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path = r.Method + " " + r.URL.Path
+		b := new(strings.Builder)
+		_, _ = io.Copy(b, r.Body)
+		body = b.String()
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer fs.Close()
+	c := New(fs.URL, "")
+	c.HTTP = fs.Client()
+	if err := c.SetDiskThrottle(context.Background(), "vm-1", "root", &model.DiskThrottle{BPSWrite: 1 << 20}); err != nil {
+		t.Fatal(err)
+	}
+	if path != "PUT /v1/vms/vm-1/disks/root/throttle" || body != `{"throttle":{"bps_write":1048576}}` {
+		t.Fatalf("%s %s", path, body)
+	}
+	if err := c.SetDiskThrottle(context.Background(), "vm-1", "data", nil); err != nil {
+		t.Fatal(err)
+	}
+	if body != `{"throttle":null}` {
+		t.Fatalf("lift body %s", body)
+	}
 }

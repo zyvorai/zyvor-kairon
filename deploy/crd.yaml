@@ -3138,6 +3138,65 @@ spec:
                         type: integer
                         minimum: 1
                         maximum: 64
+                      throttle:
+                        type: object
+                        description: IOPS and bytes/s limits, applied live. A *Total limit excludes its *Read/*Write pair; *TotalMax bursts for burstSeconds (default 1).
+                        properties:
+                          iopsTotal:
+                            type: integer
+                            format: int64
+                            minimum: 1
+                            maximum: 1000000000000000
+                          iopsRead:
+                            type: integer
+                            format: int64
+                            minimum: 1
+                            maximum: 1000000000000000
+                          iopsWrite:
+                            type: integer
+                            format: int64
+                            minimum: 1
+                            maximum: 1000000000000000
+                          bpsTotal:
+                            type: integer
+                            format: int64
+                            minimum: 1
+                            maximum: 1000000000000000
+                          bpsRead:
+                            type: integer
+                            format: int64
+                            minimum: 1
+                            maximum: 1000000000000000
+                          bpsWrite:
+                            type: integer
+                            format: int64
+                            minimum: 1
+                            maximum: 1000000000000000
+                          iopsTotalMax:
+                            type: integer
+                            format: int64
+                            minimum: 1
+                            maximum: 1000000000000000
+                          bpsTotalMax:
+                            type: integer
+                            format: int64
+                            minimum: 1
+                            maximum: 1000000000000000
+                          burstSeconds:
+                            type: integer
+                            minimum: 1
+                            maximum: 86400
+                        x-kubernetes-validations:
+                        - rule: "!has(self.iopsTotal) || (!has(self.iopsRead) && !has(self.iopsWrite))"
+                          message: "iopsTotal excludes iopsRead and iopsWrite"
+                        - rule: "!has(self.bpsTotal) || (!has(self.bpsRead) && !has(self.bpsWrite))"
+                          message: "bpsTotal excludes bpsRead and bpsWrite"
+                        - rule: "!has(self.iopsTotalMax) || (has(self.iopsTotal) && self.iopsTotalMax >= self.iopsTotal)"
+                          message: "iopsTotalMax needs iopsTotal and must not be below it"
+                        - rule: "!has(self.bpsTotalMax) || (has(self.bpsTotal) && self.bpsTotalMax >= self.bpsTotal)"
+                          message: "bpsTotalMax needs bpsTotal and must not be below it"
+                        - rule: "!has(self.burstSeconds) || has(self.iopsTotalMax) || has(self.bpsTotalMax)"
+                          message: "burstSeconds needs iopsTotalMax or bpsTotalMax"
               resources:
                 type: object
                 properties:
@@ -3671,9 +3730,70 @@ spec:
                           type: integer
                           minimum: 1
                           maximum: 64
+                        throttle:
+                          type: object
+                          description: IOPS and bytes/s limits, applied live. A *Total limit excludes its *Read/*Write pair; *TotalMax bursts for burstSeconds (default 1).
+                          properties:
+                            iopsTotal:
+                              type: integer
+                              format: int64
+                              minimum: 1
+                              maximum: 1000000000000000
+                            iopsRead:
+                              type: integer
+                              format: int64
+                              minimum: 1
+                              maximum: 1000000000000000
+                            iopsWrite:
+                              type: integer
+                              format: int64
+                              minimum: 1
+                              maximum: 1000000000000000
+                            bpsTotal:
+                              type: integer
+                              format: int64
+                              minimum: 1
+                              maximum: 1000000000000000
+                            bpsRead:
+                              type: integer
+                              format: int64
+                              minimum: 1
+                              maximum: 1000000000000000
+                            bpsWrite:
+                              type: integer
+                              format: int64
+                              minimum: 1
+                              maximum: 1000000000000000
+                            iopsTotalMax:
+                              type: integer
+                              format: int64
+                              minimum: 1
+                              maximum: 1000000000000000
+                            bpsTotalMax:
+                              type: integer
+                              format: int64
+                              minimum: 1
+                              maximum: 1000000000000000
+                            burstSeconds:
+                              type: integer
+                              minimum: 1
+                              maximum: 86400
+                          x-kubernetes-validations:
+                          - rule: "!has(self.iopsTotal) || (!has(self.iopsRead) && !has(self.iopsWrite))"
+                            message: "iopsTotal excludes iopsRead and iopsWrite"
+                          - rule: "!has(self.bpsTotal) || (!has(self.bpsRead) && !has(self.bpsWrite))"
+                            message: "bpsTotal excludes bpsRead and bpsWrite"
+                          - rule: "!has(self.iopsTotalMax) || (has(self.iopsTotal) && self.iopsTotalMax >= self.iopsTotal)"
+                            message: "iopsTotalMax needs iopsTotal and must not be below it"
+                          - rule: "!has(self.bpsTotalMax) || (has(self.bpsTotal) && self.bpsTotalMax >= self.bpsTotal)"
+                            message: "bpsTotalMax needs bpsTotal and must not be below it"
+                          - rule: "!has(self.burstSeconds) || has(self.iopsTotalMax) || has(self.bpsTotalMax)"
+                            message: "burstSeconds needs iopsTotalMax or bpsTotalMax"
                       x-kubernetes-validations:
                       - rule: "!has(self.aio) || self.aio != 'native' || (has(self.cache) && (self.cache == 'none' || self.cache == 'directsync'))"
                         message: "aio native needs cache none or directsync"
+                      - rule: "!has(self.throttle) || !has(self.bus) || self.bus != 'vhost-user-blk'"
+                        message: "vhost-user-blk bypasses QEMU's block layer and cannot be throttled"
               deviceClaims:
                 type: array
                 items:
@@ -3878,6 +3998,63 @@ spec:
               appliedMemoryMiB:
                 type: integer
                 format: int64
+              appliedDiskThrottles:
+                type: array
+                description: Disk limits kairon-node last set on the running VM (disk root or a spec.disks name).
+                items:
+                  type: object
+                  required:
+                  - disk
+                  properties:
+                    disk:
+                      type: string
+                    throttle:
+                      type: object
+                      properties:
+                        iopsTotal:
+                          type: integer
+                          format: int64
+                          minimum: 1
+                          maximum: 1000000000000000
+                        iopsRead:
+                          type: integer
+                          format: int64
+                          minimum: 1
+                          maximum: 1000000000000000
+                        iopsWrite:
+                          type: integer
+                          format: int64
+                          minimum: 1
+                          maximum: 1000000000000000
+                        bpsTotal:
+                          type: integer
+                          format: int64
+                          minimum: 1
+                          maximum: 1000000000000000
+                        bpsRead:
+                          type: integer
+                          format: int64
+                          minimum: 1
+                          maximum: 1000000000000000
+                        bpsWrite:
+                          type: integer
+                          format: int64
+                          minimum: 1
+                          maximum: 1000000000000000
+                        iopsTotalMax:
+                          type: integer
+                          format: int64
+                          minimum: 1
+                          maximum: 1000000000000000
+                        bpsTotalMax:
+                          type: integer
+                          format: int64
+                          minimum: 1
+                          maximum: 1000000000000000
+                        burstSeconds:
+                          type: integer
+                          minimum: 1
+                          maximum: 86400
               appliedResourceLimits:
                 type: object
                 properties:

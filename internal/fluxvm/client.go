@@ -28,6 +28,7 @@ type Record struct {
 	UUID    string `json:"uuid,omitempty"`
 	Name    string `json:"name,omitempty"`
 	Status  string `json:"status,omitempty"`
+	Backend string `json:"backend,omitempty"`
 	GuestIP string `json:"guest_ip,omitempty"`
 	TapName string `json:"tap_name,omitempty"`
 	// Disk is the real qcow2/raw path FluxVM currently has open for this
@@ -114,7 +115,7 @@ type CreateRequest struct {
 	Image   string `json:"image"`
 	Storage string `json:"storage,omitempty"`
 	// RootDiskIO is FluxVM's root_disk_io (QEMU).
-	RootDiskIO *model.DiskIO `json:"root_disk_io,omitempty"`
+	RootDiskIO *DiskIO `json:"root_disk_io,omitempty"`
 	// SharedMemory boots with shareable guest memory, which hot-adding a
 	// vhost-user-blk disk needs.
 	SharedMemory bool   `json:"shared_memory,omitempty"`
@@ -608,7 +609,7 @@ func buildCreateRequest(m model.Machine, defaultBackend string, vfioDevices []st
 		if backend != "qemu" {
 			return CreateRequest{}, fmt.Errorf("spec.image.io requires the qemu backend; Machine resolves to backend %q", backend)
 		}
-		payload.RootDiskIO = io
+		payload.RootDiskIO = WireDiskIO(io)
 	}
 	for _, d := range m.Spec.Disks {
 		if d.IO != nil && d.IO.Bus == "vhost-user-blk" {
@@ -691,9 +692,53 @@ func (c *Client) HotplugMemory(ctx context.Context, id string, addMemoryMiB uint
 
 // Disk is one entry of GET /v1/vms/{id}/disks.
 type Disk struct {
-	Name   string `json:"name"`
-	Path   string `json:"path"`
-	Format string `json:"format"`
+	Name     string        `json:"name"`
+	Path     string        `json:"path"`
+	Format   string        `json:"format"`
+	Throttle *DiskThrottle `json:"throttle,omitempty"`
+}
+
+// DiskIO is FluxVM's DiskIo: model.DiskIO with a snake_case throttle.
+type DiskIO struct {
+	Bus      string        `json:"bus,omitempty"`
+	AIO      string        `json:"aio,omitempty"`
+	Cache    string        `json:"cache,omitempty"`
+	IOThread bool          `json:"iothread,omitempty"`
+	Queues   int           `json:"queues,omitempty"`
+	Throttle *DiskThrottle `json:"throttle,omitempty"`
+}
+
+// DiskThrottle is FluxVM's DiskThrottle.
+type DiskThrottle struct {
+	IOPSTotal    int64 `json:"iops_total,omitempty"`
+	IOPSRead     int64 `json:"iops_read,omitempty"`
+	IOPSWrite    int64 `json:"iops_write,omitempty"`
+	BPSTotal     int64 `json:"bps_total,omitempty"`
+	BPSRead      int64 `json:"bps_read,omitempty"`
+	BPSWrite     int64 `json:"bps_write,omitempty"`
+	IOPSTotalMax int64 `json:"iops_total_max,omitempty"`
+	BPSTotalMax  int64 `json:"bps_total_max,omitempty"`
+	BurstSeconds int64 `json:"burst_seconds,omitempty"`
+}
+
+// WireDiskIO converts a Machine's disk I/O settings to FluxVM's form.
+func WireDiskIO(io *model.DiskIO) *DiskIO {
+	if io == nil {
+		return nil
+	}
+	return &DiskIO{Bus: io.Bus, AIO: io.AIO, Cache: io.Cache, IOThread: io.IOThread, Queues: io.Queues, Throttle: WireDiskThrottle(io.Throttle)}
+}
+
+// WireDiskThrottle converts a Machine disk limit; nil when it sets none.
+func WireDiskThrottle(t *model.DiskThrottle) *DiskThrottle {
+	if t.IsZero() {
+		return nil
+	}
+	return &DiskThrottle{
+		IOPSTotal: t.IOPSTotal, IOPSRead: t.IOPSRead, IOPSWrite: t.IOPSWrite,
+		BPSTotal: t.BPSTotal, BPSRead: t.BPSRead, BPSWrite: t.BPSWrite,
+		IOPSTotalMax: t.IOPSTotalMax, BPSTotalMax: t.BPSTotalMax, BurstSeconds: t.BurstSeconds,
+	}
 }
 
 // ListDisks returns the VM's root and data disks.
@@ -716,9 +761,16 @@ func (c *Client) ListDisks(ctx context.Context, id string) ([]Disk, error) {
 func (c *Client) AttachDisk(ctx context.Context, id, name, path string, io *model.DiskIO) error {
 	body := map[string]any{"name": name, "path": path}
 	if io != nil {
-		body["io"] = io
+		body["io"] = WireDiskIO(io)
 	}
 	_, err := c.do(ctx, http.MethodPost, "/v1/vms/"+url.PathEscape(id)+"/disks", body)
+	return err
+}
+
+// SetDiskThrottle sets disk name's (root or a data disk) IOPS/bandwidth
+// limits, live when the VM runs; nil lifts them all.
+func (c *Client) SetDiskThrottle(ctx context.Context, id, name string, t *model.DiskThrottle) error {
+	_, err := c.do(ctx, http.MethodPut, "/v1/vms/"+url.PathEscape(id)+"/disks/"+url.PathEscape(name)+"/throttle", map[string]any{"throttle": WireDiskThrottle(t)})
 	return err
 }
 

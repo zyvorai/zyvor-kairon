@@ -394,8 +394,8 @@ type ImageSpec struct {
 	// from or written to the API, so a Machine author can't select it.
 	Storage string `json:"-"`
 	// IO tunes the root disk's I/O on the qemu backend: aio, cache,
-	// iothread and queues (the root is always virtio-blk). Creation-time
-	// only.
+	// iothread and queues (the root is always virtio-blk) are
+	// creation-time only; throttle is applied live.
 	IO *DiskIO `json:"io,omitempty"`
 }
 
@@ -414,6 +414,86 @@ type DiskIO struct {
 	IOThread bool `json:"iothread,omitempty"`
 	// Queues is the number of virtio queues, 1-64 (virtio buses).
 	Queues int `json:"queues,omitempty"`
+	// Throttle caps the disk's IOPS and bandwidth (scsi, virtio-blk and the
+	// root; not vhost-user-blk). kairon-node changes it live on a running
+	// Machine.
+	Throttle *DiskThrottle `json:"throttle,omitempty"`
+}
+
+// DiskThrottleMax is the largest single limit QEMU accepts.
+const DiskThrottleMax = 1_000_000_000_000_000
+
+// DiskThrottle is a per-disk QEMU I/O limit. A *Total limit and its
+// *Read/*Write pair are mutually exclusive; *TotalMax lets the disk burst
+// above *Total for BurstSeconds (default 1).
+type DiskThrottle struct {
+	IOPSTotal int64 `json:"iopsTotal,omitempty"`
+	IOPSRead  int64 `json:"iopsRead,omitempty"`
+	IOPSWrite int64 `json:"iopsWrite,omitempty"`
+	// Bytes per second.
+	BPSTotal     int64 `json:"bpsTotal,omitempty"`
+	BPSRead      int64 `json:"bpsRead,omitempty"`
+	BPSWrite     int64 `json:"bpsWrite,omitempty"`
+	IOPSTotalMax int64 `json:"iopsTotalMax,omitempty"`
+	BPSTotalMax  int64 `json:"bpsTotalMax,omitempty"`
+	BurstSeconds int64 `json:"burstSeconds,omitempty"`
+}
+
+// IsZero reports a throttle that sets no limit.
+func (t *DiskThrottle) IsZero() bool {
+	return t == nil || *t == DiskThrottle{}
+}
+
+// Validate applies QEMU's block_set_io_throttle rules.
+func (t *DiskThrottle) Validate() error {
+	if t == nil {
+		return nil
+	}
+	for _, f := range []struct {
+		k string
+		v int64
+	}{
+		{"iopsTotal", t.IOPSTotal}, {"iopsRead", t.IOPSRead}, {"iopsWrite", t.IOPSWrite},
+		{"bpsTotal", t.BPSTotal}, {"bpsRead", t.BPSRead}, {"bpsWrite", t.BPSWrite},
+		{"iopsTotalMax", t.IOPSTotalMax}, {"bpsTotalMax", t.BPSTotalMax},
+	} {
+		if f.v < 0 || f.v > DiskThrottleMax {
+			return fmt.Errorf("throttle.%s must be 0-%d (got %d)", f.k, int64(DiskThrottleMax), f.v)
+		}
+	}
+	if t.IOPSTotal > 0 && (t.IOPSRead > 0 || t.IOPSWrite > 0) {
+		return fmt.Errorf("throttle.iopsTotal excludes iopsRead and iopsWrite")
+	}
+	if t.BPSTotal > 0 && (t.BPSRead > 0 || t.BPSWrite > 0) {
+		return fmt.Errorf("throttle.bpsTotal excludes bpsRead and bpsWrite")
+	}
+	for _, p := range []struct {
+		k         string
+		max, base int64
+	}{{"iopsTotal", t.IOPSTotalMax, t.IOPSTotal}, {"bpsTotal", t.BPSTotalMax, t.BPSTotal}} {
+		if p.max > 0 && p.base == 0 {
+			return fmt.Errorf("throttle.%sMax needs %s", p.k, p.k)
+		}
+		if p.max > 0 && p.max < p.base {
+			return fmt.Errorf("throttle.%sMax (%d) is below %s (%d)", p.k, p.max, p.k, p.base)
+		}
+	}
+	if t.BurstSeconds != 0 {
+		if t.IOPSTotalMax == 0 && t.BPSTotalMax == 0 {
+			return fmt.Errorf("throttle.burstSeconds needs iopsTotalMax or bpsTotalMax")
+		}
+		if t.BurstSeconds < 1 || t.BurstSeconds > 86400 {
+			return fmt.Errorf("throttle.burstSeconds must be 1-86400 (got %d)", t.BurstSeconds)
+		}
+	}
+	return nil
+}
+
+// AppliedDiskThrottle is a disk limit kairon-node has set on the running VM.
+type AppliedDiskThrottle struct {
+	// Disk is a spec.disks name, or root.
+	Disk     string       `json:"disk"`
+	Throttle DiskThrottle `json:"throttle"`
 }
 
 // ImageSource names a golden image kairon-node itself downloads into a
@@ -863,6 +943,14 @@ func ValidateDisks(disks []MachineDisk) error {
 		if strings.TrimSpace(d.ClaimName) == "" {
 			return fmt.Errorf("spec.disks[%d] requires claimName", i)
 		}
+		if d.IO != nil && !d.IO.Throttle.IsZero() {
+			if d.IO.Bus == "vhost-user-blk" {
+				return fmt.Errorf("spec.disks[%d].io.throttle: vhost-user-blk bypasses QEMU's block layer and cannot be throttled", i)
+			}
+			if err := d.IO.Throttle.Validate(); err != nil {
+				return fmt.Errorf("spec.disks[%d].io.%w", i, err)
+			}
+		}
 	}
 	return nil
 }
@@ -1016,6 +1104,10 @@ type MachineStatus struct {
 	// purely so internal/agent/resourcelimits.go can skip a redundant FluxVM
 	// call when nothing has actually changed since the last reconcile tick.
 	AppliedResourceLimits *ResourceLimits `json:"appliedResourceLimits,omitempty"`
+	// AppliedDiskThrottles are the spec.image.io.throttle (disk root) and
+	// spec.disks[].io.throttle limits kairon-node last set on the running
+	// VM. An entry whose spec limit is removed is lifted, then dropped.
+	AppliedDiskThrottles []AppliedDiskThrottle `json:"appliedDiskThrottles,omitempty"`
 	// AppliedTopology is the NUMA binding FluxVM reported for the running
 	// VM (spec.topologyAllocation Machines only).
 	AppliedTopology *AppliedTopology `json:"appliedTopology,omitempty"`
