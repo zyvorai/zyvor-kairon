@@ -68,6 +68,9 @@ func run() int {
 	drsMaxMoves := flag.Int("drs-max-moves", scheduler.DefaultRebalanceMaxMoves, "most moves DRS plans per round")
 	drsStrategy := flag.String("drs-strategy", "live", "migration strategy for DRS moves: live|auto|cold; with live only Machines live migration can move are considered")
 	drsCooldown := flag.Duration("drs-cooldown", controller.DefaultDRSCooldown, "how long DRS leaves a Machine it moved in place")
+	drsSignal := flag.String("drs-signal", envDefault("KAIRON_DRS_SIGNAL", scheduler.RebalanceSignalReserved), "what DRS balances: reserved (reserved CPU/memory) or pressure (host PSI that kairon-node publishes on each Node's kairon.zyvor.dev/pressure annotation)")
+	drsPressureThreshold := flag.Int("drs-pressure-threshold-percent", scheduler.DefaultPressureThresholdPercent, "with -drs-signal=pressure, host PSI some avg60 (worst of cpu, memory, io) at which a node is hot; nodes below half of it take Machines")
+	drsPressureMaxAge := flag.Duration("drs-pressure-max-age", scheduler.DefaultPressureMaxAge, "with -drs-signal=pressure, nodes whose pressure sample is older than this are left out")
 	staleEvacuation := flag.Bool("stale-evacuation", envBool("KAIRON_STALE_EVACUATION", false), "fence Machines annotated kairon.zyvor.dev/evacuate=true off NotReady nodes annotated kairon.zyvor.dev/node-fenced, so the scheduler places them again (see internal/controller/staleevac.go); off by default")
 	staleEvacuationMaxPerTick := flag.Int("stale-evacuation-max-per-tick", controller.DefaultStaleEvacuationMaxPerTick, "most Machines -stale-evacuation fences per reconcile tick")
 	ciliumAttach := flag.Bool("cilium-attach", envBool("KAIRON_CILIUM_ATTACH", false), "reconcile CiliumExternalWorkload for Machines with spec.network.ciliumAttach (requires Cilium CNI; off by default)")
@@ -102,6 +105,10 @@ func run() int {
 		return 1
 	}
 	if err := controller.ValidateDRSMode(*drsMode); err != nil {
+		log.Error("secure startup refused", "reason", err.Error())
+		return 1
+	}
+	if err := controller.ValidateDRSSignal(*drsSignal); err != nil {
 		log.Error("secure startup refused", "reason", err.Error())
 		return 1
 	}
@@ -183,13 +190,16 @@ func run() int {
 			MinRetryInterval: *nodeMaintenanceMinRetryInterval,
 		},
 		DRS: controller.DRS{
-			Mode:                  *drsMode,
-			Interval:              *drsInterval,
-			ThresholdPercent:      *drsThreshold,
-			MinImprovementPercent: *drsMinImprovement,
-			MaxMoves:              *drsMaxMoves,
-			Strategy:              *drsStrategy,
-			Cooldown:              *drsCooldown,
+			Mode:                     *drsMode,
+			Interval:                 *drsInterval,
+			ThresholdPercent:         *drsThreshold,
+			MinImprovementPercent:    *drsMinImprovement,
+			MaxMoves:                 *drsMaxMoves,
+			Strategy:                 *drsStrategy,
+			Cooldown:                 *drsCooldown,
+			Signal:                   *drsSignal,
+			PressureThresholdPercent: *drsPressureThreshold,
+			PressureMaxAge:           *drsPressureMaxAge,
 		},
 		DR: controller.DisasterRecovery{
 			SecretNamespace: *drSecretNamespace,

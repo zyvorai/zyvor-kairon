@@ -38,6 +38,15 @@ type RebalanceOptions struct {
 	// judged from model.AnnotationDRSMovedAt against Now.
 	Cooldown time.Duration
 	Now      time.Time
+	// Signal is RebalanceSignalReserved (the default) or
+	// RebalanceSignalPressure.
+	Signal string
+	// PressureThresholdPercent is the host PSI (some avg60, worst of cpu,
+	// memory and io) at which a node is hot under RebalanceSignalPressure.
+	PressureThresholdPercent int
+	// PressureMaxAge is how old a node's pressure sample may be before the
+	// node is treated as unmeasured.
+	PressureMaxAge time.Duration
 }
 
 func (o RebalanceOptions) threshold() int {
@@ -69,6 +78,9 @@ type NodeUtilization struct {
 	MemoryPercent int    `json:"memoryPercent"`
 	Percent       int    `json:"percent"`
 	Machines      int    `json:"machines"`
+	// Pressure is the node's last host PSI sample, set only under
+	// RebalanceSignalPressure for nodes with a fresh one.
+	Pressure *model.PSI `json:"pressure,omitempty"`
 }
 
 // RebalanceMove is one planned migration.
@@ -80,10 +92,15 @@ type RebalanceMove struct {
 	// Imbalance is the cluster imbalance after this move (and every move
 	// before it in the plan).
 	Imbalance int `json:"imbalance"`
+	// Reason explains a pressure move.
+	Reason string `json:"reason,omitempty"`
 }
 
 // RebalancePlan is PlanRebalance's result. Reason explains an empty Moves.
 type RebalancePlan struct {
+	// Signal is what the plan balanced: RebalanceSignalReserved or
+	// RebalanceSignalPressure.
+	Signal          string            `json:"signal"`
 	Nodes           []NodeUtilization `json:"nodes"`
 	ImbalanceBefore int               `json:"imbalanceBefore"`
 	ImbalanceAfter  int               `json:"imbalanceAfter"`
@@ -93,7 +110,9 @@ type RebalancePlan struct {
 
 // PlanRebalance proposes up to MaxMoves migrations that lower the spread
 // between the most and least utilized nodes, measured on reserved CPU and
-// memory (the same accounting Choose uses), not on measured guest demand.
+// memory (the same accounting Choose uses). With Signal
+// RebalanceSignalPressure it plans from measured PSI instead (see
+// planPressure).
 // Only Ready, schedulable nodes with allocatable capacity and no memory
 // pressure take part, as sources or targets. Every move must pass the same
 // hard filters Choose applies to the target, including required
@@ -108,9 +127,12 @@ func (s Scheduler) PlanRebalance(nodes []model.Node, machines []model.Machine, o
 		}
 	}
 	sort.Slice(pool, func(i, j int) bool { return pool[i].Metadata.Name < pool[j].Metadata.Name })
+	if opts.Signal == RebalanceSignalPressure {
+		return s.planPressure(pool, nodes, machines, opts)
+	}
 	sim := append([]model.Machine(nil), machines...)
 	load := BuildNodeLoad(sim)
-	plan := RebalancePlan{Nodes: utilizations(pool, load)}
+	plan := RebalancePlan{Signal: RebalanceSignalReserved, Nodes: utilizations(pool, load)}
 	plan.ImbalanceBefore = imbalance(plan.Nodes)
 	plan.ImbalanceAfter = plan.ImbalanceBefore
 	if len(pool) < 2 {

@@ -28,8 +28,8 @@ const (
 	DefaultDRSCooldown = time.Hour
 )
 
-// DRS rebalances Machines across nodes by reserved CPU and memory (see
-// scheduler.PlanRebalance). Recommend only logs, records Events and exports
+// DRS rebalances Machines across nodes by reserved CPU and memory, or by
+// measured pressure with Signal "pressure" (see scheduler.PlanRebalance). Recommend only logs, records Events and exports
 // metrics; automatic also creates the MachineMigrations, one round at a
 // time. Off by default.
 type DRS struct {
@@ -44,6 +44,11 @@ type DRS struct {
 	Strategy string
 	// Cooldown keeps a Machine the rebalancer moved in place this long.
 	Cooldown time.Duration
+	// Signal is scheduler.RebalanceSignalReserved (the default) or
+	// scheduler.RebalanceSignalPressure.
+	Signal                   string
+	PressureThresholdPercent int
+	PressureMaxAge           time.Duration
 }
 
 // ValidateDRSMode rejects an unknown -drs-mode.
@@ -53,6 +58,15 @@ func ValidateDRSMode(mode string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown DRS mode %q: want off|recommend|automatic", mode)
+}
+
+// ValidateDRSSignal rejects an unknown -drs-signal.
+func ValidateDRSSignal(signal string) error {
+	switch signal {
+	case "", scheduler.RebalanceSignalReserved, scheduler.RebalanceSignalPressure:
+		return nil
+	}
+	return fmt.Errorf("unknown DRS signal %q: want reserved|pressure", signal)
 }
 
 func (d DRS) interval() time.Duration {
@@ -80,13 +94,16 @@ func (d DRS) strategy() string {
 // holds namespace/name of Machines already migrating.
 func (d DRS) RebalanceOptions(busy map[string]bool, now time.Time) scheduler.RebalanceOptions {
 	return scheduler.RebalanceOptions{
-		ThresholdPercent:      d.ThresholdPercent,
-		MinImprovementPercent: d.MinImprovementPercent,
-		MaxMoves:              d.MaxMoves,
-		LiveOnly:              d.strategy() == "live",
-		Busy:                  busy,
-		Cooldown:              d.cooldown(),
-		Now:                   now,
+		ThresholdPercent:         d.ThresholdPercent,
+		MinImprovementPercent:    d.MinImprovementPercent,
+		MaxMoves:                 d.MaxMoves,
+		LiveOnly:                 d.strategy() == "live",
+		Busy:                     busy,
+		Cooldown:                 d.cooldown(),
+		Now:                      now,
+		Signal:                   d.Signal,
+		PressureThresholdPercent: d.PressureThresholdPercent,
+		PressureMaxAge:           d.PressureMaxAge,
 	}
 }
 
@@ -129,7 +146,7 @@ func (c *Controller) reconcileDRS(ctx context.Context, machines []model.Machine,
 	if c.Metrics != nil {
 		c.Metrics.ObserveDRSPlan(plan)
 	}
-	c.Log.Info("drs: plan", "mode", mode, "imbalanceBefore", plan.ImbalanceBefore, "imbalanceAfter", plan.ImbalanceAfter, "moves", len(plan.Moves), "reason", plan.Reason)
+	c.Log.Info("drs: plan", "mode", mode, "signal", plan.Signal, "imbalanceBefore", plan.ImbalanceBefore, "imbalanceAfter", plan.ImbalanceAfter, "moves", len(plan.Moves), "reason", plan.Reason)
 	if len(plan.Moves) == 0 {
 		c.drsLastPlan = ""
 		return
@@ -145,7 +162,7 @@ func (c *Controller) reconcileDRS(ctx context.Context, machines []model.Machine,
 			if !ok {
 				continue
 			}
-			msg := fmt.Sprintf("DRS recommends moving this Machine from %s to %s (cluster imbalance %d%% -> %d%%)", mv.From, mv.To, plan.ImbalanceBefore, mv.Imbalance)
+			msg := fmt.Sprintf("DRS recommends moving this Machine from %s to %s (%s)", mv.From, mv.To, drsMoveWhy(plan, mv))
 			c.Log.Info("drs: recommendation", "namespace", mv.Namespace, "machine", mv.Machine, "from", mv.From, "to", mv.To)
 			if err := c.Kube.RecordEvent(ctx, mv.Namespace, "Machine", mv.Machine, m.Metadata.UID, "DRSRecommendation", msg, "Normal"); err != nil {
 				c.Log.Error("drs: record event failed", "namespace", mv.Namespace, "machine", mv.Machine, "error", err)
@@ -199,7 +216,7 @@ func (c *Controller) reconcileDRS(ctx context.Context, machines []model.Machine,
 		if err := c.Kube.PatchMachine(ctx, mv.Namespace, mv.Machine, patch); err != nil {
 			c.Log.Error("drs: patch moved-at annotation failed", "namespace", mv.Namespace, "machine", mv.Machine, "error", err)
 		}
-		msg := fmt.Sprintf("DRS is moving this Machine from %s to %s (cluster imbalance %d%% -> %d%%) with MachineMigration %s", mv.From, mv.To, plan.ImbalanceBefore, mv.Imbalance, migration.Metadata.Name)
+		msg := fmt.Sprintf("DRS is moving this Machine from %s to %s (%s) with MachineMigration %s", mv.From, mv.To, drsMoveWhy(plan, mv), migration.Metadata.Name)
 		if err := c.Kube.RecordEvent(ctx, mv.Namespace, "Machine", mv.Machine, m.Metadata.UID, "DRSMigration", msg, "Normal"); err != nil {
 			c.Log.Error("drs: record event failed", "namespace", mv.Namespace, "machine", mv.Machine, "error", err)
 		}
@@ -208,6 +225,14 @@ func (c *Controller) reconcileDRS(ctx context.Context, machines []model.Machine,
 			c.Metrics.ObserveDRSMove("started")
 		}
 	}
+}
+
+// drsMoveWhy is the Event text explaining a move.
+func drsMoveWhy(plan scheduler.RebalancePlan, mv scheduler.RebalanceMove) string {
+	if mv.Reason != "" {
+		return mv.Reason
+	}
+	return fmt.Sprintf("cluster imbalance %d%% -> %d%%", plan.ImbalanceBefore, mv.Imbalance)
 }
 
 func findMachine(machines []model.Machine, namespace, name string) (model.Machine, bool) {

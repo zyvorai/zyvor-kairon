@@ -11,6 +11,7 @@ type memoryMetrics struct {
 	pressure *prometheus.GaugeVec
 	balloon  *prometheus.GaugeVec
 	actions  *prometheus.CounterVec
+	psi      *prometheus.GaugeVec
 }
 
 func newMemoryMetrics(reg *prometheus.Registry) *memoryMetrics {
@@ -27,8 +28,12 @@ func newMemoryMetrics(reg *prometheus.Registry) *memoryMetrics {
 			Name: "kairon_memory_reclaim_actions_total",
 			Help: "Balloon target changes kairon-node made, by direction (inflate, deflate).",
 		}, []string{"direction"}),
+		psi: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "kairon_node_psi_some_avg60_percent",
+			Help: "Host PSI some avg60 kairon-node last published on its Node, by resource: cpu, memory, io.",
+		}, []string{"node", "resource"}),
 	}
-	reg.MustRegister(m.pressure, m.balloon, m.actions)
+	reg.MustRegister(m.pressure, m.balloon, m.actions, m.psi)
 	return m
 }
 
@@ -39,6 +44,16 @@ func (r *Recorder) ObserveNodeMemoryPressure(node string, pressure, exhausted bo
 	}
 	r.memory.pressure.WithLabelValues(node, "pressure").Set(boolGauge(pressure))
 	r.memory.pressure.WithLabelValues(node, "exhausted").Set(boolGauge(exhausted))
+}
+
+// ObserveNodePSI sets the node's host PSI gauges.
+func (r *Recorder) ObserveNodePSI(node string, cpu, memory, io float64) {
+	if r == nil || r.memory == nil {
+		return
+	}
+	r.memory.psi.WithLabelValues(node, "cpu").Set(cpu)
+	r.memory.psi.WithLabelValues(node, "memory").Set(memory)
+	r.memory.psi.WithLabelValues(node, "io").Set(io)
 }
 
 // ObserveMachineBalloon sets one Machine's balloon target and actual size.

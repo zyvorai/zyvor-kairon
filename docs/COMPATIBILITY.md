@@ -315,6 +315,30 @@ cases exercise the cordon, the fallbacks and exit, not migration.
 | DRS: recommend or automatic moves | not run | 2026-10-12 | Needs two nodes |
 | Node maintenance and DRS: in-cluster chart RBAC | not run | 2026-10-12 | The lab controller ran with a cluster-admin token; the chart's new `patch` on nodes is checked by `scripts/check_rbac_coverage.py` only |
 
+The pressure signal is driven by
+[`scripts/lab-drs-pressure.sh`](../scripts/lab-drs-pressure.sh) on the same
+node, with host-installed FluxVM, kairon-node and kairon-controller from
+this change. Two Machines run on the node: one burns both vCPUs, one idles.
+Their QEMU threads are pinned to host CPUs 10 and 11, which two host busy
+loops keep loaded for 150 s. Without that contention a burning guest gets
+all the CPU it wants and does not stall. The script creates a second,
+synthetic Node with no kubelet or kairon-node, and keeps its heartbeat,
+lease and a calm pressure annotation fresh. The lab Machines tolerate the
+`not-ready`, `unreachable` and Cilium `agent-not-ready` taints such a node
+gets. kairon-controller runs `-drs-mode=recommend -drs-signal=pressure`
+through a temporary systemd drop-in, so nothing is migrated to the synthetic
+node. Host PSI on this shared node was 20–55% in CPU or IO across runs, from
+other workloads.
+
+| Case | Last result | Date | Notes |
+|---|---|---|---|
+| DRS pressure: publish | pass | 2026-10-13 | Single node (kernel 7.0.0-34, QEMU 10.2.1, k3s 1.35): a 5 s old Node annotation had cpu 52.0, memory 0.1, io 18.7; `/proc/pressure` avg60 read right after was 52.58, 0.13, 19.26 |
+| DRS pressure: machine-stall | pass | 2026-10-13 | Same node, CPUs 10–11 contended: the burning Machine's cgroup CPU PSI was 5.4% against 2.3% for the idle one. Without contention both read about 0.2% |
+| DRS pressure: plan | pass | 2026-10-13 | Same node: `kaironctl drs plan --signal pressure` planned the burning Machine from the real node (cpu 52.0%, threshold 25%) to the synthetic node (0.0%), "this Machine stalls 5.4%" |
+| DRS pressure: controller-recommend | pass | 2026-10-13 | Same node: kairon-controller recorded a `DRSRecommendation` Event on the burning Machine: "cpu pressure on nldw3-4-32-26 is 51.1% (threshold 25%); … this Machine stalls 4.1%" |
+| DRS pressure: stale | pass | 2026-10-13 | Same node: with the synthetic node's sample backdated 10 minutes, the plan left it out ("no fresh sample") and planned no moves |
+| DRS pressure: automatic move between two real nodes | not run | 2026-10-13 | One lab node; the synthetic node only receives recommendations |
+
 ## GPU and vGPU
 
 Driven by [`scripts/lab-vgpu.sh`](../scripts/lab-vgpu.sh) on one node with

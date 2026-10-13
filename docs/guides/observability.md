@@ -42,8 +42,8 @@ component apiserver call visibility for free, labeled `method`
 | `kairon_vgpu_available_instances` | gauge | `node`, `parent`, `profile` | Free mediated-device instances per profile, as last reported by the node. |
 | `kairon_node_maintenance` | gauge | `node`, `state` | 1 while a node is in maintenance mode, `state` `Entering` or `InMaintenance`. See [node maintenance](node-maintenance-drs.md). |
 | `kairon_node_maintenance_remaining_machines` | gauge | `node` | Machines still holding a VMM on a node in maintenance mode. |
-| `kairon_drs_imbalance_percent` | gauge | — | Gap between the most and least utilized node (reserved CPU or memory) in the last DRS round. See [DRS](node-maintenance-drs.md#drs-rebalancing). |
-| `kairon_drs_node_utilization_percent` | gauge | `node`, `resource` | Reserved `cpu`, `memory` and `max` share per node in the last DRS round. |
+| `kairon_drs_imbalance_percent` | gauge | — | Gap between the most and least utilized node (reserved CPU or memory, or worst host PSI with `-drs-signal pressure`) in the last DRS round. See [DRS](node-maintenance-drs.md#drs-rebalancing). |
+| `kairon_drs_node_utilization_percent` | gauge | `node`, `resource` | Reserved `cpu`, `memory` and `max` share per node in the last DRS round, and `pressure` (worst host PSI) with `-drs-signal pressure`. |
 | `kairon_dr_rpo_seconds` | gauge | `namespace`, `plan` | Age of the oldest of a protection plan's newest restore points. See [cross-cluster DR](cross-cluster-dr.md). |
 | `kairon_dr_active` | gauge | `namespace`, `plan` | 1 on the site that runs the plan's Machines. |
 | `kairon_dr_peer_reachable` | gauge | `namespace`, `plan` | 1 when the last call to the peer cluster succeeded. |
@@ -53,6 +53,7 @@ component apiserver call visibility for free, labeled `method`
 | `kairon_dr_last_test_timestamp_seconds` | gauge | `namespace`, `plan` | Unix time the last DR test finished; alert when it gets older than `test.every`. |
 | `kairon_dr_dns_records` | gauge | `namespace`, `plan` | Records in the plan's external-dns `DNSEndpoint` on this site (0 on the standby). |
 | `kairon_drs_moves_total` | counter | `result` | DRS moves: `recommended`, `started` or `blocked` (disruption budget). |
+| `kairon_node_psi_some_avg60_percent` | gauge | `node`, `resource` | kairon-node only. Host PSI some avg60 (`cpu`, `memory`, `io`) last published on the Node for DRS's pressure signal. See [DRS](node-maintenance-drs.md#pressure-signal). |
 | `kairon_node_memory_pressure` | gauge | `node`, `state` | kairon-node only. 1 while host memory is under pressure (`state=pressure`), and while it is with every elastic-memory balloon at its minimum (`state=exhausted`, the `KaironMemoryPressure` condition). See [elastic memory](machine-elastic-memory.md). |
 | `kairon_node_virtual_networks` | gauge | — | kairon-node only. Virtual networks applied to the local FluxVM. See [virtual networks](virtual-networks.md). |
 | `kairon_node_virtual_network_endpoints` | gauge | `location` | kairon-node only. Endpoints of the applied networks on this node (`local`) and on other nodes (`remote`). |

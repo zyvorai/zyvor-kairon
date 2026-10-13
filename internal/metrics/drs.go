@@ -31,11 +31,11 @@ func newPlacementMetrics(reg *prometheus.Registry) *placementMetrics {
 		}, []string{"node"}),
 		imbalance: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "kairon_drs_imbalance_percent",
-			Help: "Spread, in percentage points, between the most and least utilized eligible node (reserved CPU or memory, whichever is higher), from the last DRS round.",
+			Help: "Spread, in percentage points, between the most and least utilized eligible node (reserved CPU or memory, whichever is higher; worst host PSI with -drs-signal=pressure), from the last DRS round.",
 		}),
 		utilization: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "kairon_drs_node_utilization_percent",
-			Help: "Reserved share of a node's allocatable capacity as DRS saw it in its last round, by resource: cpu, memory, or max.",
+			Help: "Reserved share of a node's allocatable capacity as DRS saw it in its last round, by resource: cpu, memory, or max; with -drs-signal=pressure also pressure, the node's worst host PSI some avg60.",
 		}, []string{"node", "resource"}),
 		moves: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "kairon_drs_moves_total",
@@ -72,6 +72,9 @@ func (r *Recorder) ObserveDRSPlan(plan scheduler.RebalancePlan) {
 		r.placement.utilization.WithLabelValues(u.Node, "cpu").Set(float64(u.CPUPercent))
 		r.placement.utilization.WithLabelValues(u.Node, "memory").Set(float64(u.MemoryPercent))
 		r.placement.utilization.WithLabelValues(u.Node, "max").Set(float64(u.Percent))
+		if u.Pressure != nil {
+			r.placement.utilization.WithLabelValues(u.Node, "pressure").Set(u.Pressure.Max())
+		}
 	}
 }
 

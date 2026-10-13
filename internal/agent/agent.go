@@ -175,6 +175,9 @@ type Agent struct {
 	// MemoryReclaim tunes the elastic-memory reclaim loop (memory.go).
 	MemoryReclaim MemoryReclaimConfig
 	memory        memoryState
+	// PressureReport tunes the Node PSI publisher (pressure.go).
+	PressureReport PressureReportConfig
+	pressure       pressureState
 	// VirtualNetwork configures VirtualNetwork sync and BGP (virtualnetwork.go).
 	VirtualNetwork VirtualNetworkConfig
 	vnet           vnetState
@@ -1553,6 +1556,7 @@ func (a *Agent) Run(ctx context.Context, interval time.Duration) error {
 
 	go a.watchAssigned(ctx, kick)
 	go a.runMemoryReclaim(ctx)
+	go a.runPressureReport(ctx)
 	go a.runVirtualNetworkSync(ctx)
 	if a.VirtualNetwork.BGP != nil {
 		go a.VirtualNetwork.BGP.Run(ctx)

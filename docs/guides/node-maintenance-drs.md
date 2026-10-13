@@ -7,7 +7,8 @@ Two kairon-controller features keep Machines where they should be:
   the ones no other node can take, and puts everything back when you are done.
 - **DRS** (distributed resource scheduling) keeps nodes evenly loaded. It plans
   migrations from busy nodes to quiet ones and either recommends them or
-  carries them out.
+  carries them out. It balances either reservations or measured pressure
+  (PSI).
 
 Experimental: maintenance mode on one node (cordon, the wait, stop and
 hibernate fallbacks, exit) and DRS in recommend mode have run on real hardware
@@ -143,6 +144,60 @@ no `KaironMemoryPressure` and no maintenance. It never moves a Machine that:
 With `-drs-strategy live` (the default), only Machines live migration can move
 are considered.
 
+### Pressure signal
+
+With `-drs-signal pressure` (Helm `controller.drs.signal`), DRS plans from
+what the hosts measure instead of what Machines reserved. Every 30 s
+(`--pressure-report-interval`) kairon-node asks FluxVM for the host's PSI
+(`GET /v1/host/pressure`, from `/proc/pressure`) and each local Machine's own
+cgroup PSI, and writes the `some avg60` values to its Node:
+
+```sh
+kubectl get node worker-1 -o jsonpath='{.metadata.annotations.kairon\.zyvor\.dev/pressure}'
+```
+
+```json
+{"sampledAt":"2026-10-13T05:35:12Z","host":{"cpu":25.9,"memory":0.3,"io":55.9},
+ "machines":{"prod/vm1":{"cpu":14.2,"memory":0,"io":0.4}}}
+```
+
+Each value is the share of the last minute in which at least one task waited
+for that resource. A node's pressure is the worst of the three.
+
+- A node is **hot** when its pressure reaches
+  `-drs-pressure-threshold-percent` (default 25), and **calm** below half of
+  that. Nodes in between are neither a source nor a target, which keeps a
+  Machine from bouncing back.
+- From each hot node, hottest first, DRS moves the Machine whose own cgroup
+  stalls most to the calmest node that passes the same hard filters and
+  capacity checks as above. Each calm node takes at most one Machine per
+  round, and `-drs-max-moves` still caps the round.
+- A node whose sample is older than `-drs-pressure-max-age` (default 2m), or
+  that has none, is left out: its pressure is unknown. A host whose kernel
+  has no PSI (macOS, or Linux booted with `psi=0`) publishes nothing rather
+  than zeros.
+- The plan does not predict pressure after a move. Each move carries a
+  reason instead, which the Events repeat:
+
+```sh
+kaironctl drs plan --signal pressure
+```
+
+```text
+NODE      CPU PSI%  MEMORY PSI%  IO PSI%  UTILIZATION%  MACHINES
+worker-1  41.0      0.3          4.2      38            6
+worker-2  2.1       0.0          0.8      25            4
+
+pressure spread: 39 points
+
+MACHINE   FROM      TO        WHY
+prod/vm1  worker-1  worker-2  cpu pressure on worker-1 is 41.0% (threshold 25%); worker-2 is at 2.1%; this Machine stalls 14.2%
+```
+
+kairon-node needs a FluxVM with `GET /v1/host/pressure`. With an older one it
+logs one warning and publishes nothing, and DRS treats the node as
+unmeasured. Turn the publisher off with `--pressure-report=false`.
+
 ### Modes
 
 `-drs-mode` (Helm `controller.drs.mode`), checked every `-drs-interval`
@@ -158,19 +213,24 @@ are considered.
 
 | Metric | Meaning |
 |---|---|
-| `kairon_drs_imbalance_percent` | Imbalance in the last round |
-| `kairon_drs_node_utilization_percent{node,resource}` | Per-node `cpu`, `memory` and `max` utilization in the last round |
+| `kairon_drs_imbalance_percent` | Imbalance in the last round (pressure spread with `-drs-signal pressure`) |
+| `kairon_drs_node_utilization_percent{node,resource}` | Per-node `cpu`, `memory` and `max` utilization in the last round, plus `pressure` with `-drs-signal pressure` |
+| `kairon_node_psi_some_avg60_percent{node,resource}` | Host PSI kairon-node last published (`cpu`, `memory`, `io`) |
 | `kairon_drs_moves_total{result}` | `recommended`, `started`, `blocked` |
 | `kairon_node_maintenance{node,state}` | 1 while a node is `Entering` or `InMaintenance` |
 | `kairon_node_maintenance_remaining_machines{node}` | Machines still holding a VMM on a node in maintenance |
 
 ## Limits
 
-- DRS balances reservations, not measured CPU, memory, NUMA or network
-  pressure. A node full of idle Machines looks busy.
+- With the default `reserved` signal, DRS balances reservations: a node full
+  of idle Machines looks busy. The `pressure` signal measures CPU, memory and
+  IO stalls, but not NUMA locality or network saturation, and it moves one
+  Machine per hot node per round without predicting the result.
 - Maintenance does not drain Pods. Run `kubectl drain` for those; it does not
   touch Machines.
 - Exit restores only what maintenance changed. It does not move Machines back
   to the node.
 - Migrating Machines to another node during maintenance, and automatic DRS
-  moves, have only run in unit tests, not on hardware.
+  moves, have only run in unit tests, not on hardware. The pressure signal
+  ran on one real node against a synthetic calm node, in recommend mode
+  only (see [`COMPATIBILITY.md`](../COMPATIBILITY.md#node-maintenance-and-drs)).

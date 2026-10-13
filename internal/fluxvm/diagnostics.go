@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+
+	"github.com/zyvorai/kairon/internal/model"
 )
 
 // RuntimeMigrationCapability mirrors FluxVM's own struct of the same
@@ -135,6 +137,32 @@ func (c *Client) GetPressure(ctx context.Context, id string) (*Pressure, error) 
 		return nil, fmt.Errorf("decode vm pressure: %w", err)
 	}
 	return &out, nil
+}
+
+// GetHostPressure returns whole-host PSI from /proc/pressure -- FluxVM's
+// GET /v1/host/pressure, in the same shape as GetPressure.
+func (c *Client) GetHostPressure(ctx context.Context) (*Pressure, error) {
+	data, err := c.do(ctx, http.MethodGet, "/v1/host/pressure", nil)
+	if err != nil {
+		return nil, err
+	}
+	var out Pressure
+	if err := json.Unmarshal(data, &out); err != nil {
+		return nil, fmt.Errorf("decode host pressure: %w", err)
+	}
+	return &out, nil
+}
+
+// PSI is p's "some" avg60 per resource; a resource FluxVM did not report
+// is 0.
+func (p Pressure) PSI() model.PSI {
+	avg60 := func(r *PressureRecord) float64 {
+		if r == nil {
+			return 0
+		}
+		return r.Avg60
+	}
+	return model.PSI{CPU: avg60(p.CPUSome), Memory: avg60(p.MemorySome), IO: avg60(p.IOSome)}
 }
 
 // GetCPUSet returns the real, effective set of host CPU numbers this

@@ -122,6 +122,8 @@ func run() int {
 	memoryHighMiB := flag.Uint64("memory-high-watermark-mib", envUint("KAIRON_MEMORY_HIGH_WATERMARK_MIB", 0), "reclaim aims for this much MemAvailable and balloons deflate only above it; 0 (the default) is 20% of MemTotal, or twice --memory-low-watermark-mib when that is set")
 	memoryPSI := flag.Float64("memory-psi-some-avg10", envFloat("KAIRON_MEMORY_PSI_SOME_AVG10", 0), "host memory PSI some avg10 (percent) above this is memory pressure; 0 (the default) is 10")
 	memoryReclaimInterval := flag.Duration("memory-reclaim-interval", 0, "time between reclaim passes; 0 (the default) is 10s")
+	pressureReport := flag.Bool("pressure-report", env("KAIRON_PRESSURE_REPORT", "true") == "true", "publish host PSI and each local Machine's own PSI (some avg60, from FluxVM) on this Node's kairon.zyvor.dev/pressure annotation for kairon-controller -drs-signal=pressure; needs a FluxVM with GET /v1/host/pressure -- see docs/guides/node-maintenance-drs.md")
+	pressureReportInterval := flag.Duration("pressure-report-interval", agent.DefaultPressureReportInterval, "time between Node pressure annotations")
 	vnetSync := flag.Bool("virtual-networks", env("KAIRON_VIRTUAL_NETWORKS", "true") == "true", "apply VirtualNetworks with a Machine on this node to the local FluxVM (needs a FluxVM with host.vnet) -- see docs/guides/virtual-networks.md")
 	vnetUplink := flag.String("vnet-uplink", env("KAIRON_VNET_UPLINK", ""), "host interface carrying virtual network egress SNAT and floating IPs; empty keeps virtual networks closed on this node")
 	vnetNodeIP := flag.String("vnet-node-ip", env("KAIRON_VNET_NODE_IP", ""), "underlay address other nodes tunnel to and the SNAT address; empty takes the Node's InternalIP")
@@ -262,6 +264,10 @@ func run() int {
 			HighWatermarkMiB: *memoryHighMiB,
 			PSISomeAvg10:     *memoryPSI,
 			Interval:         *memoryReclaimInterval,
+		},
+		PressureReport: agent.PressureReportConfig{
+			Disabled: !*pressureReport,
+			Interval: *pressureReportInterval,
 		},
 		VirtualNetwork: vnetCfg,
 		Log:            log,
