@@ -427,6 +427,9 @@ spec:
             - "--drs-max-moves={{ .Values.controller.drs.maxMoves }}"
             - "--drs-strategy={{ .Values.controller.drs.strategy }}"
             - "--drs-cooldown={{ .Values.controller.drs.cooldown }}"
+            - "--drs-signal={{ .Values.controller.drs.signal }}"
+            - "--drs-pressure-threshold-percent={{ .Values.controller.drs.pressureThresholdPercent }}"
+            - "--drs-pressure-max-age={{ .Values.controller.drs.pressureMaxAge }}"
 {{ if .Values.controller.dr.enabled }}
             - "--dr-secret-namespace={{ .Release.Namespace }}"
             - "--dr-test-bridges={{ .Values.controller.dr.testBridges | join "," }}"

@@ -6,6 +6,7 @@ package controller
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -128,5 +129,44 @@ func TestValidateDRSMode(t *testing.T) {
 	}
 	if err := ValidateDRSMode("aggressive"); err == nil {
 		t.Fatal("want an error for an unknown mode")
+	}
+}
+
+func TestDRSPressureRecommendationExplainsTheMove(t *testing.T) {
+	ctl, fake := newRecordingController(t, nil)
+	ctl.DRS = DRS{Mode: DRSModeRecommend, Signal: "pressure"}
+	nodes, machines := drsCluster()
+	now := time.Now().UTC().Format(time.RFC3339)
+	for i, host := range []model.PSI{{CPU: 45}, {CPU: 3}} {
+		if nodes[i].Metadata.Annotations == nil {
+			nodes[i].Metadata.Annotations = map[string]string{}
+		}
+		p := model.NodePressure{SampledAt: now, Host: host}
+		if i == 0 {
+			p.Machines = map[string]model.PSI{"prod/vm2": {CPU: 20}}
+		}
+		nodes[i].Metadata.Annotations[model.AnnotationNodePressure] = p.Encode()
+	}
+
+	ctl.reconcileDRS(context.Background(), machines, nodes, nil)
+
+	events := fake.find(http.MethodPost, "/namespaces/prod/events")
+	if len(events) != 1 || dig(events[0].body, "involvedObject", "name") != "vm2" {
+		t.Fatalf("events=%+v, want one recommendation for vm2, the most stalled Machine", events)
+	}
+	msg, _ := dig(events[0].body, "message").(string)
+	if !strings.Contains(msg, "cpu pressure on a is 45.0% (threshold 25%)") {
+		t.Fatalf("message=%q", msg)
+	}
+}
+
+func TestValidateDRSSignal(t *testing.T) {
+	for _, ok := range []string{"", "reserved", "pressure"} {
+		if err := ValidateDRSSignal(ok); err != nil {
+			t.Fatalf("%q: %v", ok, err)
+		}
+	}
+	if err := ValidateDRSSignal("guest"); err == nil {
+		t.Fatal("want an error for an unknown signal")
 	}
 }

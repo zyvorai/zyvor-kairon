@@ -209,9 +209,13 @@ cluster's current Machines and Nodes, and prints each node's reserved
 utilization and the moves that would lower the imbalance. Nothing is
 changed. Flags mirror the controller's -drs-* flags.`,
 		Example: `  kaironctl drs plan
-  kaironctl drs plan --threshold-percent 10 --max-moves 5 -o json`,
+  kaironctl drs plan --threshold-percent 10 --max-moves 5 -o json
+  kaironctl drs plan --signal pressure --pressure-threshold-percent 15`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := controller.ValidateDRSSignal(cfg.Signal); err != nil {
+				return err
+			}
 			kc, err := newKubeClient()
 			if err != nil {
 				return err
@@ -234,6 +238,9 @@ changed. Flags mirror the controller's -drs-* flags.`,
 	plan.Flags().IntVar(&cfg.MaxMoves, "max-moves", scheduler.DefaultRebalanceMaxMoves, "most moves to plan")
 	plan.Flags().StringVar(&cfg.Strategy, "strategy", "live", "live|auto|cold; with live only Machines live migration can move are considered")
 	plan.Flags().DurationVar(&cfg.Cooldown, "cooldown", controller.DefaultDRSCooldown, "skip Machines DRS moved more recently than this")
+	plan.Flags().StringVar(&cfg.Signal, "signal", scheduler.RebalanceSignalReserved, "reserved|pressure: balance reserved CPU/memory, or move Machines off nodes with high measured PSI")
+	plan.Flags().IntVar(&cfg.PressureThresholdPercent, "pressure-threshold-percent", scheduler.DefaultPressureThresholdPercent, "with --signal pressure, host PSI at which a node is hot")
+	plan.Flags().DurationVar(&cfg.PressureMaxAge, "pressure-max-age", scheduler.DefaultPressureMaxAge, "with --signal pressure, ignore nodes whose sample is older than this")
 	plan.Flags().StringVarP(&output, "output", "o", "", "output format: json")
 	root.AddCommand(plan)
 	return root
@@ -269,6 +276,10 @@ func drsPlan(ctx context.Context, kc drsLister, cfg controller.DRS) (scheduler.R
 }
 
 func printDRSPlan(w io.Writer, p scheduler.RebalancePlan) {
+	if p.Signal == scheduler.RebalanceSignalPressure {
+		printDRSPressurePlan(w, p)
+		return
+	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "NODE\tCPU%\tMEMORY%\tUTILIZATION%\tMACHINES")
 	for _, u := range p.Nodes {
@@ -287,4 +298,32 @@ func printDRSPlan(w io.Writer, p scheduler.RebalancePlan) {
 		return
 	}
 	_, _ = fmt.Fprintf(w, "\nno moves: %s\n", p.Reason)
+}
+
+// printDRSPressurePlan prints a -signal=pressure plan: each node's host PSI
+// (some avg60) next to its reserved utilization, and why each move is
+// planned.
+func printDRSPressurePlan(w io.Writer, p scheduler.RebalancePlan) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "NODE\tCPU PSI%\tMEMORY PSI%\tIO PSI%\tUTILIZATION%\tMACHINES")
+	for _, u := range p.Nodes {
+		if u.Pressure == nil {
+			_, _ = fmt.Fprintf(tw, "%s\t-\t-\t-\t%d\t%d\n", u.Node, u.Percent, u.Machines)
+			continue
+		}
+		_, _ = fmt.Fprintf(tw, "%s\t%.1f\t%.1f\t%.1f\t%d\t%d\n", u.Node, u.Pressure.CPU, u.Pressure.Memory, u.Pressure.IO, u.Percent, u.Machines)
+	}
+	_ = tw.Flush()
+	_, _ = fmt.Fprintf(w, "\npressure spread: %d points\n", p.ImbalanceBefore)
+	if len(p.Moves) == 0 {
+		_, _ = fmt.Fprintf(w, "\nno moves: %s\n", p.Reason)
+		return
+	}
+	_, _ = fmt.Fprintln(w)
+	tw = tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "MACHINE\tFROM\tTO\tWHY")
+	for _, mv := range p.Moves {
+		_, _ = fmt.Fprintf(tw, "%s/%s\t%s\t%s\t%s\n", mv.Namespace, mv.Machine, mv.From, mv.To, mv.Reason)
+	}
+	_ = tw.Flush()
 }

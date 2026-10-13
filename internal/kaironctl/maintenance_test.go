@@ -6,6 +6,7 @@ package kaironctl
 import (
 	"bytes"
 	"context"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -107,5 +108,27 @@ func TestPrintDRSPlanNoMoves(t *testing.T) {
 	printDRSPlan(&buf, scheduler.RebalancePlan{Reason: "1 eligible node(s); rebalancing needs at least 2"})
 	if !strings.Contains(buf.String(), "no moves: 1 eligible node(s)") {
 		t.Fatalf("out=%q", buf.String())
+	}
+}
+
+func TestPrintDRSPressurePlan(t *testing.T) {
+	var buf bytes.Buffer
+	printDRSPlan(&buf, scheduler.RebalancePlan{
+		Signal:          scheduler.RebalanceSignalPressure,
+		ImbalanceBefore: 37,
+		Nodes: []scheduler.NodeUtilization{
+			{Node: "a", Percent: 50, Machines: 2, Pressure: &model.PSI{CPU: 40.2, IO: 3}},
+			{Node: "b", Percent: 10, Machines: 0},
+		},
+		Moves: []scheduler.RebalanceMove{{Namespace: "prod", Machine: "vm2", From: "a", To: "c", Reason: "cpu pressure on a is 40.2% (threshold 25%)"}},
+	})
+	out := buf.String()
+	for _, want := range []string{"CPU PSI%", "40.2", "pressure spread: 37 points", "prod/vm2", "cpu pressure on a is 40.2%"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("out=%q, missing %q", out, want)
+		}
+	}
+	if !regexp.MustCompile(`(?m)^b\s+-\s+-\s+-\s+10\s+0$`).MatchString(out) {
+		t.Fatalf("out=%q: an unmeasured node shows - for its PSI", out)
 	}
 }

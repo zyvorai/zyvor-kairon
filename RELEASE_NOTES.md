@@ -72,6 +72,29 @@ capability scheduling, backend isolation, network allocation, membership schedul
 and a Mac leaving a network all passed. Booting on real Macs and traffic between them have not run. See
 `docs/guides/mac-fabric.md` and the "Mac Fabric" section of `docs/COMPATIBILITY.md`.
 
+## Added: DRS on measured pressure (experimental)
+
+`-drs-signal pressure` (Helm `controller.drs.signal`) has DRS plan from
+measured PSI instead of reservations. kairon-node publishes the host's PSI
+(some avg60 of cpu, memory and io) and each local Machine's own cgroup PSI on
+its Node's `kairon.zyvor.dev/pressure` annotation every 30 s
+(`--pressure-report-interval`, `--pressure-report=false` to stop). A node at
+or above `-drs-pressure-threshold-percent` (default 25) is hot; DRS moves its
+most stalled Machine to the calmest node below half the threshold, through
+the same hard filters, disruption budgets and cooldown as before. Nodes with
+no sample newer than `-drs-pressure-max-age` (default 2m) are left out.
+`kaironctl drs plan --signal pressure` shows per-node PSI and why each move
+is planned, and the Events carry the same reason. New metric
+`kairon_node_psi_some_avg60_percent`. The default signal stays `reserved`.
+
+Needs FluxVM with `GET /v1/host/pressure`. With an older one kairon-node logs
+a warning and publishes nothing, and DRS treats the node as unmeasured.
+
+Ran on one real node against a synthetic calm node in recommend mode; an
+automatic move between two real nodes has not run. See the "Pressure signal"
+section of `docs/guides/node-maintenance-drs.md` and the "Node maintenance
+and DRS" section of `docs/COMPATIBILITY.md`.
+
 ## Added: per-disk I/O QoS
 
 `spec.image.io.throttle` (root disk) and `spec.disks[].io.throttle` cap a

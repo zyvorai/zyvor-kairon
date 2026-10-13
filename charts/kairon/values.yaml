@@ -70,7 +70,8 @@ controller:
     maxParallel: 2
     minRetryInterval: 2m
   drs:
-    # Rebalances Machines across nodes by reserved CPU and memory.
+    # Rebalances Machines across nodes by reserved CPU and memory, or by
+    # measured pressure (signal: pressure).
     # off | recommend (Events and metrics only) | automatic (creates
     # MachineMigrations, one round at a time). See
     # docs/guides/node-maintenance-drs.md.
@@ -81,6 +82,13 @@ controller:
     maxMoves: 1
     strategy: live # live|auto|cold
     cooldown: 1h
+    # reserved balances reserved CPU and memory; pressure moves Machines
+    # off nodes whose host PSI (published by kairon-node on each Node's
+    # kairon.zyvor.dev/pressure annotation) reaches
+    # pressureThresholdPercent, onto nodes below half of it.
+    signal: reserved
+    pressureThresholdPercent: 25
+    pressureMaxAge: 2m
   dr:
     # Runs MachineProtectionPlans: replicate Machines to a peer cluster,
     # fail over and back, DR tests. Grants the controller create/delete on
