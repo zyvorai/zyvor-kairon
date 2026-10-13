@@ -103,7 +103,7 @@ Starts a proxy on `127.0.0.1` that forwards to the `kairon-ui` Service through t
 ## Resources & power
 
 ```text
-kaironctl get [machines|migrations|snapshots|restores|quotas|budgets|machinesets|machinepools|machineclaims|instancetypes|migrationpolicies|snapshotschedules|networkpolicies|securitygroups|backups|backuprestores|protectionplans|macnetworks|nodes|nodetopologies] [--selector k=v]
+kaironctl get [machines|migrations|snapshots|restores|quotas|budgets|machinesets|machinepools|machineclaims|instancetypes|migrationpolicies|snapshotschedules|networkpolicies|securitygroups|backups|backuprestores|protectionplans|macnetworks|nodes|nodetopologies|acceleratorprofiles] [--selector k=v]
 kaironctl describe [RESOURCE] NAME   # machine: adds an elastic-memory line from status.memory
 kaironctl create NAME --image PATH [--cpu N] [--memory SIZE] [--backend qemu|…]
                  [--forward hostPort:guestPort[/proto]] [--hostname NAME] [--user NAME]

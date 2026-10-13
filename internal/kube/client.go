@@ -730,6 +730,27 @@ func (c *Client) PatchNodeTopologyStatus(ctx context.Context, name string, statu
 	return c.request(ctx, http.MethodPatch, "/apis/kairon.zyvor.dev/v1/nodetopologies/"+url.PathEscape(name)+"/status", map[string]any{"status": status}, nil, "application/merge-patch+json")
 }
 
+// ListMachineAcceleratorProfiles lists the cluster-scoped accelerator
+// profiles.
+func (c *Client) ListMachineAcceleratorProfiles(ctx context.Context) ([]model.MachineAcceleratorProfile, error) {
+	var list model.MachineAcceleratorProfileList
+	err := c.request(ctx, http.MethodGet, "/apis/kairon.zyvor.dev/v1/machineacceleratorprofiles", nil, &list, "")
+	return list.Items, err
+}
+
+func (c *Client) GetMachineAcceleratorProfile(ctx context.Context, name string) (model.MachineAcceleratorProfile, error) {
+	var p model.MachineAcceleratorProfile
+	err := c.request(ctx, http.MethodGet, "/apis/kairon.zyvor.dev/v1/machineacceleratorprofiles/"+url.PathEscape(name), nil, &p, "")
+	return p, err
+}
+
+// PatchMachineAcceleratorProfileStatus replaces the whole status, so a node
+// that no longer fits drops out of status.nodes.
+func (c *Client) PatchMachineAcceleratorProfileStatus(ctx context.Context, name string, status model.MachineAcceleratorProfileStatus) error {
+	patch := []map[string]any{{"op": "add", "path": "/status", "value": status}}
+	return c.request(ctx, http.MethodPatch, "/apis/kairon.zyvor.dev/v1/machineacceleratorprofiles/"+url.PathEscape(name)+"/status", patch, nil, "application/json-patch+json")
+}
+
 func (c *Client) ListMachineInstanceTypes(ctx context.Context) ([]model.MachineInstanceType, error) {
 	var list model.MachineInstanceTypeList
 	err := c.request(ctx, http.MethodGet, "/apis/kairon.zyvor.dev/v1/machineinstancetypes", nil, &list, "")

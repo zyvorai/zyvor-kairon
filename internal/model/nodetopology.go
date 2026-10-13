@@ -378,8 +378,8 @@ func ValidateTopologyUpdate(old, cur MachineSpec) error {
 	if old.NodeName == "" {
 		return nil
 	}
-	if !reflect.DeepEqual(old.Topology, cur.Topology) || !reflect.DeepEqual(old.Devices, cur.Devices) {
-		return fmt.Errorf("spec.topology and spec.devices cannot change after the Machine is scheduled")
+	if !reflect.DeepEqual(old.Topology, cur.Topology) || !reflect.DeepEqual(old.Devices, cur.Devices) || !reflect.DeepEqual(old.Accelerators, cur.Accelerators) {
+		return fmt.Errorf("spec.topology, spec.devices and spec.accelerators cannot change after the Machine is scheduled")
 	}
 	return nil
 }

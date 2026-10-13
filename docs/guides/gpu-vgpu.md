@@ -53,7 +53,9 @@ spec:
 `profile` matches a profile's ID (`nvidia-558`) or its name, ignoring
 case. It works for `gpu` and `accelerator` entries and cannot be combined
 with `virtualFunction`. `vendor`, `model`, `minMemory` (per instance) and
-`alignment` work as for whole devices.
+`alignment` work as for whole devices. A `MachineAcceleratorProfile` can
+name the same request for reuse; see
+[accelerator profiles](accelerator-profiles.md).
 
 ## Accounting
 

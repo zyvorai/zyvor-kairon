@@ -46,6 +46,11 @@ rules:
     resources: ["machineinstancetypes", "machineimages", "nodetopologies"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["kairon.zyvor.dev"]
+    # MachineAcceleratorProfiles are expanded into Machines' spec.devices
+    # and get a capacity status (internal/controller/accelerator.go).
+    resources: ["machineacceleratorprofiles", "machineacceleratorprofiles/status"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: ["kairon.zyvor.dev"]
     # MachineSet is the only reason kairon-controller itself ever
     # creates/deletes a Machine directly -- see
     # internal/controller/machineset.go. Every other Machine lifecycle

@@ -37,6 +37,8 @@ component apiserver call visibility for free, labeled `method`
 | `kairon_node_numa_free_cpus` | gauge | `node`, `numa` | Pinnable CPUs not held by a Machine, per NUMA node, from each `NodeTopology`. See [topology-aware placement](machine-topology.md). |
 | `kairon_gpu_vram_mib` | gauge | `node`, `state` | GPU memory per node: `total` from `NodeTopology`, `allocated` to Machines' whole GPUs and vGPU framebuffers. See [vGPU](gpu-vgpu.md). |
 | `kairon_gpu_devices` | gauge | `node`, `health` | GPUs per health state: `Healthy`, `Degraded`, `Unhealthy` or `Unknown`. |
+| `kairon_accelerator_profile_capacity` | gauge | `profile`, `node` | How many more Machines with a `MachineAcceleratorProfile` the node's free devices could take (devices only). See [accelerator profiles](accelerator-profiles.md). |
+| `kairon_accelerator_profile_machines` | gauge | `profile` | Machines expanded from the profile. |
 | `kairon_vgpu_available_instances` | gauge | `node`, `parent`, `profile` | Free mediated-device instances per profile, as last reported by the node. |
 | `kairon_node_maintenance` | gauge | `node`, `state` | 1 while a node is in maintenance mode, `state` `Entering` or `InMaintenance`. See [node maintenance](node-maintenance-drs.md). |
 | `kairon_node_maintenance_remaining_machines` | gauge | `node` | Machines still holding a VMM on a node in maintenance mode. |

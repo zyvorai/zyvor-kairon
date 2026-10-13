@@ -72,6 +72,36 @@ capability scheduling, backend isolation, network allocation, membership schedul
 and a Mac leaving a network all passed. Booting on real Macs and traffic between them have not run. See
 `docs/guides/mac-fabric.md` and the "Mac Fabric" section of `docs/COMPATIBILITY.md`.
 
+## Added: accelerator profiles (experimental)
+
+A cluster-scoped `MachineAcceleratorProfile` names an accelerator shape:
+class, vendor and model or a vGPU profile, `count`,
+`memory.minimumPerDevice`, `topology.p2pRequired` (one PCIe root),
+`topology.sameNuma`, and an optional RDMA `nic` on the same PCIe root.
+Machines ask for it with `spec.accelerators: [{name, profile}]`.
+kairon-controller copies the profile into the Machine's `spec.devices` once,
+before scheduling, and records `name=profile@generation` in the
+`kairon.zyvor.dev/accelerators` annotation. Editing the profile later does
+not change existing Machines. While a profile is missing, or asks for live
+migration (`migration.required`, not possible with passthrough or vGPU
+yet), the Machine stays Pending with `AcceleratorProfileUnavailable`.
+
+Profile status has `Ready`, `Available`, `capacity`, and per node how many
+more Machines its free devices could take. New metrics:
+`kairon_accelerator_profile_capacity` and
+`kairon_accelerator_profile_machines`. `kaironctl get acceleratorprofiles`
+lists them. The chart grants kairon-controller access to the new CRD.
+
+Also: vGPU instances on a parent that is not a PCI device (such as `mbochs`)
+can now satisfy `samePcieRoot`, with that parent counting as their root.
+
+On one node with the kernel's `mbochs` sample driver, profile status, CRD
+validation, expansion and boot with two vGPUs, capacity, waiting and
+unsatisfiable Machines, profile edits and delete have run. Whole GPUs with
+`p2pRequired`, an RDMA NIC next to GPUs, multi-NUMA `sameNuma` and NVIDIA
+profiles have not. See `docs/guides/accelerator-profiles.md` and the
+"Accelerator profiles" section of `docs/COMPATIBILITY.md`.
+
 ## Added: DR networking and scheduled DR tests (experimental)
 
 `MachineProtectionPlan` gains `spec.network` and `spec.test.every`:

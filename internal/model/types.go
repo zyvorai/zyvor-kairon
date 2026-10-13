@@ -265,6 +265,10 @@ type MachineSpec struct {
 	// Devices are PCI devices the scheduler picks from NodeTopology and
 	// kairon-node passes through with VFIO (qemu backend).
 	Devices []MachineDevice `json:"devices,omitempty"`
+	// Accelerators name cluster-scoped MachineAcceleratorProfiles.
+	// kairon-controller expands each into spec.devices once, before the
+	// Machine is scheduled. See docs/guides/accelerator-profiles.md.
+	Accelerators []MachineAccelerator `json:"accelerators,omitempty"`
 	// TopologyAllocation is set by the scheduler with spec.nodeName.
 	TopologyAllocation *TopologyAllocation `json:"topologyAllocation,omitempty"`
 	GuestAgent         GuestAgentSpec      `json:"guestAgent,omitempty"`

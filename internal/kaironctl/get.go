@@ -293,6 +293,27 @@ func cmdGet(ctx context.Context, kc *kube.Client, args []string) {
 			}
 			fmt.Printf("%s\t%d\t%d\t%d\t%d\t%t\n", t.Metadata.Name, len(t.Status.NUMANodes), cpus, len(t.Status.Devices), allocatable, t.Status.NUMABinding)
 		}
+	case "acceleratorprofile", "acceleratorprofiles", "machineacceleratorprofile", "machineacceleratorprofiles", "kmap":
+		items, err := kc.ListMachineAcceleratorProfiles(ctx)
+		if err != nil {
+			fatal(err)
+		}
+		items = selectorFilter(items, selector, func(p model.MachineAcceleratorProfile) map[string]string { return p.Metadata.Labels })
+		fmt.Printf("NAME\tCLASS\tCOUNT\tPROFILE\tREADY\tCAPACITY\tMACHINES\n")
+		for _, p := range items {
+			class, count := p.Spec.Class, p.Spec.Count
+			if class == "" {
+				class = model.DeviceClassGPU
+			}
+			if count == 0 {
+				count = 1
+			}
+			ready := "-"
+			if c, ok := model.FindCondition(p.Status.Conditions, model.AcceleratorProfileReady); ok {
+				ready = c.Status
+			}
+			fmt.Printf("%s\t%s\t%d\t%s\t%s\t%d\t%d\n", p.Metadata.Name, class, count, dash(p.Spec.Profile), ready, p.Status.Capacity, p.Status.Machines)
+		}
 	default:
 		fatal(fmt.Errorf("unknown resource %q", resource))
 	}

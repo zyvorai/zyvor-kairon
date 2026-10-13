@@ -145,6 +145,8 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 	c.reconcileTenantFences(ctx, machines)
 	machines = c.resolveInstanceTypes(ctx, machines)
 	machines, imagesNotReady := c.resolveImageRefs(ctx, machines)
+	acceleratorProfiles := c.listAcceleratorProfiles(ctx)
+	machines, acceleratorsNotReady := c.resolveAccelerators(ctx, machines, acceleratorProfiles)
 	machines, volumesNotReady := c.reconcileAtlasVolumes(ctx, machines)
 	c.reconcileCiliumAttach(ctx, machines)
 	c.reconcileCiliumPolicySync(ctx)
@@ -294,6 +296,9 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 		if _, waiting := imagesNotReady[m.Namespace()+"/"+m.Metadata.Name]; waiting {
 			continue
 		}
+		if _, waiting := acceleratorsNotReady[m.Namespace()+"/"+m.Metadata.Name]; waiting {
+			continue
+		}
 		pending = append(pending, m)
 	}
 	scheduler.SortByPriorityDesc(pending)
@@ -302,6 +307,7 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 		return err
 	}
 	c.reconcileHibernatedResumes(ctx, machines, nodes, nodeLoad, topologies)
+	c.reconcileAcceleratorProfiles(ctx, acceleratorProfiles, machines, nodes, topologies)
 
 	var unschedulable []model.Machine
 	for _, m := range pending {
