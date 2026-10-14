@@ -32,6 +32,8 @@ INLINE_WRITE = 1 << 20
 UPLOAD_CHUNK = 4 << 20
 MAX_UPLOAD = 2 << 30
 _UUID = re.compile(r"[0-9a-fA-F-]{36}")
+INPUT_ACTIONS = frozenset({"type", "key", "move", "click", "double_click", "right_click", "middle_click",
+                           "down", "up", "drag", "scroll"})
 
 
 class SessionError(RuntimeError):
@@ -55,7 +57,7 @@ def _approval(body: dict, approval_id: str, wait_seconds: int) -> int:
     return int(wait_seconds or 0)
 
 
-def session_spec(*, agent: str = "", git: str = "", workspace: str = "", image: str = "",
+def session_spec(*, agent: str = "", git: str = "", workspace: str = "", image: str = "", engine: str = "",
                  cpu: str = "", memory: str = "", preset: str = "", allow_hosts: tuple | list = (),
                  process_allow: tuple | list = (), process_deny: tuple | list = (),
                  process_ask: tuple | list = (),
@@ -68,6 +70,8 @@ def session_spec(*, agent: str = "", git: str = "", workspace: str = "", image: 
         spec["workspace"] = {k: v for k, v in {"git": git, "path": workspace}.items() if v}
     if image:
         spec["image"] = image
+    if engine:
+        spec["engine"] = engine
     if cpu or memory:
         spec["resources"] = {k: v for k, v in {"cpu": cpu, "memory": memory}.items() if v}
     pol: dict[str, Any] = {}
@@ -197,6 +201,23 @@ class AgentSession:
     def probe(self) -> dict:
         """Which tools the guest image has and which session features are ready."""
         return self._call("GET", "probe", timeout=60)
+
+    def screenshot(self, *, max_width: int | None = None) -> bytes:
+        """The guest display of a Mac (vz) session as PNG bytes; max_width scales it down."""
+        query = {"max_width": int(max_width)} if max_width else None
+        return self._call("GET", "screenshot", query=query, timeout=60, binary=True)
+
+    def input(self, *actions: dict) -> dict:
+        """Keyboard and mouse input to a Mac session's display, sent in order. Actions are FluxVM's, e.g.
+        ``{"action": "click", "x": 640, "y": 400, "screen_width": 1280}``, ``{"action": "type", "text": "ls"}``,
+        ``{"action": "key", "key": "enter", "modifiers": ["command"]}``. Typed text stays out of the ledger."""
+        if not 0 < len(actions) <= 256:
+            raise ValueError("send 1-256 actions")
+        for a in actions:
+            if not isinstance(a, dict) or a.get("action") not in INPUT_ACTIONS:
+                raise ValueError("each action is a dict whose action is one of " + ", ".join(sorted(INPUT_ACTIONS)))
+        body = dict(actions[0]) if len(actions) == 1 else {"actions": [dict(a) for a in actions]}
+        return self._call("POST", "input", body, timeout=120)
 
     def grant(self, secret_ref: str, hosts: list[str], *, value: str | None = None, methods: tuple | list = (),
               paths: tuple | list = (), ttl_seconds: int = 0) -> dict:

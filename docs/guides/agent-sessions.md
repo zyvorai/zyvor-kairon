@@ -44,6 +44,8 @@ spec:
     git: https://github.com/org/repo # cloned into /workspace
     mode: clone                      # clone (default) or readonly
   resources: {cpu: "2", memory: 4Gi} # defaults 2 vCPUs, 2Gi
+  image: agent-micro                 # FluxVM image; empty uses FluxVM's default
+  engine: agent                      # refuse a Mac guest without FluxVM's guest agent
   policy:
     preset: developer-safe           # offline, developer-safe or open
     network:
@@ -88,7 +90,19 @@ not compile the policy itself. FluxVM's answer is copied into status:
 - `status.policy.enforcement` and `networkEnforcement` say how the rules are
   enforced (for example in the guest only, or at the host).
 - `status.capabilities` says whether the backend supports snapshots, forks,
-  a PTY, confinement and HTTP-level rules.
+  a PTY, confinement and HTTP-level rules. On a Mac, `engine` says how
+  commands reach the guest: `agent` (FluxVM's guest agent: hardened exec,
+  supervised jobs, filesystem confinement) or `ssh` (a stock image without
+  the agent: exec, files and the terminal work, but there is no job
+  supervisor or confinement). `supervisor` is true when the guest agent has
+  the job supervisor. The dashboard warns about `ssh` sessions.
+
+**Engine.** FluxVM after 0.4.8 gives sessions without `image` its
+`agent-micro` image when the node's catalog has it, and the SSH engine
+otherwise. `spec.engine: agent` (`kaironctl session run --engine agent`)
+makes FluxVM refuse the session with 409 instead of creating it on the SSH
+engine; the session goes `Failed` with that message. FluxVM 0.4.8 ignores
+the field.
 
 The webhook rejects invalid specs before FluxVM sees them, for example:
 unknown presets or modes, git URLs that are not `https://`, guest paths that
@@ -131,6 +145,7 @@ An `Ended` session still answers `events`, `artifacts` and `trajectory`.
 |---|---|---|
 | Run a command | `session exec NAME -- CMD` (exits with its code) | `session_exec` |
 | Interactive terminal | `session shell NAME [-- CMD]` | |
+| Guest display (Mac) | `session screenshot`, `session input` | `session_screenshot`, `session_input` |
 | Background job | `session bg`, `jobs`, `logs -f`, `kill` | `session_job_start`, `session_job_read` |
 | Approvals | `session approvals`, `approve NAME ID`, `deny NAME ID` | `session_approvals` (read only) |
 | Files | `session ls`, `cat`/`pull`, `put` (chunked above 1 MiB), `rm-file` | `session_read_file`, `session_write_file` |
@@ -193,7 +208,7 @@ the decider, so kairon-ui writes the person into the note
 lists pending approvals with Approve and Deny buttons for admins. After a
 428 it offers to run the command again once it is approved.
 
-## Files, terminal, probe and credentials
+## Files, terminal, screen, probe and credentials
 
 **Large files.** `put` writes files up to 1 MiB in one request. Larger
 files (up to 2 GiB) go through FluxVM's resumable uploads: 4 MiB chunks, a
@@ -206,6 +221,35 @@ kairon-ui and the console relay) that follows your window size and exits
 with the shell's code. FluxVM refuses a terminal to sessions with process
 or filesystem rules, because a shell would get around them, and only to
 admin tokens.
+
+**Screen** (Mac sessions, FluxVM after 0.4.8). `session screenshot` saves
+the guest display as a PNG and `session input` sends keyboard and mouse
+input to it, so an agent can drive a graphical app:
+
+```bash
+kaironctl session screenshot demo -o screen.png --max-width 1280
+kaironctl session input demo click 640 400 --screen-width 1280
+kaironctl session input demo type -- 'make test'
+kaironctl session input demo key enter --screenshot after.png
+kaironctl session input demo --actions-file steps.json   # a list of FluxVM actions, in order
+```
+
+Coordinates are pixels of the screenshot from the top left;
+`--screen-width` names its width when it was scaled down. The actions are
+`type`, `key` (with `--mod shift|control|option|command`), `move`, `click`,
+`double-click`, `right-click`, `middle-click`, `down`, `up`, `drag` and
+`scroll`. The screen takes the same grant as exec, since typing into the
+console is running commands. FluxVM ledgers screenshots and input as
+`screen.shot` and `screen.input` without the pixels or the typed text, and
+the MCP audit log keeps only the length of `session_input`'s text. The
+MCP `session_screenshot` tool returns the image itself. The dashboard's
+session panel shows the screen of a Mac session: click on it to click
+there, or type text and press Enter.
+
+**Fork on a Mac.** FluxVM after 0.4.8 clones a fork's disk and saved state
+with APFS copy-on-write. The fork answer's `files_cloned` and
+`files_copied` say how many files were cloned or fully copied, and
+`kaironctl session fork` warns when any were copied (slower, real disk).
 
 **Probe.** `session probe` lists the tools found in the guest image, its
 architecture and kernel, and which session features (git, promote, ...) are
@@ -282,8 +326,8 @@ with AgentSession.create(ui, name="fix-42", agent="codex", git="https://github.c
 A command matching `process_ask` raises `ApprovalRequired` (an `APIError`
 with `approval_id`); call again with `exec(cmd, approval_id=...)` once an
 admin approved it. The session also has `approvals()`, `approve()`,
-`deny()`, `probe()`, `upload()`, `grant()`, `grants()` and
-`revoke_grant()`.
+`deny()`, `probe()`, `upload()`, `grant()`, `grants()`,
+`revoke_grant()`, `screenshot()` (PNG bytes) and `input(*actions)`.
 
 The TypeScript SDK (`@zyvor/kairon`) has the same API with camelCase names
 (`AgentSession.create`, `sessionSpec`, `ApprovalRequired.approvalId`,
@@ -291,8 +335,8 @@ The TypeScript SDK (`@zyvor/kairon`) has the same API with camelCase names
 
 The dashboard's **Agent sessions** page (under Compute) creates sessions,
 lists them with phase, node, checkpoints and exec count, and opens a panel
-per session with exec, pending approvals, checkpoint, previews and the last
-50 trajectory steps.
+per session with exec, pending approvals, checkpoint, the screen (Mac
+sessions), previews and the last 50 trajectory steps.
 
 ## Troubleshooting
 
@@ -308,5 +352,10 @@ per session with exec, pending approvals, checkpoint, previews and the last
   denying and grants always need an admin account.
 - **`session shell` is refused with 403.** The session has process or
   filesystem rules, or the node's FluxVM token is not an admin token.
+- **`screenshot` or `input` returns 404.** The node's FluxVM is 0.4.8,
+  which has no screen routes, or the session is not on a Mac.
+- **`Failed` with "runtime.engine is \"agent\" but this guest would run on
+  the SSH engine".** The image has no guest agent. Use `agent-micro`, or
+  drop `engine`.
 - **`exec` returns 428.** The command matched `policy.process.ask`; see
   [Approvals](#approvals).

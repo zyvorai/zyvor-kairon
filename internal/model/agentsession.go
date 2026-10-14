@@ -73,7 +73,11 @@ type AgentSessionSpec struct {
 	Resources AgentSessionResources `json:"resources,omitempty"`
 	// Image is a FluxVM image name or path for the session's VM; empty
 	// uses FluxVM's default sandbox image.
-	Image  string       `json:"image,omitempty"`
+	Image string `json:"image,omitempty"`
+	// Engine "agent" fails the create when a Mac (vz) guest would run on
+	// FluxVM's SSH engine (no job supervisor, confinement or HTTP rules)
+	// instead of its guest agent. FluxVM 0.4.8 ignores it.
+	Engine string       `json:"engine,omitempty"`
 	Policy *AgentPolicy `json:"policy,omitempty"`
 	Budget *AgentBudget `json:"budget,omitempty"`
 	// TTLSeconds ends the session this long after it is created.
@@ -195,6 +199,10 @@ type AgentSessionCapabilities struct {
 	Pty         bool `json:"pty"`
 	Confinement bool `json:"confinement"`
 	HTTPPolicy  bool `json:"httpPolicy"`
+	// Engine is how exec reaches a Mac guest: agent (the guest agent) or
+	// ssh (no supervisor or confinement); empty where FluxVM did not say.
+	Engine     string `json:"engine,omitempty"`
+	Supervisor bool   `json:"supervisor,omitempty"`
 }
 
 // AgentSessionPolicyStatus is the policy as FluxVM compiled it, including
@@ -295,6 +303,9 @@ func ValidateAgentSessionSpec(s AgentSessionSpec) error {
 		if mib, err := ParseMemoryMiB(s.Resources.Memory); err != nil || mib == 0 {
 			return fmt.Errorf("resources.memory: invalid quantity %q", s.Resources.Memory)
 		}
+	}
+	if s.Engine != "" && s.Engine != "agent" {
+		return fmt.Errorf("engine must be agent (or empty for whatever the image runs)")
 	}
 	if s.TTLSeconds < 0 {
 		return fmt.Errorf("ttlSeconds must be positive")

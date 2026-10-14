@@ -115,7 +115,7 @@ class _HTTP:
 
     def request(self, method: str, path: str, body: Any = None, *,
                 content_type: str = "application/json", timeout: float | None = None,
-                raw: bool = False, data: bytes | None = None) -> Any:
+                raw: bool = False, binary: bool = False, data: bytes | None = None) -> Any:
         if data is None and body is not None:
             data = json.dumps(body).encode()
         req = Request(self.url + path, method=method, data=data,
@@ -126,6 +126,8 @@ class _HTTP:
                 data = response.read(MAX_RESPONSE_BYTES + 1)
                 if len(data) > MAX_RESPONSE_BYTES:
                     raise ValueError("Kairon response exceeds 8 MiB")
+                if binary:
+                    return data
                 if raw:
                     return data.decode("utf-8")
                 return json.loads(data) if data else None
@@ -472,10 +474,11 @@ class UIClient:
 
     def session_call(self, name: str, method: str, verb: str, body: Any = None, *,
                      query: dict | None = None, timeout: float | None = None,
-                     data: bytes | None = None) -> Any:
+                     data: bytes | None = None, binary: bool = False) -> Any:
         """One FluxVM session verb (exec, jobs/..., files/..., git/..., preview, ...) through kairon-ui.
 
-        ``data`` sends raw bytes instead of a JSON body (upload chunks).
+        ``data`` sends raw bytes instead of a JSON body (upload chunks); ``binary``
+        returns the response bytes (screenshot).
         """
         if not verb or verb.startswith("/") or ".." in verb.split("/"):
             raise ValueError("verb must be a relative session route")
@@ -484,8 +487,8 @@ class UIClient:
             path += "?" + urlencode(query)
         if data is not None:
             return self._http.request(method, path, timeout=timeout, data=data,
-                                      content_type="application/octet-stream")
-        return self._http.request(method, path, body, timeout=timeout)
+                                      content_type="application/octet-stream", binary=binary)
+        return self._http.request(method, path, body, timeout=timeout, binary=binary)
 
     def usage_csv(self) -> str:
         return self._http.request("GET", "/api/v1/usage.csv?" + urlencode({"namespace": self.namespace}), raw=True)

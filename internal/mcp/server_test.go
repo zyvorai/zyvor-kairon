@@ -215,3 +215,30 @@ func TestApprovalGateSkipsToolsWithoutApproval(t *testing.T) {
 		t.Fatalf("got %q err=%v", text, isErr)
 	}
 }
+
+func TestImageBlocks(t *testing.T) {
+	s := NewServer("test", "v0", false)
+	s.Add(
+		Tool{Name: "shot", CallBlocks: func(context.Context, json.RawMessage) ([]Block, error) {
+			return []Block{ImageBlock("image/png", []byte{0x89, 'P', 'N', 'G'}), TextBlock(strings.Repeat("x", MaxOutput+10))}, nil
+		}},
+		Tool{Name: "huge", CallBlocks: func(context.Context, json.RawMessage) ([]Block, error) {
+			return []Block{ImageBlock("image/png", make([]byte, MaxImage+1))}, nil
+		}},
+	)
+	got := run(t, s,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"shot"}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"huge"}}`,
+	)
+	content := got["1"]["result"].(map[string]any)["content"].([]any)
+	img := content[0].(map[string]any)
+	if img["type"] != "image" || img["mimeType"] != "image/png" || img["data"] != "iVBORw==" {
+		t.Fatalf("image block %v", img)
+	}
+	if text := content[1].(map[string]any)["text"].(string); !strings.Contains(text, "[truncated") {
+		t.Fatal("text block not capped")
+	}
+	if text, isErr := resultText(t, got["2"]); !isErr || !strings.Contains(text, "image exceeds") {
+		t.Fatalf("oversized image: %q %v", text, isErr)
+	}
+}

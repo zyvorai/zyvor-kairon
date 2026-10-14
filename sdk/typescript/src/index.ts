@@ -108,7 +108,7 @@ class HTTP {
     this.fetcher = options.fetch ?? globalThis.fetch;
   }
   async request<T>(method: string, path: string, body?: unknown,
-                   options: {timeoutMs?: number; signal?: AbortSignal; contentType?: string; raw?: boolean; data?: Uint8Array} = {}): Promise<T> {
+                   options: {timeoutMs?: number; signal?: AbortSignal; contentType?: string; raw?: boolean; binary?: boolean; data?: Uint8Array} = {}): Promise<T> {
     const timeout = AbortSignal.timeout(Math.max(1, Math.ceil(positive(options.timeoutMs ?? this.timeout))));
     const signal = options.signal ? AbortSignal.any([timeout, options.signal]) : timeout;
     const payload = options.data ? {body: new Uint8Array(options.data)} : body === undefined ? {} : {body: JSON.stringify(body)};
@@ -149,6 +149,7 @@ class HTTP {
     const bytes = new Uint8Array(size);
     let offset = 0;
     for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    if (options.binary) return bytes as T;
     const text = new TextDecoder().decode(bytes);
     return (options.raw ? text : text ? JSON.parse(text) : undefined) as T;
   }
@@ -491,15 +492,16 @@ export class UIClient {
   }
   /** One FluxVM session verb (exec, jobs/..., files/..., git/..., preview, ...) through kairon-ui. */
   sessionCall<T = Json>(name: string, method: string, verb: string, body?: unknown,
-                        options: {query?: Record<string, string | number | boolean>; timeoutMs?: number; data?: Uint8Array} = {}): Promise<T> {
+                        options: {query?: Record<string, string | number | boolean>; timeoutMs?: number; data?: Uint8Array; binary?: boolean} = {}): Promise<T> {
     if (!verb || verb.startsWith('/') || verb.split('/').includes('..')) throw new Error('verb must be a relative session route');
     let path = this.session(name) + '/' + verb.split('/').map(encodeURIComponent).join('/');
     if (options.query) path += '?' + new URLSearchParams(Object.entries(options.query).map(([k, v]) => [k, String(v)]));
     return this.http.request(method, path, body, {
       ...(options.timeoutMs === undefined ? {} : {timeoutMs: options.timeoutMs}),
       ...(options.data === undefined ? {} : {data: options.data}),
+      ...(options.binary ? {binary: true} : {}),
     });
   }
 }
 export {CommandError, Process, Sandbox, SANDBOX_LABEL, type SandboxOptions} from './sandbox.js';
-export {AgentSession, SessionError, sessionSpec, type ApprovalOptions, type SessionSpecOptions} from './session.js';
+export {AgentSession, SessionError, sessionSpec, type ApprovalOptions, type InputAction, type SessionSpecOptions} from './session.js';

@@ -93,7 +93,7 @@ func sessionTools(nsDefault string, withKube func(context.Context, time.Duration
 			return string(out), nil
 		}
 	}
-	return []mcp.Tool{
+	return append(sessionScreenTools(nsDefault), []mcp.Tool{
 		{
 			Name:        "session_list",
 			Description: "List AgentSessions (FluxVM agent sessions: a sandbox VM with workspace, policy, checkpoints and ledger) with phase, node and FluxVM session id.",
@@ -143,6 +143,7 @@ func sessionTools(nsDefault string, withKube func(context.Context, time.Duration
 				"agent":      mcp.String("agent label, e.g. claude or codex"),
 				"git":        mcp.String("https:// repository cloned into the workspace"),
 				"image":      mcp.String("FluxVM image for the session VM"),
+				"engine":     mcp.String("agent: fail unless a Mac guest runs FluxVM's guest agent (job supervisor, confinement) rather than its SSH engine", "agent"),
 				"cpu":        mcp.String("vCPUs, default 2"),
 				"memory":     mcp.String("memory, e.g. 4Gi; default 2Gi"),
 				"preset":     mcp.String("policy preset", "offline", "developer-safe", "open"),
@@ -153,15 +154,15 @@ func sessionTools(nsDefault string, withKube func(context.Context, time.Duration
 			Call: func(ctx context.Context, raw json.RawMessage) (string, error) {
 				var a struct {
 					sessionRef
-					Agent, Git, Image, CPU, Memory, Preset string
-					AllowHosts                             []string `json:"allowHosts"`
-					TTLSeconds                             int64    `json:"ttlSeconds"`
-					MaxExecs                               int64    `json:"maxExecs"`
+					Agent, Git, Image, Engine, CPU, Memory, Preset string
+					AllowHosts                                     []string `json:"allowHosts"`
+					TTLSeconds                                     int64    `json:"ttlSeconds"`
+					MaxExecs                                       int64    `json:"maxExecs"`
 				}
 				if err := decodeArgs(raw, &a); err != nil {
 					return "", err
 				}
-				spec, err := agentSessionSpec(sessionRunFlags{agent: a.Agent, git: a.Git, image: a.Image, cpu: a.CPU, memory: a.Memory,
+				spec, err := agentSessionSpec(sessionRunFlags{agent: a.Agent, git: a.Git, image: a.Image, engine: a.Engine, cpu: a.CPU, memory: a.Memory,
 					preset: a.Preset, allowHosts: a.AllowHosts, ttl: time.Duration(a.TTLSeconds) * time.Second, budget: model.AgentBudget{MaxExecs: a.MaxExecs}})
 				if err != nil {
 					return "", err
@@ -445,7 +446,7 @@ func sessionTools(nsDefault string, withKube func(context.Context, time.Duration
 			Schema:      ref(nil),
 			Call:        verb(mcpCallTimeout, http.MethodGet, "probe", nil),
 		},
-	}
+	}...)
 }
 
 var (

@@ -36,11 +36,13 @@ type AgentSession struct {
 }
 
 type AgentSessionCapabilities struct {
-	Snapshot    bool `json:"snapshot"`
-	Fork        bool `json:"fork"`
-	Pty         bool `json:"pty"`
-	Confinement bool `json:"confinement"`
-	HTTPPolicy  bool `json:"http_policy"`
+	Snapshot    bool   `json:"snapshot"`
+	Fork        bool   `json:"fork"`
+	Pty         bool   `json:"pty"`
+	Confinement bool   `json:"confinement"`
+	HTTPPolicy  bool   `json:"http_policy"`
+	Engine      string `json:"engine"`
+	Supervisor  bool   `json:"supervisor"`
 }
 
 type AgentSessionPolicy struct {
@@ -128,6 +130,9 @@ func AgentSessionCreateBody(spec model.AgentSessionSpec) (map[string]any, error)
 	runtime := map[string]any{}
 	if spec.Image != "" {
 		runtime["image"] = spec.Image
+	}
+	if spec.Engine != "" {
+		runtime["engine"] = spec.Engine
 	}
 	if spec.Resources.CPU != "" {
 		n, err := model.ParseVCPUs(spec.Resources.CPU)

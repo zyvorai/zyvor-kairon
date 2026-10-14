@@ -23,6 +23,8 @@ var agentSessionVerbs = map[string]bool{
 	"grants":     true,
 	"probe":      true,
 	"pty":        true,
+	"screenshot": true,
+	"input":      true,
 	"uploads":    true,
 	"exec":       true,
 	"checkpoint": true,
