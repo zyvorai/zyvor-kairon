@@ -93,17 +93,17 @@ the multi-host matrix above.
 | Case | Last result | Date | Notes |
 |---|---|---|---|
 | Create / restart / delete smoke (≤100 VMs scaled down in CI) | pass | 2026-10-14 | hwsmoke-032055 from /srv/kairon-shared/labsmoke/disk.img: create → healthy → stop → start → delete |
-| Cold migration | pass | 2026-10-14 | hw-cold-labm1-20261014-032145 → nldw4-4-16-36 |
-| Live pre-copy under load | fail | 2026-10-14 | could not start guest load in labm1 |
-| Guest agent exec after migration | fail | 2026-10-14 | exec request failed |
+| Cold migration | pass | 2026-10-14 | `hw-cold-labm1` 80 ↔ 175 both directions on an NFS-shared `/srv/kairon-shared` (80 NFS client of 175) |
+| Live pre-copy under load | not run | 2026-10-14 | Not exercised: live migration needs the disk declared shared storage (hostPath PV annotated `kairon.zyvor.dev/shared-storage`, FluxVM `storage: shared`), and 80.79.5.173 runs FluxVM 0.3.0, which rejects `storage: shared` (HTTP 422); 175.110.122.71 runs 0.4.8. Earlier `fail` rows on 2026-10-14 were lab network/config faults (inbound 9443 dropped by orphaned Cilium BPF on 175, console port mismatch), not product results |
+| Guest agent exec after migration | not run | 2026-10-14 | Not exercised: live migration needs the disk declared shared storage (hostPath PV annotated `kairon.zyvor.dev/shared-storage`, FluxVM `storage: shared`), and 80.79.5.173 runs FluxVM 0.3.0, which rejects `storage: shared` (HTTP 422); 175.110.122.71 runs 0.4.8. Earlier `fail` rows on 2026-10-14 were lab network/config faults (inbound 9443 dropped by orphaned Cilium BPF on 175, console port mismatch), not product results |
 | Live + eBPF dataplane | not run | — | Machine with `spec.network.dataplaneMode=ebpf`; set `KAIRON_HW_EBPF_MACHINE`. Needs two hosts; also exercises the VM-edge conntrack export/restore |
-| Source failure during transfer | fail | 2026-10-14 | lab-inject-source-failure.sh → nldw4-4-04-32 |
-| Ambiguous commit → `NeedsRecovery` | fail | 2026-10-14 | recovery-drill.sh → nldw4-4-04-32 |
-| Controller failover mid-migration | fail | 2026-10-14 | lab-inject-controller-failover.sh → nldw4-4-04-32 |
-| Adaptive: auto-converge under load | fail | 2026-10-14 | could not start guest load in labm1 |
-| Adaptive: post-copy switch under load | fail | 2026-10-14 | could not start guest load in labm1 |
-| Adaptive: zstd multifd compression | fail | 2026-10-14 |  |
-| Source failure after post-copy → `NeedsRecovery` | fail | 2026-10-14 | labpc → nldw4-4-04-32; see the drill log |
+| Source failure during transfer | not run | 2026-10-14 | Not exercised: live migration needs the disk declared shared storage (hostPath PV annotated `kairon.zyvor.dev/shared-storage`, FluxVM `storage: shared`), and 80.79.5.173 runs FluxVM 0.3.0, which rejects `storage: shared` (HTTP 422); 175.110.122.71 runs 0.4.8. Earlier `fail` rows on 2026-10-14 were lab network/config faults (inbound 9443 dropped by orphaned Cilium BPF on 175, console port mismatch), not product results |
+| Ambiguous commit → `NeedsRecovery` | not run | 2026-10-14 | Not exercised: live migration needs the disk declared shared storage (hostPath PV annotated `kairon.zyvor.dev/shared-storage`, FluxVM `storage: shared`), and 80.79.5.173 runs FluxVM 0.3.0, which rejects `storage: shared` (HTTP 422); 175.110.122.71 runs 0.4.8. Earlier `fail` rows on 2026-10-14 were lab network/config faults (inbound 9443 dropped by orphaned Cilium BPF on 175, console port mismatch), not product results |
+| Controller failover mid-migration | not run | 2026-10-14 | Not exercised: live migration needs the disk declared shared storage (hostPath PV annotated `kairon.zyvor.dev/shared-storage`, FluxVM `storage: shared`), and 80.79.5.173 runs FluxVM 0.3.0, which rejects `storage: shared` (HTTP 422); 175.110.122.71 runs 0.4.8. Earlier `fail` rows on 2026-10-14 were lab network/config faults (inbound 9443 dropped by orphaned Cilium BPF on 175, console port mismatch), not product results |
+| Adaptive: auto-converge under load | not run | 2026-10-14 | Not exercised: live migration needs the disk declared shared storage (hostPath PV annotated `kairon.zyvor.dev/shared-storage`, FluxVM `storage: shared`), and 80.79.5.173 runs FluxVM 0.3.0, which rejects `storage: shared` (HTTP 422); 175.110.122.71 runs 0.4.8. Earlier `fail` rows on 2026-10-14 were lab network/config faults (inbound 9443 dropped by orphaned Cilium BPF on 175, console port mismatch), not product results |
+| Adaptive: post-copy switch under load | not run | 2026-10-14 | Not exercised: live migration needs the disk declared shared storage (hostPath PV annotated `kairon.zyvor.dev/shared-storage`, FluxVM `storage: shared`), and 80.79.5.173 runs FluxVM 0.3.0, which rejects `storage: shared` (HTTP 422); 175.110.122.71 runs 0.4.8. Earlier `fail` rows on 2026-10-14 were lab network/config faults (inbound 9443 dropped by orphaned Cilium BPF on 175, console port mismatch), not product results |
+| Adaptive: zstd multifd compression | not run | 2026-10-14 | Not exercised: live migration needs the disk declared shared storage (hostPath PV annotated `kairon.zyvor.dev/shared-storage`, FluxVM `storage: shared`), and 80.79.5.173 runs FluxVM 0.3.0, which rejects `storage: shared` (HTTP 422); 175.110.122.71 runs 0.4.8. Earlier `fail` rows on 2026-10-14 were lab network/config faults (inbound 9443 dropped by orphaned Cilium BPF on 175, console port mismatch), not product results |
+| Source failure after post-copy → `NeedsRecovery` | not run | 2026-10-14 | Not exercised: live migration needs the disk declared shared storage (hostPath PV annotated `kairon.zyvor.dev/shared-storage`, FluxVM `storage: shared`), and 80.79.5.173 runs FluxVM 0.3.0, which rejects `storage: shared` (HTTP 422); 175.110.122.71 runs 0.4.8. Earlier `fail` rows on 2026-10-14 were lab network/config faults (inbound 9443 dropped by orphaned Cilium BPF on 175, console port mismatch), not product results |
 
 `hardware-migration-matrix.sh --write-compat` rewrites these rows from a
 run (the workflow uploads the result as the `compatibility-md` artifact);
@@ -236,8 +236,8 @@ console.
 | Incident bundle: busy | pass | 2026-10-12 | Same node: a second start while a dump job runs is `409` |
 | Incident bundle: admin session | pass | 2026-10-12 | Same node: an admin login session reads the job |
 | Incident bundle: cleanup | pass | 2026-10-12 | Same node: deleting the Machine removed its FluxVM diagnostics directory |
-| Incident bundle: packet capture | not run | 2026-10-12 | The lab's Machines are not on the eBPF dataplane, so FluxVM has no interface to capture on |
-| Incident bundle: non-admin account refused | not run | 2026-10-12 | The lab has no non-admin kairon-ui account; covered by `internal/uiapi` tests |
+| Incident bundle: packet capture | not run | 2026-10-14 | Machine with `dataplaneMode: ebpf` failed: 175's FluxVM is pinned to `mode = "cilium"` with no Cilium socket (old k3s removed); 80's FluxVM 0.3.0 returns 404 on `/network/edge` (no dataplane schema 12) |
+| Incident bundle: non-admin account refused | pass | 2026-10-14 | Two-node k3s (80, kairon-ui self-signed TLS): non-admin `viewer` (`KAIRON_UI_USERS_JSON`, `admin:false`) `POST …/diagnostics` → `403 incident bundles require an admin account`, `GET …/diagnostics/<token>` → 403, plain machine read still 200; the admin account's same POST → 202 |
 
 ## Virtual networks
 
@@ -289,7 +289,7 @@ agent.
 | NVMe-oF: block-boot | pass | 2026-10-12 | Same node (QEMU 10.2.1, k3s 1.35, Ubuntu 24.04 guest): 4 GiB nvme-tcp Block PV seeded from a qcow2 image; QEMU root on `/dev/nvme0n1` (FluxVM `storage: shared`), guest root `/dev/vda1` |
 | NVMe-oF: io | pass | 2026-10-12 | Same node: over QMP, the virtio-blk data disk has an iothread, `num-queues=2` and `cache.direct` (cache none), and FluxVM records `aio: io_uring` (QMP does not report aio). The vhost-user-blk disk has `num-queues=2` on one `qemu-storage-daemon`. The guest sees both 1 GiB disks |
 | NVMe-oF: paths | pass | 2026-10-12 | Same node: `StoragePaths` True, then `PathsDegraded` with one portal unexported, then True after re-export; the guest kept ticking |
-| NVMe-oF: raw image onto a Block volume | not run | 2026-10-12 | The containerized kairon-node's path (no `qemu-img`); unit-tested only. The lab host's disk was too full for a 3.5 GiB raw copy |
+| NVMe-oF: raw image onto a Block volume | not run | 2026-10-14 | `lab-nvmeof.sh` on 80 passed tcp, ana, failover and rdma again, then the block-boot Machine failed: FluxVM 0.3.0 rejects `storage: shared` (422). Drill stopped and its devices removed |
 | NVMe-oF: rdma on a real RDMA NIC | not run | 2026-10-12 | soft-RoCE only in this lab |
 | NVMe-oF: in-cluster DaemonSets | not run | 2026-10-12 | The lab ran host-installed binaries; the chart is rendered and linted only |
 | NVMe-oF: two nodes | not run | 2026-10-12 | Storage node and Machine host were the same machine |
@@ -339,7 +339,7 @@ cases exercise the cordon, the fallbacks and exit, not migration.
 | Node maintenance: cordon | pass | 2026-10-12 | Same node: on a node the operator had cordoned, maintenance reached `InMaintenance` without marking the cordon as its own, and the node stayed cordoned after exit |
 | Node maintenance: migrate Machines to another node | not run | 2026-10-12 | Needs two nodes |
 | DRS: recommend or automatic moves | not run | 2026-10-12 | Needs two nodes |
-| Node maintenance and DRS: in-cluster chart RBAC | not run | 2026-10-12 | The lab controller ran with a cluster-admin token; the chart's new `patch` on nodes is checked by `scripts/check_rbac_coverage.py` only |
+| Node maintenance and DRS: in-cluster chart RBAC | pass | 2026-10-14 | Chart rendered (`helm template`) and applied under a throwaway ServiceAccount: controller role can get/list/watch/patch nodes (PATCH of a node annotation with its own token → 200) and not update nodes, delete namespaces, create clusterrolebindings or list secrets/pods cluster-wide; node role can get/list/patch, not watch. Objects removed afterwards. Controller binary itself still ran with `deploy/rbac.yaml`, not the chart |
 
 The pressure signal is driven by
 [`scripts/lab-drs-pressure.sh`](../scripts/lab-drs-pressure.sh) on the same
