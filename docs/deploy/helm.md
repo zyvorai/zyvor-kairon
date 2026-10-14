@@ -12,8 +12,8 @@ The chart and images are published to GitHub Container Registry on every release
 kubectl label node worker-1 kairon.zyvor.dev/capable=true
 
 helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \
-  --version 0.9.1 -n kairon-system --create-namespace \
-  -f https://raw.githubusercontent.com/zyvorai/kairon/v0.9.1/charts/kairon/values-production.yaml
+  --version 0.10.0 -n kairon-system --create-namespace \
+  -f https://raw.githubusercontent.com/zyvorai/kairon/v0.10.0/charts/kairon/values-production.yaml
 ```
 
 Without Helm: `kaironctl install --profile production`.

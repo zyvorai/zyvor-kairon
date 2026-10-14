@@ -1,8 +1,12 @@
 # Roadmap
 
+## v0.10 — Agents, DR and the data center
+
+v0.10.0 (2026-10-14) is the current release. It ships HTTPS by default for the dashboard and the console relay, `kaironctl selftest`, virtctl parity in `kaironctl`, and, as experimental features, agent sessions and agent sandboxes, Mac Fabric, cross-cluster DR, DRS, node maintenance, per-disk I/O QoS, accelerator and vGPU profiles, NVMe-oF, incremental S3 backups, topology-aware placement, elastic memory, virtual networks, hibernate, adaptive live migration and incident bundles. Each experimental feature's lab status is in [COMPATIBILITY.md](docs/COMPATIBILITY.md). See [RELEASE_NOTES.md](RELEASE_NOTES.md).
+
 ## v0.9 — Operate it from the CLI, namespace-aware dashboard
 
-v0.9.1 (2026-10-11, a patch on v0.9.0: all-namespaces Migrations/Snapshots, `doctor` for systemd installs, Machine phase Events, complete `SHA256SUMS`) is the current release. v0.9.0 shipped: `kaironctl` lifecycle and diagnostics (`doctor`, `connectivity test`, `logs`, `events`, `sysdump`, `config`, `history`, `rollback`, `upgrade --check`, `ui`, global `--kubeconfig`/`--context`, `-o json|yaml`), `kaironctl upgrade` keeping previous Helm values, dashboard namespace selector and all-namespaces Machines view (`GET /api/v1/machines?namespace=_all`), bulk Start/Stop, table filters, and the well-known lab sign-in default on fresh Helm installs (`ui.auth.wellKnownDefault`, off in `values-production.yaml`). See [RELEASE_NOTES.md](RELEASE_NOTES.md).
+v0.9.1 (2026-10-11, a patch on v0.9.0: all-namespaces Migrations/Snapshots, `doctor` for systemd installs, Machine phase Events, complete `SHA256SUMS`). v0.9.0 shipped: `kaironctl` lifecycle and diagnostics (`doctor`, `connectivity test`, `logs`, `events`, `sysdump`, `config`, `history`, `rollback`, `upgrade --check`, `ui`, global `--kubeconfig`/`--context`, `-o json|yaml`), `kaironctl upgrade` keeping previous Helm values, dashboard namespace selector and all-namespaces Machines view (`GET /api/v1/machines?namespace=_all`), bulk Start/Stop, table filters, and the well-known lab sign-in default on fresh Helm installs (`ui.auth.wellKnownDefault`, off in `values-production.yaml`). See [RELEASE_NOTES.md](RELEASE_NOTES.md).
 
 The two open multi-host items carried over from v0.7 and v0.8 are listed under "Prove live migration, beyond one Mac" below.
 

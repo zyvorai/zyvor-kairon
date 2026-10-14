@@ -35,10 +35,12 @@
 
 ## What's new
 
-New since v0.6.0 (latest tag: v0.9.1; the first rows below are on `main`, not yet in a tag):
+New since v0.6.0 (latest tag: v0.10.0; the rows down to incident bundles are new in v0.10.0):
 
 | | |
 |---|---|
+| **Agent sessions (experimental)** | An `AgentSession` is a FluxVM agent session: a sandbox VM with a git workspace, a compiled egress/filesystem/process policy, budgets, checkpoints, live forks and an event ledger, scheduled and quota-counted like a Machine. Commands can wait for an admin's approval; chunked uploads, an interactive shell, credential grants the guest never sees, and the Mac guest's screen. `kaironctl session`, `session_*` MCP tools, both SDKs and a dashboard page. Mac nodes on FluxVM 0.4.8+. [Guide →](docs/guides/agent-sessions.md) |
+| **Coming from virtctl** | `kaironctl` covers virtctl's verbs: console and VNC (with screenshots), restart/soft-reboot, exports and memory dumps, guest info, SSH keys and passwords, `expose`, `freeze`, `guestfs`, `cdrom`, `create clone`, `objectgraph`, `--dry-run -o yaml`, `wait`. [CLI →](docs/CLI.md) |
 | **Self-test: is it all working?** | `kaironctl selftest` (or the dashboard's Self-test page) boots a tiny CirrOS VM and proves power, network, hotplug, snapshot-restore and more, with live coloured logs and a PASS / FAIL / SKIP table. `deploy-remote.sh --self-test` runs it right after a deploy. [Guide →](docs/guides/selftest.md) |
 | **Deploy without building locally** | `deploy-remote.sh --remote-build` copies a small source tarball and compiles on the host, so a laptop needs no Go, no Node and no build cache. [Fastest path →](docs/getting-started.md#fastest-path) |
 | **HTTPS by default** | The dashboard and the VNC console relay serve TLS out of the box (generated or bring-your-own certificate); plain HTTP is a named opt-out. [Dashboard guide →](docs/guides/kairon-ui-dashboard.md#https) |
@@ -257,10 +259,10 @@ On a Kubernetes cluster whose VM hosts run [FluxVM](https://github.com/zyvorai/z
 kubectl label node worker-1 kairon.zyvor.dev/capable=true
 
 helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \
-  --version 0.9.1 -n kairon-system --create-namespace \
-  -f https://raw.githubusercontent.com/zyvorai/kairon/v0.9.1/charts/kairon/values-production.yaml
+  --version 0.10.0 -n kairon-system --create-namespace \
+  -f https://raw.githubusercontent.com/zyvorai/kairon/v0.10.0/charts/kairon/values-production.yaml
 
-curl -fsSL -o kaironctl https://github.com/zyvorai/kairon/releases/download/v0.9.1/kaironctl-linux-amd64
+curl -fsSL -o kaironctl https://github.com/zyvorai/kairon/releases/download/v0.10.0/kaironctl-linux-amd64
 chmod +x kaironctl && sudo mv kaironctl /usr/local/bin/      # or: kubectl krew install kairon
 
 kaironctl create demo --image /var/lib/fluxvm/images/ubuntu.qcow2 --cpu 2 --memory 2Gi
@@ -346,7 +348,7 @@ kaironctl ui                         # or through the API server, no port-forwar
 | MCP server for AI agents | Preview, CI end-to-end with the official SDK |
 | CPU/memory hotplug | Grow-only (QEMU) |
 
-**v0.9.1** is the latest release. Real two-host live migration is still Preview: the multi-host lab matrix is not yet green, so it is not claimed as Stable. Adaptive live migration stays Experimental until its four matrix cases pass on the nightly lab workflow, and it can't be called production-ready before the base live-migration rows are green too. Honest gaps live in [docs/STATUS.md](docs/STATUS.md); what comes next is in [ROADMAP.md](ROADMAP.md).
+**v0.10.0** is the latest release. Real two-host live migration is still Preview: the multi-host lab matrix is not yet green, so it is not claimed as Stable. Adaptive live migration stays Experimental until its four matrix cases pass on the nightly lab workflow, and it can't be called production-ready before the base live-migration rows are green too. Honest gaps live in [docs/STATUS.md](docs/STATUS.md); what comes next is in [ROADMAP.md](ROADMAP.md).
 
 ---
 
