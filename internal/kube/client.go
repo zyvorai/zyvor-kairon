@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -66,6 +67,18 @@ func IsConflict(err error) bool {
 		return e.StatusCode == http.StatusConflict
 	}
 	return false
+}
+
+// IsTransient reports whether err is worth retrying unchanged on a later
+// tick: API throttling or a server-side failure, or a transport timeout
+// (an apiserver whose datastore stalls longer than the client timeout).
+func IsTransient(err error) bool {
+	var apiErr *APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.StatusCode == http.StatusTooManyRequests || apiErr.StatusCode >= 500
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
 func FromEnvironment() (*Client, error) {

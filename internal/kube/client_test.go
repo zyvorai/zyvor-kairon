@@ -365,3 +365,30 @@ func TestRecordEventPostsRealCoreV1Event(t *testing.T) {
 		t.Errorf("expected a distinct generated metadata.name on the second call, got the same %q twice", firstName)
 	}
 }
+
+func TestIsTransient(t *testing.T) {
+	block := make(chan struct{})
+	slow := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-block }))
+	defer slow.Close()
+	defer close(block)
+	kc, _ := New(slow.URL, "", "", false)
+	kc.HTTP = slow.Client()
+	kc.HTTP.Timeout = 50 * time.Millisecond
+	_, timeoutErr := kc.GetMachine(context.Background(), "prod", "db")
+
+	for name, tc := range map[string]struct {
+		err  error
+		want bool
+	}{
+		"503":     {&APIError{StatusCode: http.StatusServiceUnavailable}, true},
+		"429":     {&APIError{StatusCode: http.StatusTooManyRequests}, true},
+		"404":     {&APIError{StatusCode: http.StatusNotFound}, false},
+		"409":     {&APIError{StatusCode: http.StatusConflict}, false},
+		"timeout": {timeoutErr, true},
+		"plain":   {context.Canceled, false},
+	} {
+		if got := IsTransient(tc.err); got != tc.want {
+			t.Errorf("%s: IsTransient(%v) = %v, want %v", name, tc.err, got, tc.want)
+		}
+	}
+}

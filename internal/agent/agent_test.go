@@ -502,6 +502,8 @@ type fakePeerDestination struct {
 	// diagnosis, when non-nil, makes this fake implement migration.Diagnosable.
 	diagnosis    *migration.DiagnosisResult
 	diagnosisErr error
+	// diagnosisAfterCommit, when non-nil, replaces diagnosis once Commit ran.
+	diagnosisAfterCommit *migration.DiagnosisResult
 }
 
 func (f *fakePeerDestination) Prepare(_ context.Context, session migration.Session) (migration.PrepareResult, error) {
@@ -518,6 +520,9 @@ func (f *fakePeerDestination) Abort(context.Context, migration.Session) error {
 	return nil
 }
 func (f *fakePeerDestination) Diagnose(_ context.Context, session migration.Session) (migration.DiagnosisResult, error) {
+	if f.diagnosisAfterCommit != nil && f.commits > 0 {
+		return *f.diagnosisAfterCommit, f.diagnosisErr
+	}
 	if f.diagnosis == nil {
 		return migration.DiagnosisResult{SessionPhase: session.Phase}, f.diagnosisErr
 	}
@@ -1041,6 +1046,71 @@ func TestRunningPhaseMigrationToleratesHeartbeatFailure(t *testing.T) {
 	}
 }
 
+func TestRunningMigrationSurvivesATransientAPIError(t *testing.T) {
+	item := model.MachineMigration{
+		Metadata: model.ObjectMeta{Name: "move-db", Namespace: "prod", UID: "migration-uid-1"},
+		Spec:     model.MachineMigrationSpec{MachineName: "db", Strategy: "live"},
+		Status: model.MachineMigrationStatus{
+			Phase: "Running", SourceNode: "worker-1", TargetNode: "worker-2", EffectiveStrategy: "live",
+			RuntimeID: "vm-1", SessionID: "kmm-1", TransferID: "xfer-1",
+		},
+	}
+	machine := model.Machine{
+		Metadata: model.ObjectMeta{Name: "db", Namespace: "prod", Finalizers: []string{model.Finalizer}},
+		Spec:     model.MachineSpec{NodeName: "worker-1", Image: model.ImageSpec{Path: "/images/db.qcow2"}, Resources: model.ResourceSpec{CPU: "2", Memory: "2Gi"}, Runtime: model.RuntimeSpec{Backend: "qemu"}, PowerState: "Running"},
+		Status:   model.MachineStatus{RuntimeID: "vm-1", Phase: "Running", NodeName: "worker-1"},
+	}
+	for _, code := range []int{http.StatusServiceUnavailable, http.StatusTooManyRequests} {
+		var patched []model.MachineMigrationStatus
+		ks := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.Method == http.MethodGet && r.URL.Path == "/apis/kairon.zyvor.dev/v1/machines":
+				_ = json.NewEncoder(w).Encode(model.MachineList{Items: []model.Machine{machine}})
+			case r.Method == http.MethodPatch && r.URL.Path == "/apis/kairon.zyvor.dev/v1/namespaces/prod/machines/db/status":
+				w.WriteHeader(http.StatusOK)
+			case r.Method == http.MethodGet && r.URL.Path == "/apis/kairon.zyvor.dev/v1/machinemigrations":
+				_ = json.NewEncoder(w).Encode(model.MachineMigrationList{Items: []model.MachineMigration{item}})
+			case r.Method == http.MethodGet && r.URL.Path == "/apis/kairon.zyvor.dev/v1/namespaces/prod/machines/db":
+				http.Error(w, "etcdserver: request timed out", code)
+			case r.Method == http.MethodPatch && r.URL.Path == "/apis/kairon.zyvor.dev/v1/namespaces/prod/machinemigrations/move-db/status":
+				var p struct {
+					Status model.MachineMigrationStatus `json:"status"`
+				}
+				_ = json.NewDecoder(r.Body).Decode(&p)
+				patched = append(patched, p.Status)
+				w.WriteHeader(http.StatusOK)
+			default:
+				http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusNotFound)
+			}
+		}))
+		fs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet && r.URL.Path == "/v1/vms/vm-1" {
+				_ = json.NewEncoder(w).Encode(fluxvm.Record{UUID: "vm-1", Name: machine.RuntimeName(), Status: "Running"})
+				return
+			}
+			http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusNotFound)
+		}))
+		kc, _ := kube.New(ks.URL, "", "", false)
+		kc.HTTP = ks.Client()
+		fc := fluxvm.New(fs.URL, "")
+		fc.HTTP = fs.Client()
+		a := &Agent{
+			NodeName: "worker-1", Kube: kc, Flux: fc, DefaultBackend: "qemu",
+			MigrationPeer: migration.NewClient(http.DefaultClient), SourceMigrator: &fakeSourceMigrator{},
+			MigrationPeerURL: func(context.Context, string) (string, error) { return "http://127.0.0.1:1", nil },
+			Log:              slog.New(slog.NewTextHandler(io.Discard, nil)),
+		}
+		if err := a.Reconcile(context.Background()); err != nil {
+			t.Fatalf("HTTP %d: reconcile: %v", code, err)
+		}
+		if len(patched) != 0 {
+			t.Fatalf("HTTP %d: a transient API error must leave the migration alone, got patches %+v", code, patched)
+		}
+		ks.Close()
+		fs.Close()
+	}
+}
+
 func runLiveAgentReconcile(t *testing.T, peerServer *httptest.Server, _ *fakePeerDestination, source *fakeSourceMigrator) model.MachineMigrationStatus {
 	t.Helper()
 	return runLiveAgentReconcileWithNetwork(t, peerServer, source, "")
@@ -1260,6 +1330,70 @@ func TestNeedsRecoveryConfirmNotCommittedRetriesThenFails(t *testing.T) {
 	}
 	if destination.aborts != 1 {
 		t.Errorf("expected an abort after the retried commit failed, got %d", destination.aborts)
+	}
+}
+
+// failIfSourceDeleted is a flux handler that serves the source runtime and
+// fails the test on any attempt to delete it.
+func failIfSourceDeleted(t *testing.T) http.HandlerFunc {
+	t.Helper()
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/vms/vm-1":
+			_ = json.NewEncoder(w).Encode(fluxvm.Record{UUID: "vm-1", Name: "kairon-prod-db", Status: "Running"})
+		case r.Method == http.MethodDelete && r.URL.Path == "/v1/vms/vm-1":
+			t.Error("the source runtime must not be deleted while the destination runtime is failed")
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusNotFound)
+		}
+	}
+}
+
+func TestNeedsRecoveryRefusesWhileDestinationRuntimeFailed(t *testing.T) {
+	for _, action := range []struct{ action, ack string }{
+		{model.RecoveryActionConfirmDestinationNotCommitted, model.RecoveryDiagnosisDestinationNotCommitted},
+		{model.RecoveryActionConfirmDestinationCommitted, model.RecoveryDiagnosisDestinationCommitted},
+	} {
+		t.Run(action.action, func(t *testing.T) {
+			destination := &fakePeerDestination{diagnosis: &migration.DiagnosisResult{SessionPhase: "Prepared", DestinationRuntimeFound: true, DestinationRuntimeStatus: "failed"}}
+			recovery := &model.MachineMigrationRecoverySpec{Action: action.action, AcknowledgedDiagnosis: action.ack, Reason: "operator attestation"}
+			status := runNeedsRecoveryReconcile(t, recovery, destination, "Prepared", failIfSourceDeleted(t))
+			if status.Phase != "NeedsRecovery" {
+				t.Fatalf("expected the migration to stay NeedsRecovery, got %+v", status)
+			}
+			if !strings.Contains(status.Message, "recovery refused") || !strings.Contains(status.Message, "failed") {
+				t.Errorf("expected a refusal naming the failed destination runtime, got %q", status.Message)
+			}
+			if destination.commits != 0 || destination.aborts != 0 {
+				t.Errorf("expected no commit or abort, got commits=%d aborts=%d", destination.commits, destination.aborts)
+			}
+			if status.Recovery != nil && status.Recovery.AppliedAction != "" {
+				t.Errorf("a refused action must not be recorded as applied, got %+v", status.Recovery)
+			}
+		})
+	}
+}
+
+func TestNeedsRecoveryNotCommittedKeepsSourceWhenCommitSucceedsButDestinationFailed(t *testing.T) {
+	destination := &fakePeerDestination{
+		diagnosis:            &migration.DiagnosisResult{SessionPhase: "Prepared", DestinationRuntimeFound: true, DestinationRuntimeStatus: "creating"},
+		diagnosisAfterCommit: &migration.DiagnosisResult{SessionPhase: "Committed", DestinationRuntimeFound: true, DestinationRuntimeStatus: "failed"},
+	}
+	recovery := &model.MachineMigrationRecoverySpec{
+		Action:                model.RecoveryActionConfirmDestinationNotCommitted,
+		AcknowledgedDiagnosis: model.RecoveryDiagnosisDestinationNotCommitted,
+		Reason:                "control-plane port was firewalled during Running",
+	}
+	status := runNeedsRecoveryReconcile(t, recovery, destination, "Prepared", failIfSourceDeleted(t))
+	if status.Phase != "NeedsRecovery" {
+		t.Fatalf("expected the migration to stay NeedsRecovery, got %+v", status)
+	}
+	if !strings.Contains(status.Message, "recovery paused") {
+		t.Errorf("expected a paused-recovery message, got %q", status.Message)
+	}
+	if destination.commits != 1 {
+		t.Errorf("expected the retried commit to have run once, got %d", destination.commits)
 	}
 }
 

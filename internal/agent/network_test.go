@@ -97,6 +97,48 @@ func TestProjectNetworkStatusThrottlesRecheckOnceResolved(t *testing.T) {
 	}
 }
 
+func TestProjectNetworkStatusDropsTheGuestIPOfAPreviousRuntime(t *testing.T) {
+	fs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "guest agent not up yet", http.StatusBadRequest)
+	}))
+	defer fs.Close()
+	fc := fluxvm.New(fs.URL, "")
+	fc.HTTP = fs.Client()
+	a := &Agent{Flux: fc, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+
+	m := model.Machine{
+		Metadata: model.ObjectMeta{Name: "db", Namespace: "prod"},
+		Spec:     model.MachineSpec{GuestAgent: model.GuestAgentSpec{Enabled: true}},
+		Status:   model.MachineStatus{RuntimeID: "vm-on-the-old-node", GuestIP: "10.0.2.15", GuestIPs: []string{"10.0.2.15"}},
+	}
+	var status model.MachineStatus
+	if err := a.projectNetworkStatus(context.Background(), m, &fluxvm.Record{UUID: "vm-1"}, &status); err != nil {
+		t.Fatalf("projectNetworkStatus: %v", err)
+	}
+	if status.GuestIP != "" || len(status.GuestIPs) != 0 {
+		t.Fatalf("got GuestIP %q GuestIPs %v, want none until the new runtime's guest agent answers", status.GuestIP, status.GuestIPs)
+	}
+
+	m.Status.RuntimeID = "vm-1"
+	if err := a.projectNetworkStatus(context.Background(), m, &fluxvm.Record{UUID: "vm-1"}, &status); err != nil {
+		t.Fatalf("projectNetworkStatus: %v", err)
+	}
+	if status.GuestIP != "10.0.2.15" {
+		t.Fatalf("got GuestIP %q, want the same runtime's address kept", status.GuestIP)
+	}
+
+	// Without a guest agent nothing could re-resolve it, so a migrated
+	// guest (which keeps its address) keeps reporting it.
+	m.Spec.GuestAgent.Enabled = false
+	m.Status.RuntimeID = "vm-on-the-old-node"
+	if err := a.projectNetworkStatus(context.Background(), m, &fluxvm.Record{UUID: "vm-1"}, &status); err != nil {
+		t.Fatalf("projectNetworkStatus: %v", err)
+	}
+	if status.GuestIP != "10.0.2.15" {
+		t.Fatalf("got GuestIP %q, want the address kept when no guest agent can re-resolve it", status.GuestIP)
+	}
+}
+
 func TestProjectNetworkStatusRechecksAfterIntervalElapses(t *testing.T) {
 	fs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/v1/vms/vm-1/qga/network-interfaces" {

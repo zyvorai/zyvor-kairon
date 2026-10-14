@@ -31,6 +31,7 @@ func machineSpecFromFlags(fs *flag.FlagSet) (spec func() model.MachineSpec, imag
 	fs.Var(&packages, "package", "package to install via cloud-init at first boot (repeatable)")
 	var runcmd stringSliceFlag
 	fs.Var(&runcmd, "runcmd", "shell command to run via cloud-init at first boot (repeatable)")
+	guestAgent := fs.Bool("guest-agent", false, "attach a qemu-guest-agent channel (the image must run qemu-guest-agent); reports status.guestIP and enables guest exec")
 	priority := fs.Int("priority", 0, "scheduling priority: when a reconcile tick can't fit every pending Machine (node capacity or MachineQuota), higher values are attempted first; default 0, negative values are valid for a below-default class")
 	return func() model.MachineSpec {
 		pf, err := parseForwards(forwards)
@@ -49,6 +50,7 @@ func machineSpecFromFlags(fs *flag.FlagSet) (spec func() model.MachineSpec, imag
 				Packages:          packages,
 				RunCmd:            runcmd,
 			},
+			GuestAgent: model.GuestAgentSpec{Enabled: *guestAgent},
 			PowerState: "Running",
 			Priority:   int32(*priority),
 		}

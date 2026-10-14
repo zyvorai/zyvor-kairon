@@ -8,7 +8,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -132,15 +134,7 @@ func (s *Server) handleExec(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		var upstreamErr struct {
-			Error string `json:"error"`
-		}
-		_ = json.NewDecoder(resp.Body).Decode(&upstreamErr)
-		msg := upstreamErr.Error
-		if msg == "" {
-			msg = fmt.Sprintf("node exec relay returned HTTP %d", resp.StatusCode)
-		}
-		writeError(w, http.StatusBadGateway, msg)
+		writeError(w, http.StatusBadGateway, relayErrorMessage(resp, "node exec relay"))
 		return
 	}
 	var out execResponse
@@ -149,4 +143,21 @@ func (s *Server) handleExec(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// relayErrorMessage is the reason a node relay gave for a non-200: its JSON
+// "error", else its plain-text body (kairon-node's relay answers with
+// http.Error), else just the status.
+func relayErrorMessage(resp *http.Response, relay string) string {
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	var upstreamErr struct {
+		Error string `json:"error"`
+	}
+	if json.Unmarshal(body, &upstreamErr) == nil && upstreamErr.Error != "" {
+		return upstreamErr.Error
+	}
+	if text := strings.TrimSpace(string(body)); text != "" {
+		return text
+	}
+	return fmt.Sprintf("%s returned HTTP %d", relay, resp.StatusCode)
 }

@@ -28,6 +28,8 @@ type Record struct {
 	UUID    string `json:"uuid,omitempty"`
 	Name    string `json:"name,omitempty"`
 	Status  string `json:"status,omitempty"`
+	// Error is why a "failed" VM failed (FluxVM's VmRecord.error).
+	Error   string `json:"error,omitempty"`
 	Backend string `json:"backend,omitempty"`
 	GuestIP string `json:"guest_ip,omitempty"`
 	TapName string `json:"tap_name,omitempty"`
@@ -363,6 +365,13 @@ func (c *Client) RestoreBackup(ctx context.Context, id, name string) ([]string, 
 		return nil, fmt.Errorf("decode fluxvm restore response: %w", err)
 	}
 	return out.Restored, nil
+}
+
+// IsDiskGone reports whether err is FluxVM refusing to start a VM because
+// the disk on its record does not exist (for example a create that failed
+// before the disk was provisioned).
+func IsDiskGone(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "disk no longer exists")
 }
 
 func (c *Client) Ready(ctx context.Context) error {

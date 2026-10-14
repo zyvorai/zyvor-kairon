@@ -75,18 +75,19 @@ SECRET_DATA_FILE="$(mktemp)"
 trap 'rm -f "$SECRET_DATA_FILE"' EXIT
 
 echo "[*] generating root CA (valid ${DAYS}d -- this is a throwaway test CA, not for production use)"
-openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+openssl req -x509 -sha256 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -pkeyopt ec_param_enc:named_curve -nodes \
   -keyout "$OUT_DIR/ca/ca-key.pem" -out "$OUT_DIR/ca/ca.pem" \
-  -days "$DAYS" -subj "/CN=kairon-migration-test-ca" 2>/dev/null
+  -days "$DAYS" -subj "/CN=kairon-migration-test-ca" \
+  -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign" -addext "subjectKeyIdentifier=hash" 2>/dev/null
 
 echo "[*] generating control-plane cert (SAN: DNS:$CONTROL_PLANE_SERVER_NAME, clientAuth+serverAuth)"
-openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -pkeyopt ec_param_enc:named_curve -nodes \
   -keyout "$OUT_DIR/control-plane/key.pem" -out "$OUT_DIR/control-plane/csr.pem" \
   -subj "/CN=$CONTROL_PLANE_SERVER_NAME" 2>/dev/null
-openssl x509 -req -in "$OUT_DIR/control-plane/csr.pem" \
+openssl x509 -req -sha256 -in "$OUT_DIR/control-plane/csr.pem" \
   -CA "$OUT_DIR/ca/ca.pem" -CAkey "$OUT_DIR/ca/ca-key.pem" -CAcreateserial \
   -out "$OUT_DIR/control-plane/cert.pem" -days "$DAYS" \
-  -extfile <(printf 'subjectAltName=DNS:%s\nextendedKeyUsage=clientAuth,serverAuth\n' "$CONTROL_PLANE_SERVER_NAME") \
+  -extfile <(printf 'subjectAltName=DNS:%s\nbasicConstraints=CA:FALSE\nsubjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=clientAuth,serverAuth\n' "$CONTROL_PLANE_SERVER_NAME") \
   2>/dev/null
 cp "$OUT_DIR/ca/ca.pem" "$OUT_DIR/control-plane/ca.pem"
 rm -f "$OUT_DIR/control-plane/csr.pem"
@@ -100,13 +101,13 @@ for pair in "$@"; do
     continue
   fi
   echo "[*] generating data-plane cert for $name (SAN: DNS:$name, IP:$ip)"
-  openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+  openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -pkeyopt ec_param_enc:named_curve -nodes \
     -keyout "$OUT_DIR/data-plane/$name-key.pem" -out "$OUT_DIR/data-plane/$name-csr.pem" \
     -subj "/CN=$name" 2>/dev/null
-  openssl x509 -req -in "$OUT_DIR/data-plane/$name-csr.pem" \
+  openssl x509 -req -sha256 -in "$OUT_DIR/data-plane/$name-csr.pem" \
     -CA "$OUT_DIR/ca/ca.pem" -CAkey "$OUT_DIR/ca/ca-key.pem" -CAcreateserial \
     -out "$OUT_DIR/data-plane/$name-cert.pem" -days "$DAYS" \
-    -extfile <(printf 'subjectAltName=DNS:%s,IP:%s\nextendedKeyUsage=clientAuth,serverAuth\n' "$name" "$ip") \
+    -extfile <(printf 'subjectAltName=DNS:%s,IP:%s\nbasicConstraints=CA:FALSE\nsubjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=clientAuth,serverAuth\n' "$name" "$ip") \
     2>/dev/null
   cp "$OUT_DIR/ca/ca.pem" "$OUT_DIR/data-plane/$name-ca.pem"
   rm -f "$OUT_DIR/data-plane/$name-csr.pem"

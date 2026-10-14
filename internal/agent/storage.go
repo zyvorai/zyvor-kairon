@@ -66,7 +66,7 @@ func (a *Agent) resolveBootDiskPath(ctx context.Context, m model.Machine) (strin
 		// A Block-mode hostPath/local PV names the device itself.
 		return dir, csiVolumeStatus{}, nil
 	}
-	return filepath.Join(dir, bootDiskFileName), csiVolumeStatus{}, nil
+	return filepath.Join(dir, bootDiskFileName), csiVolumeStatus{Shared: model.SharedHostPath(pv)}, nil
 }
 
 // resolveAtlasRBDBoot returns the FluxVM "pool/image" reference for an Atlas

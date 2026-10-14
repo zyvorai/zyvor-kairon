@@ -56,6 +56,20 @@ type PersistentVolume struct {
 	Spec     PersistentVolumeSpec `json:"spec"`
 }
 
+// AnnotationSharedStorage set to "true" on a hostPath PersistentVolume says
+// its path is one shared filesystem mounted at the same place on every node
+// (NFS, for example). A Machine booting from it opens its raw disk.img in
+// place instead of through a node-local overlay, so it can live-migrate.
+// Kairon cannot check the claim; a path that is not really shared corrupts
+// the disk on the first migration.
+const AnnotationSharedStorage = "kairon.zyvor.dev/shared-storage"
+
+// SharedHostPath reports whether pv is a hostPath volume marked with
+// AnnotationSharedStorage.
+func SharedHostPath(pv PersistentVolume) bool {
+	return pv.Spec.HostPath != nil && pv.Metadata.Annotations[AnnotationSharedStorage] == "true"
+}
+
 type PersistentVolumeSpec struct {
 	// VolumeMode is "Filesystem" (default, empty means Filesystem per the
 	// Kubernetes API) or "Block". Only Filesystem-mode volumes are

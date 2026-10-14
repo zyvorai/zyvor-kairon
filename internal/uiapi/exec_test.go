@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/zyvorai/kairon/internal/consoleproxy"
@@ -266,5 +267,8 @@ func TestHandleExecPropagatesNodeRelayFailure(t *testing.T) {
 	rr := doJSON(t, h, http.MethodPost, "/api/v1/machines/default/vm1/exec", token, execRequest{Path: "/bin/echo"})
 	if rr.Code != http.StatusBadGateway {
 		t.Fatalf("expected 502 when the node relay/FluxVM rejects the exec, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "guest agent is not enabled for this VM") {
+		t.Fatalf("expected the relay's plain-text reason to reach the caller, got %s", rr.Body.String())
 	}
 }

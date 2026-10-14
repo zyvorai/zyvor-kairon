@@ -261,6 +261,14 @@ func (a *Agent) Reconcile(ctx context.Context) error {
 		})
 		err := a.reconcileMigration(ctx, migration)
 		span.End(err)
+		if err != nil && kube.IsTransient(err) {
+			// Failing here would orphan a transfer QEMU is still running.
+			a.Log.Warn("migration reconcile hit a transient error; retrying next tick", "namespace", migration.Namespace(), "migration", migration.Metadata.Name, "error", err)
+			if a.Metrics != nil {
+				a.Metrics.ObserveReconcileItemError("migration")
+			}
+			continue
+		}
 		if err != nil {
 			status := migration.Status
 			status.Phase = "Failed"
@@ -356,9 +364,10 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 		} else if bootDisk, vs, err = a.resolveBootDiskPath(ctx, m); err != nil {
 			return err
 		}
-		if vs.Block && vs.Driver == "" {
-			// A Block volume of Kairon's own driver is the disk itself;
-			// a local qcow2 overlay would keep the writes on this node.
+		if (vs.Block && vs.Driver == "") || vs.Shared {
+			// A Block volume of Kairon's own driver, or a disk on a shared
+			// hostPath, is the disk itself; a local qcow2 overlay would keep
+			// the writes on this node.
 			m.Spec.Image.Storage = fluxvm.StorageShared
 		}
 		if bootDisk == "" {
@@ -369,7 +378,7 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 			if m.Spec.Image.DiskSize != "" {
 				sizeGiB, _ = model.ParseDiskSizeGiB(m.Spec.Image.DiskSize)
 			}
-			if err := populateBootVolume(bootDisk, seedPath, sizeGiB); err != nil {
+			if err := populateBootVolume(bootDisk, seedPath, sizeGiB, vs.Shared); err != nil {
 				return err
 			}
 		}
@@ -506,6 +515,33 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 		// reusing FluxVM's own kept config) -- there is no way, or need,
 		// to distinguish which of the three actually happened.
 		rec, err = a.Flux.Start(ctx, rec.ID())
+		if err != nil {
+			return err
+		}
+		restarted = true
+	case strings.EqualFold(rec.Status, "failed") && m.DesiredPowerState() != "Stopped":
+		// FluxVM keeps the record of a create or start that failed (a
+		// host-side error, or a VMM that died), so without this the
+		// Machine would sit in Unknown after the cause is fixed.
+		ok, err := a.mayRestartFailedRuntime(ctx, m)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			break
+		}
+		a.Log.Warn("restarting failed runtime", "machine", m.Metadata.Name, "runtimeID", rec.ID(), "error", rec.Error)
+		failedID := rec.ID()
+		rec, err = a.Flux.Start(ctx, failedID)
+		if fluxvm.IsDiskGone(err) {
+			// Nothing on the record to keep; FluxVM never deletes a
+			// shared or in-place disk. The next tick creates afresh.
+			if derr := a.Flux.Delete(ctx, failedID); derr != nil {
+				return derr
+			}
+			a.Log.Warn("deleted failed runtime with no disk; recreating", "machine", m.Metadata.Name, "runtimeID", failedID)
+			return err
+		}
 		if err != nil {
 			return err
 		}
@@ -803,7 +839,7 @@ func (a *Agent) ensureHalted(ctx context.Context, m model.Machine) error {
 // than share one across packages for a single boolean.
 func isNonTerminalMigrationPhase(phase string) bool {
 	switch phase {
-	case "Succeeded", "Failed", "Blocked", "":
+	case "Succeeded", "Failed", "Blocked", "Cancelled", "":
 		return false
 	}
 	return true
@@ -830,6 +866,31 @@ func (a *Agent) migrationInFlightFor(ctx context.Context, m model.Machine) (bool
 		}
 	}
 	return false, nil
+}
+
+// mayRestartFailedRuntime reports whether a failed FluxVM runtime for m may
+// be started again from its kept config. Not while a migration is moving m:
+// after a live or post-copy transfer the newest guest state can be on the
+// other host. The exception is a cold migration restarting m on this node,
+// which boots from the disk exactly as a fresh create would.
+func (a *Agent) mayRestartFailedRuntime(ctx context.Context, m model.Machine) (bool, error) {
+	migrations, err := a.Kube.ListMachineMigrationsNamespace(ctx, m.Namespace())
+	if err != nil {
+		if kube.IsNotFound(err) {
+			return true, nil
+		}
+		return false, err
+	}
+	for _, mig := range migrations {
+		if mig.Spec.MachineName != m.Metadata.Name || !isNonTerminalMigrationPhase(mig.Status.Phase) {
+			continue
+		}
+		if mig.Status.EffectiveStrategy == "cold" && mig.Status.Phase == "Restarting" && mig.Status.TargetNode == a.NodeName {
+			continue
+		}
+		return false, nil
+	}
+	return true, nil
 }
 
 func (a *Agent) cleanup(ctx context.Context, m model.Machine) error {
@@ -1205,6 +1266,23 @@ func (a *Agent) projectTransfer(ctx context.Context, item model.MachineMigration
 	return a.Kube.PatchMachineMigrationStatus(ctx, item.Namespace(), item.Metadata.Name, status)
 }
 
+// destinationRuntimeUnusable reports whether a recovery diagnosis found the
+// destination runtime but in a state that can no longer run the guest. The
+// source runtime may then be the only copy of the guest that can still run, so
+// no operator-attested recovery action may delete it. A missing runtime or an
+// unreachable peer is not "unusable" here: those leave the existing
+// retried-commit failure handling in charge.
+func destinationRuntimeUnusable(r *model.MachineMigrationRecoveryStatus) bool {
+	if r == nil || !r.DestinationRuntimeFound {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(r.DestinationRuntimeStatus)) {
+	case "failed", "stopped", "error", "exited":
+		return true
+	}
+	return false
+}
+
 // reconcileNeedsRecovery never auto-resolves a NeedsRecovery migration --
 // every tick it only refreshes a live diagnosis of what's actually known
 // (status.Recovery's diagnosis fields), and acts *only* when the operator
@@ -1278,6 +1356,17 @@ func (a *Agent) reconcileNeedsRecovery(ctx context.Context, item model.MachineMi
 		return a.Kube.PatchMachineMigrationStatus(ctx, item.Namespace(), item.Metadata.Name, status)
 	}
 
+	// Never delete the source runtime while the destination runtime has
+	// failed: ConfirmDestinationCommitted and ConfirmDestinationNotCommitted
+	// both do, and the source may be the only copy that can still run.
+	if action.Action != model.RecoveryActionForceAbort && destinationRuntimeUnusable(recovery) {
+		status.Message = fmt.Sprintf(
+			"recovery refused: the destination runtime is %q, so the source runtime may be the only copy that can still run the guest and is left untouched; inspect the destination host, then use ForceAbort or fix the destination and retry",
+			recovery.DestinationRuntimeStatus,
+		)
+		return a.Kube.PatchMachineMigrationStatus(ctx, item.Namespace(), item.Metadata.Name, status)
+	}
+
 	appliedAt := time.Now().UTC()
 	recovery.AppliedAction = action.Action
 	recovery.AppliedReason = action.Reason
@@ -1306,6 +1395,25 @@ func (a *Agent) reconcileNeedsRecovery(ctx context.Context, item model.MachineMi
 			status.Phase = "Failed"
 			status.Message = "recovery: retried commit failed, confirming destination never committed: " + err.Error() + "; host-level inspection is required before reusing this Machine"
 			break
+		}
+		// A successful commit RPC does not prove the adopted runtime is
+		// alive: look again before the source, possibly the only live copy,
+		// is removed.
+		if status.SessionID != "" {
+			if diag, err := a.MigrationPeer.Diagnose(ctx, targetURL, status.SessionID); err != nil {
+				a.Log.Warn("NeedsRecovery: post-commit destination diagnosis failed", "sessionID", status.SessionID, "error", err)
+			} else {
+				recovery.DestinationSessionPhase = diag.SessionPhase
+				recovery.DestinationRuntimeFound = diag.DestinationRuntimeFound
+				recovery.DestinationRuntimeStatus = diag.DestinationRuntimeStatus
+				if destinationRuntimeUnusable(recovery) {
+					status.Message = fmt.Sprintf(
+						"recovery paused: the retried commit succeeded but the destination runtime is %q; the source runtime was left untouched; inspect the destination host before removing it",
+						diag.DestinationRuntimeStatus,
+					)
+					return a.Kube.PatchMachineMigrationStatus(ctx, item.Namespace(), item.Metadata.Name, status)
+				}
+			}
 		}
 		if status.RuntimeID != "" {
 			if err := a.Flux.Delete(ctx, status.RuntimeID); err != nil {
