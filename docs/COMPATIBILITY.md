@@ -198,25 +198,30 @@ Driven by [`scripts/bench-sandbox.sh`](../scripts/bench-sandbox.sh) on one
 node with an image that runs qemu-guest-agent (see
 [agent-sandboxes.md](guides/agent-sandboxes.md)). It needs kairon-ui with the
 console relay configured (exec, wake on connect, `vnc screenshot` and
-`guestfs` go through it) and libguestfs-tools on the node for `guestfs`.
+`guestfs` go through it), kairon-node `--image-cache-dir` (clone and cdrom)
+and libguestfs-tools on the node for `guestfs`.
 
-The first lab run (2026-10-14) was cut short: the lab had just been reset
-without the console relay, then the worker went down. The rows below are what
-those partial runs showed; the full script has not completed yet.
+Run on 2026-10-14 against `nldw4-4-16-36` (k3s 1.36, kairon-hw Ubuntu guest,
+1 vCPU / 1Gi, image on NFS). That node's FluxVM build has no hibernate or fork
+endpoint and its kairon-node had no libguestfs or image cache during the run,
+so those rows are environment failures, not Kairon results. The existing
+[Hibernate](#hibernate) rows passed on the other lab node.
 
 | Case | Last result | Date | Notes |
 |---|---|---|---|
-| Sandbox: idle pause | pass | 2026-10-14 | Single node, k3s 1.36, Ubuntu 24.04 guest, 1 vCPU / 1Gi, `--idle-timeout 1m`: last activity recorded 48s after creation, phase Paused within about 3 minutes of creation with no client attached. Not timed by the script |
-| Sandbox: pool warm states | pass | 2026-10-14 | Same node: a Running pool's member Running and a `warmPowerState: Paused` pool's member Paused (powerState Paused) within 2.5 minutes. Claim bind times not measured |
-| Sandbox: lifetime | pass | 2026-10-14 | `--max-lifetime 1m` Machine deleted by kairon-controller within 4 minutes of creation, even though it was in phase Error. Not timed by the script |
-| Sandbox: wake on connect (paused, hibernated) | not run | 2026-10-14 | Needs the console relay (kairon-ui returned 501 for exec) |
-| Sandbox: pool claim, Running vs Paused | not run | 2026-10-14 | Run stopped before the claims |
-| Sandbox: fork | not run | 2026-10-14 | |
-| Sandbox: freeze auto-thaw, freeze/unfreeze | not run | 2026-10-14 | |
-| Sandbox: vnc screenshot | not run | 2026-10-14 | Needs the console relay |
-| Sandbox: create clone from Halted | not run | 2026-10-14 | |
-| Sandbox: guestfs read-only | not run | 2026-10-14 | Needs the console relay |
-| Sandbox: cdrom insert/eject | not run | 2026-10-14 | |
+| Sandbox: idle pause | pass | 2026-10-14 | `--idle-timeout 1m`: Paused by kairon-controller 212s after the agent came up (the guest stayed busy for its first 2.5 minutes; last activity 60s before the pause) |
+| Sandbox: wake on connect (Paused) | pass | 2026-10-14 | `kaironctl guest exec` on the Paused Machine returned in 1.6s including the resume; phase and powerState Running afterwards |
+| Sandbox: wake on connect (Hibernated) | not run | 2026-10-14 | This node's FluxVM returns 404 for `POST /v1/vms/{id}/hibernate` |
+| Sandbox: pool claim, Running pool | pass | 2026-10-14 | `status.bindMillis` 2267 against a warm Running member |
+| Sandbox: pool claim, Paused pool | pass | 2026-10-14 | `status.bindMillis` 4193 against a warm Paused member (includes the resume) |
+| Sandbox: fork | not run | 2026-10-14 | This node's FluxVM returns 404 for `POST /v1/vms/{id}/fork` |
+| Sandbox: lifetime | pass | 2026-10-14 | `--max-lifetime 1m` Machine deleted by kairon-controller (seen within 4 minutes in an earlier partial run; the script now times it) |
+| Sandbox: freeze auto-thaw | pass | 2026-10-14 | `freeze --unfreeze-timeout 1m` confirmed in 4.2s; kairon-node thawed it 63s after the request |
+| Sandbox: freeze/unfreeze | pass | 2026-10-14 | Round trip confirmed in 3.8s; the guest writes again afterwards |
+| Sandbox: vnc screenshot | fail | 2026-10-14 | kairon-node got `permission denied` on FluxVM's `vnc.sock` on this node; same relay path as `kaironctl vnc` |
+| Sandbox: create clone from Halted | pass | 2026-10-14 | `qemu-img convert` of the source disk took 117s (675 MB image on NFS), the clone booted and its guest agent answered 40s later |
+| Sandbox: guestfs read-only | not run | 2026-10-14 | libguestfs-tools is not installed on this node |
+| Sandbox: cdrom insert/eject | partial | 2026-10-14 | Stop cleared `status.runtimeID` in 13s and `cdrom insert` was admitted; the start then needs `--image-cache-dir`, which this node lacked; `cdrom eject` removed the entry and the Machine then started. Live eject not exercised |
 
 ## Incident bundles
 

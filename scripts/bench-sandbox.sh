@@ -24,7 +24,8 @@
 #          [--timeout=600] [--iso-url=URL --iso-sha256=HEX]
 # Needs kaironctl with cluster access and KAIRON_UI_URL / KAIRON_UI_TOKEN,
 # kubectl, and an image that runs qemu-guest-agent. --node pins every Machine
-# (the image must exist there; guestfs needs libguestfs-tools on it). Without
+# (the image must exist there; clone and cdrom need kairon-node
+# --image-cache-dir, guestfs needs libguestfs-tools on it). Without
 # --iso-url the cdrom case is "not run". Machines and pools are deleted on
 # exit.
 set -euo pipefail
@@ -62,6 +63,7 @@ K() { "$KAIRONCTL" -n "$NS" "$@"; }
 
 cleanup() {
   set +e
+  [[ -n "${LIFE_POLL:-}" ]] && kill "$LIFE_POLL" 2>/dev/null
   "$KUBECTL" -n "$NS" delete machineclaims,machinepools -l "kairon.zyvor.dev/lab=$VM" --wait=false >/dev/null 2>&1
   for p in "$POOL_RUN" "$POOL_PAUSED"; do "$KUBECTL" -n "$NS" delete machinepool "$p" --wait=false >/dev/null 2>&1; done
   "$KUBECTL" -n "$NS" delete machines -l "kairon.zyvor.dev/lab=$VM" --wait=false >/dev/null 2>&1
@@ -140,6 +142,8 @@ print(json.dumps({"apiVersion": "kairon.zyvor.dev/v1", "kind": "MachineClaim",
 new_machine "$VM" --guest-agent --idle-timeout 1m --wake-on-connect
 LIFE_START="$(now_ms)"
 new_machine "$LIFE" --memory 512Mi --max-lifetime 1m
+( until gone "$LIFE"; do sleep 3; done; secs_since "$LIFE_START" >"$TMP/life" ) &
+LIFE_POLL=$!
 new_pool "$POOL_RUN"
 new_pool "$POOL_PAUSED" --warm-power-state Paused --warmup 30s
 
@@ -291,8 +295,8 @@ else
 fi
 
 # ---- lifetime -------------------------------------------------------------
-if wait_until "$TIMEOUT" "$LIFE deleted" gone "$LIFE"; then
-  result lifetime pass "--max-lifetime 1m Machine deleted by the controller $(secs_since "$LIFE_START")s after creation"
+if wait_until "$TIMEOUT" "$LIFE deleted" test -s "$TMP/life"; then
+  result lifetime pass "--max-lifetime 1m Machine deleted by the controller $(cat "$TMP/life")s after creation"
 else
   result lifetime fail "$LIFE still exists ($(phase "$LIFE")) after $(secs_since "$LIFE_START")s"
 fi
