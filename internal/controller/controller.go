@@ -159,6 +159,11 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 		return err
 	}
 	nodeLoad := scheduler.BuildNodeLoad(machines)
+	agentSessions, err := c.listAgentSessions(ctx)
+	if err != nil {
+		return err
+	}
+	reserveAgentSessions(nodeLoad, agentSessions)
 	machineIndex := indexMachines(machines)
 
 	migrations, err := c.Kube.ListMachineMigrations(ctx)
@@ -272,6 +277,7 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	seedQuotaWithAgentSessions(quotaTrackers, agentSessions)
 	draPlacements, err := c.buildDRAPlacements(ctx, machines)
 	if err != nil {
 		return err
@@ -432,6 +438,7 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 		markScheduled(machines, m, node, cpuset, topoAlloc)
 		c.Log.Info("scheduled machine", "namespace", m.Namespace(), "machine", m.Metadata.Name, "node", node)
 	}
+	c.reconcileAgentSessions(ctx, agentSessions, nodes, machines, nodeLoad, quotaTrackers)
 	c.preemptForPending(ctx, unschedulable, machines, migrations)
 
 	// observedQuotas carries each tracker's final Spec/Status pair (seeded

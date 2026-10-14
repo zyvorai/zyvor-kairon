@@ -223,6 +223,31 @@ so those rows are environment failures, not Kairon results. The existing
 | Sandbox: guestfs read-only | not run | 2026-10-14 | libguestfs-tools is not installed on this node |
 | Sandbox: cdrom insert/eject | partial | 2026-10-14 | Stop cleared `status.runtimeID` in 13s and `cdrom insert` was admitted; the start then needs `--image-cache-dir`, which this node lacked; `cdrom eject` removed the entry and the Machine then started. Live eject not exercised |
 
+## Agent sessions
+
+Needs a Mac node running kairon-node natively against FluxVM 0.4.8 or later
+(FluxVM creates agent sessions only on its Apple Virtualization backend),
+kairon-ui with the console relay, and `ui.agentSessions.previews: true` for
+the preview row. The lab has no Mac, so nothing below has run on real
+hardware. Unit tests cover the same paths against a fake FluxVM (see
+[agent-sessions.md](guides/agent-sessions.md)).
+
+| Case | Last result | Date | Notes |
+|---|---|---|---|
+| Session: capability label | not run | - | Mac node gets `kairon.zyvor.dev/agent-sessions=true`; a Linux node with FluxVM 0.4.8 does not |
+| Session: run with git workspace | not run | - | `kaironctl session run` reaches Running; `status.workspace.cloned` true |
+| Session: offline policy | not run | - | `--preset offline`: outbound request from `session exec` fails; `status.policy.offline` true |
+| Session: allow-host policy | not run | - | Only the allowed host answers; `status.policy.unenforced` empty on vz |
+| Session: exec and jobs | not run | - | `session exec` exit code matches; `bg` + `logs -f` streams to the end |
+| Session: files and git | not run | - | `put`/`cat` round trip; `git commit` shows in `git log` |
+| Session: checkpoint and restore | not run | - | A file written after `checkpoint` is gone after `restore` |
+| Session: fork and promote | not run | - | Each child becomes an AgentSession on the parent's node; `promote` applies a child's change to the parent |
+| Session: rollout | not run | - | `--count 4`: four results, children deleted afterwards |
+| Session: preview | not run | - | URL opens through kairon-ui; CSP sandbox header present; 404 after `unexpose` |
+| Session: OTLP export | not run | - | Trace shows in the collector with one span per step |
+| Session: quota | not run | - | A session over `MachineQuota` stays Pending with the quota's reason |
+| Session: delete | not run | - | FluxVM session gone; finalizer released |
+
 ## Incident bundles
 
 Driven by [`scripts/lab-incident-bundle.sh`](../scripts/lab-incident-bundle.sh)

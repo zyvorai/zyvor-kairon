@@ -84,7 +84,7 @@ rules:
     resources: ["events"]
     verbs: ["create"]
   - apiGroups: ["kairon.zyvor.dev"]
-    resources: ["machines", "machines/status", "machinemigrations", "machinemigrations/status", "machinesnapshots", "machinesnapshots/status", "machinenetworkpolicies", "machinenetworkpolicies/status", "networksecuritygroups", "networksecuritygroups/status", "machinequotas", "machinequotas/status", "machinesnapshotrestores", "machinesnapshotrestores/status", "machinesets", "machinesets/status", "machinepools", "machinepools/status", "machineclaims", "machineclaims/status", "migrationpolicies", "migrationpolicies/status", "machinebackups", "machinebackups/status", "machinebackuprestores", "machinebackuprestores/status", "virtualnetworks", "virtualnetworks/status", "macnetworks", "macnetworks/status"]
+    resources: ["machines", "machines/status", "machinemigrations", "machinemigrations/status", "machinesnapshots", "machinesnapshots/status", "machinenetworkpolicies", "machinenetworkpolicies/status", "networksecuritygroups", "networksecuritygroups/status", "machinequotas", "machinequotas/status", "machinesnapshotrestores", "machinesnapshotrestores/status", "machinesets", "machinesets/status", "machinepools", "machinepools/status", "machineclaims", "machineclaims/status", "migrationpolicies", "migrationpolicies/status", "machinebackups", "machinebackups/status", "machinebackuprestores", "machinebackuprestores/status", "virtualnetworks", "virtualnetworks/status", "macnetworks", "macnetworks/status", "agentsessions", "agentsessions/status"]
     verbs: ["get", "list", "watch", "patch"]
   - apiGroups: ["kairon.zyvor.dev"]
     # Read-only: MachineInstanceType is pure reference data
@@ -266,6 +266,11 @@ rules:
   - apiGroups: ["kairon.zyvor.dev"]
     resources: ["machineexports/status"]
     verbs: ["patch"]
+  # AgentSession: kairon-node creates the session in its FluxVM, mirrors it
+  # into status and removes its finalizer (internal/agent/agentsession.go).
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["agentsessions", "agentsessions/status"]
+    verbs: ["get", "list", "watch", "patch"]
   # Read-only: internal/agent/hotplug.go's own resize-past-quota self-check
   # (independent of webhook.enabled) needs to list MachineQuotas/Machines
   # cluster-wide the same way the admission webhook's own equivalent check
@@ -333,6 +338,12 @@ rules:
   # dashboard's own RBAC catching up to a capability that already existed.
   - apiGroups: ["kairon.zyvor.dev"]
     resources: ["machinesnapshotrestores"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  # Agent sessions (internal/uiapi/agentsessions.go): the verb relay reads
+  # them, a fork creates one child per new FluxVM session, the dashboard
+  # deletes them.
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["agentsessions"]
     verbs: ["get", "list", "watch", "create", "delete"]
   # The dashboard's Exports page and download proxy (internal/uiapi/exports.go).
   - apiGroups: ["kairon.zyvor.dev"]

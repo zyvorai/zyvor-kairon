@@ -108,6 +108,8 @@ func cmdDescribe(ctx context.Context, kc *kube.Client, args []string) {
 		out, err = kc.GetMachinePool(ctx, ns, name)
 	case "machineclaim", "machineclaims", "claim", "claims":
 		out, err = kc.GetMachineClaim(ctx, ns, name)
+	case "agentsession", "agentsessions", "asess":
+		out, err = kc.GetAgentSession(ctx, ns, name)
 	case "instancetype", "instancetypes", "machineinstancetypes":
 		out, err = kc.GetMachineInstanceType(ctx, ns, name)
 	case "clusterinstancetype", "clusterinstancetypes", "machineclusterinstancetypes", "mcit":

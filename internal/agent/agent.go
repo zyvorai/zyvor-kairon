@@ -196,6 +196,7 @@ type Agent struct {
 	vnet           vnetState
 	// hibernationSweptAt throttles sweepMovedHibernations.
 	hibernationSweptAt time.Time
+	sessions           agentSessionState
 }
 
 func (a *Agent) Reconcile(ctx context.Context) error {
@@ -260,6 +261,7 @@ func (a *Agent) Reconcile(ctx context.Context) error {
 		a.Log.Error("machine export reconcile failed", "error", err)
 	}
 	a.sweepClones(local)
+	a.reconcileAgentSessions(ctx)
 	migSelector := model.MigrationSourceNodeLabelSelector(a.NodeName)
 	migrations, err := a.Kube.ListMachineMigrationsWithSelector(ctx, migSelector)
 	if err != nil {
@@ -1644,7 +1646,7 @@ func readyStatus(phase string) string {
 // statusMergePatch is updated as a merge patch that also clears what
 // updated dropped from old: omitempty leaves a cleared field out of the
 // JSON, and a merge patch keeps omitted keys, so each one is sent as null.
-func statusMergePatch(old, updated model.MachineStatus) (map[string]any, error) {
+func statusMergePatch(old, updated any) (map[string]any, error) {
 	oldMap, err := toJSONMap(old)
 	if err != nil {
 		return nil, err

@@ -74,6 +74,8 @@ func resourcePlural(resource string) (plural string, core bool, ok bool) {
 		return "machinepools", false, true
 	case "machineclaim", "machineclaims", "claim", "claims":
 		return "machineclaims", false, true
+	case "agentsession", "agentsessions", "asess":
+		return "agentsessions", false, true
 	case "instancetype", "instancetypes", "machineinstancetype", "machineinstancetypes":
 		return "machineinstancetypes", false, true
 	case "clusterinstancetype", "clusterinstancetypes", "machineclusterinstancetype", "machineclusterinstancetypes", "mcit":

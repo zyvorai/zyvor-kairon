@@ -63,6 +63,7 @@ try:
         "macnetworks.kairon.zyvor.dev",
         "nodetopologies.kairon.zyvor.dev",
         "virtualnetworks.kairon.zyvor.dev",
+        "agentsessions.kairon.zyvor.dev",
     }
     fleet_resources = {"machinehaprofiles", "nodefencerequests", "machineactionapprovals", "machinebalancepolicies", "machineautoscalers", "machinerecoveryplans", "machinebackupgroups", "machineimportplans", "machinetemplateversions", "machinetemplateclaims", "machinevirtualnetworks", "machinenetworkclaims", "machineusageledgers"}
     expected |= {r + ".fleet.kairon.zyvor.dev" for r in fleet_resources}

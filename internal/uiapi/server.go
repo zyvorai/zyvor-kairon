@@ -156,6 +156,9 @@ type Server struct {
 	// HTTP proxy to non-admin operators, on Machines labelled
 	// model.LabelSandbox=true only; consoleAuthorized still applies.
 	SandboxOperatorExec bool
+	// AgentSessionPreviews serves AgentSession previews unauthenticated at
+	// /preview/{namespace}/{name}/{token}/; off, that route is always 404.
+	AgentSessionPreviews bool
 	// consoleTickets backs the console feature's single-use WebSocket
 	// tickets; zero value is ready to use.
 	consoleTickets sync.Map
@@ -318,6 +321,11 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/v1/exports/{namespace}/{name}/link", s.requireNamespace(namespaceFromPath, s.handleExportLink))
 
 	api.HandleFunc("GET /api/v1/quotas", s.requireNamespace(namespaceParam, s.handleListQuotas))
+	api.HandleFunc("GET /api/v1/agentsessions", s.requireNamespace(namespaceParam, s.handleListAgentSessions))
+	api.HandleFunc("POST /api/v1/agentsessions", s.requireNamespace(namespaceParam, s.handleCreateAgentSession))
+	api.HandleFunc("GET /api/v1/agentsessions/{namespace}/{name}", s.requireNamespace(namespaceFromPath, s.handleGetAgentSession))
+	api.HandleFunc("DELETE /api/v1/agentsessions/{namespace}/{name}", s.requireNamespace(namespaceFromPath, s.handleDeleteAgentSession))
+	api.HandleFunc("/api/v1/agentsessions/{namespace}/{name}/{rest...}", s.requireNamespace(namespaceFromPath, s.handleAgentSessionProxy))
 	api.HandleFunc("GET /api/v1/machinepools", s.requireNamespace(namespaceParam, s.handleListMachinePools))
 	api.HandleFunc("GET /api/v1/machineclaims", s.requireNamespace(namespaceParam, s.handleListMachineClaims))
 	api.HandleFunc("GET /api/v1/machinebackups", s.requireNamespace(namespaceParam, s.handleListMachineBackups))
@@ -431,6 +439,9 @@ func (s *Server) Handler() http.Handler {
 	// Unauthenticated: kairon-node downloads uploaded images by digest and
 	// verifies them itself -- see handleServeImageBlob.
 	top.HandleFunc("GET /images/sha256/{digest}", s.handleServeImageBlob)
+	// Unauthenticated: the preview token is the credential. Off by default.
+	top.HandleFunc("/preview/{namespace}/{name}/{token}", s.handleAgentSessionPreviewRoot)
+	top.HandleFunc("/preview/{namespace}/{name}/{token}/{rest...}", s.handleAgentSessionPreview)
 	// The SPA route is intentionally unauthenticated (same as netra's own
 	// serveWeb registration) -- it serves static JS/CSS/HTML, not data;
 	// every actual data fetch the page makes goes through the auth-gated

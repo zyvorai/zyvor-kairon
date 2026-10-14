@@ -65,6 +65,7 @@ The root [README](https://github.com/zyvorai/zyvor-kairon/blob/main/README.md) i
 | [`guides/machine-install-media.md`](guides/machine-install-media.md) | `spec.cdroms` + `spec.image.blank`: install Windows or Linux from an ISO onto an empty disk |
 | [`guides/machine-sets.md`](guides/machine-sets.md) | `MachineSet`: replica reconciliation, `RollingUpdate`/`Recreate` rollout strategy |
 | [`guides/agent-sandboxes.md`](guides/agent-sandboxes.md) | `spec.lifecycle` idle suspend, wake on connect and max lifetime; paused warm pools; per-claim usage; the SDK `Sandbox` class |
+| [`guides/agent-sessions.md`](guides/agent-sessions.md) | `AgentSession`: FluxVM agent sessions with workspace, policy, checkpoints, forks, jobs, files, git, previews and an exportable trajectory |
 | [`guides/machine-fork.md`](guides/machine-fork.md) | `kaironctl fork` / `fork_machine`: live copies of a Running Machine from one memory snapshot |
 | [`guides/machine-pools.md`](guides/machine-pools.md) | `MachinePool` / `MachineClaim`: warm, pre-booted Machines claimed in one reconcile tick |
 | [`guides/machine-instance-types.md`](guides/machine-instance-types.md) | `MachineInstanceType`: a reusable named CPU/memory shape resolved into `spec.resources` once |

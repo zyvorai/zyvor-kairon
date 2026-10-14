@@ -170,6 +170,13 @@ func cmdGet(ctx context.Context, kc *kube.Client, args []string) {
 			fmt.Printf("%s\t%s\t%s\t%s\t%d\t%s\t%s\t%.0f\n", c.Metadata.Name, c.Spec.PoolName, style.Phase(os.Stdout, dash(c.Status.Phase)), dash(c.Status.MachineName), c.Status.BindMillis,
 				time.Duration(u.ActiveSeconds)*time.Second, time.Duration(u.SuspendedSeconds)*time.Second, u.VCPUSeconds)
 		}
+	case "agentsession", "agentsessions", "asess":
+		items, err := kc.ListAgentSessionsNamespace(ctx, ns)
+		if err != nil {
+			fatal(err)
+		}
+		items = selectorFilter(items, selector, func(s model.AgentSession) map[string]string { return s.Metadata.Labels })
+		printAgentSessions(items)
 	case "instancetype", "instancetypes", "machineinstancetypes":
 		items, err := kc.ListMachineInstanceTypesNamespace(ctx, ns)
 		if err != nil {

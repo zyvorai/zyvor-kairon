@@ -878,6 +878,12 @@ ui:
   # in front of the pod and speaks HTTP to it; logins and tokens are then
   # clear text on the pod network. Cannot be combined with tls.secretName.
   insecureHttp: false
+  agentSessions:
+    # previews serves AgentSession preview URLs unauthenticated at
+    # /preview/<namespace>/<name>/<token>/ (the 256-bit token is the
+    # credential). Pages run in a sandboxed opaque origin and cannot set
+    # cookies. Off by default. See docs/guides/agent-sessions.md.
+    previews: false
   ingress:
     enabled: false
     className: ""

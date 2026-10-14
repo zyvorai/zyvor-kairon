@@ -450,5 +450,26 @@ export class UIClient {
   usageCSV(): Promise<string> {
     return this.http.request('GET', '/api/v1/usage.csv?' + new URLSearchParams({namespace: this.namespace}), undefined, {raw: true});
   }
+  private session(name: string): string { return `/api/v1/agentsessions/${this.namespace}/${segment(name)}`; }
+  /** Create an AgentSession (a FluxVM agent session) in the namespace. */
+  createSession(name: string, spec: Record<string, Json>, labels: Record<string, string> = {}): Promise<KaironObject> {
+    return this.http.request('POST', '/api/v1/agentsessions?' + new URLSearchParams({namespace: this.namespace}), {name: segment(name), spec, labels});
+  }
+  getSession(name: string): Promise<KaironObject> { return this.http.request('GET', this.session(name)); }
+  listSessions(): Promise<KaironObject[]> {
+    return this.http.request('GET', '/api/v1/agentsessions?' + new URLSearchParams({namespace: this.namespace}));
+  }
+  async deleteSession(name: string): Promise<void> {
+    try { await this.http.request('DELETE', this.session(name)); } catch (error) { if (!(error instanceof APIError && error.status === 404)) throw error; }
+  }
+  /** One FluxVM session verb (exec, jobs/..., files/..., git/..., preview, ...) through kairon-ui. */
+  sessionCall<T = Json>(name: string, method: string, verb: string, body?: unknown,
+                        options: {query?: Record<string, string | number | boolean>; timeoutMs?: number} = {}): Promise<T> {
+    if (!verb || verb.startsWith('/') || verb.split('/').includes('..')) throw new Error('verb must be a relative session route');
+    let path = this.session(name) + '/' + verb.split('/').map(encodeURIComponent).join('/');
+    if (options.query) path += '?' + new URLSearchParams(Object.entries(options.query).map(([k, v]) => [k, String(v)]));
+    return this.http.request(method, path, body, options.timeoutMs === undefined ? {} : {timeoutMs: options.timeoutMs});
+  }
 }
 export {CommandError, Process, Sandbox, SANDBOX_LABEL, type SandboxOptions} from './sandbox.js';
+export {AgentSession, SessionError, sessionSpec, type SessionSpecOptions} from './session.js';

@@ -378,7 +378,12 @@ and others; they never apply). Write tools, only with `--allow-write`:
 `set_power_state`, `create_snapshot`, `snapshot_volume`, `network_capture`,
 `claim_machine`, `release_claim`, `fork_machine`, `delete_machine`, `machine_disk`, `machine_nic`,
 `machine_backup`, `create_sealed_claim`, `apply_network_policy`,
-`apply_claim_step`, `audit_record`. Write calls go to a hash-chained audit
+`apply_claim_step`, `audit_record`, and the agent-session writers
+(`session_create`, `session_delete`, `session_exec`, `session_checkpoint`,
+`session_restore`, `session_fork`, `session_job_start`,
+`session_write_file`, `session_git_commit`, `session_preview`; the readers
+are `session_list`, `session_get`, `session_job_read`, `session_read_file`,
+`session_git` and `session_trajectory`). Write calls go to a hash-chained audit
 log (`--audit-log`, default `~/.kairon/audit.jsonl`; `--audit-configmap
 ns/name` mirrors it) and are refused if it cannot be written.
 `delete_machine`, `fork_machine` and `machine_backup` restore/delete also need
@@ -412,6 +417,33 @@ optionally `KAIRON_LLM_API_KEY`; the model's answer is validated by the
 same compilers before it is printed. `kaironctl agent --help` lists the
 rest (`migration-claim`, `cpu-label`, `gateway`). The MCP server also offers the read-only `detect_edge_anomalies` (beacon, DNS-tunnel, SNI-spread and deny-burst findings) and `project_confidential` (sealed or not, from a node attestation report); neither applies anything. See
 [guides/agent-plane.md](guides/agent-plane.md).
+
+## Agent sessions (experimental)
+
+```bash
+kaironctl session run NAME [--agent codex] [--git URL] [--preset offline|developer-safe|open]
+        [--network-default deny|allow] [--allow-host H]... [--process-deny GLOB]...
+        [--fs-read P]... [--fs-write P]... [--cpu N] [--memory 4Gi] [--ttl 2h] [--max-execs N] [--no-wait]
+kaironctl session list | get NAME | rm NAME...
+kaironctl session exec NAME -- COMMAND            # exits with the command's code
+kaironctl session checkpoint NAME [--tag T] [--disk-only] ; session restore NAME TAG
+kaironctl session fork NAME [--count N] ; session promote CHILD [--dry-run]
+kaironctl session rollout NAME --count N [--keep] -- COMMAND
+kaironctl session bg NAME -- COMMAND ; jobs NAME ; logs NAME JOB [-f] ; kill NAME JOB
+kaironctl session ls NAME [PATH] ; cat NAME PATH [-o F] ; put NAME LOCAL GUEST-PATH ; rm-file NAME PATH [-r]
+kaironctl session git NAME status|diff|log|commit MESSAGE|branch NAME
+kaironctl session expose NAME PORT ; previews NAME ; unexpose NAME TOKEN
+kaironctl session timeline NAME [--trajectory] ; artifacts NAME
+kaironctl session export NAME [--out F.jsonl] [--otlp URL [--otlp-header K=V]...]
+```
+
+An `AgentSession` is a FluxVM agent session with its own sandbox VM
+(today Mac nodes on FluxVM 0.4.8 or later). `run`, `list`, `get` and `rm`
+talk to the cluster; every other verb goes through kairon-ui
+(`KAIRON_UI_URL`, `KAIRON_UI_TOKEN`) and needs an admin, or any named
+operator with `ui.auth.sandboxOperatorExec`. `get`, `describe` and
+`delete` also accept `agentsession` (`asess`). See
+[guides/agent-sessions.md](guides/agent-sessions.md).
 
 ## Meta
 

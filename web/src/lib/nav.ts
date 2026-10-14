@@ -37,6 +37,7 @@ export const NAV = [
       { id: 'topology', label: 'Topology', blurb: 'Where every VM and pod runs, live' },
       { id: 'storage', label: 'Storage', blurb: 'Atlas volumes, pools, backups and health' },
       { id: 'pools', label: 'Pools & claims', blurb: 'Warm machine pools and bound claims' },
+      { id: 'agent-sessions', label: 'Agent sessions', blurb: 'FluxVM agent sandboxes with checkpoints, forks and a ledger' },
       { id: 'images', label: 'Images', blurb: 'Upload and serve VM images to nodes' },
     ],
   },

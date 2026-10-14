@@ -106,6 +106,7 @@ OVERRIDES = {
     # node-scoped list). Bodies have no path literal for the regex to read.
     "ListMachines": ("kairon.zyvor.dev", "machines", "list"),
     "ListMachineMigrations": ("kairon.zyvor.dev", "machinemigrations", "list"),
+    "ListAgentSessions": ("kairon.zyvor.dev", "agentsessions", "list"),
     # Watch lives in internal/kube/watch.go; same resources as the List forms.
     "WatchMachines": ("kairon.zyvor.dev", "machines", "watch"),
     "WatchMachineMigrations": ("kairon.zyvor.dev", "machinemigrations", "watch"),
