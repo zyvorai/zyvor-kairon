@@ -1340,6 +1340,23 @@ func (a *Agent) projectTransfer(ctx context.Context, item model.MachineMigration
 	return a.Kube.PatchMachineMigrationStatus(ctx, item.Namespace(), item.Metadata.Name, status)
 }
 
+// destinationRuntimeUnusable reports whether a recovery diagnosis found the
+// destination runtime but in a state that can no longer run the guest. The
+// source runtime may then be the only copy of the guest that can still run, so
+// no operator-attested recovery action may delete it. A missing runtime or an
+// unreachable peer is not "unusable" here: those leave the existing
+// retried-commit failure handling in charge.
+func destinationRuntimeUnusable(r *model.MachineMigrationRecoveryStatus) bool {
+	if r == nil || !r.DestinationRuntimeFound {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(r.DestinationRuntimeStatus)) {
+	case "failed", "stopped", "error", "exited":
+		return true
+	}
+	return false
+}
+
 // reconcileNeedsRecovery never auto-resolves a NeedsRecovery migration --
 // every tick it only refreshes a live diagnosis of what's actually known
 // (status.Recovery's diagnosis fields), and acts *only* when the operator
@@ -1413,6 +1430,17 @@ func (a *Agent) reconcileNeedsRecovery(ctx context.Context, item model.MachineMi
 		return a.Kube.PatchMachineMigrationStatus(ctx, item.Namespace(), item.Metadata.Name, status)
 	}
 
+	// Never delete the source runtime while the destination runtime has
+	// failed: ConfirmDestinationCommitted and ConfirmDestinationNotCommitted
+	// both do, and the source may be the only copy that can still run.
+	if action.Action != model.RecoveryActionForceAbort && destinationRuntimeUnusable(recovery) {
+		status.Message = fmt.Sprintf(
+			"recovery refused: the destination runtime is %q, so the source runtime may be the only copy that can still run the guest and is left untouched; inspect the destination host, then use ForceAbort or fix the destination and retry",
+			recovery.DestinationRuntimeStatus,
+		)
+		return a.Kube.PatchMachineMigrationStatus(ctx, item.Namespace(), item.Metadata.Name, status)
+	}
+
 	appliedAt := time.Now().UTC()
 	recovery.AppliedAction = action.Action
 	recovery.AppliedReason = action.Reason
@@ -1441,6 +1469,25 @@ func (a *Agent) reconcileNeedsRecovery(ctx context.Context, item model.MachineMi
 			status.Phase = "Failed"
 			status.Message = "recovery: retried commit failed, confirming destination never committed: " + err.Error() + "; host-level inspection is required before reusing this Machine"
 			break
+		}
+		// A successful commit RPC does not prove the adopted runtime is
+		// alive: look again before the source, possibly the only live copy,
+		// is removed.
+		if status.SessionID != "" {
+			if diag, err := a.MigrationPeer.Diagnose(ctx, targetURL, status.SessionID); err != nil {
+				a.Log.Warn("NeedsRecovery: post-commit destination diagnosis failed", "sessionID", status.SessionID, "error", err)
+			} else {
+				recovery.DestinationSessionPhase = diag.SessionPhase
+				recovery.DestinationRuntimeFound = diag.DestinationRuntimeFound
+				recovery.DestinationRuntimeStatus = diag.DestinationRuntimeStatus
+				if destinationRuntimeUnusable(recovery) {
+					status.Message = fmt.Sprintf(
+						"recovery paused: the retried commit succeeded but the destination runtime is %q; the source runtime was left untouched; inspect the destination host before removing it",
+						diag.DestinationRuntimeStatus,
+					)
+					return a.Kube.PatchMachineMigrationStatus(ctx, item.Namespace(), item.Metadata.Name, status)
+				}
+			}
 		}
 		if status.RuntimeID != "" {
 			if err := a.Flux.Delete(ctx, status.RuntimeID); err != nil {

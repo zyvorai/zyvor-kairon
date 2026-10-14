@@ -358,7 +358,9 @@ function Honest() {
           <List
             items={[
               'Boot, power, network, vCPU hotplug and snapshot-restore on a real FluxVM host (kaironctl selftest).',
-              'Cold relocation, snapshots, DRA bridging and the secure live-migration control plane.',
+              'Cold and live migration between two real hosts over mTLS, including adaptive auto-converge, post-copy switch and zstd, and the source-failure, NeedsRecovery and controller-failover drills (both directions on matched QEMU, lab run of 2026-10-14).',
+              'Node maintenance draining Machines to another node by live migration.',
+              'Snapshots and DRA bridging.',
               'Native macOS node on an Apple M4 with a real k3s cluster.',
               'Single-node lab runs of hibernate, elastic memory, virtual networks, NVMe-oF, disk QoS, vGPU, accelerator profiles, node maintenance, DRS, incident bundles and agent sandboxes.',
               'Cross-cluster DR replication, failover, failback and DR tests, with both sites on one lab node.',
@@ -371,11 +373,12 @@ function Honest() {
           <List
             limits
             items={[
-              'Two-host live migration, including the adaptive engine, has not run on real hardware in this repo’s CI.',
-              'Cold migration through selftest needs a second node and is unverified.',
+              'The NeedsRecovery drill passed 5 of 6 lab runs and failed once unexplained, live migration with the eBPF dataplane has not run, and none of it runs in this repo’s CI yet.',
+              'Plain pre-copy under a heavy write load did not converge on a 1 Gbps link; adaptive migration is the answer.',
+              'Incremental S3 backups, hibernate resume on another node and cross-host virtual networks are not verified.',
               'Agent sessions have not run on a real Mac yet.',
               'Mac Fabric has only run against simulated Mac nodes; multi-Mac clusters are not verified.',
-              'DR between two real clusters, and anything needing a second node, an NVIDIA GPU or a BGP router.',
+              'DR between two real clusters, and anything needing an NVIDIA GPU or a BGP router.',
               'Experimental features are labelled; read their “Real limits today”.',
             ]}
           />

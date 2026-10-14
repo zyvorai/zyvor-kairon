@@ -506,6 +506,8 @@ type fakePeerDestination struct {
 	// diagnosis, when non-nil, makes this fake implement migration.Diagnosable.
 	diagnosis    *migration.DiagnosisResult
 	diagnosisErr error
+	// diagnosisAfterCommit, when non-nil, replaces diagnosis once Commit ran.
+	diagnosisAfterCommit *migration.DiagnosisResult
 }
 
 func (f *fakePeerDestination) Prepare(_ context.Context, session migration.Session) (migration.PrepareResult, error) {
@@ -522,6 +524,9 @@ func (f *fakePeerDestination) Abort(context.Context, migration.Session) error {
 	return nil
 }
 func (f *fakePeerDestination) Diagnose(_ context.Context, session migration.Session) (migration.DiagnosisResult, error) {
+	if f.diagnosisAfterCommit != nil && f.commits > 0 {
+		return *f.diagnosisAfterCommit, f.diagnosisErr
+	}
 	if f.diagnosis == nil {
 		return migration.DiagnosisResult{SessionPhase: session.Phase}, f.diagnosisErr
 	}
@@ -1329,6 +1334,70 @@ func TestNeedsRecoveryConfirmNotCommittedRetriesThenFails(t *testing.T) {
 	}
 	if destination.aborts != 1 {
 		t.Errorf("expected an abort after the retried commit failed, got %d", destination.aborts)
+	}
+}
+
+// failIfSourceDeleted is a flux handler that serves the source runtime and
+// fails the test on any attempt to delete it.
+func failIfSourceDeleted(t *testing.T) http.HandlerFunc {
+	t.Helper()
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/vms/vm-1":
+			_ = json.NewEncoder(w).Encode(fluxvm.Record{UUID: "vm-1", Name: "kairon-prod-db", Status: "Running"})
+		case r.Method == http.MethodDelete && r.URL.Path == "/v1/vms/vm-1":
+			t.Error("the source runtime must not be deleted while the destination runtime is failed")
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusNotFound)
+		}
+	}
+}
+
+func TestNeedsRecoveryRefusesWhileDestinationRuntimeFailed(t *testing.T) {
+	for _, action := range []struct{ action, ack string }{
+		{model.RecoveryActionConfirmDestinationNotCommitted, model.RecoveryDiagnosisDestinationNotCommitted},
+		{model.RecoveryActionConfirmDestinationCommitted, model.RecoveryDiagnosisDestinationCommitted},
+	} {
+		t.Run(action.action, func(t *testing.T) {
+			destination := &fakePeerDestination{diagnosis: &migration.DiagnosisResult{SessionPhase: "Prepared", DestinationRuntimeFound: true, DestinationRuntimeStatus: "failed"}}
+			recovery := &model.MachineMigrationRecoverySpec{Action: action.action, AcknowledgedDiagnosis: action.ack, Reason: "operator attestation"}
+			status := runNeedsRecoveryReconcile(t, recovery, destination, "Prepared", failIfSourceDeleted(t))
+			if status.Phase != "NeedsRecovery" {
+				t.Fatalf("expected the migration to stay NeedsRecovery, got %+v", status)
+			}
+			if !strings.Contains(status.Message, "recovery refused") || !strings.Contains(status.Message, "failed") {
+				t.Errorf("expected a refusal naming the failed destination runtime, got %q", status.Message)
+			}
+			if destination.commits != 0 || destination.aborts != 0 {
+				t.Errorf("expected no commit or abort, got commits=%d aborts=%d", destination.commits, destination.aborts)
+			}
+			if status.Recovery != nil && status.Recovery.AppliedAction != "" {
+				t.Errorf("a refused action must not be recorded as applied, got %+v", status.Recovery)
+			}
+		})
+	}
+}
+
+func TestNeedsRecoveryNotCommittedKeepsSourceWhenCommitSucceedsButDestinationFailed(t *testing.T) {
+	destination := &fakePeerDestination{
+		diagnosis:            &migration.DiagnosisResult{SessionPhase: "Prepared", DestinationRuntimeFound: true, DestinationRuntimeStatus: "creating"},
+		diagnosisAfterCommit: &migration.DiagnosisResult{SessionPhase: "Committed", DestinationRuntimeFound: true, DestinationRuntimeStatus: "failed"},
+	}
+	recovery := &model.MachineMigrationRecoverySpec{
+		Action:                model.RecoveryActionConfirmDestinationNotCommitted,
+		AcknowledgedDiagnosis: model.RecoveryDiagnosisDestinationNotCommitted,
+		Reason:                "control-plane port was firewalled during Running",
+	}
+	status := runNeedsRecoveryReconcile(t, recovery, destination, "Prepared", failIfSourceDeleted(t))
+	if status.Phase != "NeedsRecovery" {
+		t.Fatalf("expected the migration to stay NeedsRecovery, got %+v", status)
+	}
+	if !strings.Contains(status.Message, "recovery paused") {
+		t.Errorf("expected a paused-recovery message, got %q", status.Message)
+	}
+	if destination.commits != 1 {
+		t.Errorf("expected the retried commit to have run once, got %d", destination.commits)
 	}
 }
 

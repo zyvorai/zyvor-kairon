@@ -414,7 +414,7 @@ func (a *Agent) projectNetworkStatus(ctx context.Context, m model.Machine, rec *
 	guestIP := rec.GuestIP
 	var guestIPs []string
 	runtimeChanged := m.Status.RuntimeID != "" && m.Status.RuntimeID != rec.ID()
-	if guestIP == "" && !(runtimeChanged && m.Spec.GuestAgent.Enabled) {
+	if guestIP == "" && (!runtimeChanged || !m.Spec.GuestAgent.Enabled) {
 		// Preserve whatever was already resolved on a prior tick -- m.Status
 		// is this reconcile's untouched snapshot of the last-persisted
 		// status, unlike *status, which the caller already overwrote with
