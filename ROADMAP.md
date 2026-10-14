@@ -120,7 +120,7 @@ Not originally scoped for a specific version, but small enough to land alongside
 - [x] `spec.cloudInit` and `spec.network.forwards` ergonomics (`kaironctl create --hostname/--ssh-key/--forward/...`, matching dashboard fields) — see `docs/guides/machine-network.md`
 - [x] Graphical VNC console (`console.enabled`): `kairon-ui` → `kairon-node` → the VM's local QEMU VNC socket, rendered in-browser via noVNC — FluxVM exposes no remote VNC endpoint of its own, so this is a real relay Kairon built, not a wrapper. Tickets are bound to the requesting username with a full open/close audit trail, the button hides itself when ineligible, the kairon-ui↔kairon-node hop optionally runs over one-way TLS (`console.tls.enabled`), and `scripts/deploy-remote.sh --with-console` covers the bare-metal install path — see SECURITY.md's "VNC console" section
 - [x] `internal/integration`: a CI-runnable controller+agent pipeline test -- since extended with scale/failure-injection/upgrade suites, see the "upgrade/scale/failure-injection test suites" entry below
-- [x] multi-host migration test and `NeedsRecovery` drill runbooks (`docs/runbook-multi-host-migration-test.md`, `docs/runbook-recovery-drill.md`) — documented and scripted; still not yet run against real hardware in this repo's own CI, which remains a real, named gap, not a false completion claim
+- [x] multi-host migration test and `NeedsRecovery` drill runbooks (`docs/runbook-multi-host-migration-test.md`, `docs/runbook-recovery-drill.md`) — documented and scripted; run by hand on a two-host lab on 2026-10-14 (see `docs/COMPATIBILITY.md`), still not in this repo's own CI, which remains a real, named gap, not a false completion claim
 
 ## v0.5+
 

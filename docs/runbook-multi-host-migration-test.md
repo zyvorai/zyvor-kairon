@@ -6,11 +6,11 @@ exercises against fakes and loopback connections. None of it proves a real
 QEMU migration across a real network, with real mTLS hostname verification
 and a real guest network handoff, actually works. This runbook is that test.
 
-**Not executed as part of shipping this runbook** -- it requires a second
-real (or nested-virtualization) KVM host beyond this project's one lab host,
-and every value below (hostnames, IPs, storage transport) is
-environment-specific. Follow it, adjusting the bracketed values, when a
-second host is available.
+**Executed by hand on 2026-10-14** on a two-host lab with NFS shared storage
+(results in `docs/COMPATIBILITY.md`), but not part of this repo's CI. Every
+value below (hostnames, IPs, storage transport) is environment-specific.
+Use the same QEMU release on both hosts (or migrate from the older to the
+newer one): FluxVM refuses to send a newer machine type to an older QEMU.
 
 ## Prerequisites
 

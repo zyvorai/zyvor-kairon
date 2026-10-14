@@ -337,15 +337,15 @@ kaironctl ui                         # or through the API server, no port-forwar
 | `Machine` lifecycle, MachineSet, instance types, quotas, budgets | Stable |
 | Capacity-aware scheduling, node-scoped watches, controller HA | Stable |
 | Cold migration and evacuation | Stable |
-| Secure live migration and `NeedsRecovery` | Preview, multi-host lab matrix in progress ([COMPATIBILITY](docs/COMPATIBILITY.md)) |
-| Adaptive live migration (auto-converge, post-copy switch, zstd) | Experimental, adaptive lab cases not yet run ([COMPATIBILITY](docs/COMPATIBILITY.md)) |
+| Secure live migration and `NeedsRecovery` | Preview, two-host lab run 2026-10-14, both directions on matched QEMU; `NeedsRecovery` drill passed 5 of 6 runs, one unexplained failure; not yet in nightly CI ([COMPATIBILITY](docs/COMPATIBILITY.md)) |
+| Adaptive live migration (auto-converge, post-copy switch, zstd) | Experimental, adaptive lab cases passed on a two-host lab 2026-10-14, nightly workflow not yet ([COMPATIBILITY](docs/COMPATIBILITY.md)) |
 | eBPF VM edge, flows, drops, capture | Preview, single-host lab green |
 | CSI snapshots with guest quiesce | Stable |
 | `kairon-ui` with SSO and VNC console | Stable |
 | MCP server for AI agents | Preview, CI end-to-end with the official SDK |
 | CPU/memory hotplug | Grow-only (QEMU) |
 
-**v0.9.1** is the latest release. Real two-host live migration is still Preview: the multi-host lab matrix is not yet green, so it is not claimed as Stable. Adaptive live migration stays Experimental until its four matrix cases pass on the nightly lab workflow, and it can't be called production-ready before the base live-migration rows are green too. Honest gaps live in [docs/STATUS.md](docs/STATUS.md); what comes next is in [ROADMAP.md](ROADMAP.md).
+**v0.9.1** is the latest release. Two-host live migration ran on a real lab on 2026-10-14 (cold, source failure, controller failover, all three adaptive cases and post-copy source failure pass in both directions on matched QEMU 10.2.1; plain pre-copy under a heavy write load did not converge, and the `NeedsRecovery` drill passed 5 of 6 runs with one unexplained failure that left a migration in `Adopting`). There is no live + eBPF run and no nightly CI yet, so it stays Preview. Adaptive live migration stays Experimental until its matrix cases pass on the nightly lab workflow. Honest gaps live in [docs/STATUS.md](docs/STATUS.md); what comes next is in [ROADMAP.md](ROADMAP.md).
 
 ---
 

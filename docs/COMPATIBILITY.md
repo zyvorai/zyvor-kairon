@@ -92,18 +92,20 @@ the multi-host matrix above.
 
 | Case | Last result | Date | Notes |
 |---|---|---|---|
-| Create / restart / delete smoke (≤100 VMs scaled down in CI) | not run | — | Multi-host matrix; single-host create/stop/start smoke is green above |
-| Cold migration | not run | — | |
-| Live pre-copy under load | not run | — | |
-| Guest agent exec after migration | not run | — | `echo` through kairon-ui → kairon-node → qemu-guest-agent in the migrated Machine; needs `spec.guestAgent.enabled` and `KAIRON_UI_URL`/`KAIRON_UI_TOKEN` |
+| Create / restart / delete smoke (≤100 VMs scaled down in CI) | pass | 2026-10-14 | One VM, not 100: create → healthy → stop → start → delete from a shared-storage image on the two-host lab; the 100-VM scale-down is still not run |
+| Cold migration | pass | 2026-10-14 | Two hosts on the same QEMU 10.2.1 (`nldw4-4-04-32` runs a source build under `/opt` with the packaged `efi-virtio.rom`; `nldw4-4-16-36` Ubuntu 26.04 package), NFS shared root disk, mTLS adapter: `hwm-live` moved `nldw4-4-04-32` → `nldw4-4-16-36`, healthy with a guest IP on the target |
+| Live pre-copy under load | fail | 2026-10-14 | Two runs, both directions of QEMU pairing: plain pre-copy with the guest rewriting 256 MiB ran the full 600 s without converging (throughput about 930 Mbps against a dirty rate of about 930 Mbps, expected downtime 2.4 s). The adaptive rows below are the same lab with a heavier load and pass |
+| Guest agent exec after migration | pass | 2026-10-14 | Same lab: `echo` through kairon-ui (admin session) → kairon-node → qemu-guest-agent in the migrated Machine, exit 0 |
 | Live + eBPF dataplane | not run | — | Machine with `spec.network.dataplaneMode=ebpf`; set `KAIRON_HW_EBPF_MACHINE`. Needs two hosts; also exercises the VM-edge conntrack export/restore |
-| Source failure during transfer | not run | — | |
-| Ambiguous commit → `NeedsRecovery` | not run | — | |
-| Controller failover mid-migration | not run | — | |
-| Adaptive: auto-converge under load | not run | — | `--strategy adaptive --auto-converge` with the guest dirtying `KAIRON_HW_ADAPTIVE_LOAD_MIB` through a `KAIRON_HW_ADAPTIVE_BANDWIDTH_MBPS` link; needs an `auto-converge`/`throttle` action, no post-copy, and `status.progress` |
-| Adaptive: post-copy switch under load | not run | — | `--post-copy --post-copy-after=20s` under the same load; needs a `postcopy` action and `status.adaptive.postCopyStarted` |
-| Adaptive: zstd multifd compression | not run | — | `--compression=zstd --compression-level=3` on an idle guest; needs `status.progress.compressionRatioPercent` above 100 |
-| Source failure after post-copy → `NeedsRecovery` | not run | — | `lab-inject-postcopy-source-failure.sh` kills the source QEMU after the switch on the disposable `KAIRON_HW_POSTCOPY_MACHINE`; must land `NeedsRecovery` with the source not resumed, then `ForceAbort` |
+| Source failure during transfer | pass | 2026-10-14 | Two hosts on the same QEMU 10.2.1 (`nldw4-4-04-32` runs a source build under `/opt` with the packaged `efi-virtio.rom`; `nldw4-4-16-36` Ubuntu 26.04 package), NFS shared root disk, mTLS adapter: kairon-node stopped on the source mid-transfer and restarted; the migration still reached Succeeded without operator action |
+| Ambiguous commit → `NeedsRecovery` | pass | 2026-10-14 | Same matched-QEMU lab, `nldw4-4-04-32` → `nldw4-4-16-36`, firewalling the control-plane port during Running, then `ConfirmDestinationNotCommitted`: passed 5 of 6 runs on a freshly created Machine, plus 3 of 3 after the destination-health guard below (cutover completed, Machine Running on the target, recorded diagnosis `destinationSessionPhase: Prepared`, `destinationRuntimeStatus: creating`). The one failing run came right after a cascade of timed-out migrations that left stale FluxVM runtimes behind: its diagnosis showed `destinationRuntimeStatus: failed`, and after the action the migration sat in `Adopting` with the Machine `Unknown`. Not reproduced on a clean lab and not explained. `ConfirmDestinationCommitted` and `ConfirmDestinationNotCommitted` now refuse while the destination runtime is failed/stopped (and `NotCommitted` re-checks after its retried commit) instead of deleting the source: with the destination QEMU killed during `NeedsRecovery`, the action stayed `NeedsRecovery` with `recovery refused`, was not recorded as applied, and the source runtime stayed running; `ForceAbort` then ended it Failed |
+| Controller failover mid-migration | pass | 2026-10-14 | Two hosts on the same QEMU 10.2.1 (`nldw4-4-04-32` runs a source build under `/opt` with the packaged `efi-virtio.rom`; `nldw4-4-16-36` Ubuntu 26.04 package), NFS shared root disk, mTLS adapter: kairon-controller restarted mid-migration; the migration still reached Succeeded |
+| Adaptive: auto-converge under load | pass | 2026-10-14 | Same lab, guest dirtying 1024 MiB behind a 200 Mbps link: converged, downtime 47 ms, total 158 s (the 8.2.2 → 10.2.1 run: 61 ms, 427 s) |
+| Adaptive: post-copy switch under load | pass | 2026-10-14 | Same lab, same load, `nldw4-4-16-36` → `nldw4-4-04-32`: switched to post-copy, downtime 9 ms, total 25 s |
+| Adaptive: zstd multifd compression | pass | 2026-10-14 | Same lab, idle guest: downtime 33 ms, total 5.2 s, compression ratio 142% |
+| Source failure after post-copy → `NeedsRecovery` | pass | 2026-10-14 | Same lab: source QEMU killed after the post-copy switch; `NeedsRecovery` with post-copy latched, source not resumed, destination not aborted, then `ForceAbort` recovered it |
+
+**Direction and QEMU versions.** Run 1 (2026-10-14) was `nldw4-4-04-32` on QEMU 8.2.2 to `nldw4-4-16-36` on 10.2.1, one way only: FluxVM refuses the reverse ("this host's QEMU cannot boot the source's machine type pc-q35-10.2"). Run 2 had both hosts on QEMU 10.2.1 and migrated in both directions (a manual round trip: 151 ms and 125 ms downtime, about 4.5 s total). Matching versions was not enough on its own: a source-built QEMU's `efi-virtio.rom` (160 KB) differs from the packaged one (512 KB), and the receiver then fails with `Size mismatch: virtio-net-pci.rom`; both hosts must ship the same option ROM. Live + eBPF dataplane was not run (no eBPF Machine in the lab).
 
 `hardware-migration-matrix.sh --write-compat` rewrites these rows from a
 run (the workflow uploads the result as the `compatibility-md` artifact);
@@ -311,7 +313,7 @@ cases exercise the cordon, the fallbacks and exit, not migration.
 | Node maintenance: exit | pass | 2026-10-12 | Same node: exit uncordoned the node and the Machine was Running again in 69s in a fresh boot; parked annotation removed, `MaintenanceExited` Event |
 | Node maintenance: hibernate | pass | 2026-10-12 | Same node: `--fallback hibernate` hibernated the Machine and reached `InMaintenance` in 27s; exit resumed it in the same boot (same boot id and `/dev/shm` marker, tick 4 -> 12) |
 | Node maintenance: cordon | pass | 2026-10-12 | Same node: on a node the operator had cordoned, maintenance reached `InMaintenance` without marking the cordon as its own, and the node stayed cordoned after exit |
-| Node maintenance: migrate Machines to another node | not run | 2026-10-12 | Needs two nodes |
+| Node maintenance: migrate Machines to another node | pass | 2026-10-14 | Two-host lab: `kaironctl node maintenance enter nldw4-4-04-32` live-migrated both Machines to `nldw4-4-16-36` (two `maintenance-*` MachineMigrations Succeeded), `InMaintenance` in 30 s; exit uncordoned the node |
 | DRS: recommend or automatic moves | not run | 2026-10-12 | Needs two nodes |
 | Node maintenance and DRS: in-cluster chart RBAC | not run | 2026-10-12 | The lab controller ran with a cluster-admin token; the chart's new `patch` on nodes is checked by `scripts/check_rbac_coverage.py` only |
 

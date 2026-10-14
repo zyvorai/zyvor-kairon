@@ -43,6 +43,8 @@ These are the exact same fields `kaironctl recover NAME` prints before it requir
 
 `reconcileNeedsRecovery` rejects the action outright (no state change, `status.message` explains why) unless `AcknowledgedDiagnosis` matches `Action` exactly and `Reason` is non-empty -- it will not accept a guess. `Reason` must be a real description of what you observed, not a placeholder.
 
+`ConfirmDestinationCommitted` and `ConfirmDestinationNotCommitted` also refuse while the diagnosis shows the destination runtime as `failed`, `stopped`, `error` or `exited`: both delete the source runtime, which may then be the only copy that can still run the guest. The migration stays in `NeedsRecovery` with a `recovery refused` message and the action is not recorded as applied. For `ConfirmDestinationNotCommitted` the destination is diagnosed again after the retried commit; if it is failed then, the migration stays in `NeedsRecovery` with a `recovery paused` message and the source is kept. Inspect the destination host, then fix it and retry, or use `ForceAbort`.
+
 ## Command reference
 
 ```
