@@ -353,10 +353,13 @@ are scheduled and counted against `MachineQuota` like Machines, and their
 status mirrors FluxVM's (preview tokens and git URL credentials are never
 written to status).
 
-- Commands can wait for an admin: `approve`/`deny` from `kaironctl session`,
-  MCP and the dashboard.
-- Chunked uploads, an interactive shell over the console relay, network probes,
-  and credential grants injected at the egress proxy (the guest never sees the
+- Commands matching `policy.process.ask` wait for an admin's approval
+  (`kaironctl session approve|deny` or the dashboard). Approving is admin-only
+  even for sandbox operators, and there is no MCP approve tool, so an agent
+  cannot approve its own commands.
+- Resumable chunked uploads, an interactive shell over the console relay,
+  `session probe` (the tools in the guest image), and admin-only credential
+  grants that FluxVM's egress proxy adds to requests (the guest never sees the
   secret value).
 - On Mac guests: `session screenshot` and `session input` (type, keys, clicks,
   drag, scroll), the MCP `session_screenshot` tool returning an image, and a
