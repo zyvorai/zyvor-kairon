@@ -397,6 +397,9 @@ Pseudo filesystems (tmpfs, overlay, squashfs, ...) are hidden unless --all.`,
 				}
 			}
 			if userOut != "" {
+				if list == nil {
+					list = []GuestUser{}
+				}
 				return printStructured(os.Stdout, list, userOut)
 			}
 			writeUserList(os.Stdout, list)

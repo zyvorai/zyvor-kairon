@@ -43,6 +43,15 @@ func TestExposeService(t *testing.T) {
 	}
 }
 
+func TestExposeWarning(t *testing.T) {
+	for mode, warn := range map[string]bool{"": true, "user": true, "tap": false, "macvtap": false} {
+		m := model.Machine{Metadata: model.ObjectMeta{Name: "web-1"}, Spec: model.MachineSpec{Network: model.NetworkSpec{Mode: mode}}}
+		if got := exposeWarning(m) != ""; got != warn {
+			t.Errorf("mode %q: warning=%v, want %v", mode, got, warn)
+		}
+	}
+}
+
 func TestWriteExposed(t *testing.T) {
 	m := model.Machine{Metadata: model.ObjectMeta{Name: "web-1"}, Status: model.MachineStatus{Phase: "Running", GuestIP: "10.0.0.9"}}
 	svc, _ := exposeService(m, "prod", exposeOptions{Type: "ClusterIP", Protocol: "TCP", Port: 80, TargetPort: 8080})

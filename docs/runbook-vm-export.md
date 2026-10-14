@@ -39,10 +39,13 @@ How it works:
   Machine keeps its FluxVM record, so its live disk path is used. A
   `Stopped` Machine has no FluxVM VM any more, so only a hostPath or
   local PersistentVolume boot disk can be exported.
-- If `spec.format` differs from the disk's own format, kairon-node runs
-  `qemu-img convert` into `--export-dir` (default
-  `/var/lib/kairon/exports`); `status.phase` is `Preparing` meanwhile. The
-  copy is removed when the export expires or is deleted.
+- If `spec.format` differs from the disk's own format, or the disk is a
+  qcow2 overlay with a backing file (the usual FluxVM layout), kairon-node
+  runs `qemu-img convert` into `--export-dir` (default
+  `/var/lib/kairon-node/exports`, inside the unit's state directory);
+  `status.phase` is `Preparing` meanwhile. The download is always a
+  standalone image. The copy is removed when the export expires or is
+  deleted.
 - The node relay serves only disks its own agent registered for a `Ready`
   export. It never serves a path taken from a request or from object
   status. Downloads go through the shared node relay token, and support

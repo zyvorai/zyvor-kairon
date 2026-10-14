@@ -364,7 +364,7 @@ func (s *Server) handleConsole(w http.ResponseWriter, r *http.Request) {
 		defer func() { _ = resp.Body.Close() }()
 	}
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "connect to node console relay: "+err.Error())
+		writeRelayDialError(w, "connect to node console relay", resp, err)
 		return
 	}
 	defer func() { _ = upstream.CloseNow() }()

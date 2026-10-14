@@ -6,6 +6,7 @@ package agent
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"os"
@@ -99,7 +100,7 @@ func (a *Agent) reconcileExport(ctx context.Context, e model.MachineExport, m mo
 	if err != nil {
 		return fail(err.Error())
 	}
-	srcFormat, err := diskFormat(src)
+	srcFormat, backed, err := diskFormat(src)
 	if err != nil {
 		return fail(err.Error())
 	}
@@ -109,13 +110,18 @@ func (a *Agent) reconcileExport(ctx context.Context, e model.MachineExport, m mo
 	}
 	status.Format = want
 	path, temp := src, false
-	if want != srcFormat {
+	// A qcow2 overlay is useless off this node without its backing chain;
+	// qemu-img convert flattens it into a standalone image.
+	if want != srcFormat || backed {
 		job, started := a.exportJob(key, src, want)
 		select {
 		case <-job.done:
 		default:
 			status.Phase = "Preparing"
 			status.Message = fmt.Sprintf("converting %s to %s", srcFormat, want)
+			if want == srcFormat {
+				status.Message = "flattening the qcow2 overlay into a standalone image"
+			}
 			if started {
 				a.Log.Info("machine export converting", "namespace", e.Namespace(), "export", e.Metadata.Name, "from", srcFormat, "to", want)
 			}
@@ -193,7 +199,7 @@ func (a *Agent) exportDir() string {
 	if a.ExportDir != "" {
 		return a.ExportDir
 	}
-	return "/var/lib/kairon/exports"
+	return "/var/lib/kairon-node/exports"
 }
 
 // dropExport stops serving key and removes any converted copy once its
@@ -228,20 +234,23 @@ func exportStatusEqual(a, b model.MachineExportStatus) bool {
 	return sameTime && a == b
 }
 
-func diskFormat(path string) (string, error) {
+// diskFormat sniffs path's format and, for qcow2, whether the header names a
+// backing file (bytes 8-15, big-endian backing_file_offset).
+func diskFormat(path string) (format string, backed bool, err error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return "", fmt.Errorf("open disk: %w", err)
+		return "", false, fmt.Errorf("open disk: %w", err)
 	}
 	defer func() { _ = f.Close() }()
-	magic := make([]byte, len(qcow2Magic))
-	if _, err := io.ReadFull(f, magic); err != nil && err != io.ErrUnexpectedEOF {
-		return "", fmt.Errorf("read disk %s: %w", path, err)
+	hdr := make([]byte, 16)
+	n, err := io.ReadFull(f, hdr)
+	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
+		return "", false, fmt.Errorf("read disk %s: %w", path, err)
 	}
-	if bytes.Equal(magic, qcow2Magic) {
-		return "qcow2", nil
+	if n < len(qcow2Magic) || !bytes.Equal(hdr[:len(qcow2Magic)], qcow2Magic) {
+		return "raw", false, nil
 	}
-	return "raw", nil
+	return "qcow2", n == len(hdr) && binary.BigEndian.Uint64(hdr[8:16]) != 0, nil
 }
 
 func diskSize(path string) (int64, error) {

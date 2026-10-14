@@ -92,7 +92,9 @@ func (s *Server) handleSoftReboot(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), time.Minute)
 	defer cancel()
 	t := uint64(15)
-	out, err := s.relayExec(ctx, nodeAddr, m.Status.RuntimeID, execRequest{Path: "/bin/sh", Args: []string{"-c", "systemctl reboot || reboot || shutdown -r now"}, TimeoutSeconds: &t})
+	// Detached and delayed: a synchronous reboot kills the guest agent before
+	// it reports the exec result, which reads as a failure.
+	out, err := s.relayExec(ctx, nodeAddr, m.Status.RuntimeID, execRequest{Path: "/bin/sh", Args: []string{"-c", "(sleep 2; systemctl reboot || reboot || shutdown -r now) </dev/null >/dev/null 2>&1 &"}, TimeoutSeconds: &t})
 	if err != nil || out.ExitCode != 0 {
 		out, err = s.relayExec(ctx, nodeAddr, m.Status.RuntimeID, execRequest{Powershell: "Restart-Computer -Force", TimeoutSeconds: &t})
 	}

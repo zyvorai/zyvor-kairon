@@ -78,6 +78,17 @@ func exposeService(m model.Machine, ns string, o exposeOptions) (kube.Service, e
 	}, nil
 }
 
+// exposeWarning explains why a Service for m cannot route, or "". A
+// user-mode guest sits behind QEMU's NAT, whose address exists only
+// inside the VM.
+func exposeWarning(m model.Machine) string {
+	if mode := m.Spec.Network.Mode; mode != "" && mode != "user" {
+		return ""
+	}
+	return fmt.Sprintf("machine/%s uses user-mode networking, so the Service cannot reach the guest; "+
+		"use a tap or macvtap network, or `kaironctl port-forward` for ad-hoc access", m.Metadata.Name)
+}
+
 // validDNSLabel returns why s is not an RFC 1123 label (a Service name), or "".
 func validDNSLabel(s string) string {
 	if len(s) == 0 || len(s) > 63 {
@@ -128,7 +139,8 @@ with the guest IP, and kairon-controller keeps it current when the IP changes
 Deleting the Machine deletes the Service.
 
 The guest IP has to be routable from the cluster's nodes (bridged or routed
-networks); a NAT-only guest network is reachable from its own node alone.`,
+networks); a NAT-only guest network is reachable from its own node alone. A
+user-mode (QEMU NAT) guest is not reachable at all, and expose warns about it.`,
 		Example: `  $ kaironctl expose web-1 --port 80
   $ kaironctl expose web-1 --name web-ssh --port 22 --type NodePort
   $ kaironctl expose db-1 --port 5432 --target-port 5432 --type LoadBalancer --dry-run -o yaml`,
@@ -150,6 +162,9 @@ networks); a NAT-only guest network is reachable from its own node alone.`,
 			svc, err := exposeService(m, ns, o)
 			if err != nil {
 				return err
+			}
+			if w := exposeWarning(m); w != "" {
+				fmt.Fprintln(os.Stderr, "warning: "+w)
 			}
 			if dryRun {
 				svc.APIVersion, svc.Kind = "v1", "Service"

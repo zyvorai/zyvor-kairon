@@ -4,11 +4,14 @@
 package uiapi
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/coder/websocket"
@@ -73,7 +76,7 @@ func (s *Server) handlePortForward(w http.ResponseWriter, r *http.Request) {
 		defer func() { _ = resp.Body.Close() }()
 	}
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "connect to node relay: "+err.Error())
+		writeRelayDialError(w, "connect to node relay", resp, err)
 		return
 	}
 	defer func() { _ = upstream.CloseNow() }()
@@ -100,4 +103,22 @@ func (s *Server) handlePortForward(w http.ResponseWriter, r *http.Request) {
 		s.Log.Info("uiapi port-forward closed", "username", username, "namespace", namespace, "name", name, "port", port, "duration", time.Since(start).Round(time.Second).String())
 	}
 	_ = downstream.Close(websocket.StatusNormalClosure, "")
+}
+
+// writeRelayDialError reports a failed kairon-node relay upgrade with the
+// node's own explanation (e.g. "guest port 22 is not forwarded"), which the
+// WebSocket error alone drops. A node 4xx keeps its status.
+func writeRelayDialError(w http.ResponseWriter, prefix string, resp *http.Response, err error) {
+	status, msg := http.StatusBadGateway, prefix+": "+err.Error()
+	if resp != nil {
+		if resp.Body != nil {
+			if b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024)); len(bytes.TrimSpace(b)) > 0 {
+				msg = prefix + ": " + strings.TrimSpace(string(b))
+			}
+		}
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != http.StatusUnauthorized && resp.StatusCode != http.StatusForbidden {
+			status = resp.StatusCode
+		}
+	}
+	writeError(w, status, msg)
 }
