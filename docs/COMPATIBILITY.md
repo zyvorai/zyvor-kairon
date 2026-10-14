@@ -245,6 +245,11 @@ hardware. Unit tests cover the same paths against a fake FluxVM (see
 | Session: rollout | not run | - | `--count 4`: four results, children deleted afterwards |
 | Session: preview | not run | - | URL opens through kairon-ui; CSP sandbox header present; 404 after `unexpose` |
 | Session: OTLP export | not run | - | Trace shows in the collector with one span per step |
+| Session: approvals | not run | - | `--process-ask 'git push*'`: exec answers 428; an operator's `approve` gets 403; after an admin approves, `--approval-id` runs it once; note names the approver |
+| Session: chunked upload | not run | - | `put` of a 50 MiB file: same sha256 in the guest; an interrupted put leaves no file |
+| Session: shell | not run | - | `session shell` echoes input, follows a window resize, exits with the shell's code; refused when the session has process rules |
+| Session: probe | not run | - | Lists the guest's git and node; `ready_for.git` true |
+| Session: credential grant | not run | - | `grant --host api.github.com`: an authenticated API call from the guest succeeds, the guest's environment has no token; fails after `revoke-grant` |
 | Session: quota | not run | - | A session over `MachineQuota` stays Pending with the quota's reason |
 | Session: delete | not run | - | FluxVM session gone; finalizer released |
 

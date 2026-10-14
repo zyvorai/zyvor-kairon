@@ -32,6 +32,11 @@ func TestSessionMCPTools(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(created)
 		case strings.HasPrefix(r.URL.Path, "/api/v1/agentsessions/"):
 			_ = json.NewDecoder(r.Body).Decode(&gotBody)
+			if gotBody["command"] == "git push" && gotBody["approval_id"] == nil {
+				w.WriteHeader(http.StatusPreconditionRequired)
+				_, _ = io.WriteString(w, `{"approval_required":true,"approval_id":"ap-1","kind":"exec","summary":"git push","matched":"git push*"}`)
+				return
+			}
 			_, _ = io.WriteString(w, `{"exit_code":0,"stdout":"ok"}`)
 		default:
 			http.Error(w, "unexpected", http.StatusNotFound)
@@ -65,6 +70,14 @@ func TestSessionMCPTools(t *testing.T) {
 	if _, err := call("session_exec", `{"name":"work","command":"ls","bogus":1}`); err == nil {
 		t.Fatal("unknown argument accepted")
 	}
+	out, err = call("session_exec", `{"name":"work","command":"git push"}`)
+	if err != nil || !strings.Contains(out, `"approval_id": "ap-1"`) || !strings.Contains(out, "session approve work ap-1") {
+		t.Fatalf("approval-required exec = %q, %v", out, err)
+	}
+	if _, err := call("session_job_start", `{"name":"work","command":"git push","approvalId":"ap-1","approvalWaitSeconds":500}`); err != nil ||
+		gotBody["approval_id"] != "ap-1" || gotBody["approval_wait_seconds"] != float64(120) {
+		t.Fatalf("approved job body %v, %v", gotBody, err)
+	}
 	if _, err := call("session_trajectory", `{"name":"work","namespace":"other"}`); err != nil || gotPath != "/api/v1/agentsessions/other/work/trajectory" {
 		t.Fatalf("trajectory %s %v", gotPath, err)
 	}
@@ -81,7 +94,8 @@ func TestSessionMCPTools(t *testing.T) {
 		t.Fatalf("created = %+v", created)
 	}
 	for name, tool := range tools {
-		read := name == "session_list" || name == "session_get" || name == "session_job_read" || name == "session_read_file" || name == "session_git" || name == "session_trajectory"
+		read := name == "session_list" || name == "session_get" || name == "session_job_read" || name == "session_read_file" || name == "session_git" || name == "session_trajectory" ||
+			name == "session_approvals" || name == "session_probe"
 		if tool.Write == read {
 			t.Errorf("%s: Write = %v", name, tool.Write)
 		}

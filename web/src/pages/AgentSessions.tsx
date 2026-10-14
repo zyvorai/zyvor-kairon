@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState } from 'react';
-import { api, apiErrorText, apiJSON } from '../api';
+import { api, apiErrorText, apiJSON, isAdmin } from '../api';
 import { badgeClass } from '../lib/phase';
 import { currentNamespace } from '../lib/namespace';
 import ResourceTable from '../components/ResourceTable';
@@ -35,6 +35,29 @@ interface Preview {
   url?: string;
   served?: boolean;
   expires_at?: string;
+}
+
+interface Approval {
+  id: string;
+  kind?: string;
+  summary?: string;
+  matched?: string;
+  state: string;
+  requested_at?: string;
+  expires_at?: string;
+  decided_by?: string;
+  note?: string;
+}
+
+// approvalIDOf returns the approval id of a 428 from exec (a command matched
+// policy.process.ask), or '' for any other error.
+export function approvalIDOf(e: unknown): string {
+  try {
+    const doc = JSON.parse(e instanceof Error ? e.message : String(e));
+    return doc?.approval_required && typeof doc.approval_id === 'string' ? doc.approval_id : '';
+  } catch {
+    return '';
+  }
 }
 
 const verbPath = (name: string, verb: string) =>
@@ -192,7 +215,16 @@ function SessionPanel({ session }: { session: Session }) {
   const [tag, setTag] = useState('');
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
+  const [approvals, setApprovals] = useState<Approval[]>([]);
+  const [waiting, setWaiting] = useState<{ id: string; command: string } | null>(null);
+  const admin = isAdmin();
 
+  const loadApprovals = () =>
+    running
+      ? api<{ items?: Approval[] }>(verbPath(name, 'approvals'))
+          .then((r) => setApprovals((r?.items ?? []).filter((a) => a.state === 'pending')))
+          .catch(() => setApprovals([]))
+      : undefined;
   const loadSteps = () =>
     api<{ steps?: Step[] }>(verbPath(name, 'trajectory'))
       .then((r) => setSteps((r?.steps ?? []).slice(-50).reverse()))
@@ -203,6 +235,10 @@ function SessionPanel({ session }: { session: Session }) {
   useEffect(() => {
     if (session.status?.sessionID) loadSteps();
     loadPreviews();
+    loadApprovals();
+    if (!running) return;
+    const t = setInterval(loadApprovals, 5000);
+    return () => clearInterval(t);
   }, [name, session.status?.sessionID, running]);
 
   const run = async (fn: () => Promise<unknown>) => {
@@ -218,11 +254,29 @@ function SessionPanel({ session }: { session: Session }) {
     }
   };
 
+  const runCommand = (cmd: string, approvalID?: string) =>
+    run(async () => {
+      try {
+        setResult(await apiJSON(verbPath(name, 'exec'), 'POST', approvalID ? { command: cmd, approval_id: approvalID } : { command: cmd }));
+        setWaiting(null);
+      } catch (err) {
+        const id = approvalIDOf(err);
+        if (!id) throw err;
+        setWaiting({ id, command: cmd });
+        loadApprovals();
+      }
+    });
+
   const exec = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!command) return;
-    run(async () => setResult(await apiJSON(verbPath(name, 'exec'), 'POST', { command })));
+    if (command) runCommand(command);
   };
+
+  const decide = (id: string, decision: 'approve' | 'deny') =>
+    run(async () => {
+      await apiJSON(verbPath(name, `approvals/${encodeURIComponent(id)}/${decision}`), 'POST', {});
+      await loadApprovals();
+    });
 
   const unenforced = session.status?.policy?.unenforced ?? [];
 
@@ -254,11 +308,51 @@ function SessionPanel({ session }: { session: Session }) {
           </button>
         </div>
       </form>
+      {waiting && (
+        <p className="msg">
+          This command needs an admin's approval ({waiting.id}).{' '}
+          <button type="button" disabled={busy} onClick={() => runCommand(waiting.command, waiting.id)}>
+            Run approved
+          </button>
+        </p>
+      )}
       {result && (
         <>
           <p className="muted">exit {result.exit_code ?? '-'}</p>
           {result.stdout && <pre className="execStream">{result.stdout}</pre>}
           {result.stderr && <pre className="execStream">{result.stderr}</pre>}
+        </>
+      )}
+
+      {approvals.length > 0 && (
+        <>
+          <h4>Pending approvals</h4>
+          <ResourceTable
+            items={approvals}
+            keyFn={(a) => a.id}
+            emptyText="None."
+            columns={[
+              { header: 'Command', render: (a) => a.summary || a.kind || '-' },
+              { header: 'Rule', render: (a) => a.matched || '-' },
+              { header: 'Expires', render: (a) => until(a.expires_at) },
+              {
+                header: '',
+                render: (a) =>
+                  admin ? (
+                    <span className="rowactions">
+                      <button disabled={busy} onClick={() => decide(a.id, 'approve')}>
+                        Approve
+                      </button>
+                      <button className="danger" disabled={busy} onClick={() => decide(a.id, 'deny')}>
+                        Deny
+                      </button>
+                    </span>
+                  ) : (
+                    'an admin decides'
+                  ),
+              },
+            ]}
+          />
         </>
       )}
 

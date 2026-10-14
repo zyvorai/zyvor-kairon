@@ -274,7 +274,7 @@ func applyAgentSession(status *model.AgentSessionStatus, fs *fluxvm.AgentSession
 		NetworkEnforcement: fs.Policy.NetworkEnforcement,
 	}
 	if p := fs.Policy.Process; p != nil {
-		policy.Process = &model.AgentProcessPolicy{Allow: p.Allow, Deny: p.Deny}
+		policy.Process = &model.AgentProcessPolicy{Allow: p.Allow, Deny: p.Deny, Ask: p.Ask}
 	}
 	status.Policy = policy
 	status.Workspace = nil

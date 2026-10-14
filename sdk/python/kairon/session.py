@@ -17,23 +17,48 @@ ui.auth.sandboxOperatorExec.
 from __future__ import annotations
 
 import base64
+import hashlib
+import re
 import time
 import uuid
 from typing import Any
+from urllib.parse import quote
 
-from .client import UIClient, _segment
+from .client import APIError, UIClient, _segment
 from .sandbox import CommandError, ExecResult
 
 _EXEC_SLACK = 30
+INLINE_WRITE = 1 << 20
+UPLOAD_CHUNK = 4 << 20
+MAX_UPLOAD = 2 << 30
+_UUID = re.compile(r"[0-9a-fA-F-]{36}")
 
 
 class SessionError(RuntimeError):
     pass
 
 
+def _uuid(value: str) -> str:
+    if not isinstance(value, str) or not _UUID.fullmatch(value):
+        raise ValueError("expected a FluxVM id (UUID)")
+    return value
+
+
+def _approval(body: dict, approval_id: str, wait_seconds: int) -> int:
+    """Adds the approval fields to body; returns the seconds the request may be held."""
+    if approval_id:
+        body["approval_id"] = _uuid(approval_id)
+    if wait_seconds:
+        if not 0 < int(wait_seconds) <= 120:
+            raise ValueError("approval_wait_seconds is 1-120")
+        body["approval_wait_seconds"] = int(wait_seconds)
+    return int(wait_seconds or 0)
+
+
 def session_spec(*, agent: str = "", git: str = "", workspace: str = "", image: str = "",
                  cpu: str = "", memory: str = "", preset: str = "", allow_hosts: tuple | list = (),
                  process_allow: tuple | list = (), process_deny: tuple | list = (),
+                 process_ask: tuple | list = (),
                  ttl_seconds: int = 0, budget: dict | None = None, policy: dict | None = None) -> dict:
     """An AgentSession spec from keyword arguments; policy entries override the generated policy."""
     spec: dict[str, Any] = {}
@@ -50,8 +75,9 @@ def session_spec(*, agent: str = "", git: str = "", workspace: str = "", image: 
         pol["preset"] = preset
     if allow_hosts:
         pol["network"] = {"allow": [{"host": h} for h in allow_hosts]}
-    if process_allow or process_deny:
-        pol["process"] = {k: list(v) for k, v in {"allow": process_allow, "deny": process_deny}.items() if v}
+    if process_allow or process_deny or process_ask:
+        pol["process"] = {k: list(v) for k, v in
+                          {"allow": process_allow, "deny": process_deny, "ask": process_ask}.items() if v}
     pol.update(policy or {})
     if pol:
         spec["policy"] = pol
@@ -106,14 +132,21 @@ class AgentSession:
     def _call(self, method: str, verb: str, body: Any = None, **kw) -> Any:
         return self.ui.session_call(self.name, method, verb, body, **kw)
 
-    def exec(self, command: str, *, timeout_seconds: int | None = None, check: bool = False) -> ExecResult:
-        """Run a shell command line in the workspace under the session policy."""
+    def exec(self, command: str, *, timeout_seconds: int | None = None, check: bool = False,
+             approval_id: str = "", approval_wait_seconds: int = 0) -> ExecResult:
+        """Run a shell command line in the workspace under the session policy.
+
+        A command matching a policy.process.ask rule raises ApprovalRequired; once a human
+        admin approved it, call again with approval_id. approval_wait_seconds (at most 120)
+        holds the request open for the decision instead.
+        """
         if not command or not isinstance(command, str):
             raise ValueError("command must be a non-empty string")
         body: dict[str, Any] = {"command": command}
         if timeout_seconds:
             body["timeout_seconds"] = int(timeout_seconds)
-        out = self._call("POST", "exec", body, timeout=(timeout_seconds or 600) + _EXEC_SLACK) or {}
+        wait = _approval(body, approval_id, approval_wait_seconds)
+        out = self._call("POST", "exec", body, timeout=(timeout_seconds or 600) + wait + _EXEC_SLACK) or {}
         res = ExecResult(int(out.get("exit_code") or 0), out.get("stdout", ""), out.get("stderr", ""))
         if check and not res.ok:
             raise CommandError(res, command)
@@ -141,11 +174,94 @@ class AgentSession:
             c.wait(timeout=timeout)
         return children
 
-    def start_job(self, command: str, *, timeout_seconds: int = 0, stdin: bool = False) -> str:
+    def start_job(self, command: str, *, timeout_seconds: int = 0, stdin: bool = False,
+                  approval_id: str = "", approval_wait_seconds: int = 0) -> str:
         body: dict[str, Any] = {"command": command, "stdin": stdin}
         if timeout_seconds:
             body["timeout_seconds"] = int(timeout_seconds)
-        return self._call("POST", "jobs", body)["job"]
+        wait = _approval(body, approval_id, approval_wait_seconds)
+        return self._call("POST", "jobs", body, timeout=60 + wait)["job"]
+
+    def approvals(self, *, pending_only: bool = False) -> list[dict]:
+        """Approval requests for commands matching policy.process.ask, newest first."""
+        items = (self._call("GET", "approvals") or {}).get("items", [])
+        return [a for a in items if a.get("state") == "pending"] if pending_only else items
+
+    def approve(self, approval_id: str, *, note: str = "") -> dict:
+        """Approve a pending command (admin accounts only; kairon-ui records who decided)."""
+        return self._call("POST", f"approvals/{_uuid(approval_id)}/approve", {"note": note} if note else {})
+
+    def deny(self, approval_id: str, *, note: str = "") -> dict:
+        return self._call("POST", f"approvals/{_uuid(approval_id)}/deny", {"note": note} if note else {})
+
+    def probe(self) -> dict:
+        """Which tools the guest image has and which session features are ready."""
+        return self._call("GET", "probe", timeout=60)
+
+    def grant(self, secret_ref: str, hosts: list[str], *, value: str | None = None, methods: tuple | list = (),
+              paths: tuple | list = (), ttl_seconds: int = 0) -> dict:
+        """Let the session's requests to hosts carry a credential it never sees (admin only).
+
+        value is the full header value (e.g. "Bearer ..."); without it FluxVM uses the node's
+        FLUXVM_SECRET_<REF>. The answer never includes the value.
+        """
+        if not hosts:
+            raise ValueError("hosts must name at least one host")
+        body: dict[str, Any] = {"secret_ref": secret_ref, "hosts": list(hosts)}
+        if value:
+            body["value"] = value
+        if methods:
+            body["methods"] = list(methods)
+        if paths:
+            body["paths"] = list(paths)
+        if ttl_seconds:
+            body["ttl_seconds"] = int(ttl_seconds)
+        return self._call("POST", "grants", body)
+
+    def grants(self) -> list[dict]:
+        return (self._call("GET", "grants") or {}).get("grants", [])
+
+    def revoke_grant(self, grant_id: str | None = None) -> Any:
+        """Revoke one grant, or every grant of the session when grant_id is None."""
+        return self._call("DELETE", "grants" if grant_id is None else "grants/" + quote(grant_id, safe=""))
+
+    def upload(self, path: str, data: bytes, *, mode: int | None = None, parents: bool = True,
+               chunk_size: int = UPLOAD_CHUNK) -> dict:
+        """Write up to 2 GiB in chunks; the guest checks the SHA-256 before the file appears."""
+        if not path.startswith("/"):
+            raise ValueError("upload needs an absolute path")
+        if not 0 < len(data) <= MAX_UPLOAD or not 0 < chunk_size <= UPLOAD_CHUNK:
+            raise ValueError("uploads are 1 byte to 2 GiB in chunks of at most 4 MiB")
+        body: dict[str, Any] = {"path": path, "size": len(data), "sha256": hashlib.sha256(data).hexdigest(),
+                                "parents": parents}
+        if mode is not None:
+            body["mode"] = mode
+        up = self._call("POST", "uploads", body)
+        verb = "uploads/" + _uuid(up["id"])
+        try:
+            offset, resyncs = 0, 0
+            while offset < len(data):
+                chunk = data[offset:offset + chunk_size]
+                try:
+                    self._call("PUT", verb, query={"offset": offset}, data=chunk, timeout=300)
+                except APIError as exc:
+                    if exc.status != 409 or resyncs >= 5:
+                        raise
+                    resyncs += 1
+                    cur = self._call("GET", verb)
+                    if cur.get("state") == "complete":
+                        return cur
+                    offset = int(cur.get("received", 0))
+                    continue
+                offset += len(chunk)
+            done = self._call("POST", verb + "/complete", timeout=900)
+        except BaseException:
+            try:
+                self._call("DELETE", verb)
+            except APIError:
+                pass
+            raise
+        return done
 
     def job(self, job: str, *, offset: int = 0, stderr_offset: int = 0, wait_ms: int = 0) -> dict:
         """One read of a job: state, exit_code, output from offset and next_offset."""
@@ -168,8 +284,12 @@ class AgentSession:
         return base64.b64decode(out.get("content_base64", ""))
 
     def write_file(self, path: str, data: bytes, *, mode: int | None = None, parents: bool = True) -> None:
+        """Write a guest file; above 1 MiB it goes through upload()."""
         if not path.startswith("/"):
             raise ValueError("write_file needs an absolute path")
+        if len(data) > INLINE_WRITE:
+            self.upload(path, data, mode=mode, parents=parents)
+            return
         body: dict[str, Any] = {"path": path, "content_base64": base64.b64encode(data).decode(), "parents": parents}
         if mode is not None:
             body["mode"] = mode

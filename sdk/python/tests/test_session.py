@@ -5,7 +5,14 @@ import sys
 import unittest
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from kairon import AgentSession, CommandError, SessionError, UIClient, session_spec
+import hashlib
+import json
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from kairon import APIError, AgentSession, ApprovalRequired, CommandError, SessionError, UIClient, session_spec
+
+APPROVAL = "11111111-2222-4333-8444-555555555555"
+UPLOAD = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 
 
 class FakeUI:
@@ -25,8 +32,25 @@ class FakeUI:
     def delete_session(self, name):
         self.deleted.append(name)
 
-    def session_call(self, name, method, verb, body=None, query=None, timeout=None):
+    def session_call(self, name, method, verb, body=None, query=None, timeout=None, data=None):
         self.calls.append((name, method, verb, body, query))
+        if verb == "exec" and body["command"].startswith("git push") and "approval_id" not in body:
+            raise ApprovalRequired("POST", {"approval_id": APPROVAL, "kind": "exec", "summary": body["command"],
+                                            "matched": "git push*"})
+        if verb == "uploads":
+            self.upload = {"meta": body, "data": bytearray(), "conflict": True}
+            return {"id": UPLOAD}
+        if verb == f"uploads/{UPLOAD}" and method == "PUT":
+            if query["offset"] > 0 and self.upload["conflict"]:
+                self.upload["conflict"] = False
+                raise APIError(409, "PUT")
+            self.upload["data"] += data
+            return {"received": len(self.upload["data"])}
+        if verb == f"uploads/{UPLOAD}" and method == "GET":
+            return {"state": "open", "received": len(self.upload["data"])}
+        if verb == f"uploads/{UPLOAD}/complete":
+            self.files[self.upload["meta"]["path"]] = bytes(self.upload["data"])
+            return {"state": "complete"}
         if verb == "exec":
             code = 1 if body["command"] == "false" else 0
             return {"exit_code": code, "stdout": "out", "stderr": "err" if code else ""}
@@ -91,6 +115,69 @@ class SessionTests(unittest.TestCase):
             s.write_file("relative", b"")
         with self.assertRaises(ValueError):
             s.git("push")
+
+    def test_approvals(self):
+        ui = FakeUI()
+        s = AgentSession(ui, "work")
+        with self.assertRaises(ApprovalRequired) as ctx:
+            s.exec("git push origin fix")
+        self.assertEqual((ctx.exception.approval_id, ctx.exception.matched, ctx.exception.status), (APPROVAL, "git push*", 428))
+        s.approve(APPROVAL, note="ok")
+        self.assertEqual(ui.calls[-1][2:4], (f"approvals/{APPROVAL}/approve", {"note": "ok"}))
+        self.assertTrue(s.exec("git push origin fix", approval_id=APPROVAL, approval_wait_seconds=30).ok)
+        self.assertEqual(ui.calls[-1][3], {"command": "git push origin fix", "approval_id": APPROVAL, "approval_wait_seconds": 30})
+        for bad in ({"approval_id": "x"}, {"approval_wait_seconds": 500}):
+            with self.assertRaises(ValueError):
+                s.exec("ls", **bad)
+        self.assertEqual(session_spec(process_ask=["deploy *"]), {"policy": {"process": {"ask": ["deploy *"]}}})
+
+    def test_large_write_uploads_in_chunks(self):
+        ui = FakeUI()
+        s = AgentSession(ui, "work")
+        data = bytes(range(256)) * ((9 << 20) // 256 + 3)
+        s.write_file("/workspace/big.bin", data)
+        self.assertEqual(ui.files["/workspace/big.bin"], data)
+        self.assertEqual(ui.upload["meta"]["sha256"], hashlib.sha256(data).hexdigest())
+        self.assertFalse(ui.upload["conflict"])
+        with self.assertRaises(ValueError):
+            s.upload("/x", b"")
+
+    def test_grant_needs_hosts(self):
+        s = AgentSession(FakeUI(), "work")
+        with self.assertRaises(ValueError):
+            s.grant("gh", [])
+        s.grant("gh", ["api.github.com"], value="Bearer x", ttl_seconds=60)
+        self.assertEqual(s.ui.calls[-1][2:4], ("grants", {"secret_ref": "gh", "hosts": ["api.github.com"],
+                                                          "value": "Bearer x", "ttl_seconds": 60}))
+
+
+class ApprovalHTTPTests(unittest.TestCase):
+    def test_428_becomes_approval_required(self):
+        class H(BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.rfile.read(int(self.headers["Content-Length"]))
+                body = json.dumps({"approval_required": True, "approval_id": APPROVAL, "matched": "deploy *",
+                                   "summary": "deploy prod"}).encode()
+                self.send_response(428)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *a):
+                pass
+
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            ui = UIClient(f"http://127.0.0.1:{srv.server_address[1]}", "t")
+            with self.assertRaises(ApprovalRequired) as ctx:
+                ui.session_call("work", "POST", "exec", {"command": "deploy prod"})
+            self.assertEqual((ctx.exception.approval_id, ctx.exception.summary), (APPROVAL, "deploy prod"))
+            self.assertIsInstance(ctx.exception, APIError)
+        finally:
+            srv.shutdown()
+            srv.server_close()
 
 
 class UIClientSessionTests(unittest.TestCase):

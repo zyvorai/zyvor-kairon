@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -66,13 +67,22 @@ func sessionTools(nsDefault string, withKube func(context.Context, time.Duration
 				}
 				_ = json.Unmarshal(raw, &r)
 			}
-			p := sessionPath(r.ns(nsDefault), r.Name, suffix)
+			p := suffix
 			if len(q) > 0 {
 				p += "?" + q.Encode()
 			}
 			ctx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
-			out, err := uiRaw(ctx, method, p, b)
+			out, err := sessionSend(ctx, r.ns(nsDefault), r.Name, method, p, b)
+			var ar *approvalRequired
+			if errors.As(err, &ar) {
+				return mcp.JSON(map[string]any{
+					"approval_required": true, "approval_id": ar.ID, "kind": ar.Kind, "command": ar.Summary,
+					"matched_rule": ar.Matched, "expires_at": ar.ExpiresAt,
+					"next": fmt.Sprintf("ask a human Kairon admin to approve it (kaironctl -n %s session approve %s %s, or the dashboard), then call this tool again with approvalId %q; or retry with approvalWaitSeconds to wait for the decision",
+						r.ns(nsDefault), r.Name, ar.ID, ar.ID),
+				})
+			}
 			if err != nil {
 				return "", err
 			}
@@ -190,12 +200,16 @@ func sessionTools(nsDefault string, withKube func(context.Context, time.Duration
 		},
 		{
 			Name:        "session_exec",
-			Description: "Run a shell command line in the session workspace under its policy; returns exit_code, stdout and stderr.",
+			Description: "Run a shell command line in the session workspace under its policy; returns exit_code, stdout and stderr. A command matching a policy.process.ask rule returns approval_required with an approval_id instead: only a human admin can approve it, then call again with approvalId.",
 			Write:       true,
-			Schema:      ref(map[string]any{"command": mcp.String("shell command line"), "timeoutSeconds": mcp.Integer("kill after this many seconds", 1, 3600)}, "command"),
+			Schema: ref(map[string]any{
+				"command": mcp.String("shell command line"), "timeoutSeconds": mcp.Integer("kill after this many seconds", 1, 3600),
+				"approvalId": approvalIDProp, "approvalWaitSeconds": approvalWaitProp,
+			}, "command"),
 			Call: verb(mcpSessionExecTimeout, http.MethodPost, "exec", func(raw json.RawMessage) (any, url.Values, error) {
 				var a struct {
 					sessionRef
+					sessionApprovalArgs
 					Command        string `json:"command"`
 					TimeoutSeconds int    `json:"timeoutSeconds"`
 				}
@@ -206,6 +220,7 @@ func sessionTools(nsDefault string, withKube func(context.Context, time.Duration
 				if a.TimeoutSeconds > 0 {
 					body["timeout_seconds"] = a.TimeoutSeconds
 				}
+				a.apply(body)
 				return body, nil, nil
 			}),
 		},
@@ -263,18 +278,21 @@ func sessionTools(nsDefault string, withKube func(context.Context, time.Duration
 		},
 		{
 			Name:        "session_job_start",
-			Description: "Start a background job (long build, dev server); returns its job id for session_job_read.",
+			Description: "Start a background job (long build, dev server); returns its job id for session_job_read. Approval rules apply as for session_exec.",
 			Write:       true,
-			Schema:      ref(map[string]any{"command": mcp.String("shell command line")}, "command"),
-			Call: verb(mcpCallTimeout, http.MethodPost, "jobs", func(raw json.RawMessage) (any, url.Values, error) {
+			Schema:      ref(map[string]any{"command": mcp.String("shell command line"), "approvalId": approvalIDProp, "approvalWaitSeconds": approvalWaitProp}, "command"),
+			Call: verb(mcpSessionExecTimeout, http.MethodPost, "jobs", func(raw json.RawMessage) (any, url.Values, error) {
 				var a struct {
 					sessionRef
+					sessionApprovalArgs
 					Command string `json:"command"`
 				}
 				if err := decodeArgs(raw, &a); err != nil {
 					return nil, nil, err
 				}
-				return map[string]any{"command": a.Command}, nil, nil
+				body := map[string]any{"command": a.Command}
+				a.apply(body)
+				return body, nil, nil
 			}),
 		},
 		{
@@ -415,5 +433,36 @@ func sessionTools(nsDefault string, withKube func(context.Context, time.Duration
 				return body, nil, nil
 			}),
 		},
+		{
+			Name:        "session_approvals",
+			Description: "The session's approval requests (commands matching policy.process.ask) with state pending, approved, denied, consumed or expired. Deciding is for human admins only and has no tool.",
+			Schema:      ref(nil),
+			Call:        verb(mcpCallTimeout, http.MethodGet, "approvals", nil),
+		},
+		{
+			Name:        "session_probe",
+			Description: "Which tools the guest image has (git, python3, node, go, cargo, make, chromium...) and which session features are ready, so you know before building on them.",
+			Schema:      ref(nil),
+			Call:        verb(mcpCallTimeout, http.MethodGet, "probe", nil),
+		},
+	}
+}
+
+var (
+	approvalIDProp   = mcp.String("approval id from an earlier approval_required answer, once a human admin approved it")
+	approvalWaitProp = mcp.Integer("wait up to this many seconds for an admin's decision instead of returning approval_required", 1, 120)
+)
+
+type sessionApprovalArgs struct {
+	ApprovalID          string `json:"approvalId"`
+	ApprovalWaitSeconds int    `json:"approvalWaitSeconds"`
+}
+
+func (a sessionApprovalArgs) apply(body map[string]any) {
+	if a.ApprovalID != "" {
+		body["approval_id"] = a.ApprovalID
+	}
+	if a.ApprovalWaitSeconds > 0 {
+		body["approval_wait_seconds"] = min(a.ApprovalWaitSeconds, 120)
 	}
 }

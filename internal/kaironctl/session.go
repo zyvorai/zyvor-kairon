@@ -42,6 +42,7 @@ type sessionRunFlags struct {
 	agent, git, mode, path, image, cpu, memory, node string
 	preset, networkDefault                           string
 	allowHosts, processAllow, processDeny            []string
+	processAsk                                       []string
 	fsRead, fsWrite                                  []string
 	ttl                                              time.Duration
 	budget                                           model.AgentBudget
@@ -60,7 +61,7 @@ func agentSessionSpec(f sessionRunFlags) (model.AgentSessionSpec, error) {
 	if f.git != "" || f.path != "" || f.mode != "" {
 		spec.Workspace = &model.AgentWorkspace{Git: f.git, Path: f.path, Mode: f.mode}
 	}
-	if f.preset != "" || f.networkDefault != "" || len(f.allowHosts) > 0 || len(f.processAllow) > 0 || len(f.processDeny) > 0 || len(f.fsRead) > 0 || len(f.fsWrite) > 0 {
+	if f.preset != "" || f.networkDefault != "" || len(f.allowHosts) > 0 || len(f.processAllow) > 0 || len(f.processDeny) > 0 || len(f.processAsk) > 0 || len(f.fsRead) > 0 || len(f.fsWrite) > 0 {
 		p := &model.AgentPolicy{Preset: f.preset}
 		if f.networkDefault != "" || len(f.allowHosts) > 0 {
 			p.Network = &model.AgentNetworkPolicy{Default: f.networkDefault}
@@ -68,8 +69,8 @@ func agentSessionSpec(f sessionRunFlags) (model.AgentSessionSpec, error) {
 				p.Network.Allow = append(p.Network.Allow, model.AgentNetworkAllow{Host: h})
 			}
 		}
-		if len(f.processAllow) > 0 || len(f.processDeny) > 0 {
-			p.Process = &model.AgentProcessPolicy{Allow: f.processAllow, Deny: f.processDeny}
+		if len(f.processAllow) > 0 || len(f.processDeny) > 0 || len(f.processAsk) > 0 {
+			p.Process = &model.AgentProcessPolicy{Allow: f.processAllow, Deny: f.processDeny, Ask: f.processAsk}
 		}
 		if len(f.fsRead) > 0 || len(f.fsWrite) > 0 {
 			p.Filesystem = &model.AgentFilesystemPolicy{Read: f.fsRead, Write: f.fsWrite}
@@ -213,6 +214,19 @@ named operator when ui.auth.sandboxOperatorExec is on.`,
 			RunE:  uiRun(http.MethodGet, sp("artifacts"), nil),
 		},
 		newSessionExportCmd(opts),
+		newSessionShellCmd(opts),
+		newSessionProbeCmd(opts),
+		newSessionApprovalsCmd(opts),
+		newSessionDecideCmd(opts, "approve"),
+		newSessionDecideCmd(opts, "deny"),
+		newSessionGrantCmd(opts),
+		&cobra.Command{
+			Use:   "grants NAME",
+			Short: "List the session's credential grants, without their values (admin only)",
+			Args:  cobra.ExactArgs(1),
+			RunE:  uiRun(http.MethodGet, sp("grants"), nil),
+		},
+		newSessionRevokeGrantCmd(opts),
 	)
 	return cmd
 }
@@ -283,6 +297,7 @@ func newSessionRunCmd(opts *Options) *cobra.Command {
 	fl.StringArrayVar(&f.allowHosts, "allow-host", nil, "host the session may reach (repeatable; *.example.com allowed)")
 	fl.StringArrayVar(&f.processAllow, "process-allow", nil, "command glob allowed (repeatable)")
 	fl.StringArrayVar(&f.processDeny, "process-deny", nil, "command glob refused (repeatable)")
+	fl.StringArrayVar(&f.processAsk, "process-ask", nil, "command glob that waits for an admin's approval (repeatable)")
 	fl.StringArrayVar(&f.fsRead, "fs-read", nil, "guest path exec may read (repeatable; dir/** for a tree)")
 	fl.StringArrayVar(&f.fsWrite, "fs-write", nil, "guest path exec may write (repeatable)")
 	fl.DurationVar(&f.ttl, "ttl", 0, "end the session after this long")
@@ -334,15 +349,21 @@ type sessionExecResult struct {
 
 func newSessionExecCmd(opts *Options) *cobra.Command {
 	var timeout uint64
+	var approval approvalFlags
 	c := &cobra.Command{
 		Use:   "exec NAME -- COMMAND [ARGS...]",
 		Short: "Run a command in the session and exit with its code",
 		Long: `The command line runs through the guest's shell under the session policy, in
-the workspace. Exits with the command's exit code.`,
-		Example: `  $ kaironctl session exec demo -- 'cd /workspace && go test ./...'`,
-		Args:    cobra.MinimumNArgs(2),
+the workspace. Exits with the command's exit code.
+
+A command matching a policy.process.ask rule waits for an admin: the first try
+prints the approval id; repeat with --approval-id once it is approved, or pass
+--approval-wait to hold the request open for the decision.`,
+		Example: `  $ kaironctl session exec demo -- 'cd /workspace && go test ./...'
+  $ kaironctl session exec demo --approval-wait 2m -- git push origin fix`,
+		Args: cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			res, err := sessionExec(cmd.Context(), opts.Namespace, args[0], strings.Join(args[1:], " "), timeout)
+			res, err := sessionExec(cmd.Context(), opts.Namespace, args[0], strings.Join(args[1:], " "), timeout, approval)
 			if err != nil {
 				return err
 			}
@@ -355,16 +376,20 @@ the workspace. Exits with the command's exit code.`,
 		},
 	}
 	c.Flags().Uint64Var(&timeout, "timeout", 0, "seconds before the command is killed")
+	approval.register(c)
 	return c
 }
 
-func sessionExec(ctx context.Context, ns, name, command string, timeout uint64) (sessionExecResult, error) {
+func sessionExec(ctx context.Context, ns, name, command string, timeout uint64, approval approvalFlags) (sessionExecResult, error) {
 	body := map[string]any{"command": command}
 	if timeout > 0 {
 		body["timeout_seconds"] = timeout
 	}
 	var res sessionExecResult
-	raw, err := uiRaw(ctx, http.MethodPost, sessionPath(ns, name, "exec"), body)
+	if err := approval.apply(body); err != nil {
+		return res, err
+	}
+	raw, err := sessionSend(ctx, ns, name, http.MethodPost, "exec", body)
 	if err != nil {
 		return res, err
 	}
@@ -523,7 +548,7 @@ func sessionRollout(ctx context.Context, kc *kube.Client, ns, parent string, cou
 				results[i] = map[string]any{"session": child, "error": err.Error()}
 				return
 			}
-			res, err := sessionExec(ctx, ns, child, command, timeout)
+			res, err := sessionExec(ctx, ns, child, command, timeout, approvalFlags{})
 			if err != nil {
 				results[i] = map[string]any{"session": child, "error": err.Error()}
 				return
@@ -555,13 +580,12 @@ func sessionRollout(ctx context.Context, kc *kube.Client, ns, parent string, cou
 func newSessionBgCmd(opts *Options) *cobra.Command {
 	var timeout, maxOutput uint64
 	var stdin bool
+	var approval approvalFlags
 	c := &cobra.Command{
 		Use:   "bg NAME -- COMMAND",
 		Short: "Start a background job; prints its id",
 		Args:  cobra.MinimumNArgs(2),
-		RunE: uiRun(http.MethodPost, func(args []string) (string, error) {
-			return sessionPath(opts.Namespace, args[0], "jobs"), nil
-		}, func(args []string) (any, error) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			body := map[string]any{"command": strings.Join(args[1:], " "), "stdin": stdin}
 			if timeout > 0 {
 				body["timeout_seconds"] = timeout
@@ -569,12 +593,20 @@ func newSessionBgCmd(opts *Options) *cobra.Command {
 			if maxOutput > 0 {
 				body["max_output_bytes"] = maxOutput
 			}
-			return body, nil
-		}),
+			if err := approval.apply(body); err != nil {
+				return err
+			}
+			raw, err := sessionSend(cmd.Context(), opts.Namespace, args[0], http.MethodPost, "jobs", body)
+			if err != nil {
+				return err
+			}
+			return printRaw(raw)
+		},
 	}
 	c.Flags().Uint64Var(&timeout, "timeout", 0, "seconds before the job is killed")
 	c.Flags().Uint64Var(&maxOutput, "max-output-bytes", 0, "stop recording output after this many bytes")
 	c.Flags().BoolVar(&stdin, "stdin", false, "give the job a writable stdin")
+	approval.register(c)
 	return c
 }
 
@@ -718,19 +750,37 @@ func newSessionPutCmd(opts *Options) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "put NAME LOCAL GUEST-PATH",
 		Short: "Write a local file into the guest",
-		Args:  cobra.ExactArgs(3),
+		Long: `Files up to 1 MiB are written in one request. Larger ones (up to 2 GiB) go
+in 4 MiB chunks through a resumable upload, and the guest checks the SHA-256
+before the file appears at GUEST-PATH.`,
+		Args: cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			data, err := os.ReadFile(args[1])
-			if err != nil {
-				return err
-			}
-			body := map[string]any{"path": args[2], "content_base64": base64.StdEncoding.EncodeToString(data), "parents": !noParents}
+			var perm *uint64
 			if mode != "" {
 				m, err := strconv.ParseUint(mode, 8, 32)
 				if err != nil {
 					return fmt.Errorf("--mode %q: octal permission bits like 0644", mode)
 				}
-				body["mode"] = m
+				perm = &m
+			}
+			st, err := os.Stat(args[1])
+			if err != nil {
+				return err
+			}
+			if st.Size() > inlinePutLimit {
+				raw, err := sessionUpload(cmd.Context(), opts.Namespace, args[0], args[1], args[2], perm, !noParents, os.Stderr)
+				if err != nil {
+					return err
+				}
+				return printRaw(raw)
+			}
+			data, err := os.ReadFile(args[1])
+			if err != nil {
+				return err
+			}
+			body := map[string]any{"path": args[2], "content_base64": base64.StdEncoding.EncodeToString(data), "parents": !noParents}
+			if perm != nil {
+				body["mode"] = *perm
 			}
 			raw, err := uiRaw(cmd.Context(), http.MethodPut, sessionPath(opts.Namespace, args[0], "files/content"), body)
 			if err != nil {

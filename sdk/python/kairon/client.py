@@ -53,6 +53,22 @@ class APIError(RuntimeError):
         super().__init__(f"Kairon {method} failed (HTTP {status})")
 
 
+class ApprovalRequired(APIError):
+    """HTTP 428 from an AgentSession verb: the command matched a policy.process.ask rule.
+
+    A human admin approves ``approval_id`` (``kaironctl session approve``); then repeat
+    the call with ``approval_id=...``. The answer carries the command summary only.
+    """
+    def __init__(self, method: str, doc: dict):
+        super().__init__(428, method)
+        self.approval_id = str(doc.get("approval_id", ""))
+        self.kind = str(doc.get("kind", ""))
+        self.summary = str(doc.get("summary", ""))
+        self.matched = str(doc.get("matched", ""))
+        self.expires_at = str(doc.get("expires_at", ""))
+        self.args = (f"command needs an admin's approval (rule {self.matched!r}): approval {self.approval_id}",)
+
+
 class _NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -99,9 +115,10 @@ class _HTTP:
 
     def request(self, method: str, path: str, body: Any = None, *,
                 content_type: str = "application/json", timeout: float | None = None,
-                raw: bool = False) -> Any:
-        req = Request(self.url + path, method=method,
-                      data=None if body is None else json.dumps(body).encode(),
+                raw: bool = False, data: bytes | None = None) -> Any:
+        if data is None and body is not None:
+            data = json.dumps(body).encode()
+        req = Request(self.url + path, method=method, data=data,
                       headers={"Authorization": "Bearer " + self._token,
                                "Accept": "application/json", "Content-Type": content_type})
         try:
@@ -113,6 +130,16 @@ class _HTTP:
                     return data.decode("utf-8")
                 return json.loads(data) if data else None
         except HTTPError as exc:
+            if exc.code == 428:
+                try:
+                    doc = json.loads(exc.read(64 * 1024) or b"{}")
+                except ValueError:
+                    doc = {}
+                finally:
+                    exc.close()
+                if isinstance(doc, dict) and doc.get("approval_id"):
+                    raise ApprovalRequired(method, doc) from None
+                raise APIError(exc.code, method) from None
             exc.close()
             raise APIError(exc.code, method) from None
 
@@ -444,13 +471,20 @@ class UIClient:
                 raise
 
     def session_call(self, name: str, method: str, verb: str, body: Any = None, *,
-                     query: dict | None = None, timeout: float | None = None) -> Any:
-        """One FluxVM session verb (exec, jobs/..., files/..., git/..., preview, ...) through kairon-ui."""
+                     query: dict | None = None, timeout: float | None = None,
+                     data: bytes | None = None) -> Any:
+        """One FluxVM session verb (exec, jobs/..., files/..., git/..., preview, ...) through kairon-ui.
+
+        ``data`` sends raw bytes instead of a JSON body (upload chunks).
+        """
         if not verb or verb.startswith("/") or ".." in verb.split("/"):
             raise ValueError("verb must be a relative session route")
         path = self._session(name) + "/" + quote(verb, safe="/")
         if query:
             path += "?" + urlencode(query)
+        if data is not None:
+            return self._http.request(method, path, timeout=timeout, data=data,
+                                      content_type="application/octet-stream")
         return self._http.request(method, path, body, timeout=timeout)
 
     def usage_csv(self) -> str:

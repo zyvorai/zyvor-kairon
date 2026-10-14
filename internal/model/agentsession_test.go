@@ -18,7 +18,7 @@ func TestValidateAgentSessionSpec(t *testing.T) {
 			{Host: "api.example.com", Methods: []string{"get", "POST", "*"}, Paths: []string{"/v1/"}},
 		}}}},
 		{Policy: &AgentPolicy{Filesystem: &AgentFilesystemPolicy{Read: []string{"/workspace/**"}, Write: []string{"/tmp/*"}, Enforcement: "best-effort"}}},
-		{Policy: &AgentPolicy{Process: &AgentProcessPolicy{Allow: []string{"git *"}, Deny: []string{"rm -rf *"}}}},
+		{Policy: &AgentPolicy{Process: &AgentProcessPolicy{Allow: []string{"git *"}, Deny: []string{"rm -rf *"}, Ask: []string{"git push*"}}}},
 		{Workspace: &AgentWorkspace{}, Budget: &AgentBudget{MaxExecs: 10, MaxWorkspaceBytes: 1 << 30}},
 	}
 	for i, s := range ok {
@@ -43,6 +43,7 @@ func TestValidateAgentSessionSpec(t *testing.T) {
 		"fs.wildcard":           {Policy: &AgentPolicy{Filesystem: &AgentFilesystemPolicy{Read: []string{"/home/*/x"}}}},
 		"fs.relative":           {Policy: &AgentPolicy{Filesystem: &AgentFilesystemPolicy{Write: []string{"tmp"}}}},
 		"process.empty":         {Policy: &AgentPolicy{Process: &AgentProcessPolicy{Deny: []string{"  "}}}},
+		"process.ask.empty":     {Policy: &AgentPolicy{Process: &AgentProcessPolicy{Ask: []string{""}}}},
 		"budget.range":          {Budget: &AgentBudget{MaxOutputBytes: 1 << 40}},
 		"budget.workspace":      {Budget: &AgentBudget{MaxWorkspaceBytes: 10}},
 	}

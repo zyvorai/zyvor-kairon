@@ -169,7 +169,7 @@ func scheduledSession(name string) model.AgentSession {
 			NodeName:  "mac-1",
 			Workspace: &model.AgentWorkspace{Git: "https://github.com/a/b"},
 			Resources: model.AgentSessionResources{CPU: "2", Memory: "4Gi"},
-			Policy:    &model.AgentPolicy{Preset: "offline"},
+			Policy:    &model.AgentPolicy{Preset: "offline", Process: &model.AgentProcessPolicy{Ask: []string{"git push*"}}},
 		},
 	}
 }
@@ -207,6 +207,9 @@ func TestAgentSessionCreateThenRunning(t *testing.T) {
 	waitCreated(t, a, "prod/s1")
 	if w.createBody["runtime"].(map[string]any)["memory_mb"].(float64) != 4096 {
 		t.Fatalf("create body = %v", w.createBody)
+	}
+	if ask := w.createBody["policy"].(map[string]any)["process"].(map[string]any)["ask"].([]any); len(ask) != 1 || ask[0] != "git push*" {
+		t.Fatalf("create body process = %v", w.createBody["policy"])
 	}
 	a.reconcileAgentSessions(context.Background())
 	s = w.get("s1")

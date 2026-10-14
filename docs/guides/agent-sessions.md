@@ -52,7 +52,7 @@ spec:
         - host: pypi.org
         - {host: api.github.com, methods: [GET], paths: ["/repos/**"]}
     filesystem: {read: ["/workspace/**"], write: ["/workspace/**"]}
-    process: {deny: ["curl *", "ssh *"]}
+    process: {deny: ["curl *", "ssh *"], ask: ["git push*"]}
   budget: {maxExecs: 500, maxChildren: 8, maxComputeSeconds: 7200}
   ttlSeconds: 7200
 ```
@@ -62,7 +62,7 @@ The same from the CLI:
 ```bash
 kaironctl session run fix-issue-42 --agent codex --git https://github.com/org/repo \
   --preset developer-safe --network-default deny --allow-host pypi.org \
-  --process-deny 'curl *' --max-execs 500 --ttl 2h
+  --process-deny 'curl *' --process-ask 'git push*' --max-execs 500 --ttl 2h
 kaironctl session list
 kaironctl describe agentsession fix-issue-42
 ```
@@ -130,8 +130,12 @@ An `Ended` session still answers `events`, `artifacts` and `trajectory`.
 | Task | CLI | MCP tool |
 |---|---|---|
 | Run a command | `session exec NAME -- CMD` (exits with its code) | `session_exec` |
+| Interactive terminal | `session shell NAME [-- CMD]` | |
 | Background job | `session bg`, `jobs`, `logs -f`, `kill` | `session_job_start`, `session_job_read` |
-| Files | `session ls`, `cat`/`pull`, `put`, `rm-file` | `session_read_file`, `session_write_file` |
+| Approvals | `session approvals`, `approve NAME ID`, `deny NAME ID` | `session_approvals` (read only) |
+| Files | `session ls`, `cat`/`pull`, `put` (chunked above 1 MiB), `rm-file` | `session_read_file`, `session_write_file` |
+| Guest tools | `session probe` | `session_probe` |
+| Credentials | `session grant`, `grants`, `revoke-grant` (admin only) | |
 | Git | `session git NAME status\|diff\|log\|commit MSG\|branch B` | `session_git`, `session_git_commit` |
 | Checkpoint | `session checkpoint --tag T [--disk-only]`, `restore T` | `session_checkpoint`, `session_restore` |
 | Fork | `session fork --count N`, `promote CHILD` | `session_fork` |
@@ -157,6 +161,72 @@ one step per line. With `--otlp`, it sends the trajectory as a single
 OTLP/JSON trace to the collector's `/v1/traces`. The trace id is the FluxVM
 session id and there is one span per step. Span ids match `fluxctl`'s
 export, so the same session exported by either tool gives the same trace.
+
+**Not relayed.** FluxVM's session `tokens` work only on FluxVM's own port
+on the node, `ssh` hands out the host's shared sandbox key, and
+`pty-ticket` exists for browsers that talk to FluxVM directly. The console
+relay refuses all three.
+
+## Approvals
+
+`policy.process.ask` lists command patterns (same syntax as `allow` and
+`deny`) that run only after a person approves them. A matching `exec` or
+job start answers 428 with an approval id instead of running:
+
+```console
+$ kaironctl session exec demo -- git push origin main
+Error: this command needs an admin's approval (rule "git push*"); approval 6f1c... is pending until 2026-10-14T16:12:03Z
+  approve: kaironctl session approve demo 6f1c...
+  then repeat with --approval-id 6f1c..., or wait for the decision with --approval-wait 2m
+$ kaironctl session approvals demo           # pending requests, newest first
+$ kaironctl session approve demo 6f1c... --note "release branch"
+$ kaironctl session exec demo --approval-id 6f1c... -- git push origin main
+```
+
+An approval covers that exact command once. `--approval-wait` (at most
+2m) holds the request open until someone decides. Only admin accounts can
+approve or deny, even when `ui.auth.sandboxOperatorExec` lets operators run
+verbs, so an agent with an operator token cannot approve its own commands.
+The MCP server only lists approvals. FluxVM records its own node token as
+the decider, so kairon-ui writes the person into the note
+(`by alice via kairon-ui: release branch`). The dashboard's session panel
+lists pending approvals with Approve and Deny buttons for admins. After a
+428 it offers to run the command again once it is approved.
+
+## Files, terminal, probe and credentials
+
+**Large files.** `put` writes files up to 1 MiB in one request. Larger
+files (up to 2 GiB) go through FluxVM's resumable uploads: 4 MiB chunks, a
+retry from the guest's offset after a conflict, and a SHA-256 check before
+the file appears. A failed upload is aborted. The SDKs' `write_file` and
+`writeFile` do the same.
+
+**Terminal.** `session shell` opens a real terminal (a WebSocket through
+kairon-ui and the console relay) that follows your window size and exits
+with the shell's code. FluxVM refuses a terminal to sessions with process
+or filesystem rules, because a shell would get around them, and only to
+admin tokens.
+
+**Probe.** `session probe` lists the tools found in the guest image, its
+architecture and kernel, and which session features (git, promote, ...) are
+ready.
+
+**Credential grants** (admin only). FluxVM's egress proxy adds a header to
+the session's requests to the named hosts, so the guest never holds the
+credential:
+
+```bash
+GH_AUTH="Bearer $(gh auth token)" kaironctl session grant demo github \
+  --host api.github.com --method GET --path '/repos/*' --ttl 1h --value-env GH_AUTH
+kaironctl session grants demo
+kaironctl session revoke-grant demo --all
+```
+
+The value comes from `--value-env`, `--value-from-secret SECRET/KEY` (a
+Secret in the namespace), or, with neither, the node's
+`FLUXVM_SECRET_<REF>` variable. kaironctl never prints it and kairon-ui
+never logs it. A grant ends with the session, at `--ttl`, or when revoked.
+Fork children start without grants.
 
 ## Previews
 
@@ -209,13 +279,20 @@ with AgentSession.create(ui, name="fix-42", agent="codex", git="https://github.c
         ...
 ```
 
+A command matching `process_ask` raises `ApprovalRequired` (an `APIError`
+with `approval_id`); call again with `exec(cmd, approval_id=...)` once an
+admin approved it. The session also has `approvals()`, `approve()`,
+`deny()`, `probe()`, `upload()`, `grant()`, `grants()` and
+`revoke_grant()`.
+
 The TypeScript SDK (`@zyvor/kairon`) has the same API with camelCase names
-(`AgentSession.create`, `sessionSpec`).
+(`AgentSession.create`, `sessionSpec`, `ApprovalRequired.approvalId`,
+`exec(cmd, {approvalId})`).
 
 The dashboard's **Agent sessions** page (under Compute) creates sessions,
 lists them with phase, node, checkpoints and exec count, and opens a panel
-per session with exec, checkpoint, previews and the last 50 trajectory
-steps.
+per session with exec, pending approvals, checkpoint, previews and the last
+50 trajectory steps.
 
 ## Troubleshooting
 
@@ -227,4 +304,9 @@ steps.
 - **Verbs return 409.** The session is not `Running`, or has no node or
   FluxVM id yet.
 - **Verbs return 403 for an operator.** Turn on
-  `ui.auth.sandboxOperatorExec`, or use an admin account.
+  `ui.auth.sandboxOperatorExec`, or use an admin account. Approving,
+  denying and grants always need an admin account.
+- **`session shell` is refused with 403.** The session has process or
+  filesystem rules, or the node's FluxVM token is not an admin token.
+- **`exec` returns 428.** The command matched `policy.process.ask`; see
+  [Approvals](#approvals).

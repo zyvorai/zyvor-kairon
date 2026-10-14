@@ -22,7 +22,7 @@ import (
 
 // agentSessionReadVerbs still answer once a session has Ended: FluxVM
 // keeps the ledger after the VM is gone.
-var agentSessionReadVerbs = map[string]bool{"events": true, "artifacts": true, "trajectory": true}
+var agentSessionReadVerbs = map[string]bool{"events": true, "artifacts": true, "trajectory": true, "approvals": true}
 
 var previewTokenPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
@@ -158,6 +158,22 @@ func (s *Server) handleAgentSessionProxy(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
+	if agentSessionAdminOnly(r.Method, rest) && !s.isAdminIdentity(r.Context(), username) {
+		if s.Log != nil {
+			s.Log.Warn("uiapi agent session denied", "username", username, "namespace", sess.Metadata.Namespace, "name", sess.Metadata.Name, "verb", verb, "method", r.Method)
+		}
+		writeError(w, http.StatusForbidden, "deciding approvals and credential grants require an admin account")
+		return
+	}
+	if approval, decision := approvalDecision(r.Method, rest); decision != "" {
+		if err := stampApprover(r, orDefault(username, "admin")); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if s.Log != nil {
+			s.Log.Info("uiapi agent session approval", "username", username, "namespace", sess.Metadata.Namespace, "name", sess.Metadata.Name, "approval", approval, "decision", decision)
+		}
+	}
 	rewrite := s.agentSessionResponseRewrite(r, sess, rest)
 	rp := s.nodeReverseProxy(nodeAddr, "/agent-sessions/"+sess.Status.SessionID+"/"+rest, rewrite != nil)
 	rp.ModifyResponse = rewrite
@@ -165,6 +181,63 @@ func (s *Server) handleAgentSessionProxy(w http.ResponseWriter, r *http.Request)
 		s.Log.Info("uiapi agent session verb", "username", username, "namespace", sess.Metadata.Namespace, "name", sess.Metadata.Name, "verb", verb, "method", r.Method)
 	}
 	rp.ServeHTTP(w, r)
+}
+
+// agentSessionAdminOnly reports the verbs that need an admin even where
+// ui.auth.sandboxOperatorExec lets operators run commands: deciding an
+// approval (an agent must not approve its own request) and credential
+// grants.
+func agentSessionAdminOnly(method, rest string) bool {
+	verb, _, _ := strings.Cut(rest, "/")
+	switch verb {
+	case "grants":
+		return true
+	case "approvals":
+		return method != http.MethodGet
+	}
+	return false
+}
+
+var approvalDecisionPattern = regexp.MustCompile(`^approvals/([0-9a-fA-F-]{36})/(approve|deny)$`)
+
+// approvalDecision returns the approval id and "approve" or "deny" for a
+// decision request, else empty strings.
+func approvalDecision(method, rest string) (approval, decision string) {
+	m := approvalDecisionPattern.FindStringSubmatch(rest)
+	if method != http.MethodPost || m == nil {
+		return "", ""
+	}
+	return m[1], m[2]
+}
+
+// stampApprover puts the Kairon user at the front of the decision's note.
+// FluxVM records its own API token as the approver, which through the relay
+// is always the node's; the note is what the ledger keeps (512 characters).
+func stampApprover(r *http.Request, username string) error {
+	raw, err := io.ReadAll(io.LimitReader(r.Body, 64<<10))
+	_ = r.Body.Close()
+	if err != nil {
+		return err
+	}
+	body := map[string]any{}
+	if len(bytes.TrimSpace(raw)) > 0 {
+		if err := json.Unmarshal(raw, &body); err != nil {
+			return fmt.Errorf("decision body must be a JSON object: %w", err)
+		}
+	}
+	note := "by " + username + " via kairon-ui"
+	if user, _ := body["note"].(string); strings.TrimSpace(user) != "" {
+		note += ": " + user
+	}
+	body["note"] = note
+	out, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	r.Body = io.NopCloser(bytes.NewReader(out))
+	r.ContentLength = int64(len(out))
+	r.Header.Set("Content-Type", "application/json")
+	return nil
 }
 
 func (s *Server) agentSessionResponseRewrite(r *http.Request, sess model.AgentSession, rest string) func(*http.Response) error {

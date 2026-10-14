@@ -28,6 +28,26 @@ export class APIError extends Error {
     this.status = status;
   }
 }
+/**
+ * HTTP 428 from an AgentSession verb: the command matched a policy.process.ask rule. A human
+ * admin approves approvalId (`kaironctl session approve`); then repeat the call with approvalId.
+ */
+export class ApprovalRequired extends APIError {
+  readonly approvalId: string;
+  readonly kind: string;
+  readonly summary: string;
+  readonly matched: string;
+  readonly expiresAt: string;
+  constructor(method: string, doc: Record<string, unknown>) {
+    super(428, method);
+    this.approvalId = String(doc.approval_id ?? '');
+    this.kind = String(doc.kind ?? '');
+    this.summary = String(doc.summary ?? '');
+    this.matched = String(doc.matched ?? '');
+    this.expiresAt = String(doc.expires_at ?? '');
+    this.message = `command needs an admin's approval (rule ${JSON.stringify(this.matched)}): approval ${this.approvalId}`;
+  }
+}
 export const API_VERSION = 'kairon.zyvor.dev/v1';
 export const FLEET_VERSION = 'fleet.kairon.zyvor.dev/v1alpha1';
 const KINDS: Record<string, string> = {
@@ -88,15 +108,22 @@ class HTTP {
     this.fetcher = options.fetch ?? globalThis.fetch;
   }
   async request<T>(method: string, path: string, body?: unknown,
-                   options: {timeoutMs?: number; signal?: AbortSignal; contentType?: string; raw?: boolean} = {}): Promise<T> {
+                   options: {timeoutMs?: number; signal?: AbortSignal; contentType?: string; raw?: boolean; data?: Uint8Array} = {}): Promise<T> {
     const timeout = AbortSignal.timeout(Math.max(1, Math.ceil(positive(options.timeoutMs ?? this.timeout))));
     const signal = options.signal ? AbortSignal.any([timeout, options.signal]) : timeout;
+    const payload = options.data ? {body: new Uint8Array(options.data)} : body === undefined ? {} : {body: JSON.stringify(body)};
     const response = await this.fetcher(this.base + path, {
       method, signal, redirect: 'manual', headers: {
         Authorization: `Bearer ${this.#token}`, Accept: 'application/json',
-        'Content-Type': options.contentType ?? 'application/json',
-      }, ...(body === undefined ? {} : {body: JSON.stringify(body)}),
+        'Content-Type': options.contentType ?? (options.data ? 'application/octet-stream' : 'application/json'),
+      }, ...payload,
     });
+    if (response.status === 428) {
+      let doc: unknown = {};
+      try { doc = JSON.parse((await response.text()).slice(0, 64 * 1024)); } catch { doc = {}; }
+      if (doc && typeof doc === 'object' && (doc as Record<string, unknown>).approval_id) throw new ApprovalRequired(method, doc as Record<string, unknown>);
+      throw new APIError(response.status, method);
+    }
     if (!response.ok) {
       await response.body?.cancel();
       throw new APIError(response.status, method);
@@ -464,12 +491,15 @@ export class UIClient {
   }
   /** One FluxVM session verb (exec, jobs/..., files/..., git/..., preview, ...) through kairon-ui. */
   sessionCall<T = Json>(name: string, method: string, verb: string, body?: unknown,
-                        options: {query?: Record<string, string | number | boolean>; timeoutMs?: number} = {}): Promise<T> {
+                        options: {query?: Record<string, string | number | boolean>; timeoutMs?: number; data?: Uint8Array} = {}): Promise<T> {
     if (!verb || verb.startsWith('/') || verb.split('/').includes('..')) throw new Error('verb must be a relative session route');
     let path = this.session(name) + '/' + verb.split('/').map(encodeURIComponent).join('/');
     if (options.query) path += '?' + new URLSearchParams(Object.entries(options.query).map(([k, v]) => [k, String(v)]));
-    return this.http.request(method, path, body, options.timeoutMs === undefined ? {} : {timeoutMs: options.timeoutMs});
+    return this.http.request(method, path, body, {
+      ...(options.timeoutMs === undefined ? {} : {timeoutMs: options.timeoutMs}),
+      ...(options.data === undefined ? {} : {data: options.data}),
+    });
   }
 }
 export {CommandError, Process, Sandbox, SANDBOX_LABEL, type SandboxOptions} from './sandbox.js';
-export {AgentSession, SessionError, sessionSpec, type SessionSpecOptions} from './session.js';
+export {AgentSession, SessionError, sessionSpec, type ApprovalOptions, type SessionSpecOptions} from './session.js';

@@ -147,6 +147,9 @@ spec:
                       deny:
                         type: array
                         items: {type: string}
+                      ask:
+                        type: array
+                        items: {type: string}
               budget:
                 type: object
                 x-kubernetes-validations:
@@ -229,6 +232,9 @@ spec:
                         type: array
                         items: {type: string}
                       deny:
+                        type: array
+                        items: {type: string}
+                      ask:
                         type: array
                         items: {type: string}
                   unenforced:
