@@ -1,4 +1,35 @@
-# Unreleased
+# Kairon v0.10.0
+
+Released 2026-10-14.
+
+HTTPS by default for the dashboard and the console relay, `kaironctl selftest`,
+virtctl parity in `kaironctl`, and a large set of experimental features: agent
+sessions and agent sandboxes, Mac Fabric, cross-cluster DR, DRS and node
+maintenance, per-disk I/O QoS, accelerator and vGPU profiles, NVMe-oF storage,
+incremental S3 backups, topology-aware placement, elastic memory, virtual
+networks, hibernate, adaptive live migration and incident bundles. Experimental
+features are opt-in; what has run on real hardware is in
+`docs/COMPATIBILITY.md`.
+
+## Upgrade notes
+
+- **Two breaking defaults**, described below: the dashboard serves HTTPS, and
+  the kairon-ui to kairon-node console hop uses TLS. Upgrade kairon-ui and
+  kairon-node together, and give clients `https://` and `KAIRON_UI_CA`.
+- **Apply the CRDs and RBAC before the new binaries** (`kubectl apply
+  --server-side -f deploy/crd.yaml` and `deploy/rbac.yaml` from the tag, or
+  `deploy-remote.sh --apply-crds`; Helm applies `crds/` only on first install).
+  New CRDs: `AgentSession`, `MachineAcceleratorProfile`, `MachineBackupPolicy`,
+  `MachineExport`, `MachinePreference`, `MachineClusterInstanceType`,
+  `MachineClusterPreference`, `MachineProtectionPlan`, `MacNetwork`,
+  `NodeTopology` and `VirtualNetwork`; `Machine`, `MachineBackup`,
+  `MachineMigration`, `MachinePool`, `MachineClaim` and `MigrationPolicy` gain
+  fields. Without the new RBAC, the dashboard's Timeline, System and backup
+  actions, `kaironctl expose`, `adm log-verbosity` and agent sessions fail with
+  403.
+- **FluxVM 0.4.8** has every route this release uses. The agent-session screen
+  and `spec.engine` need a FluxVM newer than 0.4.8; older ones answer 404 or
+  ignore the field.
 
 ## Breaking: the dashboard serves HTTPS by default
 
@@ -312,6 +343,136 @@ redacted by default (`--no-redact` keeps them). Needs FluxVM with
 `/v1/vms/{id}/diagnostics`, the node console relay (`KAIRON_NODE_CONSOLE_TOKEN`)
 and an administrator `KAIRON_UI_TOKEN` or account. See
 `docs/guides/machine-incident-bundle.md`.
+
+## Added: agent sessions (experimental)
+
+An `AgentSession` wires a FluxVM agent session into Kairon: a sandbox VM with a
+git workspace (cloned or read-only), a compiled egress, filesystem and
+process policy, budgets, checkpoints, live forks and an event ledger. Sessions
+are scheduled and counted against `MachineQuota` like Machines, and their
+status mirrors FluxVM's (preview tokens and git URL credentials are never
+written to status).
+
+- Commands can wait for an admin: `approve`/`deny` from `kaironctl session`,
+  MCP and the dashboard.
+- Chunked uploads, an interactive shell over the console relay, network probes,
+  and credential grants injected at the egress proxy (the guest never sees the
+  secret value).
+- On Mac guests: `session screenshot` and `session input` (type, keys, clicks,
+  drag, scroll), the MCP `session_screenshot` tool returning an image, and a
+  Screen panel in the dashboard. `spec.engine: agent` refuses to fall back to
+  SSH. Forks report how many files were cloned and how many had to be copied.
+- `kaironctl session`, `session_*` MCP tools (typed text is kept out of the MCP
+  audit log), Python and TypeScript SDKs and an Agent sessions page.
+
+Exec, shell, screen and input need an administrator, or an operator when
+`ui.auth.sandboxOperatorExec` is on. Needs FluxVM 0.4.8 on a Mac node; nothing
+here has run on a real Mac yet. See `docs/guides/agent-sessions.md`.
+
+## Added: agent sandboxes (experimental)
+
+`spec.lifecycle` on a Machine: `idleTimeoutSeconds` with an `idleAction`
+(Pause, Hibernate, Halt, Stop or Delete), `maxLifetimeSeconds` and
+`wakeOnConnect`, which resumes a suspended Machine on console, exec,
+port-forward and file requests. `MachinePool.spec.warmPowerState: Paused` keeps
+warm members in memory without CPU. `MachineClaim.status.usage` records active
+and suspended seconds and vCPU/GiB-memory seconds. Python and TypeScript
+`Sandbox` classes. See `docs/guides/agent-sandboxes.md`.
+
+## Added: virtctl parity in kaironctl
+
+`kaironctl` now covers virtctl's verbs: `console` (Ctrl+] detach, `--log`),
+`vnc` (macOS Screen Sharing, `--proxy-only`, `vnc screenshot`), `restart`,
+`soft-reboot`, `stop --grace-period/--force`, `export` and `memory-dump`,
+`guest osinfo|fslist|userlist`, `credentials add-ssh-key|remove-ssh-key|
+set-password` (the password never goes on a command line), `expose` (a Service
+whose EndpointSlice the controller keeps on the guest IP), `freeze`/`unfreeze`,
+`create clone`, `guestfs` (admin only), `cdrom list|insert|eject`,
+`objectgraph`, `permitted-devices`, `adm log-verbosity`, `start --paused`,
+`create --dry-run -o yaml|json` for every kind, and `wait`. See the "Coming
+from virtctl" table in `docs/CLI.md`.
+
+Fixed: kairon-node's status patch never removed cleared fields, so a Stopped
+Machine kept its old `runtimeID`, and `cdrom insert` was always refused.
+
+## Added: hibernate (experimental)
+
+`spec.powerState: Hibernated` saves guest memory to disk through FluxVM and
+frees the node's capacity and quota. Resuming (`Running`) picks the same node,
+or another node with matching CPU and QEMU facts when the root disk is on Atlas
+RBD. The `kairon.zyvor.dev/discard-hibernation=true` annotation drops the state
+and boots from disk. `kaironctl hibernate` and dashboard Hibernate/Resume.
+Cross-node resume has not run on real hardware. See
+`docs/guides/machine-hibernate.md`.
+
+## Added: virtual networks (experimental)
+
+`VirtualNetwork` (short name `vnet`): an overlay subnet with controller IPAM,
+sticky cluster-wide VNIs, floating IPs and optional egress SNAT. Machines attach
+with `spec.network.virtualNetwork`. kairon-node syncs each network to FluxVM,
+and an announce-only BGP speaker (`--bgp-peers`) advertises floating IPs as /32
+routes. See `docs/guides/virtual-networks.md`.
+
+## Added: elastic memory (experimental)
+
+`spec.resources.elasticMemory{min}` lets kairon-node inflate a QEMU guest's
+balloon down to `min` under host memory pressure and deflate it when pressure
+clears. A node annotated `kairon.zyvor.dev/memory-overcommit-ratio` (1–4)
+admits Machines by guaranteed memory. When reclaim runs out, the node gets
+`KaironMemoryPressure=True` and stops taking new Machines; opt-in
+`--memory-pressure-evacuate` migrates the lowest-priority Machine away.
+
+Behaviour change: `--memory-reclaim` is on by default, so a node whose FluxVM
+reports balloon support can get `KaironMemoryPressure` from host pressure alone,
+even with no elastic Machines. Set `node.memoryReclaim.enabled=false` to keep
+the old behaviour. See `docs/guides/machine-elastic-memory.md`.
+
+## Added: topology-aware placement (experimental)
+
+`NodeTopology` (cluster-scoped) mirrors each node's NUMA, CPU, GPU, NIC and
+NVMe graph. Machines ask for `spec.topology` (NUMA policy, guest NUMA shape,
+hugepages) and `spec.devices` with locality; the scheduler filters and scores on
+it, and the allocation is bound with the node. QEMU only. See
+`docs/guides/machine-topology.md`.
+
+## Added: incremental S3 backups (experimental)
+
+`MachineBackup` can write to S3 as full, incremental (changed-block tracking) or
+synthetic-full backups, with compression, encryption and Object Lock.
+`MachineBackupPolicy` schedules them with GFS retention and consolidation.
+Nodes need the `kairon.zyvor.dev/cbt=true` label, and the Machine must boot from
+an image. `kaironctl backup chain`, `kaironctl backuppolicy` and a dashboard
+Backup policies page. See `docs/guides/machine-backup-incremental.md`.
+
+## Added: adaptive live migration (experimental)
+
+`MigrationPolicy.strategy: adaptive` runs pre-copy, then auto-converge, then
+relaxes the downtime target, then switches to post-copy, within
+`maxDowntimeMs` and a per-GiB completion deadline, with optional compression and
+adaptive bandwidth. Once post-copy starts, a failure goes to `NeedsRecovery`
+instead of resuming the source, and cancel is refused. `kaironctl migrate
+--strategy adaptive`, progress in `describe` and the dashboard. Upgrade the
+source and destination nodes together: the peer `prepare` call rejects unknown
+fields. Also fixes the receiver, finish and network-restore bugs that kept the
+live-migration lab matrix from passing. See `docs/guides/migration-policies.md`.
+
+## Added: dashboard live view
+
+The dashboard updates from a server-sent event stream (`/api/v1/stream`), with
+polling as the fallback. New Topology, System and Network pages; usage
+sparklines, a Timeline and a placement fit list in the Machine inspector; a
+"Needs attention" strip; a "Will it fit?" check on Nodes. Fork, hot-attach disk,
+hot-add NIC, back up, restore and delete backups, and run snapshot schedules in
+place. Needs the new kairon-ui RBAC (pods and events read; create and delete on
+backups and backup restores).
+
+## Security
+
+- Removed an 11 MB binary that had been committed by mistake (it remains in git
+  history) and ignored root build outputs.
+- Bumped katex to 0.18.2 (prototype pollution, via mermaid in the website).
+- Fixed a regex injection in `scripts/ghcr-set-visibility.mjs` and replaced
+  `curl | python3` pipelines in scripts.
 
 # Kairon v0.9.1
 

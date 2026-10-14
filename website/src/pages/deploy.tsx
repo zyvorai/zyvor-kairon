@@ -45,8 +45,8 @@ kubectl label node worker-1 kairon.zyvor.dev/capable=true
 
 # 2. install the production profile
 helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \\
-  --version 0.9.1 -n kairon-system --create-namespace \\
-  -f https://raw.githubusercontent.com/zyvorai/kairon/v0.9.1/charts/kairon/values-production.yaml`,
+  --version 0.10.0 -n kairon-system --create-namespace \\
+  -f https://raw.githubusercontent.com/zyvorai/kairon/v0.10.0/charts/kairon/values-production.yaml`,
       `# or, without Helm
 kaironctl install --profile production`,
       `# 3. check it, then prove it
