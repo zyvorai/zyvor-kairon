@@ -45,8 +45,8 @@ kubectl label node worker-1 kairon.zyvor.dev/capable=true
 
 # 2. install the production profile
 helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \\
-  --version 0.9.1 -n kairon-system --create-namespace \\
-  -f https://raw.githubusercontent.com/zyvorai/kairon/v0.9.1/charts/kairon/values-production.yaml`,
+  --version 0.10.0 -n kairon-system --create-namespace \\
+  -f https://raw.githubusercontent.com/zyvorai/kairon/v0.10.0/charts/kairon/values-production.yaml`,
       `# or, without Helm
 kaironctl install --profile production`,
       `# 3. check it, then prove it
@@ -112,7 +112,7 @@ KUBECONFIG=/path/to/kubeconfig scripts/macos-e2e.sh /path/to/arm64-debian.raw`,
       'An Apple silicon Mac, a Kubernetes API it can reach, and FluxVM built with the vz backend.',
       'Linux-only features (eBPF edge, migration, CPU pinning, VFIO) stay Linux-only.',
     ],
-    notes: 'Verified on an Apple M4 against a real k3s cluster. Multi-Mac clusters and macOS guests are not verified.',
+    notes: 'Verified on an Apple M4 against a real k3s cluster. Mac Fabric (several Macs as one pool) and agent sessions are experimental and have not run on real Macs; macOS guests are not verified.',
     doc: {to: '/docs/macos', label: 'Kairon on macOS'},
     badge: <Pill>Verified on one M4</Pill>,
   },
@@ -251,6 +251,7 @@ function Day2() {
       <div className="zv-two">
         <List
           items={[
+            'From v0.9: apply deploy/crd.yaml and deploy/rbac.yaml from the v0.10.0 tag first, then upgrade kairon-ui and kairon-node together (both now speak TLS).',
             'kaironctl upgrade keeps your values; --check compares with the latest release first.',
             'kaironctl history and rollback list and restore Helm revisions.',
             'kaironctl doctor explains every problem with a hint.',

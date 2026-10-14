@@ -28,6 +28,26 @@ export class APIError extends Error {
     this.status = status;
   }
 }
+/**
+ * HTTP 428 from an AgentSession verb: the command matched a policy.process.ask rule. A human
+ * admin approves approvalId (`kaironctl session approve`); then repeat the call with approvalId.
+ */
+export class ApprovalRequired extends APIError {
+  readonly approvalId: string;
+  readonly kind: string;
+  readonly summary: string;
+  readonly matched: string;
+  readonly expiresAt: string;
+  constructor(method: string, doc: Record<string, unknown>) {
+    super(428, method);
+    this.approvalId = String(doc.approval_id ?? '');
+    this.kind = String(doc.kind ?? '');
+    this.summary = String(doc.summary ?? '');
+    this.matched = String(doc.matched ?? '');
+    this.expiresAt = String(doc.expires_at ?? '');
+    this.message = `command needs an admin's approval (rule ${JSON.stringify(this.matched)}): approval ${this.approvalId}`;
+  }
+}
 export const API_VERSION = 'kairon.zyvor.dev/v1';
 export const FLEET_VERSION = 'fleet.kairon.zyvor.dev/v1alpha1';
 const KINDS: Record<string, string> = {
@@ -88,15 +108,22 @@ class HTTP {
     this.fetcher = options.fetch ?? globalThis.fetch;
   }
   async request<T>(method: string, path: string, body?: unknown,
-                   options: {timeoutMs?: number; signal?: AbortSignal; contentType?: string; raw?: boolean} = {}): Promise<T> {
+                   options: {timeoutMs?: number; signal?: AbortSignal; contentType?: string; raw?: boolean; binary?: boolean; data?: Uint8Array} = {}): Promise<T> {
     const timeout = AbortSignal.timeout(Math.max(1, Math.ceil(positive(options.timeoutMs ?? this.timeout))));
     const signal = options.signal ? AbortSignal.any([timeout, options.signal]) : timeout;
+    const payload = options.data ? {body: new Uint8Array(options.data)} : body === undefined ? {} : {body: JSON.stringify(body)};
     const response = await this.fetcher(this.base + path, {
       method, signal, redirect: 'manual', headers: {
         Authorization: `Bearer ${this.#token}`, Accept: 'application/json',
-        'Content-Type': options.contentType ?? 'application/json',
-      }, ...(body === undefined ? {} : {body: JSON.stringify(body)}),
+        'Content-Type': options.contentType ?? (options.data ? 'application/octet-stream' : 'application/json'),
+      }, ...payload,
     });
+    if (response.status === 428) {
+      let doc: unknown = {};
+      try { doc = JSON.parse((await response.text()).slice(0, 64 * 1024)); } catch { doc = {}; }
+      if (doc && typeof doc === 'object' && (doc as Record<string, unknown>).approval_id) throw new ApprovalRequired(method, doc as Record<string, unknown>);
+      throw new APIError(response.status, method);
+    }
     if (!response.ok) {
       await response.body?.cancel();
       throw new APIError(response.status, method);
@@ -122,6 +149,7 @@ class HTTP {
     const bytes = new Uint8Array(size);
     let offset = 0;
     for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    if (options.binary) return bytes as T;
     const text = new TextDecoder().decode(bytes);
     return (options.raw ? text : text ? JSON.parse(text) : undefined) as T;
   }
@@ -401,6 +429,17 @@ export class Client {
   }
 }
 export interface ExecResult {exitCode: number; stdout: string; stderr: string}
+export function toBase64(data: Uint8Array): string {
+  let s = '';
+  for (let i = 0; i < data.length; i += 0x8000) s += String.fromCharCode(...data.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+export function fromBase64(text: string): Uint8Array {
+  const s = atob(text.replace(/\s+/g, ''));
+  const out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+  return out;
+}
 export class UIClient {
   private readonly http: HTTP;
   readonly namespace: string;
@@ -418,6 +457,17 @@ export class UIClient {
     if (!Number.isInteger(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > 300) throw new Error('timeoutSeconds must be 1..300');
     return this.http.request('POST', this.machine(name) + '/agent-exec', {command, timeoutSeconds}, {timeoutMs: (timeoutSeconds + 15) * 1000});
   }
+  /** Write a guest file over the vsock agent (spec.guestAgent.console). */
+  async putFile(name: string, path: string, data: Uint8Array, mode = 0o600): Promise<void> {
+    if (data.length > 3 * 1024 * 1024 || !path.startsWith('/') || mode < 0 || mode > 0o777) throw new Error('file needs an absolute path, <=3 MiB content and a mode <=0777');
+    await this.http.request('POST', this.machine(name) + '/agent-file/put', {path, contentBase64: toBase64(data), mode});
+  }
+  /** Read a guest file over the vsock agent (spec.guestAgent.console). */
+  async getFile(name: string, path: string): Promise<Uint8Array> {
+    if (!path.startsWith('/')) throw new Error('file needs an absolute path');
+    const out = await this.http.request('POST', this.machine(name) + '/agent-file/get', {path}) as {contentBase64?: string} | null;
+    return fromBase64(out?.contentBase64 ?? '');
+  }
   capabilities(node: string): Promise<Record<string, Json>> {
     return this.http.request('GET', `/api/v1/nodes/${segment(node)}/capabilities`);
   }
@@ -428,4 +478,30 @@ export class UIClient {
   usageCSV(): Promise<string> {
     return this.http.request('GET', '/api/v1/usage.csv?' + new URLSearchParams({namespace: this.namespace}), undefined, {raw: true});
   }
+  private session(name: string): string { return `/api/v1/agentsessions/${this.namespace}/${segment(name)}`; }
+  /** Create an AgentSession (a FluxVM agent session) in the namespace. */
+  createSession(name: string, spec: Record<string, Json>, labels: Record<string, string> = {}): Promise<KaironObject> {
+    return this.http.request('POST', '/api/v1/agentsessions?' + new URLSearchParams({namespace: this.namespace}), {name: segment(name), spec, labels});
+  }
+  getSession(name: string): Promise<KaironObject> { return this.http.request('GET', this.session(name)); }
+  listSessions(): Promise<KaironObject[]> {
+    return this.http.request('GET', '/api/v1/agentsessions?' + new URLSearchParams({namespace: this.namespace}));
+  }
+  async deleteSession(name: string): Promise<void> {
+    try { await this.http.request('DELETE', this.session(name)); } catch (error) { if (!(error instanceof APIError && error.status === 404)) throw error; }
+  }
+  /** One FluxVM session verb (exec, jobs/..., files/..., git/..., preview, ...) through kairon-ui. */
+  sessionCall<T = Json>(name: string, method: string, verb: string, body?: unknown,
+                        options: {query?: Record<string, string | number | boolean>; timeoutMs?: number; data?: Uint8Array; binary?: boolean} = {}): Promise<T> {
+    if (!verb || verb.startsWith('/') || verb.split('/').includes('..')) throw new Error('verb must be a relative session route');
+    let path = this.session(name) + '/' + verb.split('/').map(encodeURIComponent).join('/');
+    if (options.query) path += '?' + new URLSearchParams(Object.entries(options.query).map(([k, v]) => [k, String(v)]));
+    return this.http.request(method, path, body, {
+      ...(options.timeoutMs === undefined ? {} : {timeoutMs: options.timeoutMs}),
+      ...(options.data === undefined ? {} : {data: options.data}),
+      ...(options.binary ? {binary: true} : {}),
+    });
+  }
 }
+export {CommandError, Process, Sandbox, SANDBOX_LABEL, type SandboxOptions} from './sandbox.js';
+export {AgentSession, SessionError, sessionSpec, type ApprovalOptions, type InputAction, type SessionSpecOptions} from './session.js';

@@ -8,6 +8,7 @@ package mcp
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,6 +30,19 @@ var supportedVersions = map[string]bool{
 // MaxOutput caps a tool result so one call cannot flood the model's context.
 const MaxOutput = 64 << 10
 
+// MaxImage caps one image block's raw bytes.
+const MaxImage = 4 << 20
+
+// Block is one tool-result content block; see TextBlock and ImageBlock.
+type Block map[string]any
+
+func TextBlock(text string) Block { return Block{"type": "text", "text": text} }
+
+// ImageBlock carries data (e.g. a PNG) base64-encoded.
+func ImageBlock(mimeType string, data []byte) Block {
+	return Block{"type": "image", "mimeType": mimeType, "data": base64.StdEncoding.EncodeToString(data)}
+}
+
 // Tool is one callable tool. Write tools change state and are only
 // listed and callable when the server allows writes.
 type Tool struct {
@@ -40,6 +54,9 @@ type Tool struct {
 	// approval when the server has an Approve hook.
 	Approval bool
 	Call     func(ctx context.Context, args json.RawMessage) (string, error)
+	// CallBlocks, when set, is used instead of Call for tools that answer
+	// with more than text (images).
+	CallBlocks func(ctx context.Context, args json.RawMessage) ([]Block, error)
 }
 
 // ApprovalError refuses a call pending (or after a failed) approval.
@@ -225,7 +242,15 @@ func (s *Server) handle(ctx context.Context, req request) (any, *rpcError) {
 				return toolResult("audit log unavailable; write refused: "+err.Error(), true), nil
 			}
 		}
-		out, err := t.Call(ctx, args)
+		var blocks []Block
+		var err error
+		if t.CallBlocks != nil {
+			blocks, err = t.CallBlocks(ctx, args)
+		} else {
+			var out string
+			out, err = t.Call(ctx, args)
+			blocks = []Block{TextBlock(out)}
+		}
 		if t.Write && s.Audit != nil {
 			outcome := "ok"
 			if err != nil {
@@ -236,7 +261,7 @@ func (s *Server) handle(ctx context.Context, req request) (any, *rpcError) {
 		if err != nil {
 			return toolResult(err.Error(), true), nil
 		}
-		return toolResult(out, false), nil
+		return blocksResult(blocks), nil
 	default:
 		return nil, &rpcError{Code: codeMethodNotFound, Message: "method not found: " + req.Method}
 	}
@@ -271,13 +296,38 @@ func (s *Server) listed() []map[string]any {
 }
 
 func toolResult(text string, isError bool) map[string]any {
+	return map[string]any{
+		"content": []Block{TextBlock(capText(text))},
+		"isError": isError,
+	}
+}
+
+func capText(text string) string {
 	if len(text) > MaxOutput {
 		text = text[:MaxOutput] + fmt.Sprintf("\n[truncated: output exceeded %d bytes; narrow the request, e.g. with limit]", MaxOutput)
 	}
-	return map[string]any{
-		"content": []map[string]any{{"type": "text", "text": text}},
-		"isError": isError,
+	return text
+}
+
+// blocksResult caps text blocks like toolResult and refuses an image over
+// MaxImage rather than cutting it.
+func blocksResult(blocks []Block) map[string]any {
+	out := make([]Block, 0, len(blocks))
+	for _, b := range blocks {
+		switch b["type"] {
+		case "text":
+			text, _ := b["text"].(string)
+			out = append(out, TextBlock(capText(text)))
+		case "image":
+			if data, _ := b["data"].(string); base64.StdEncoding.DecodedLen(len(data)) > MaxImage {
+				return toolResult(fmt.Sprintf("image exceeds %d bytes; ask for a smaller one", MaxImage), true)
+			}
+			out = append(out, b)
+		default:
+			out = append(out, b)
+		}
 	}
+	return map[string]any{"content": out, "isError": false}
 }
 
 // Object builds a JSON Schema object from property schemas; required

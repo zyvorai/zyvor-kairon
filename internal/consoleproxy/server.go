@@ -31,6 +31,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/zyvorai/kairon/internal/diskexport"
 	"github.com/zyvorai/kairon/internal/fluxvm"
 )
 
@@ -39,8 +40,9 @@ import (
 // per-operator identity here, that check already happened in kairon-ui
 // (internal/uiapi/console.go) before the request ever reaches this node.
 type Server struct {
-	Flux  *fluxvm.Client
-	Token string
+	Flux    *fluxvm.Client
+	Token   string
+	Exports *diskexport.Registry
 }
 
 func (s *Server) Handler() http.Handler {
@@ -48,6 +50,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /console/{runtimeID}", s.handleConsole)
 	mux.HandleFunc("POST /exec/{runtimeID}", s.handleExec)
 	mux.HandleFunc("GET /text-console/{runtimeID}", s.handleTextConsole)
+	mux.HandleFunc("GET /guestfs/{runtimeID}", s.handleGuestfs)
+	mux.HandleFunc("GET /portforward/{runtimeID}", s.handlePortForward)
 	mux.HandleFunc("POST /agent-file/put/{runtimeID}", s.handleAgentPutFile)
 	mux.HandleFunc("POST /agent-file/get/{runtimeID}", s.handleAgentGetFile)
 	mux.HandleFunc("POST /agent-exec/{runtimeID}", s.handleAgentExec)
@@ -56,6 +60,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /qga-firewall/close/{runtimeID}", s.handleQGAFirewallClose)
 	mux.HandleFunc("GET /logs/{runtimeID}", s.handleLogs)
 	mux.HandleFunc("GET /backup-root/{name}", s.handleBackupRoot)
+	mux.HandleFunc("GET /export/{namespace}/{name}", s.handleExport)
 	mux.HandleFunc("POST /vm-snapshot/{runtimeID}", s.handleVMSnapshot)
 	mux.HandleFunc("POST /vm-restore-snapshot/{runtimeID}", s.handleVMRestoreSnapshot)
 	mux.HandleFunc("GET /sandboxes", s.handleListSandboxes)
@@ -92,7 +97,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /network-capture/{runtimeID}/{token}", s.handleNetworkCaptureFile)
 	mux.HandleFunc("POST /diagnostics/{runtimeID}", s.handleStartDiagnostics)
 	mux.HandleFunc("GET /diagnostics/{runtimeID}/{token}", s.handleGetDiagnostics)
+	mux.HandleFunc("DELETE /diagnostics/{runtimeID}/{token}", s.handleDeleteDiagnostics)
 	mux.HandleFunc("GET /diagnostics/{runtimeID}/{token}/{file}", s.handleDiagnosticsFile)
+	mux.HandleFunc("/agent-sessions/{id}", s.handleAgentSession)
+	mux.HandleFunc("/agent-sessions/{id}/{rest...}", s.handleAgentSession)
+	mux.HandleFunc("/agent-preview/{token}/{rest...}", s.handleAgentPreview)
 	return mux
 }
 
@@ -590,6 +599,13 @@ func relay(a, b io.ReadWriteCloser) {
 // /v1/backups/{name}/root), e.g. a MachineBackup Veyron publishes as a
 // golden image. Multi-GB, so it bypasses the FluxVM client's request
 // timeout and lives only as long as the caller's request.
+func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
+	if !s.checkToken(w, r) {
+		return
+	}
+	s.Exports.Serve(w, r, diskexport.Key(r.PathValue("namespace"), r.PathValue("name")))
+}
+
 func (s *Server) handleBackupRoot(w http.ResponseWriter, r *http.Request) {
 	if !s.checkToken(w, r) {
 		return

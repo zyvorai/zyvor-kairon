@@ -117,6 +117,23 @@ func TestValidateCdromsUpdate(t *testing.T) {
 	}
 }
 
+func TestValidateMachineCdromsUpdate(t *testing.T) {
+	old := Machine{Spec: MachineSpec{PowerState: "Stopped"}}
+	updated := old
+	updated.Spec.Cdroms = []MachineCdrom{{Name: "tools", ImageRef: "virtio-win"}}
+	if err := ValidateMachineCdromsUpdate(old, updated); err != nil {
+		t.Fatalf("stopped machine: %v", err)
+	}
+	old.Status.RuntimeID = "vm-1"
+	if err := ValidateMachineCdromsUpdate(old, updated); err == nil {
+		t.Fatal("machine with a runtime accepted a new cdrom")
+	}
+	old.Status.RuntimeID, old.Spec.PowerState = "", "Halted"
+	if err := ValidateMachineCdromsUpdate(old, updated); err == nil {
+		t.Fatal("halted machine accepted a new cdrom")
+	}
+}
+
 func TestParseDiskSizeGiB(t *testing.T) {
 	for in, want := range map[string]uint64{"60Gi": 60, "1Ti": 1024, "1500Mi": 2, "100G": 94} {
 		got, err := ParseDiskSizeGiB(in)

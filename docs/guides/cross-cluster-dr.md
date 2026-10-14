@@ -14,6 +14,8 @@ Replication is the incremental S3 backup
 same requirements apply: image-booted Machines on nodes labelled
 `kairon.zyvor.dev/cbt=true`, and an S3 bucket both sites can read.
 
+![Animated: site A replicates restore points to site B; site A is lost; db then web start on site B, DNS moves to site B and site A is fenced](../ux/anim/cross-cluster-dr.svg)
+
 ## How it fits together
 
 The same plan exists on both clusters, with `role: Primary` on the site

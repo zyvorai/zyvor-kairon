@@ -18,13 +18,13 @@ import time
 from contextlib import contextmanager
 from typing import Any, Iterator
 from urllib.error import HTTPError
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
 
 API_VERSION = "kairon.zyvor.dev/v1"
 FLEET_VERSION = "fleet.kairon.zyvor.dev/v1alpha1"
 KINDS = {
-    "machines": "Machine", "machinepools": "MachinePool",
+    "machines": "Machine", "machinepools": "MachinePool", "agentsessions": "AgentSession",
     "machineclaims": "MachineClaim", "machinesnapshots": "MachineSnapshot",
     "machinesnapshotrestores": "MachineSnapshotRestore",
     "machinemigrations": "MachineMigration", "machinequotas": "MachineQuota",
@@ -51,6 +51,22 @@ class APIError(RuntimeError):
     def __init__(self, status: int, method: str):
         self.status = status
         super().__init__(f"Kairon {method} failed (HTTP {status})")
+
+
+class ApprovalRequired(APIError):
+    """HTTP 428 from an AgentSession verb: the command matched a policy.process.ask rule.
+
+    A human admin approves ``approval_id`` (``kaironctl session approve``); then repeat
+    the call with ``approval_id=...``. The answer carries the command summary only.
+    """
+    def __init__(self, method: str, doc: dict):
+        super().__init__(428, method)
+        self.approval_id = str(doc.get("approval_id", ""))
+        self.kind = str(doc.get("kind", ""))
+        self.summary = str(doc.get("summary", ""))
+        self.matched = str(doc.get("matched", ""))
+        self.expires_at = str(doc.get("expires_at", ""))
+        self.args = (f"command needs an admin's approval (rule {self.matched!r}): approval {self.approval_id}",)
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -99,9 +115,10 @@ class _HTTP:
 
     def request(self, method: str, path: str, body: Any = None, *,
                 content_type: str = "application/json", timeout: float | None = None,
-                raw: bool = False) -> Any:
-        req = Request(self.url + path, method=method,
-                      data=None if body is None else json.dumps(body).encode(),
+                raw: bool = False, binary: bool = False, data: bytes | None = None) -> Any:
+        if data is None and body is not None:
+            data = json.dumps(body).encode()
+        req = Request(self.url + path, method=method, data=data,
                       headers={"Authorization": "Bearer " + self._token,
                                "Accept": "application/json", "Content-Type": content_type})
         try:
@@ -109,10 +126,22 @@ class _HTTP:
                 data = response.read(MAX_RESPONSE_BYTES + 1)
                 if len(data) > MAX_RESPONSE_BYTES:
                     raise ValueError("Kairon response exceeds 8 MiB")
+                if binary:
+                    return data
                 if raw:
                     return data.decode("utf-8")
                 return json.loads(data) if data else None
         except HTTPError as exc:
+            if exc.code == 428:
+                try:
+                    doc = json.loads(exc.read(64 * 1024) or b"{}")
+                except ValueError:
+                    doc = {}
+                finally:
+                    exc.close()
+                if isinstance(doc, dict) and doc.get("approval_id"):
+                    raise ApprovalRequired(method, doc) from None
+                raise APIError(exc.code, method) from None
             exc.close()
             raise APIError(exc.code, method) from None
 
@@ -408,12 +437,58 @@ class UIClient:
         self._http.request("POST", self._machine(name) + "/agent-file/put", {
             "path": path, "contentBase64": base64.b64encode(data).decode(), "mode": mode})
 
+    def get_file(self, name: str, path: str) -> bytes:
+        """Read a guest file over the vsock agent (spec.guestAgent.console)."""
+        if not path.startswith("/"):
+            raise ValueError("file needs an absolute path")
+        out = self._http.request("POST", self._machine(name) + "/agent-file/get", {"path": path})
+        return base64.b64decode((out or {}).get("contentBase64", ""))
+
     def capabilities(self, node: str) -> dict:
         return self._http.request("GET", "/api/v1/nodes/" + _segment(node) + "/capabilities")
 
     def topology(self, node: str) -> dict:
         """The node's NodeTopology status and the Machines' topology allocations on it."""
         return self._http.request("GET", "/api/v1/nodes/" + _segment(node) + "/topology")
+
+    def _session(self, name: str) -> str:
+        return f"/api/v1/agentsessions/{self.namespace}/{_segment(name)}"
+
+    def create_session(self, name: str, spec: dict, *, labels: dict | None = None) -> dict:
+        """Create an AgentSession (a FluxVM agent session) in the namespace."""
+        return self._http.request("POST", "/api/v1/agentsessions?" + urlencode({"namespace": self.namespace}),
+                                  {"name": _segment(name), "spec": spec, "labels": labels or {}})
+
+    def get_session(self, name: str) -> dict:
+        return self._http.request("GET", self._session(name))
+
+    def list_sessions(self) -> list[dict]:
+        return self._http.request("GET", "/api/v1/agentsessions?" + urlencode({"namespace": self.namespace})) or []
+
+    def delete_session(self, name: str) -> None:
+        try:
+            self._http.request("DELETE", self._session(name))
+        except APIError as exc:
+            if exc.status != 404:
+                raise
+
+    def session_call(self, name: str, method: str, verb: str, body: Any = None, *,
+                     query: dict | None = None, timeout: float | None = None,
+                     data: bytes | None = None, binary: bool = False) -> Any:
+        """One FluxVM session verb (exec, jobs/..., files/..., git/..., preview, ...) through kairon-ui.
+
+        ``data`` sends raw bytes instead of a JSON body (upload chunks); ``binary``
+        returns the response bytes (screenshot).
+        """
+        if not verb or verb.startswith("/") or ".." in verb.split("/"):
+            raise ValueError("verb must be a relative session route")
+        path = self._session(name) + "/" + quote(verb, safe="/")
+        if query:
+            path += "?" + urlencode(query)
+        if data is not None:
+            return self._http.request(method, path, timeout=timeout, data=data,
+                                      content_type="application/octet-stream", binary=binary)
+        return self._http.request(method, path, body, timeout=timeout, binary=binary)
 
     def usage_csv(self) -> str:
         return self._http.request("GET", "/api/v1/usage.csv?" + urlencode({"namespace": self.namespace}), raw=True)

@@ -12,6 +12,7 @@
 package uiapi
 
 import (
+	"bufio"
 	"crypto/subtle"
 	"crypto/tls"
 	"encoding/json"
@@ -151,6 +152,13 @@ type Server struct {
 	// own existing "no real identity" precedent for the empty-username
 	// case). See docs/guides/kairon-ui-console-rbac.md.
 	RBACConsoleCheck bool
+	// SandboxOperatorExec opens guest exec, file transfer and the sandbox
+	// HTTP proxy to non-admin operators, on Machines labelled
+	// model.LabelSandbox=true only; consoleAuthorized still applies.
+	SandboxOperatorExec bool
+	// AgentSessionPreviews serves AgentSession previews unauthenticated at
+	// /preview/{namespace}/{name}/{token}/; off, that route is always 404.
+	AgentSessionPreviews bool
 	// consoleTickets backs the console feature's single-use WebSocket
 	// tickets; zero value is ready to use.
 	consoleTickets sync.Map
@@ -272,11 +280,14 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/resume", s.requireNamespace(namespaceFromPath, s.handlePowerMachine("Running")))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/halt", s.requireNamespace(namespaceFromPath, s.handlePowerMachine("Halted")))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/hibernate", s.requireNamespace(namespaceFromPath, s.handlePowerMachine("Hibernated")))
+	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/restart", s.requireNamespace(namespaceFromPath, s.handleRestartMachine))
+	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/soft-reboot", s.requireNamespace(namespaceFromPath, s.handleSoftReboot))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/priority", s.requireNamespace(namespaceFromPath, s.handleSetMachinePriority))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/fork", s.requireNamespace(namespaceFromPath, s.handleForkMachine))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/disks", s.requireNamespace(namespaceFromPath, s.handleHotplugDisk))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/nics", s.requireNamespace(namespaceFromPath, s.handleHotplugNIC))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/console/ticket", s.requireNamespace(namespaceFromPath, s.handleConsoleTicket))
+	api.HandleFunc("GET /api/v1/machines/{namespace}/{name}/portforward", s.requireNamespace(namespaceFromPath, s.handlePortForward))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/exec", s.requireNamespace(namespaceFromPath, s.handleExec))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/agent-file/put", s.requireNamespace(namespaceFromPath, s.handleAgentPutFile))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/agent-file/get", s.requireNamespace(namespaceFromPath, s.handleAgentGetFile))
@@ -303,8 +314,18 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/v1/restores", s.requireNamespace(namespaceParam, s.handleListRestores))
 	api.HandleFunc("POST /api/v1/restores", s.requireNamespace(namespaceParam, s.handleCreateRestore))
 	api.HandleFunc("DELETE /api/v1/restores/{namespace}/{name}", s.requireNamespace(namespaceFromPath, s.handleDeleteRestore))
+	api.HandleFunc("GET /api/v1/exports", s.requireNamespace(namespaceParam, s.handleListExports))
+	api.HandleFunc("POST /api/v1/exports", s.requireNamespace(namespaceParam, s.handleCreateExport))
+	api.HandleFunc("DELETE /api/v1/exports/{namespace}/{name}", s.requireNamespace(namespaceFromPath, s.handleDeleteExport))
+	api.HandleFunc("GET /api/v1/exports/{namespace}/{name}/download", s.requireNamespace(namespaceFromPath, s.handleExportDownload))
+	api.HandleFunc("POST /api/v1/exports/{namespace}/{name}/link", s.requireNamespace(namespaceFromPath, s.handleExportLink))
 
 	api.HandleFunc("GET /api/v1/quotas", s.requireNamespace(namespaceParam, s.handleListQuotas))
+	api.HandleFunc("GET /api/v1/agentsessions", s.requireNamespace(namespaceParam, s.handleListAgentSessions))
+	api.HandleFunc("POST /api/v1/agentsessions", s.requireNamespace(namespaceParam, s.handleCreateAgentSession))
+	api.HandleFunc("GET /api/v1/agentsessions/{namespace}/{name}", s.requireNamespace(namespaceFromPath, s.handleGetAgentSession))
+	api.HandleFunc("DELETE /api/v1/agentsessions/{namespace}/{name}", s.requireNamespace(namespaceFromPath, s.handleDeleteAgentSession))
+	api.HandleFunc("/api/v1/agentsessions/{namespace}/{name}/{rest...}", s.requireNamespace(namespaceFromPath, s.handleAgentSessionProxy))
 	api.HandleFunc("GET /api/v1/machinepools", s.requireNamespace(namespaceParam, s.handleListMachinePools))
 	api.HandleFunc("GET /api/v1/machineclaims", s.requireNamespace(namespaceParam, s.handleListMachineClaims))
 	api.HandleFunc("GET /api/v1/machinebackups", s.requireNamespace(namespaceParam, s.handleListMachineBackups))
@@ -322,6 +343,10 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("DELETE /api/v1/machinesets/{namespace}/{name}", s.requireNamespace(namespaceFromPath, s.handleDeleteMachineSet))
 	api.HandleFunc("PATCH /api/v1/machinesets/{namespace}/{name}/scale", s.requireNamespace(namespaceFromPath, s.handleScaleMachineSet))
 	api.HandleFunc("GET /api/v1/instancetypes", s.requireNamespace(namespaceParam, s.handleListInstanceTypes))
+	api.HandleFunc("GET /api/v1/preferences", s.requireNamespace(namespaceParam, s.handleListPreferences))
+	// Cluster-scoped catalogs: shared reference data, like the node list.
+	api.HandleFunc("GET /api/v1/cluster-instancetypes", s.handleListClusterInstanceTypes)
+	api.HandleFunc("GET /api/v1/cluster-preferences", s.handleListClusterPreferences)
 	api.HandleFunc("GET /api/v1/migration-policies", s.requireNamespace(namespaceParam, s.handleListMigrationPolicies))
 	api.HandleFunc("GET /api/v1/snapshot-schedules", s.requireNamespace(namespaceParam, s.handleListMachineSnapshotSchedules))
 	api.HandleFunc("PATCH /api/v1/snapshot-schedules/{namespace}/{name}/suspend", s.requireNamespace(namespaceFromPath, s.handleSuspendMachineSnapshotSchedule))
@@ -374,6 +399,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/v1/machines/{namespace}/{name}/network-capture/{token}", s.requireNamespace(namespaceFromPath, s.handleNetworkCaptureFile))
 	api.HandleFunc("POST /api/v1/machines/{namespace}/{name}/diagnostics", s.requireNamespace(namespaceFromPath, s.handleStartDiagnostics))
 	api.HandleFunc("GET /api/v1/machines/{namespace}/{name}/diagnostics/{token}", s.requireNamespace(namespaceFromPath, s.handleGetDiagnostics))
+	api.HandleFunc("DELETE /api/v1/machines/{namespace}/{name}/diagnostics/{token}", s.requireNamespace(namespaceFromPath, s.handleDeleteDiagnostics))
 	api.HandleFunc("GET /api/v1/machines/{namespace}/{name}/diagnostics/{token}/{file}", s.requireNamespace(namespaceFromPath, s.handleDiagnosticsFile))
 	// GET /api/v1/config reports server-wide feature flags (e.g.
 	// consoleEnabled), not per-namespace state -- not namespace-scoped.
@@ -407,9 +433,15 @@ func (s *Server) Handler() http.Handler {
 	// gated by the single-use ticket handleConsoleTicket issues instead
 	// (that ticket-issuing call *is* behind the normal auth above).
 	top.HandleFunc("GET /api/v1/machines/{namespace}/{name}/console", s.handleConsole)
+	// Gated by the single-use ticket handleExportLink issues, for the same
+	// reason as the console route above.
+	top.HandleFunc("GET /api/v1/export-links/{ticket}", s.handleExportLinkDownload)
 	// Unauthenticated: kairon-node downloads uploaded images by digest and
 	// verifies them itself -- see handleServeImageBlob.
 	top.HandleFunc("GET /images/sha256/{digest}", s.handleServeImageBlob)
+	// Unauthenticated: the preview token is the credential. Off by default.
+	top.HandleFunc("/preview/{namespace}/{name}/{token}", s.handleAgentSessionPreviewRoot)
+	top.HandleFunc("/preview/{namespace}/{name}/{token}/{rest...}", s.handleAgentSessionPreview)
 	// The SPA route is intentionally unauthenticated (same as netra's own
 	// serveWeb registration) -- it serves static JS/CSS/HTML, not data;
 	// every actual data fetch the page makes goes through the auth-gated
@@ -673,6 +705,21 @@ func (r *statusRecorder) Flush() {
 	if f, ok := r.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+// Hijack lets WebSocket routes (console, port-forward) upgrade through
+// statusRecorder; a hijacked connection is recorded as 101.
+func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h, ok := r.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("response writer does not support hijacking")
+	}
+	r.status = http.StatusSwitchingProtocols
+	return h.Hijack()
+}
+
+func (r *statusRecorder) Unwrap() http.ResponseWriter {
+	return r.ResponseWriter
 }
 
 // withAuth accepts either credential: the legacy shared static token

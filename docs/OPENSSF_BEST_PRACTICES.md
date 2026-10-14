@@ -10,12 +10,12 @@ silver → 7, gold → 10.
 
 | Criteria area | Evidence |
 |---------------|----------|
-| Description, obtain, feedback | [`README.md`](../README.md), [GitHub Issues](https://github.com/zyvorai/kairon/issues), [Releases](https://github.com/zyvorai/kairon/releases) |
-| Contribution process + requirements | [`CONTRIBUTING.md`](../CONTRIBUTING.md) (PR process, coding standard, test policy) |
-| License | [`LICENSE`](../LICENSE) (Apache-2.0) |
-| Interface docs | [`docs/CLI.md`](CLI.md), [`docs/guides/`](guides/), CRDs in [`charts/kairon`](../charts/kairon) |
-| Releases / notes | SemVer tags `vX.Y.Z`, [`RELEASE_NOTES.md`](../RELEASE_NOTES.md) |
-| Vulnerability reporting | [`SECURITY.md`](../SECURITY.md) (private email + GitHub advisories, 14-day ack) |
+| Description, obtain, feedback | [`README.md`](https://github.com/zyvorai/zyvor-kairon/blob/main/README.md), [GitHub Issues](https://github.com/zyvorai/kairon/issues), [Releases](https://github.com/zyvorai/kairon/releases) |
+| Contribution process + requirements | [`CONTRIBUTING.md`](https://github.com/zyvorai/zyvor-kairon/blob/main/CONTRIBUTING.md) (PR process, coding standard, test policy) |
+| License | [`LICENSE`](https://github.com/zyvorai/zyvor-kairon/blob/main/LICENSE) (Apache-2.0) |
+| Interface docs | [`docs/CLI.md`](CLI.md), [`docs/guides/`](guides/), CRDs in [`charts/kairon`](https://github.com/zyvorai/zyvor-kairon/tree/main/charts/kairon) |
+| Releases / notes | SemVer tags `vX.Y.Z`, [`RELEASE_NOTES.md`](https://github.com/zyvorai/zyvor-kairon/blob/main/RELEASE_NOTES.md) |
+| Vulnerability reporting | [`SECURITY.md`](https://github.com/zyvorai/zyvor-kairon/blob/main/SECURITY.md) (private email + GitHub advisories, 14-day ack) |
 | Build / test / CI | `make all`, [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) |
 | Warnings / static analysis | `go vet`, `golangci-lint` ([`.golangci.yml`](../.golangci.yml)), CodeQL, `govulncheck`, Trivy |
 | Dynamic analysis | `go test -race`, native Go fuzzing ([`.github/workflows/fuzz.yml`](../.github/workflows/fuzz.yml)) |
@@ -24,7 +24,7 @@ silver → 7, gold → 10.
 | License-header enforcement | `python3 scripts/check_license_headers.py`, run by the `hygiene` job in [`ci-extra.yml`](../.github/workflows/ci-extra.yml) and by the `sdk` job in [`ecosystem.yml`](../.github/workflows/ecosystem.yml); locally via `make license-headers` (not part of `make all`) |
 | Dependency boundary | `scripts/check_stdlib_boundary.py` (deny list for `kairon-controller` and `kairon-node`), in `make all` and the `hygiene` job |
 | Ecosystem SDKs and contracts | [`ecosystem.yml`](../.github/workflows/ecosystem.yml), job `sdk`: Python `unittest` for `sdk/python/tests` and `ecosystem/tests`, and `npm ci`, `typecheck` and `test` for `sdk/typescript`, on changes under `sdk/`, `ecosystem/`, `deploy/crd.yaml`, `internal/model/` and `internal/uiapi/` |
-| Vulnerability response in practice | v0.7.0 was tagged but never published: its image scan failed on Go standard-library CVE-2026-78667 and CVE-2026-97031. v0.7.1 rebuilt on Go 1.27.2 and was the first published v0.7 release. v0.7.2 raised `golang.org/x/net` to v0.60.0 for the HTTP/2 advisories GO-2026-6610 through GO-2026-6617. Both are described in [`RELEASE_NOTES.md`](../RELEASE_NOTES.md) |
+| Vulnerability response in practice | v0.7.0 was tagged but never published: its image scan failed on Go standard-library CVE-2026-78667 and CVE-2026-97031. v0.7.1 rebuilt on Go 1.27.2 and was the first published v0.7 release. v0.7.2 raised `golang.org/x/net` to v0.60.0 for the HTTP/2 advisories GO-2026-6610 through GO-2026-6617. Both are described in [`RELEASE_NOTES.md`](https://github.com/zyvorai/zyvor-kairon/blob/main/RELEASE_NOTES.md) |
 | Signed delivery | cosign keyless signatures + SBOM attestations ([`release.yml`](../.github/workflows/release.yml)), `SHA256SUMS` |
 
 ## Maintained check

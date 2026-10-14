@@ -708,6 +708,38 @@ func TestHandleConsoleTicketRejectsInvalidKind(t *testing.T) {
 	}
 }
 
+func TestHandleConsoleTicketGuestfsIsAdminOnly(t *testing.T) {
+	fk := newFakeKube()
+	fk.machines["vm1"] = model.Machine{Metadata: model.ObjectMeta{Name: "vm1", Namespace: "default"}}
+	kubeSrv := httptest.NewServer(fk.handler())
+	defer kubeSrv.Close()
+	s := &Server{
+		Kube: mustKubeClientAt(t, kubeSrv.URL),
+		Users: []User{
+			{Username: "alice", PasswordHash: hashFor(t, "correct-horse")},
+			{Username: "root", PasswordHash: hashFor(t, "correct-horse"), IsAdmin: true},
+		},
+		SessionSecret: []byte("test-session-secret"),
+	}
+	h := s.Handler()
+	token := func(user string) string {
+		var out struct {
+			Token string `json:"token"`
+		}
+		_ = json.Unmarshal(login(t, h, user, "correct-horse").Body.Bytes(), &out)
+		return out.Token
+	}
+	for _, kind := range []string{"guestfs", "guestfs-rw"} {
+		if rr := doJSON(t, h, http.MethodPost, "/api/v1/machines/default/vm1/console/ticket?kind="+kind, token("alice"), nil); rr.Code != http.StatusForbidden {
+			t.Fatalf("%s for non-admin: %d %s", kind, rr.Code, rr.Body.String())
+		}
+		rr := doJSON(t, h, http.MethodPost, "/api/v1/machines/default/vm1/console/ticket?kind="+kind, token("root"), nil)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("%s for admin: %d %s", kind, rr.Code, rr.Body.String())
+		}
+	}
+}
+
 func TestHandleConsoleTicketDefaultsToVNCKind(t *testing.T) {
 	fk := newFakeKube()
 	fk.machines["vm1"] = model.Machine{Metadata: model.ObjectMeta{Name: "vm1", Namespace: "default"}}

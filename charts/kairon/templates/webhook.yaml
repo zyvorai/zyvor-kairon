@@ -131,6 +131,24 @@ webhooks:
         resources: ["machinequotas"]
         operations: ["CREATE", "UPDATE"]
         scope: Namespaced
+  - name: agentsession.kairon.zyvor.dev
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: {{ .Values.webhook.failurePolicy }}
+    matchPolicy: Equivalent
+    clientConfig:
+      caBundle: {{ .Values.webhook.caBundle | quote }}
+      service:
+        name: kairon-controller-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-agentsession
+        port: 443
+    rules:
+      - apiGroups: ["kairon.zyvor.dev"]
+        apiVersions: ["v1"]
+        resources: ["agentsessions"]
+        operations: ["CREATE"]
+        scope: Namespaced
 {{ end }}
 
 {{ if and .Values.webhook.enabled .Values.webhook.tlsSecretName .Values.webhook.caBundle }}

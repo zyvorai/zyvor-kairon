@@ -71,9 +71,20 @@ sees an empty drive and nothing is unplugged. FluxVM records the drive as empty,
 migration targets bring it up without the ISO and drive letters stay put. Then the Machine can
 live-migrate.
 
-After creation, entries can only be **removed**. Adding or changing an entry is denied by the
-admission webhook. Without the webhook, kairon-node simply doesn't attach the new entry, because
-FluxVM can't insert media into an existing VM yet. To boot from a different ISO, create a new Machine.
+Once the Machine has a runtime, entries can only be **removed**: FluxVM can't insert media into an
+existing VM. Adding or changing an entry is denied by the admission webhook; without the webhook,
+kairon-node simply doesn't attach the new entry. A Machine held Stopped (no runtime) may change
+`spec.cdroms` freely, and the drives are created when it next starts:
+
+```bash
+kaironctl stop win2022
+kaironctl cdrom insert win2022 virtio --image virtio-win
+kaironctl start win2022
+kaironctl cdrom eject win2022 virtio   # live
+```
+
+A Stopped Machine keeps only disks on `spec.volumes`; one booting from `spec.image` starts again
+from the image.
 
 ## Persistent installs on a volume
 

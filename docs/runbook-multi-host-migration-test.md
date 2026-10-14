@@ -118,6 +118,41 @@ scripts/multi-host-migration-test-teardown.sh root@10.0.1.11 root@10.0.1.12
 Add `--purge` to also remove `/etc/kairon` and the `kairon` system user on
 both hosts (matches `deploy-remote.sh --uninstall --purge`'s own semantics).
 
+## Lessons from the first real two-host run (2026-10-14)
+
+Hosts `80.79.5.173` (FluxVM 0.3.0, QEMU 10.2.1) and `175.110.122.71`
+(FluxVM 0.4.8, QEMU 8.2.2), 175 exporting `/srv/kairon-shared` over NFS to 80.
+Check these before blaming Kairon for a stalled or `Blocked` live migration:
+
+- **Same FluxVM on both hosts, new enough for `storage: shared`.** A live
+  migration is refused with `live migration needs the disk on shared storage
+  (storage: shared ...)`, and a Machine create fails with `storage: unknown
+  variant 'shared'` (HTTP 422), when a host's FluxVM predates that mode.
+- **The Machine must declare shared storage.** `spec.image.path` is not
+  enough: boot from `spec.volumes[0]` on a `hostPath` PersistentVolume
+  annotated `kairon.zyvor.dev/shared-storage: "true"` (path = a directory
+  holding `disk.img`, identical on both hosts) with a Bound claim. Storage is
+  creation-time-only, so recreate Machines created the old way.
+- **TCP 9443 must be reachable from every host to every other.** The source
+  node's `prepare target` call is an HTTPS POST to the target's `:9443`;
+  a blocked port shows as `context deadline exceeded` on the source and
+  nothing on the target. Orphaned CNI BPF programs (for example Cilium's
+  `cil_from_netdev` left on the NIC after uninstalling k3s) can drop it
+  silently; a reboot clears them.
+- **Adapter ordering.** After a reboot, `kairon-migration-adapter-fluxvm` can
+  fail with "Dependency failed" if `fluxvm.service` was not up yet; check
+  `systemctl is-active` on both hosts before starting.
+- **Console relay port.** kairon-ui's `KAIRON_NODE_CONSOLE_PORT` must equal
+  every kairon-node's `KAIRON_NODE_CONSOLE_ADDR` port, and both must use the
+  same TLS setting; otherwise guest-agent exec (used by the load cases)
+  fails with "connect to node exec relay".
+- **Self-signed kairon-ui.** The certificate regenerates on every restart;
+  re-pin it (`openssl s_client`) before running the matrix with
+  `CURL_CA_BUNDLE`. macOS `/usr/bin/curl` rejects a self-signed leaf used as
+  its own CA; use Homebrew curl.
+- **`kaironctl` build.** Use a `kaironctl` built from the tree under test;
+  a stale `bin/kaironctl` lacks `--guest-agent`.
+
 ## Related
 
 - Migration failures and `NeedsRecovery` in general (not multi-host

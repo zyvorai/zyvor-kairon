@@ -47,6 +47,12 @@ const (
 	// forks the parent's FluxVM runtime (POST /v1/vms/{id}/fork) instead
 	// of booting a new one. See docs/guides/machine-fork.md.
 	AnnotationForkFrom = "kairon.zyvor.dev/fork-from"
+	// AnnotationCloneFrom names a Halted Machine in the same namespace on
+	// the same node. Before first boot, kairon-node flattens that
+	// Machine's disk into its image cache and boots this Machine from the
+	// copy instead of spec.image.
+	AnnotationCloneFrom = "kairon.zyvor.dev/clone-from"
+	LabelClonedFrom     = "kairon.zyvor.dev/cloned-from"
 	// LabelForkedFrom is stamped on fork children so they can be listed
 	// by parent.
 	LabelForkedFrom        = "kairon.zyvor.dev/forked-from"
@@ -59,6 +65,16 @@ const (
 	// this is opt-in, never a behavior change for a Machine that doesn't
 	// set it.
 	AnnotationConsoleAllowedUsers = "kairon.zyvor.dev/console-allowed-users"
+	// AnnotationRestartRequested asks kairon-node to power-cycle a Running
+	// Machine (FluxVM stop, then start) once per distinct value; the value
+	// handled last is status.lastRestartRequest. kaironctl restart sets
+	// it to the current time (RFC3339).
+	AnnotationRestartRequested = "kairon.zyvor.dev/restart-requested"
+	// AnnotationStopGracePeriod (seconds) makes powerState Stopped or
+	// Halted first ask the guest agent to power the guest off, and only
+	// stop the runtime once it has or the period has passed. Unset or 0
+	// stops immediately. Needs spec.guestAgent.enabled.
+	AnnotationStopGracePeriod = "kairon.zyvor.dev/stop-grace-period-seconds"
 	// AnnotationCordonEvacuateAttemptedAt records the last time
 	// kairon-controller's opt-in cordon-evacuation reconcile step (see
 	// internal/controller/cordon.go) created, or tried and was
@@ -100,6 +116,13 @@ const (
 	// failure mode kairon-node must never silently abandon.
 	AnnotationQuiesceRequest = "kairon.zyvor.dev/quiesce-request"
 	AnnotationQuiesceStatus  = "kairon.zyvor.dev/quiesce-status"
+	// AnnotationFsFreezeUntil (RFC 3339) asks kairon-node to keep the
+	// guest's filesystems frozen until then (kaironctl freeze); it thaws
+	// them and removes the request at that time, so a forgotten freeze
+	// cannot wedge the guest. Removing it (kaironctl unfreeze) thaws at
+	// once. kairon-node confirms a freeze with AnnotationFsFrozen.
+	AnnotationFsFreezeUntil = "kairon.zyvor.dev/fs-frozen-until"
+	AnnotationFsFrozen      = "kairon.zyvor.dev/fs-frozen"
 	// AnnotationSnapshotScheduleTriggerNow requests an immediate,
 	// out-of-band MachineSnapshotSchedule run -- kairon-controller's
 	// analog of `kubectl create job --from=cronjob`, but implemented as
@@ -204,14 +227,22 @@ type MachineSpec struct {
 	// time this is set while Resources is still empty; editing either
 	// field afterward never re-resolves, matching every other
 	// creation-time-only field in this project.
-	InstanceTypeName string            `json:"instanceTypeName,omitempty"`
-	Image            ImageSpec         `json:"image"`
-	Resources        ResourceSpec      `json:"resources"`
-	Runtime          RuntimeSpec       `json:"runtime,omitempty"`
-	Network          NetworkSpec       `json:"network,omitempty"`
-	CloudInit        CloudInitSpec     `json:"cloudInit,omitempty"`
-	ServiceFabric    ServiceFabricSpec `json:"serviceFabric,omitempty"`
-	PowerState       string            `json:"powerState,omitempty"`
+	InstanceTypeName string `json:"instanceTypeName,omitempty"`
+	// InstanceTypeKind is MachineInstanceType (default, same namespace)
+	// or MachineClusterInstanceType (cluster-scoped).
+	InstanceTypeKind string `json:"instanceTypeKind,omitempty"`
+	// PreferenceName names a MachinePreference (same namespace) or, with
+	// PreferenceKind MachineClusterPreference, a cluster-scoped one.
+	// kairon-controller fills still-unset guest-OS fields from it once.
+	PreferenceName string            `json:"preferenceName,omitempty"`
+	PreferenceKind string            `json:"preferenceKind,omitempty"`
+	Image          ImageSpec         `json:"image"`
+	Resources      ResourceSpec      `json:"resources"`
+	Runtime        RuntimeSpec       `json:"runtime,omitempty"`
+	Network        NetworkSpec       `json:"network,omitempty"`
+	CloudInit      CloudInitSpec     `json:"cloudInit,omitempty"`
+	ServiceFabric  ServiceFabricSpec `json:"serviceFabric,omitempty"`
+	PowerState     string            `json:"powerState,omitempty"`
 	// Tenant is free-form metadata unless the Machine opts in. Admission
 	// enforces a DNS-1123 label when it is set, and rejects a later
 	// rename (internal/tenantfence). kairon.zyvor.dev/tenant-fence=true
@@ -223,6 +254,9 @@ type MachineSpec struct {
 	// quota and disruption boundary.
 	Tenant     string `json:"tenant,omitempty"`
 	TTLSeconds int64  `json:"ttlSeconds,omitempty"`
+	// Lifecycle bounds the Machine's lifetime and suspends it when idle.
+	// See LifecycleSpec and docs/guides/agent-sandboxes.md.
+	Lifecycle *LifecycleSpec `json:"lifecycle,omitempty"`
 	// Priority orders competition among Machines that are all still
 	// unscheduled (spec.nodeName empty) at the start of the same
 	// reconcile tick -- kairon-controller attempts higher-Priority
@@ -875,6 +909,16 @@ func ValidateCdroms(cdroms []MachineCdrom) error {
 	return nil
 }
 
+// ValidateMachineCdromsUpdate is ValidateCdromsUpdate, except that a
+// Machine held Stopped with no runtime may change spec.cdroms freely: the
+// next boot creates its drives from scratch (kaironctl cdrom insert).
+func ValidateMachineCdromsUpdate(old, updated Machine) error {
+	if old.DesiredPowerState() == "Stopped" && old.Status.RuntimeID == "" {
+		return nil
+	}
+	return ValidateCdromsUpdate(old.Spec.Cdroms, updated.Spec.Cdroms)
+}
+
 // ValidateCdromsUpdate allows an update to spec.cdroms only to remove
 // entries: FluxVM can eject install media from a created VM but not insert
 // new media. An imageRef entry that kairon-controller has since resolved
@@ -1117,6 +1161,14 @@ type MachineStatus struct {
 	// Hibernation is set while the guest's state is saved
 	// (spec.powerState: Hibernated) and until it has resumed.
 	Hibernation *HibernationStatus `json:"hibernation,omitempty"`
+	// LastRestartRequest is the kairon.zyvor.dev/restart-requested value
+	// kairon-node last acted on.
+	LastRestartRequest string `json:"lastRestartRequest,omitempty"`
+	// ShutdownDeadline (RFC3339) is set while a graceful stop waits for
+	// the guest to power itself off; see AnnotationStopGracePeriod.
+	ShutdownDeadline string `json:"shutdownDeadline,omitempty"`
+	// Lifecycle is kairon-node's activity record for spec.lifecycle.
+	Lifecycle *LifecycleStatus `json:"lifecycle,omitempty"`
 	// ResourceUsage is this Machine's cgroup-derived resource usage as of
 	// the last *meaningful* status write (FluxVM's GET /v1/vms/{id}/stats).
 	// High-frequency samples go to Prometheus (kairon_machine_resource_usage)
@@ -1466,6 +1518,10 @@ type MachineSnapshotStatus struct {
 	Message         string                    `json:"message"`
 	ReadyToUse      bool                      `json:"readyToUse,omitempty"`
 	VolumeSnapshots []VolumeSnapshotReference `json:"volumeSnapshots,omitempty"`
+	// SourceSpec is the Machine's spec when the snapshot started, so a
+	// MachineSnapshotRestore with spec.machine can recreate the Machine
+	// after the original is gone.
+	SourceSpec *MachineSpec `json:"sourceSpec,omitempty"`
 }
 
 type VolumeSnapshotReference struct {

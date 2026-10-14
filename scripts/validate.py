@@ -44,10 +44,14 @@ try:
         "machinedisruptionbudgets.kairon.zyvor.dev",
         "machinequotas.kairon.zyvor.dev",
         "machinesnapshotrestores.kairon.zyvor.dev",
+        "machineexports.kairon.zyvor.dev",
         "machinesets.kairon.zyvor.dev",
         "machinepools.kairon.zyvor.dev",
         "machineclaims.kairon.zyvor.dev",
         "machineinstancetypes.kairon.zyvor.dev",
+        "machineclusterinstancetypes.kairon.zyvor.dev",
+        "machinepreferences.kairon.zyvor.dev",
+        "machineclusterpreferences.kairon.zyvor.dev",
         "machineimages.kairon.zyvor.dev",
         "migrationpolicies.kairon.zyvor.dev",
         "machinesnapshotschedules.kairon.zyvor.dev",
@@ -59,6 +63,7 @@ try:
         "macnetworks.kairon.zyvor.dev",
         "nodetopologies.kairon.zyvor.dev",
         "virtualnetworks.kairon.zyvor.dev",
+        "agentsessions.kairon.zyvor.dev",
     }
     fleet_resources = {"machinehaprofiles", "nodefencerequests", "machineactionapprovals", "machinebalancepolicies", "machineautoscalers", "machinerecoveryplans", "machinebackupgroups", "machineimportplans", "machinetemplateversions", "machinetemplateclaims", "machinevirtualnetworks", "machinenetworkclaims", "machineusageledgers"}
     expected |= {r + ".fleet.kairon.zyvor.dev" for r in fleet_resources}
@@ -69,7 +74,7 @@ try:
     # itself ever observes or reports back) -- no status subresource, the
     # same real-world precedent a StorageClass/PriorityClass already sets
     # among Kubernetes' own built-in CRD-shaped resources.
-    no_status = {"machineinstancetypes.kairon.zyvor.dev", "machineimages.kairon.zyvor.dev"}
+    no_status = {"machineinstancetypes.kairon.zyvor.dev", "machineclusterinstancetypes.kairon.zyvor.dev", "machinepreferences.kairon.zyvor.dev", "machineclusterpreferences.kairon.zyvor.dev", "machineimages.kairon.zyvor.dev"}
     for d in crds:
         if d["metadata"]["name"] in {r + ".fleet.kairon.zyvor.dev" for r in fleet_resources}:
             versions = d["spec"]["versions"]
@@ -111,13 +116,13 @@ if chart_crds != bundle_crds:
 
 try:
     chart = yaml.safe_load((root / "charts/kairon/Chart.yaml").read_text())
-    if chart.get("version") != "0.9.1" or chart.get("appVersion") != "0.9.1":
-        fail("Helm chart version/appVersion must be 0.9.1")
+    if chart.get("version") != "0.10.0" or chart.get("appVersion") != "0.10.0":
+        fail("Helm chart version/appVersion must be 0.10.0")
 except Exception as e:
     fail(f"Chart semantic check failed: {e}")
 
-if (root / "VERSION").read_text().strip() != "v0.9.1":
-    fail("VERSION must be v0.9.1")
+if (root / "VERSION").read_text().strip() != "v0.10.0":
+    fail("VERSION must be v0.10.0")
 
 # README is a landing page; detail lives in the docs it links to.
 readme_docs = ["README.md", "ARCHITECTURE.md", "docs/README.md", "docs/WHAT_SHIPS.md", "docs/STATUS.md"]

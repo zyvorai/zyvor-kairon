@@ -80,6 +80,7 @@ func (c *Controller) WebhookHandler() http.Handler {
 	mux.HandleFunc("POST /validate-machinenetworkpolicy", admission.Handler(c.Log, c.validateMachineNetworkPolicy, c.observeWebhookDecision))
 	mux.HandleFunc("POST /validate-networksecuritygroup", admission.Handler(c.Log, c.validateNetworkSecurityGroup, c.observeWebhookDecision))
 	mux.HandleFunc("POST /validate-machinequota", admission.Handler(c.Log, c.validateMachineQuotaObject, c.observeWebhookDecision))
+	mux.HandleFunc("POST /validate-agentsession", admission.Handler(c.Log, c.validateAgentSession, c.observeWebhookDecision))
 	// /convert/machinequotas is a scaffold, not live enforcement: every
 	// kairon.zyvor.dev version (v1, v1beta1, v1alpha1) shares one schema,
 	// so the API server uses the None strategy and never calls this route
@@ -265,6 +266,12 @@ func (c *Controller) validateMachineCreate(r *http.Request, req *admission.Reque
 	if err := validateResourceQuantities(m.Spec.Resources); err != nil {
 		return admission.Deny(err.Error())
 	}
+	if m.Metadata.Namespace == "" {
+		m.Metadata.Namespace = req.Namespace
+	}
+	if msg := c.checkInstanceTypeRefs(r.Context(), m); msg != "" {
+		return admission.Deny(msg)
+	}
 	if err := validateNetworkMAC(m.Spec.Network); err != nil {
 		return admission.Deny(err.Error())
 	}
@@ -296,6 +303,9 @@ func (c *Controller) validateMachineCreate(r *http.Request, req *admission.Reque
 		return admission.Deny(err.Error())
 	}
 	if err := model.ValidateMachineVirtualNetwork(m.Spec.Network); err != nil {
+		return admission.Deny(err.Error())
+	}
+	if err := model.ValidateLifecycle(m.Spec.Lifecycle); err != nil {
 		return admission.Deny(err.Error())
 	}
 	if err := tenantfence.CheckCreate(m.Spec.Tenant, m.Metadata.Annotations); err != nil {
@@ -368,6 +378,9 @@ func (c *Controller) validateMachineResize(r *http.Request, req *admission.Reque
 	if err := model.ValidateElasticMemoryUpdate(oldM.Spec, newM.Spec); err != nil {
 		return admission.Deny(err.Error())
 	}
+	if err := model.ValidateLifecycle(newM.Spec.Lifecycle); err != nil {
+		return admission.Deny(err.Error())
+	}
 	if err := tenantfence.CheckUpdate(oldM.Spec.Tenant, newM.Spec.Tenant, newM.Metadata.Annotations); err != nil {
 		return admission.Deny(err.Error())
 	}
@@ -389,7 +402,7 @@ func (c *Controller) validateMachineResize(r *http.Request, req *admission.Reque
 	if err := model.ValidateCdroms(newM.Spec.Cdroms); err != nil {
 		return admission.Deny(err.Error())
 	}
-	if err := model.ValidateCdromsUpdate(oldM.Spec.Cdroms, newM.Spec.Cdroms); err != nil {
+	if err := model.ValidateMachineCdromsUpdate(oldM, newM); err != nil {
 		return admission.Deny(err.Error())
 	}
 	if !MachineCountsTowardQuota(oldM) {
@@ -562,6 +575,24 @@ func (c *Controller) validateMachineQuotaObject(r *http.Request, req *admission.
 		if _, err := model.ParseMemoryMiB(q.Spec.MaxTotalMemory); err != nil {
 			return admission.Deny(fmt.Sprintf("spec.maxTotalMemory: %v", err))
 		}
+	}
+	return admission.Allow()
+}
+
+// validateAgentSession applies FluxVM's own create-time policy and
+// workspace checks (model.ValidateAgentSessionSpec) at admission, so a
+// session FluxVM would refuse fails at kubectl apply rather than on the
+// node. Immutability is the CRD's own transition rules.
+func (c *Controller) validateAgentSession(r *http.Request, req *admission.Request) admission.Decision {
+	if req.Resource.Resource != "agentsessions" || req.Operation != admission.OperationCreate {
+		return admission.Allow()
+	}
+	var s model.AgentSession
+	if err := json.Unmarshal(req.Object, &s); err != nil {
+		return admission.Deny(fmt.Sprintf("decode AgentSession: %v", err))
+	}
+	if err := model.ValidateAgentSessionSpec(s.Spec); err != nil {
+		return admission.Deny("spec." + err.Error())
 	}
 	return admission.Allow()
 }

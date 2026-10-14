@@ -106,10 +106,25 @@ migrations, snapshots, and more. Same command tree as kubectl-kairon.`,
 		newNodeCmd(),
 		newDRSCmd(),
 		newAgentCmd(),
+		newSessionCmd(opts),
 		newDiagnoseCmd(opts),
+		newPortForwardCmd(opts),
+		newSSHCmd(opts),
+		newSCPCmd(opts),
+		newConsoleCmd(opts),
+		newVNCCmd(opts),
+		newExportCmd(opts),
+		newMemoryDumpCmd(opts),
+		newGuestCmd(opts),
+		newCredentialsCmd(opts),
+		newExposeCmd(opts),
+		newWaitCmd(opts),
+		newOpenCmd(opts),
+		newRuntimeCmd(),
 		legacyCmd(opts, "get", "List Kairon resources", getExamples, cmdGet),
 		legacyCmd(opts, "describe", "Show details of a Kairon resource", describeExamples, cmdDescribe),
-		legacyCmd(opts, "create", "Create a Machine or other Kairon resource", createExamples, cmdCreate),
+		newCreateCmd(opts),
+		newExpandCmd(opts),
 		legacyCmd(opts, "delete", "Delete a Kairon resource", deleteExamples, cmdDelete),
 		legacyCmd(opts, "edit", "Edit a Kairon resource (only flags you pass are patched)", editExamples, cmdEdit),
 		legacyCmd(opts, "scale", "Scale a MachineSet or MachinePool", scaleExamples, cmdScale),
@@ -119,10 +134,19 @@ migrations, snapshots, and more. Same command tree as kubectl-kairon.`,
 		legacyCmd(opts, "top", "Show live Machine or node resource usage", topExamples, cmdTop),
 		legacyCmd(opts, "trigger", "Trigger a SnapshotSchedule run now", triggerExamples, cmdTrigger),
 		powerCmd(opts, "start", "Running"),
-		powerCmd(opts, "stop", "Stopped"),
+		newStopCmd(opts, "stop", "Stopped"),
 		powerCmd(opts, "pause", "Paused"),
 		powerCmd(opts, "resume", "Running"),
-		powerCmd(opts, "halt", "Halted"),
+		newStopCmd(opts, "halt", "Halted"),
+		newRestartCmd(opts),
+		newFreezeCmd(opts),
+		newUnfreezeCmd(opts),
+		newObjectGraphCmd(opts),
+		newPermittedDevicesCmd(),
+		newAdmCmd(),
+		newGuestfsCmd(opts),
+		newCdromCmd(opts),
+		newSoftRebootCmd(opts),
 		powerCmd(opts, "hibernate", "Hibernated"),
 		legacyCmd(opts, "migrate", "Create a MachineMigration", migrateExamples, cmdMigrate),
 		legacyCmd(opts, "evacuate", "Migrate all Machines off a node", evacuateExamples, cmdEvacuate),
@@ -201,9 +225,17 @@ func legacyCmd(opts *Options, use, short, example string, fn func(context.Contex
 }
 
 func powerCmd(opts *Options, use, state string) *cobra.Command {
+	long := "Set the Machine's powerState to " + state + ".\n\n--dry-run sends the change with dryRun=All: admission webhooks and validation run, nothing is stored."
+	example := "  $ kaironctl " + use + " web-1\n  $ kaironctl " + use + " web-1 --dry-run"
+	if use == "start" {
+		long += "\n\n--paused starts the Machine and pauses it at once (powerState Paused): kairon-node boots the\nruntime and pauses it in the same pass, so it holds its memory but runs no guest code until\n`kaironctl resume`. Unlike virtctl start --paused, the guest may run briefly before the pause."
+		example += "\n  $ kaironctl start web-1 --paused"
+	}
 	return &cobra.Command{
 		Use:                use + " MACHINE",
 		Short:              "Set Machine powerState to " + state,
+		Long:               long,
+		Example:            example,
 		DisableFlagParsing: true,
 		ValidArgsFunction:  completeMachineNames(&opts.Namespace),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -251,7 +283,9 @@ const describeExamples = `  $ kaironctl describe machine demo
   $ kaironctl describe quota team-payments`
 
 const createExamples = `  $ kaironctl create demo --image /var/lib/fluxvm/images/ubuntu.qcow2 --cpu 2 --memory 2Gi
-  $ kaironctl create machineset web --image /img.qcow2 --replicas 3 --label tier=web`
+  $ kaironctl create machineset web --image /img.qcow2 --replicas 3 --label tier=web
+  $ kaironctl create web-2 --image /img.qcow2 --instance-type m.large --dry-run -o yaml > web-2.yaml
+  $ kaironctl create clone web-1 --name web-1-copy --label-filter 'app*' --label-filter '!app.kubernetes.io/version'`
 
 const deleteExamples = `  $ kaironctl delete machine demo
   $ kaironctl delete machines --selector tier=web --dry-run`

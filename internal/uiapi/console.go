@@ -148,8 +148,9 @@ func (s *Server) handleConsoleTicket(w http.ResponseWriter, r *http.Request) {
 	if kind == "" {
 		kind = "vnc"
 	}
-	if kind != "vnc" && kind != "text" {
-		writeError(w, http.StatusBadRequest, "kind must be \"vnc\" or \"text\"")
+	guestfs := kind == "guestfs" || kind == "guestfs-rw"
+	if kind != "vnc" && kind != "text" && !guestfs {
+		writeError(w, http.StatusBadRequest, "kind must be \"vnc\", \"text\", \"guestfs\" or \"guestfs-rw\"")
 		return
 	}
 	m, err := s.Kube.GetMachine(r.Context(), namespace, name)
@@ -158,6 +159,10 @@ func (s *Server) handleConsoleTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	username := usernameFromContext(r.Context())
+	if guestfs && !s.isAdminIdentity(r.Context(), username) {
+		writeError(w, http.StatusForbidden, "guestfs opens the Machine's disk directly and is admin-only")
+		return
+	}
 	if !s.consoleAuthorized(r.Context(), m, username) {
 		if s.Log != nil {
 			s.Log.Warn("uiapi console ticket denied", "username", username, "namespace", namespace, "name", name)
@@ -258,6 +263,8 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]any{
 		"consoleEnabled": s.ConsoleToken != "" && s.ConsolePort != "",
 		"atlasEnabled":   s.atlasEnabled(),
+
+		"agentSessionPreviews": s.AgentSessionPreviews,
 	}
 	if s.AtlasConsoleURL != "" {
 		resp["atlasConsoleURL"] = s.AtlasConsoleURL
@@ -302,24 +309,42 @@ func (s *Server) handleConsole(w http.ResponseWriter, r *http.Request) {
 		writeUpstreamError(w, err)
 		return
 	}
-	if m.Status.Phase != "Running" {
-		writeError(w, http.StatusConflict, "machine is not Running")
-		return
+	guestfs := kind == "guestfs" || kind == "guestfs-rw"
+	if !guestfs {
+		if m, _, err = s.ensureAwake(r.Context(), m); err != nil {
+			writeWakeError(w, err)
+			return
+		}
+		if m.Status.Phase != "Running" {
+			writeError(w, http.StatusConflict, "machine is not Running")
+			return
+		}
 	}
 	var nodePath string
 	switch kind {
+	case "guestfs":
+		nodePath = "guestfs"
+	case "guestfs-rw":
+		if m.Status.Phase != "Halted" {
+			writeError(w, http.StatusConflict, "guestfs --rw needs the Machine Halted (it is "+m.Status.Phase+")")
+			return
+		}
+		nodePath = "guestfs"
 	case "text":
 		if !m.Spec.GuestAgent.Console {
 			writeError(w, http.StatusBadRequest, "text console requires spec.guestAgent.console")
 			return
 		}
 		nodePath = "text-console"
-	default: // "vnc"
+	case "vnc":
 		if backend := m.Spec.Runtime.Backend; backend != "" && backend != "auto" && backend != "qemu" {
 			writeError(w, http.StatusBadRequest, "VNC console is only available for the qemu backend")
 			return
 		}
 		nodePath = "console"
+	default:
+		writeError(w, http.StatusUnauthorized, "invalid or expired console ticket")
+		return
 	}
 	if m.Status.RuntimeID == "" || m.Status.NodeName == "" {
 		writeError(w, http.StatusConflict, "machine has no runtime yet")
@@ -338,19 +363,24 @@ func (s *Server) handleConsole(w http.ResponseWriter, r *http.Request) {
 		dialOpts.HTTPClient = &http.Client{Transport: &http.Transport{TLSClientConfig: s.ConsoleTLS}}
 	}
 	upstreamURL := fmt.Sprintf("%s://%s:%s/%s/%s", scheme, nodeAddr, s.ConsolePort, nodePath, m.Status.RuntimeID)
-	if kind == "text" {
+	if kind == "text" || guestfs {
 		// Forward the browser's requested terminal size straight through
 		// to FluxVM's own ConsoleQuery (cols/rows) -- cosmetic only, a
 		// missing/invalid value just falls back to FluxVM's own 80x24
 		// default, nothing here validates them.
+		forward := url.Values{}
 		if q := r.URL.Query(); q.Has("cols") || q.Has("rows") {
-			forward := url.Values{}
 			if v := q.Get("cols"); v != "" {
 				forward.Set("cols", v)
 			}
 			if v := q.Get("rows"); v != "" {
 				forward.Set("rows", v)
 			}
+		}
+		if kind == "guestfs-rw" {
+			forward.Set("rw", "1")
+		}
+		if len(forward) > 0 {
 			upstreamURL += "?" + forward.Encode()
 		}
 	}
@@ -361,7 +391,7 @@ func (s *Server) handleConsole(w http.ResponseWriter, r *http.Request) {
 		defer func() { _ = resp.Body.Close() }()
 	}
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "connect to node console relay: "+err.Error())
+		writeRelayDialError(w, "connect to node console relay", resp, err)
 		return
 	}
 	defer func() { _ = upstream.CloseNow() }()
@@ -377,6 +407,7 @@ func (s *Server) handleConsole(w http.ResponseWriter, r *http.Request) {
 	}
 	start := time.Now()
 	ctx := r.Context()
+	defer s.keepActive(m)()
 	relay(
 		websocket.NetConn(ctx, downstream, websocket.MessageBinary),
 		websocket.NetConn(ctx, upstream, websocket.MessageBinary),

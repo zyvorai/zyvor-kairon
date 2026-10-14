@@ -32,17 +32,58 @@ func machineSpecFromFlags(fs *flag.FlagSet) (spec func() model.MachineSpec, imag
 	var runcmd stringSliceFlag
 	fs.Var(&runcmd, "runcmd", "shell command to run via cloud-init at first boot (repeatable)")
 	guestAgent := fs.Bool("guest-agent", false, "attach a qemu-guest-agent channel (the image must run qemu-guest-agent); reports status.guestIP and enables guest exec")
+	instanceType := fs.String("instance-type", "", "MachineInstanceType to take cpu/memory from (unless --cpu/--memory are given)")
+	clusterInstanceType := fs.Bool("cluster-instance-type", false, "--instance-type names a cluster-scoped MachineClusterInstanceType")
+	preference := fs.String("preference", "", "MachinePreference supplying guest-OS defaults (backend unless --backend is given)")
+	clusterPreference := fs.Bool("cluster-preference", false, "--preference names a cluster-scoped MachineClusterPreference")
 	priority := fs.Int("priority", 0, "scheduling priority: when a reconcile tick can't fit every pending Machine (node capacity or MachineQuota), higher values are attempted first; default 0, negative values are valid for a below-default class")
+	idleTimeout := fs.Duration("idle-timeout", 0, "apply --idle-action after this long with no guest CPU/disk activity and no console, exec or port-forward use (e.g. 10m; min 1m)")
+	idleAction := fs.String("idle-action", "", "Pause (default), Hibernate, Halt, Stop or Delete")
+	maxLifetime := fs.Duration("max-lifetime", 0, "delete the Machine this long after creation (or after a claim binds it), e.g. 24h")
+	wakeOnConnect := fs.Bool("wake-on-connect", false, "resume an idle-suspended Machine when console, exec, port-forward or the sandbox proxy connects")
 	return func() model.MachineSpec {
 		pf, err := parseForwards(forwards)
 		if err != nil {
 			fatal(err)
 		}
+		var lifecycle *model.LifecycleSpec
+		if *idleTimeout > 0 || *maxLifetime > 0 || *idleAction != "" || *wakeOnConnect {
+			lifecycle = &model.LifecycleSpec{
+				IdleTimeoutSeconds: int64(idleTimeout.Seconds()),
+				IdleAction:         *idleAction,
+				MaxLifetimeSeconds: int64(maxLifetime.Seconds()),
+				WakeOnConnect:      *wakeOnConnect,
+			}
+			if err := model.ValidateLifecycle(lifecycle); err != nil {
+				fatal(err)
+			}
+		}
+		set := map[string]bool{}
+		fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+		resources := model.ResourceSpec{CPU: *cpu, Memory: *memory}
+		if *instanceType != "" && !set["cpu"] && !set["memory"] {
+			resources = model.ResourceSpec{}
+		}
+		runtimeBackend := *backend
+		if *preference != "" && !set["backend"] {
+			runtimeBackend = ""
+		}
+		itKind, prefKind := "", ""
+		if *clusterInstanceType {
+			itKind = model.KindMachineClusterInstanceType
+		}
+		if *clusterPreference {
+			prefKind = model.KindMachineClusterPreference
+		}
 		return model.MachineSpec{
-			Image:     model.ImageSpec{Path: *image},
-			Resources: model.ResourceSpec{CPU: *cpu, Memory: *memory},
-			Runtime:   model.RuntimeSpec{Backend: *backend},
-			Network:   model.NetworkSpec{Mode: *network, NetNS: *netns, Forwards: pf},
+			InstanceTypeName: *instanceType,
+			InstanceTypeKind: itKind,
+			PreferenceName:   *preference,
+			PreferenceKind:   prefKind,
+			Image:            model.ImageSpec{Path: *image},
+			Resources:        resources,
+			Runtime:          model.RuntimeSpec{Backend: runtimeBackend},
+			Network:          model.NetworkSpec{Mode: *network, NetNS: *netns, Forwards: pf},
 			CloudInit: model.CloudInitSpec{
 				Hostname:          *hostname,
 				User:              *guestUser,
@@ -53,6 +94,7 @@ func machineSpecFromFlags(fs *flag.FlagSet) (spec func() model.MachineSpec, imag
 			GuestAgent: model.GuestAgentSpec{Enabled: *guestAgent},
 			PowerState: "Running",
 			Priority:   int32(*priority),
+			Lifecycle:  lifecycle,
 		}
 	}, image
 }
@@ -70,7 +112,7 @@ func machineSpecFromFlags(fs *flag.FlagSet) (spec func() model.MachineSpec, imag
 // create-a-Machine behavior below, byte-for-byte unchanged.
 func cmdCreate(ctx context.Context, kc *kube.Client, args []string) {
 	if len(args) < 1 {
-		fatal(fmt.Errorf("usage: kaironctl create NAME --image PATH [flags] | create machineset|machinepool|instancetype|migrationpolicy|snapshotschedule|quota|budget|networkpolicy|securitygroup NAME [flags]"))
+		fatal(fmt.Errorf("usage: kaironctl create NAME --image PATH [flags] | create machineset|machinepool|instancetype|migrationpolicy|snapshotschedule|quota|budget|networkpolicy|securitygroup NAME [flags] | create clone SOURCE --name NEW"))
 	}
 	switch strings.ToLower(args[0]) {
 	case "machineset", "machinesets":
@@ -100,11 +142,15 @@ func cmdCreate(ctx context.Context, kc *kube.Client, args []string) {
 	case "securitygroup", "securitygroups", "networksecuritygroups":
 		cmdCreateSecurityGroup(ctx, kc, args[1:])
 		return
+	case "clone":
+		cmdCreateClone(ctx, kc, args[1:])
+		return
 	}
 	name := args[0]
 	fs := flag.NewFlagSet("create", flag.ExitOnError)
 	ns := fs.String("namespace", "default", "namespace")
 	specFn, image := machineSpecFromFlags(fs)
+	co := createOutputFlags(fs)
 	_ = fs.Parse(args[1:])
 	if *image == "" {
 		fatal(fmt.Errorf("--image PATH is required"))
@@ -114,11 +160,14 @@ func cmdCreate(ctx context.Context, kc *kube.Client, args []string) {
 		Metadata: model.ObjectMeta{Name: name, Namespace: *ns},
 		Spec:     specFn(),
 	}
+	if co.preview(m) {
+		return
+	}
 	out, err := kc.CreateMachine(ctx, *ns, m)
 	if err != nil {
 		fatal(err)
 	}
-	okf("machine/%s created", out.Metadata.Name)
+	co.done(out, "machine/%s created", out.Metadata.Name)
 }
 
 // cmdCreateMachineSet handles `kaironctl create machineset NAME [flags]`,
@@ -138,6 +187,7 @@ func cmdCreateMachineSet(ctx context.Context, kc *kube.Client, args []string) {
 	var labels stringSliceFlag
 	fs.Var(&labels, "label", "label key=value applied to every replica this MachineSet creates, in addition to its own bookkeeping labels (repeatable)")
 	specFn, image := machineSpecFromFlags(fs)
+	co := createOutputFlags(fs)
 	_ = fs.Parse(args[1:])
 	if *image == "" {
 		fatal(fmt.Errorf("--image PATH is required"))
@@ -156,11 +206,14 @@ func cmdCreateMachineSet(ctx context.Context, kc *kube.Client, args []string) {
 			MaxUnavailable: *maxUnavailable,
 		},
 	}
+	if co.preview(ms) {
+		return
+	}
 	out, err := kc.CreateMachineSet(ctx, *ns, ms)
 	if err != nil {
 		fatal(err)
 	}
-	okf("machineset/%s created", out.Metadata.Name)
+	co.done(out, "machineset/%s created", out.Metadata.Name)
 }
 
 // cmdCreateMachinePool handles `kaironctl create machinepool NAME --image
@@ -173,12 +226,20 @@ func cmdCreateMachinePool(ctx context.Context, kc *kube.Client, args []string) {
 	fs := flag.NewFlagSet("create machinepool", flag.ExitOnError)
 	ns := fs.String("namespace", "default", "namespace")
 	replicas := fs.Int("replicas", 1, "warm (unclaimed) Machines to keep booted")
+	warmState := fs.String("warm-power-state", "", "Running (default) or Paused: pause members after --warmup so they hold memory but no CPU; a claim resumes one in milliseconds")
+	warmup := fs.Duration("warmup", 0, "with --warm-power-state Paused, how long a member runs before it is paused (default 30s)")
 	var labels stringSliceFlag
 	fs.Var(&labels, "label", "label key=value applied to every pool member (repeatable)")
 	specFn, image := machineSpecFromFlags(fs)
+	co := createOutputFlags(fs)
 	_ = fs.Parse(args[1:])
 	if *image == "" {
 		fatal(fmt.Errorf("--image PATH is required"))
+	}
+	switch *warmState {
+	case "", "Running", "Paused":
+	default:
+		fatal(fmt.Errorf("--warm-power-state must be Running or Paused"))
 	}
 	labelMap, err := parseKeyValues(labels)
 	if err != nil {
@@ -188,15 +249,20 @@ func cmdCreateMachinePool(ctx context.Context, kc *kube.Client, args []string) {
 		TypeMeta: model.TypeMeta{APIVersion: model.APIVersion, Kind: model.KindMachinePool},
 		Metadata: model.ObjectMeta{Name: name, Namespace: *ns},
 		Spec: model.MachinePoolSpec{
-			Replicas: *replicas,
-			Template: model.MachineTemplate{Labels: labelMap, Spec: specFn()},
+			Replicas:       *replicas,
+			Template:       model.MachineTemplate{Labels: labelMap, Spec: specFn()},
+			WarmPowerState: *warmState,
+			WarmupSeconds:  int64(warmup.Seconds()),
 		},
+	}
+	if co.preview(pool) {
+		return
 	}
 	out, err := kc.CreateMachinePool(ctx, *ns, pool)
 	if err != nil {
 		fatal(err)
 	}
-	okf("machinepool/%s created", out.Metadata.Name)
+	co.done(out, "machinepool/%s created", out.Metadata.Name)
 }
 
 // cmdCreateInstanceType handles `kaironctl create instancetype NAME --cpu N
@@ -218,6 +284,7 @@ func cmdCreateInstanceType(ctx context.Context, kc *kube.Client, args []string) 
 	numaNode := fs.Int("numa-node", -1, "pin to a specific host NUMA node (qemu only); -1 leaves it unset")
 	cpuSet := fs.String("cpu-set", "", "guest-visible vNUMA CPUSet hint (qemu only)")
 	cpuPinning := fs.Bool("cpu-pinning", false, "real, exclusive host-core allocation (qemu only)")
+	co := createOutputFlags(fs)
 	_ = fs.Parse(args[1:])
 	if *cpu == "" || *memory == "" {
 		fatal(fmt.Errorf("--cpu and --memory are both required"))
@@ -234,11 +301,14 @@ func cmdCreateInstanceType(ctx context.Context, kc *kube.Client, args []string) 
 		Metadata: model.ObjectMeta{Name: name, Namespace: *ns},
 		Spec:     model.MachineInstanceTypeSpec{Resources: resources},
 	}
+	if co.preview(it) {
+		return
+	}
 	out, err := kc.CreateMachineInstanceType(ctx, *ns, it)
 	if err != nil {
 		fatal(err)
 	}
-	okf("instancetype/%s created", out.Metadata.Name)
+	co.done(out, "instancetype/%s created", out.Metadata.Name)
 }
 
 // cmdCreateMigrationPolicy handles `kaironctl create migrationpolicy NAME
@@ -256,6 +326,7 @@ func cmdCreateMigrationPolicy(ctx context.Context, kc *kube.Client, args []strin
 	maxConcurrent := fs.Int("max-concurrent", 0, "cap on simultaneous non-terminal migrations of matching Machines cluster-wide; 0 is unlimited within this policy's own scope")
 	var tuning policyTuningFlags
 	tuning.register(fs)
+	co := createOutputFlags(fs)
 	_ = fs.Parse(args[1:])
 	if len(selector) == 0 {
 		fatal(fmt.Errorf("--selector k=v is required (repeatable)"))
@@ -277,11 +348,14 @@ func cmdCreateMigrationPolicy(ctx context.Context, kc *kube.Client, args []strin
 	if err := json.Unmarshal(raw, &p.Spec); err != nil {
 		fatal(err)
 	}
+	if co.preview(p) {
+		return
+	}
 	out, err := kc.CreateMigrationPolicy(ctx, *ns, p)
 	if err != nil {
 		fatal(err)
 	}
-	okf("migrationpolicy/%s created", out.Metadata.Name)
+	co.done(out, "migrationpolicy/%s created", out.Metadata.Name)
 }
 
 // cmdCreateSnapshotSchedule handles `kaironctl create snapshotschedule NAME
@@ -303,6 +377,7 @@ func cmdCreateSnapshotSchedule(ctx context.Context, kc *kube.Client, args []stri
 	suspend := fs.Bool("suspend", false, "create the schedule already suspended")
 	keepLast := fs.Int("keep-last", 0, "retain only the N most recent ready-to-use snapshots this schedule created per Machine, deleting older ones (0, the default, never prunes)")
 	startingDeadlineSeconds := fs.Int("starting-deadline-seconds", 0, "skip (rather than immediately fire) a run found more than this many seconds late, e.g. after the controller was down (0, the default, never skips -- an overdue run always fires)")
+	co := createOutputFlags(fs)
 	_ = fs.Parse(args[1:])
 	if len(selector) == 0 {
 		fatal(fmt.Errorf("--selector k=v is required (repeatable)"))
@@ -329,11 +404,14 @@ func cmdCreateSnapshotSchedule(ctx context.Context, kc *kube.Client, args []stri
 	if err := s.Spec.Validate(); err != nil {
 		fatal(err)
 	}
+	if co.preview(s) {
+		return
+	}
 	out, err := kc.CreateMachineSnapshotSchedule(ctx, *ns, s)
 	if err != nil {
 		fatal(err)
 	}
-	okf("snapshotschedule/%s created", out.Metadata.Name)
+	co.done(out, "snapshotschedule/%s created", out.Metadata.Name)
 }
 
 // cmdCreateQuota handles `kaironctl create quota NAME [--max-machines N]
@@ -356,6 +434,7 @@ func cmdCreateQuota(ctx context.Context, kc *kube.Client, args []string) {
 	maxMachines := fs.Int("max-machines", -1, "cap on scheduled Machine count in this namespace; -1 (the default) leaves it unset (no cap on this dimension)")
 	maxTotalCPU := fs.String("max-total-cpu", "", "cap on total vCPUs scheduled in this namespace, summed across every scheduled Machine's spec.resources.cpu")
 	maxTotalMemory := fs.String("max-total-memory", "", "cap on total memory scheduled in this namespace, summed across every scheduled Machine's spec.resources.memory")
+	co := createOutputFlags(fs)
 	_ = fs.Parse(args[1:])
 	if *maxMachines < 0 && *maxTotalCPU == "" && *maxTotalMemory == "" {
 		fatal(fmt.Errorf("at least one of --max-machines, --max-total-cpu, --max-total-memory is required -- a quota with no dimension set caps nothing"))
@@ -369,11 +448,14 @@ func cmdCreateQuota(ctx context.Context, kc *kube.Client, args []string) {
 		Metadata: model.ObjectMeta{Name: name, Namespace: *ns},
 		Spec:     spec,
 	}
+	if co.preview(q) {
+		return
+	}
 	out, err := kc.CreateMachineQuota(ctx, *ns, q)
 	if err != nil {
 		fatal(err)
 	}
-	okf("quota/%s created", out.Metadata.Name)
+	co.done(out, "quota/%s created", out.Metadata.Name)
 }
 
 // cmdCreateBudget handles `kaironctl create budget NAME --selector k=v
@@ -397,6 +479,7 @@ func cmdCreateBudget(ctx context.Context, kc *kube.Client, args []string) {
 	fs.Var(&selector, "selector", "label key=value a Machine must match to count against this budget (repeatable, required)")
 	minAvailable := fs.String("min-available", "", "integer or \"N%\" floor on healthy matching Machines (exactly one of this and --max-unavailable is required)")
 	maxUnavailable := fs.String("max-unavailable", "", "integer or \"N%\" ceiling on unhealthy/disrupted matching Machines (exactly one of this and --min-available is required)")
+	co := createOutputFlags(fs)
 	_ = fs.Parse(args[1:])
 	if len(selector) == 0 {
 		fatal(fmt.Errorf("--selector k=v is required (repeatable)"))
@@ -413,11 +496,14 @@ func cmdCreateBudget(ctx context.Context, kc *kube.Client, args []string) {
 		Metadata: model.ObjectMeta{Name: name, Namespace: *ns},
 		Spec:     model.MachineDisruptionBudgetSpec{Selector: selectorMap, MinAvailable: *minAvailable, MaxUnavailable: *maxUnavailable},
 	}
+	if co.preview(b) {
+		return
+	}
 	out, err := kc.CreateMachineDisruptionBudget(ctx, *ns, b)
 	if err != nil {
 		fatal(err)
 	}
-	okf("budget/%s created", out.Metadata.Name)
+	co.done(out, "budget/%s created", out.Metadata.Name)
 }
 
 // vmNetworkPolicyFromFlags registers every model.VmNetworkPolicy field as a
@@ -493,6 +579,7 @@ func cmdCreateNetworkPolicy(ctx context.Context, kc *kube.Client, args []string)
 	var selector stringSliceFlag
 	fs.Var(&selector, "selector", "label key=value a Machine must match when --machine-name is unset (repeatable)")
 	policyFn := vmNetworkPolicyFromFlags(fs)
+	co := createOutputFlags(fs)
 	_ = fs.Parse(args[1:])
 	if *machineName == "" && len(selector) == 0 {
 		fatal(fmt.Errorf("at least one of --machine-name or --selector is required -- a policy with neither set matches no Machine"))
@@ -510,11 +597,14 @@ func cmdCreateNetworkPolicy(ctx context.Context, kc *kube.Client, args []string)
 			Policy:      policyFn(),
 		},
 	}
+	if co.preview(p) {
+		return
+	}
 	out, err := kc.CreateMachineNetworkPolicy(ctx, *ns, p)
 	if err != nil {
 		fatal(err)
 	}
-	okf("networkpolicy/%s created", out.Metadata.Name)
+	co.done(out, "networkpolicy/%s created", out.Metadata.Name)
 }
 
 // cmdCreateSecurityGroup handles `kaironctl create securitygroup NAME
@@ -538,6 +628,7 @@ func cmdCreateSecurityGroup(ctx context.Context, kc *kube.Client, args []string)
 	var groupLabels stringSliceFlag
 	fs.Var(&groupLabels, "group-label", "key=value tag FluxVM matches group membership against, e.g. tier=frontend (repeatable)")
 	policyFn := vmNetworkPolicyFromFlags(fs)
+	co := createOutputFlags(fs)
 	_ = fs.Parse(args[1:])
 	g := model.NetworkSecurityGroup{
 		TypeMeta: model.TypeMeta{APIVersion: model.APIVersion, Kind: model.KindNetworkSecurityGroup},
@@ -550,11 +641,14 @@ func cmdCreateSecurityGroup(ctx context.Context, kc *kube.Client, args []string)
 			Policy:      policyFn(),
 		},
 	}
+	if co.preview(g) {
+		return
+	}
 	out, err := kc.CreateNetworkSecurityGroup(ctx, *ns, g)
 	if err != nil {
 		fatal(err)
 	}
-	okf("securitygroup/%s created", out.Metadata.Name)
+	co.done(out, "securitygroup/%s created", out.Metadata.Name)
 }
 
 // cmdScale mutates spec.replicas on an existing MachineSet -- the only

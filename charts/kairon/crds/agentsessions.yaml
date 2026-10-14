@@ -1,0 +1,309 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: agentsessions.kairon.zyvor.dev
+spec:
+  group: kairon.zyvor.dev
+  scope: Namespaced
+  names:
+    plural: agentsessions
+    singular: agentsession
+    kind: AgentSession
+    shortNames:
+    - asess
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    subresources: &subresources
+      status: {}
+    additionalPrinterColumns: &columns
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    - name: Node
+      type: string
+      jsonPath: .spec.nodeName
+    - name: Agent
+      type: string
+      jsonPath: .spec.agent
+    - name: Backend
+      type: string
+      jsonPath: .status.backend
+    - name: Expires
+      type: date
+      jsonPath: .status.expiresAt
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+    schema: &schema
+      openAPIV3Schema:
+        type: object
+        description: A FluxVM agent session (its own sandbox VM, workspace, policy,
+          checkpoints and event ledger) scheduled onto a node whose FluxVM serves
+          /v1/agents/sessions. See docs/guides/agent-sessions.md.
+        required:
+        - spec
+        properties:
+          spec:
+            type: object
+            properties:
+              agent:
+                type: string
+                maxLength: 64
+                pattern: '^[A-Za-z0-9._-]+$'
+                x-kubernetes-validations:
+                - rule: self == oldSelf
+                  message: agent is immutable
+              workspace:
+                type: object
+                x-kubernetes-validations:
+                - rule: self == oldSelf
+                  message: workspace is immutable
+                properties:
+                  git:
+                    type: string
+                    maxLength: 500
+                    pattern: '^https://'
+                  path:
+                    type: string
+                    maxLength: 200
+                    pattern: '^/[A-Za-z0-9/._-]*$'
+                  mode:
+                    type: string
+                    enum: ["clone", "readonly"]
+                  requireReady:
+                    type: boolean
+              resources:
+                type: object
+                x-kubernetes-validations:
+                - rule: self == oldSelf
+                  message: resources are immutable
+                properties:
+                  cpu:
+                    type: string
+                  memory:
+                    type: string
+              image:
+                type: string
+                x-kubernetes-validations:
+                - rule: self == oldSelf
+                  message: image is immutable
+              engine:
+                type: string
+                enum: ["agent"]
+                x-kubernetes-validations:
+                - rule: self == oldSelf
+                  message: engine is immutable
+              policy:
+                type: object
+                x-kubernetes-validations:
+                - rule: self == oldSelf
+                  message: policy is immutable
+                properties:
+                  preset:
+                    type: string
+                    enum: ["offline", "developer-safe", "open"]
+                  network:
+                    type: object
+                    properties:
+                      default:
+                        type: string
+                        enum: ["deny", "allow"]
+                      enforcement:
+                        type: string
+                        enum: ["strict", "best-effort"]
+                      allow:
+                        type: array
+                        items:
+                          type: object
+                          required: ["host"]
+                          properties:
+                            host:
+                              type: string
+                              minLength: 1
+                            methods:
+                              type: array
+                              items: {type: string}
+                            paths:
+                              type: array
+                              items: {type: string}
+                  filesystem:
+                    type: object
+                    properties:
+                      read:
+                        type: array
+                        items: {type: string}
+                      write:
+                        type: array
+                        items: {type: string}
+                      enforcement:
+                        type: string
+                        enum: ["strict", "best-effort"]
+                  process:
+                    type: object
+                    properties:
+                      allow:
+                        type: array
+                        items: {type: string}
+                      deny:
+                        type: array
+                        items: {type: string}
+                      ask:
+                        type: array
+                        items: {type: string}
+              budget:
+                type: object
+                x-kubernetes-validations:
+                - rule: self == oldSelf
+                  message: budget is immutable
+                properties:
+                  maxExecs: {type: integer, minimum: 1}
+                  maxExecSeconds: {type: integer, minimum: 1}
+                  maxJobs: {type: integer, minimum: 1}
+                  maxConcurrentJobs: {type: integer, minimum: 1}
+                  maxChildren: {type: integer, minimum: 1}
+                  maxComputeSeconds: {type: integer, minimum: 1}
+                  maxOutputBytes: {type: integer, minimum: 1}
+                  maxWorkspaceBytes: {type: integer, minimum: 1}
+              ttlSeconds:
+                type: integer
+                minimum: 1
+                x-kubernetes-validations:
+                - rule: self == oldSelf
+                  message: ttlSeconds is immutable
+              nodeName:
+                type: string
+                x-kubernetes-validations:
+                - rule: self == oldSelf
+                  message: nodeName is set once
+              placement:
+                type: object
+                properties:
+                  nodeSelector:
+                    type: object
+                    additionalProperties:
+                      type: string
+                  tolerations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key: {type: string}
+                        operator: {type: string}
+                        value: {type: string}
+                        effect: {type: string}
+          status:
+            type: object
+            properties:
+              phase:
+                type: string
+                enum: ["Pending", "Creating", "Running", "Ended", "Failed"]
+              message:
+                type: string
+              nodeName:
+                type: string
+              sessionID:
+                type: string
+              sandboxID:
+                type: string
+              backend:
+                type: string
+              state:
+                type: string
+              capabilities:
+                type: object
+                properties:
+                  snapshot: {type: boolean}
+                  fork: {type: boolean}
+                  pty: {type: boolean}
+                  confinement: {type: boolean}
+                  httpPolicy: {type: boolean}
+                  engine: {type: string}
+                  supervisor: {type: boolean}
+              policy:
+                type: object
+                properties:
+                  preset: {type: string}
+                  offline: {type: boolean}
+                  allowHosts:
+                    type: array
+                    items: {type: string}
+                  process:
+                    type: object
+                    properties:
+                      allow:
+                        type: array
+                        items: {type: string}
+                      deny:
+                        type: array
+                        items: {type: string}
+                      ask:
+                        type: array
+                        items: {type: string}
+                  unenforced:
+                    type: array
+                    items: {type: string}
+                  httpRules:
+                    type: array
+                    items: {type: string}
+                  enforcement: {type: string}
+                  networkEnforcement: {type: string}
+              workspace:
+                type: object
+                properties:
+                  path: {type: string}
+                  git: {type: string}
+                  mode: {type: string}
+                  cloned: {type: boolean}
+                  baseline: {type: boolean}
+                  note: {type: string}
+              checkpoints:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    tag: {type: string}
+                    memory: {type: boolean}
+                    createdAt: {type: string, format: date-time}
+              parent:
+                type: string
+              children:
+                type: array
+                items: {type: string}
+              usage:
+                type: object
+                properties:
+                  execs: {type: integer}
+                  execMillis: {type: integer}
+                  jobs: {type: integer}
+                  children: {type: integer}
+                  workspaceBytes: {type: integer}
+              createdAt:
+                type: string
+                format: date-time
+              expiresAt:
+                type: string
+                format: date-time
+              createRequestedAt:
+                type: string
+                format: date-time
+  - name: v1beta1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1beta1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema
+  - name: v1alpha1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1alpha1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema

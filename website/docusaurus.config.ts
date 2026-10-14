@@ -97,15 +97,27 @@ const config: Config = {
             {label: 'Getting started', to: '/docs/getting-started'},
             {label: 'What ships', to: '/docs/WHAT_SHIPS'},
             {label: 'Status', to: '/docs/STATUS'},
+            {label: 'Compatibility', to: '/docs/COMPATIBILITY'},
             {label: 'CLI', to: '/docs/CLI'},
             {label: 'Architecture', to: '/docs/architecture'},
             {label: 'Network Fabric', to: '/docs/network-fabric'},
           ],
         },
         {
+          title: 'New in v0.10',
+          items: [
+            {label: 'Agent sessions', to: '/docs/guides/agent-sessions'},
+            {label: 'Agent sandboxes', to: '/docs/guides/agent-sandboxes'},
+            {label: 'Cross-cluster DR', to: '/docs/guides/cross-cluster-dr'},
+            {label: 'Mac Fabric', to: '/docs/guides/mac-fabric'},
+            {label: 'Coming from virtctl', to: '/docs/CLI#coming-from-virtctl'},
+          ],
+        },
+        {
           title: 'Project',
           items: [
             {label: 'GitHub', href: 'https://github.com/zyvorai/zyvor-kairon'},
+            {label: 'Release notes', href: 'https://github.com/zyvorai/zyvor-kairon/blob/main/RELEASE_NOTES.md'},
             {label: 'Roadmap', href: 'https://github.com/zyvorai/zyvor-kairon/blob/main/ROADMAP.md'},
             {label: 'License (Apache-2.0)', href: 'https://github.com/zyvorai/zyvor-kairon/blob/main/LICENSE'},
           ],

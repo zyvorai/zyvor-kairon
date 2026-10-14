@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-  Activity, Archive, ArchiveRestore, ArrowLeftRight, Box, Boxes, Disc3, Calendar, Camera, Cpu, Gauge, HardDrive, Layers, Network, RotateCcw, Route, Server,
+  Activity, Archive, ArchiveRestore, ArrowLeftRight, Bot, Box, Boxes, Disc3, Download, Calendar, Camera, Cpu, Gauge, HardDrive, Layers, Network, RotateCcw, Route, Server,
   FlaskConical, Shield, ShieldCheck, Sparkles, Stethoscope, UserCog, Waypoints,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -16,6 +16,7 @@ const ICONS: Record<string, ReactNode> = {
   topology: <Waypoints size={18} />,
   storage: <HardDrive size={18} />,
   pools: <Boxes size={18} />,
+  'agent-sessions': <Bot size={18} />,
   images: <Disc3 size={18} />,
   backups: <Archive size={18} />,
   'backup-policies': <ArchiveRestore size={18} />,
@@ -24,6 +25,7 @@ const ICONS: Record<string, ReactNode> = {
   snapshots: <Camera size={18} />,
   'snapshot-schedules': <Calendar size={18} />,
   restores: <RotateCcw size={18} />,
+  exports: <Download size={18} />,
   quotas: <Gauge size={18} />,
   'disruption-budgets': <Shield size={18} />,
   'network-policies': <Network size={18} />,

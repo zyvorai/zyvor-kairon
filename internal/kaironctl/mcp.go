@@ -755,6 +755,30 @@ func kaironTools(opts *Options, newKube func() (*kube.Client, error)) []mcp.Tool
 			},
 		},
 		{
+			Name: "describe_claim",
+			Description: "Show a MachineClaim: phase, bound Machine, bind time, and metered usage since binding " +
+				"(active and suspended seconds, vCPU-seconds, memory GiB-seconds).",
+			Schema: mcp.Object(map[string]any{
+				"namespace": nsProp,
+				"name":      mcp.String("MachineClaim name"),
+			}, "name"),
+			Call: func(ctx context.Context, raw json.RawMessage) (string, error) {
+				var a machineRef
+				if err := decodeArgs(raw, &a); err != nil {
+					return "", err
+				}
+				return withKube(ctx, mcpCallTimeout, func(ctx context.Context, kc *kube.Client) (string, error) {
+					c, err := kc.GetMachineClaim(ctx, a.ns(nsDefault), a.Name)
+					if err != nil {
+						return "", err
+					}
+					return mcp.JSON(map[string]any{"claim": c.Metadata.Name, "namespace": c.Namespace(), "pool": c.Spec.PoolName,
+						"phase": c.Status.Phase, "machine": c.Status.MachineName, "boundAt": c.Status.BoundAt, "bindMillis": c.Status.BindMillis,
+						"ttlSeconds": c.Spec.TTLSeconds, "usage": c.Status.Usage, "message": c.Status.Message})
+				})
+			},
+		},
+		{
 			Name:        "release_claim",
 			Description: "Delete a MachineClaim. With reclaimPolicy Delete (the default) its Machine is deleted too.",
 			Write:       true,
@@ -853,6 +877,7 @@ func kaironTools(opts *Options, newKube func() (*kube.Client, error)) []mcp.Tool
 		},
 	}
 	tools = append(tools, agentPlaneTools()...)
+	tools = append(tools, sessionTools(nsDefault, withKube)...)
 	return append(tools, agentPlaneKubeTools(nsDefault, withKube)...)
 }
 

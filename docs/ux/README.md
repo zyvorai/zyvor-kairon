@@ -10,6 +10,7 @@ production or lab cluster. Captions say so.
 | `clips/*.gif`, `clips/*.webm` | Short interaction clips (bulk Stop, namespace switch + filter) |
 | `anim/hero.gif` | Tour built from the day shots |
 | `anim/*.svg` | Hand-written animated diagrams: how it works, Machine lifecycle, live migration, no pod per VM |
+| [`scripts/gen-anim-diagrams.py`](https://github.com/zyvorai/zyvor-kairon/blob/main/scripts/gen-anim-diagrams.py) | Writes the v0.10 feature diagrams in `anim/` (agent sessions, agent sandboxes, cross-cluster DR, node maintenance and DRS, elastic memory, incremental backups, Mac Fabric). Edit the script and rerun it; don't edit those SVGs by hand |
 | `sample-api.go` | Fake Kubernetes API with sample Kairon objects (in-memory; power actions take effect) |
 | `capture.mjs` | Playwright script that signs in, walks the pages and records the clips |
 | `build-hero-gif.sh` | Encodes `anim/hero.gif` (needs `ffmpeg`) |

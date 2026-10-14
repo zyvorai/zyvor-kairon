@@ -160,8 +160,23 @@ export interface MachineSnapshotRestore {
     targetClaimName: string;
     storageClassName?: string;
     storageSize?: string;
+    machine?: { name: string; powerState?: 'Running' | 'Stopped' };
   };
-  status?: { phase?: string; message?: string; restoredClaimName?: string };
+  status?: { phase?: string; message?: string; restoredClaimName?: string; restoredMachineName?: string };
+}
+
+export interface MachineExport {
+  metadata: ObjectMeta;
+  spec: { machineName: string; format?: 'qcow2' | 'raw'; ttl?: string };
+  status?: {
+    phase?: string;
+    nodeName?: string;
+    format?: string;
+    sizeBytes?: number;
+    expiresAt?: string;
+    downloadPath?: string;
+    message?: string;
+  };
 }
 
 // KaironNode mirrors internal/model.Node -- the real Kubernetes Node
@@ -238,6 +253,18 @@ export interface MachineInstanceType {
       cpuSet?: string;
       cpuPinning?: boolean;
     };
+  };
+}
+
+export interface MachinePreference {
+  metadata: ObjectMeta;
+  spec: {
+    backend?: string;
+    architecture?: string;
+    secureBoot?: boolean;
+    tpm?: boolean;
+    guestAgent?: boolean;
+    guestOS?: string;
   };
 }
 

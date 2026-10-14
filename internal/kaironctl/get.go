@@ -83,6 +83,16 @@ func cmdGet(ctx context.Context, kc *kube.Client, args []string) {
 		for _, r := range items {
 			fmt.Printf("%s\t%s\t%s\t%s\n", r.Metadata.Name, r.Spec.SnapshotName, dash(r.Status.RestoredClaimName), style.Phase(os.Stdout, r.Status.Phase))
 		}
+	case "export", "exports", "machineexport", "machineexports":
+		items, err := kc.ListMachineExportsNamespace(ctx, ns)
+		if err != nil {
+			fatal(err)
+		}
+		items = selectorFilter(items, selector, func(e model.MachineExport) map[string]string { return e.Metadata.Labels })
+		fmt.Printf("NAME\tMACHINE\tFORMAT\tPHASE\tNODE\n")
+		for _, e := range items {
+			fmt.Printf("%s\t%s\t%s\t%s\t%s\n", e.Metadata.Name, e.Spec.MachineName, dash(e.Status.Format), style.Phase(os.Stdout, e.Status.Phase), dash(e.Status.NodeName))
+		}
 	case "backup", "backups", "machinebackups":
 		items, err := kc.ListMachineBackupsNamespace(ctx, ns)
 		if err != nil {
@@ -140,9 +150,13 @@ func cmdGet(ctx context.Context, kc *kube.Client, args []string) {
 			fatal(err)
 		}
 		items = selectorFilter(items, selector, func(p model.MachinePool) map[string]string { return p.Metadata.Labels })
-		fmt.Printf("NAME\tWARM\tREADY\tCLAIMED\n")
+		fmt.Printf("NAME\tWARM\tREADY\tCLAIMED\tWARM-STATE\n")
 		for _, p := range items {
-			fmt.Printf("%s\t%d\t%d\t%d\n", p.Metadata.Name, p.Spec.Replicas, p.Status.ReadyReplicas, p.Status.Claimed)
+			warm := p.Spec.WarmPowerState
+			if warm == "" {
+				warm = "Running"
+			}
+			fmt.Printf("%s\t%d\t%d\t%d\t%s\n", p.Metadata.Name, p.Spec.Replicas, p.Status.ReadyReplicas, p.Status.Claimed, warm)
 		}
 	case "machineclaim", "machineclaims", "claim", "claims":
 		items, err := kc.ListMachineClaimsNamespace(ctx, ns)
@@ -150,10 +164,19 @@ func cmdGet(ctx context.Context, kc *kube.Client, args []string) {
 			fatal(err)
 		}
 		items = selectorFilter(items, selector, func(c model.MachineClaim) map[string]string { return c.Metadata.Labels })
-		fmt.Printf("NAME\tPOOL\tPHASE\tMACHINE\tBIND-MS\n")
+		fmt.Printf("NAME\tPOOL\tPHASE\tMACHINE\tBIND-MS\tACTIVE\tSUSPENDED\tVCPU-S\n")
 		for _, c := range items {
-			fmt.Printf("%s\t%s\t%s\t%s\t%d\n", c.Metadata.Name, c.Spec.PoolName, style.Phase(os.Stdout, dash(c.Status.Phase)), dash(c.Status.MachineName), c.Status.BindMillis)
+			u := c.Status.Usage
+			fmt.Printf("%s\t%s\t%s\t%s\t%d\t%s\t%s\t%.0f\n", c.Metadata.Name, c.Spec.PoolName, style.Phase(os.Stdout, dash(c.Status.Phase)), dash(c.Status.MachineName), c.Status.BindMillis,
+				time.Duration(u.ActiveSeconds)*time.Second, time.Duration(u.SuspendedSeconds)*time.Second, u.VCPUSeconds)
 		}
+	case "agentsession", "agentsessions", "asess":
+		items, err := kc.ListAgentSessionsNamespace(ctx, ns)
+		if err != nil {
+			fatal(err)
+		}
+		items = selectorFilter(items, selector, func(s model.AgentSession) map[string]string { return s.Metadata.Labels })
+		printAgentSessions(items)
 	case "instancetype", "instancetypes", "machineinstancetypes":
 		items, err := kc.ListMachineInstanceTypesNamespace(ctx, ns)
 		if err != nil {
@@ -164,6 +187,32 @@ func cmdGet(ctx context.Context, kc *kube.Client, args []string) {
 		for _, it := range items {
 			fmt.Printf("%s\t%s\t%s\n", it.Metadata.Name, dash(it.Spec.Resources.CPU), dash(it.Spec.Resources.Memory))
 		}
+	case "clusterinstancetype", "clusterinstancetypes", "machineclusterinstancetypes", "mcit":
+		items, err := kc.ListMachineClusterInstanceTypes(ctx)
+		if err != nil {
+			fatal(err)
+		}
+		items = selectorFilter(items, selector, func(it model.MachineClusterInstanceType) map[string]string { return it.Metadata.Labels })
+		fmt.Printf("NAME\tCPU\tMEMORY\n")
+		for _, it := range items {
+			fmt.Printf("%s\t%s\t%s\n", it.Metadata.Name, dash(it.Spec.Resources.CPU), dash(it.Spec.Resources.Memory))
+		}
+	case "preference", "preferences", "machinepreferences", "mpref":
+		items, err := kc.ListMachinePreferencesNamespace(ctx, ns)
+		if err != nil {
+			fatal(err)
+		}
+		items = selectorFilter(items, selector, func(p model.MachinePreference) map[string]string { return p.Metadata.Labels })
+		printPreferences(itemsPreferenceRows(items, func(p model.MachinePreference) (string, model.MachinePreferenceSpec) { return p.Metadata.Name, p.Spec }))
+	case "clusterpreference", "clusterpreferences", "machineclusterpreferences", "mcpref":
+		items, err := kc.ListMachineClusterPreferences(ctx)
+		if err != nil {
+			fatal(err)
+		}
+		items = selectorFilter(items, selector, func(p model.MachineClusterPreference) map[string]string { return p.Metadata.Labels })
+		printPreferences(itemsPreferenceRows(items, func(p model.MachineClusterPreference) (string, model.MachinePreferenceSpec) {
+			return p.Metadata.Name, p.Spec
+		}))
 	case "migrationpolicy", "migrationpolicies":
 		items, err := kc.ListMigrationPoliciesNamespace(ctx, ns)
 		if err != nil {
@@ -341,3 +390,24 @@ func cmdGet(ctx context.Context, kc *kube.Client, args []string) {
 // verb in this file); "top nodes" is cluster-wide by construction (a
 // Machine's Spec.NodeName can span namespaces onto the same physical node),
 // so -n/--namespace has no effect there, the same "ns silently unused for a
+
+type preferenceRow struct {
+	name string
+	spec model.MachinePreferenceSpec
+}
+
+func itemsPreferenceRows[T any](items []T, f func(T) (string, model.MachinePreferenceSpec)) []preferenceRow {
+	rows := make([]preferenceRow, 0, len(items))
+	for _, it := range items {
+		name, spec := f(it)
+		rows = append(rows, preferenceRow{name: name, spec: spec})
+	}
+	return rows
+}
+
+func printPreferences(rows []preferenceRow) {
+	fmt.Printf("NAME\tGUEST-OS\tBACKEND\tARCH\tSECUREBOOT\tTPM\tGUESTAGENT\n")
+	for _, r := range rows {
+		fmt.Printf("%s\t%s\t%s\t%s\t%t\t%t\t%t\n", r.name, dash(r.spec.GuestOS), dash(r.spec.Backend), dash(r.spec.Architecture), r.spec.SecureBoot, r.spec.TPM, r.spec.GuestAgent)
+	}
+}

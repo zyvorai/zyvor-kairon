@@ -38,6 +38,10 @@ func newWebhookTestController(t *testing.T, ns string, quotas []model.MachineQuo
 			_ = json.NewEncoder(w).Encode(model.MachineDisruptionBudgetList{Items: budgets})
 		case r.Method == http.MethodGet && r.URL.Path == "/apis/kairon.zyvor.dev/v1/namespaces/"+ns+"/machinemigrations":
 			_ = json.NewEncoder(w).Encode(model.MachineMigrationList{Items: migrations})
+		case r.Method == http.MethodGet && r.URL.Path == "/apis/kairon.zyvor.dev/v1/namespaces/"+ns+"/machineinstancetypes/small":
+			_ = json.NewEncoder(w).Encode(model.MachineInstanceType{Metadata: model.ObjectMeta{Namespace: ns, Name: "small"}})
+		case r.Method == http.MethodGet && r.URL.Path == "/apis/kairon.zyvor.dev/v1/machineclusterpreferences/linux":
+			_ = json.NewEncoder(w).Encode(model.MachineClusterPreference{Metadata: model.ObjectMeta{Name: "linux"}})
 		default:
 			http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusNotFound)
 		}
@@ -300,6 +304,31 @@ func TestValidateMachineAllowsCreateWithEmptyResourcesAwaitingInstanceType(t *te
 	r, req := admissionReq(t, "machines", "prod", admission.OperationCreate, incoming)
 	if d := ctl.validateMachine(r, req); !d.Allowed {
 		t.Fatalf("expected an empty spec.resources awaiting instance-type resolution to be allowed, got denied: %s", d.Reason)
+	}
+}
+
+func TestValidateMachineInstanceTypeAndPreferenceRefs(t *testing.T) {
+	ctl := newWebhookTestController(t, "prod", nil, nil, nil, nil)
+	cases := []struct {
+		name  string
+		spec  model.MachineSpec
+		allow bool
+	}{
+		{"existing type and cluster preference", model.MachineSpec{InstanceTypeName: "small", PreferenceName: "linux", PreferenceKind: model.KindMachineClusterPreference}, true},
+		{"missing type", model.MachineSpec{InstanceTypeName: "huge"}, false},
+		{"missing cluster type", model.MachineSpec{InstanceTypeName: "small", InstanceTypeKind: model.KindMachineClusterInstanceType}, false},
+		{"missing namespaced preference", model.MachineSpec{InstanceTypeName: "small", PreferenceName: "linux"}, false},
+		{"bad kind", model.MachineSpec{InstanceTypeName: "small", InstanceTypeKind: "Bogus"}, false},
+		{"explicit resources skip the type lookup", model.MachineSpec{InstanceTypeName: "huge", Resources: model.ResourceSpec{CPU: "1", Memory: "1Gi"}}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			incoming := model.Machine{Metadata: model.ObjectMeta{Namespace: "prod", Name: "vm-1"}, Spec: tc.spec}
+			r, req := admissionReq(t, "machines", "prod", admission.OperationCreate, incoming)
+			if d := ctl.validateMachine(r, req); d.Allowed != tc.allow {
+				t.Fatalf("allowed=%v, want %v (%s)", d.Allowed, tc.allow, d.Reason)
+			}
+		})
 	}
 }
 

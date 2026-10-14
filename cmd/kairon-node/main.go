@@ -24,9 +24,11 @@ import (
 	"github.com/zyvorai/kairon/internal/agent"
 	"github.com/zyvorai/kairon/internal/bgp"
 	"github.com/zyvorai/kairon/internal/consoleproxy"
+	"github.com/zyvorai/kairon/internal/diskexport"
 	"github.com/zyvorai/kairon/internal/fluxvm"
 	"github.com/zyvorai/kairon/internal/health"
 	"github.com/zyvorai/kairon/internal/kube"
+	"github.com/zyvorai/kairon/internal/loglevel"
 	"github.com/zyvorai/kairon/internal/macnode"
 	"github.com/zyvorai/kairon/internal/metrics"
 	"github.com/zyvorai/kairon/internal/migration"
@@ -82,6 +84,7 @@ func run() int {
 	fluxURL := flag.String("fluxvm-url", env("FLUXVM_URL", "http://127.0.0.1:7788"), "node-local FluxVM URL")
 	backend := flag.String("default-backend", env("KAIRON_DEFAULT_BACKEND", osDefault("qemu", "vz")), "backend used when Machine runtime.backend is auto")
 	imageRoot := flag.String("image-root", env("KAIRON_IMAGE_ROOT", osDefault("/var/lib/fluxvm/images", macSupport("FluxVM/images"))), "allowed root for Machine image paths")
+	exportDir := flag.String("export-dir", env("KAIRON_EXPORT_DIR", osDefault("/var/lib/kairon-node/exports", macSupport("Kairon/exports"))), "directory for MachineExport copies converted to another disk format")
 	imageCacheDir := flag.String("image-cache-dir", env("KAIRON_IMAGE_CACHE_DIR", ""), "directory kairon-node downloads/caches spec.image.source images into, keyed by digest -- empty (the default) refuses any Machine that sets spec.image.source; see docs/guides/machine-image-import.md")
 	vfioAllowlistRaw := flag.String("vfio-allowlist", env("KAIRON_VFIO_ALLOWLIST", ""), "comma-separated PCI BDFs this node permits for DRA-backed VFIO passthrough")
 	mdevParentsRaw := flag.String("mdev-parents", env("KAIRON_MDEV_PARENTS", ""), "comma-separated mediated device parents (PCI BDFs or names such as mbochs) the scheduler may create vGPUs on; empty allows every parent")
@@ -145,7 +148,8 @@ func run() int {
 		fmt.Fprintln(os.Stderr, "NODE_NAME is required")
 		return 2
 	}
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logLevel := new(slog.LevelVar)
+	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel}))
 	kc, err := kube.FromEnvironment()
 	if err != nil {
 		log.Error("kubernetes client", "error", err)
@@ -170,6 +174,7 @@ func run() int {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
+	go loglevel.Watch(ctx, kc, loglevel.Namespace(), "node", node, logLevel, log)
 	if *registerNode {
 		discover := func(ctx context.Context) macnode.Info {
 			info := macnode.Discover()
@@ -231,7 +236,8 @@ func run() int {
 		return 2
 	}
 
-	configureConsole(ctx, log, fc, *consoleAddr, *consoleToken, *consoleTLSCert, *consoleTLSKey)
+	exports := &diskexport.Registry{}
+	configureConsole(ctx, log, fc, exports, *consoleAddr, *consoleToken, *consoleTLSCert, *consoleTLSKey)
 
 	vnetCfg, err := configureVirtualNetworks(ctx, log, kc, node, *vnetSync, *vnetUplink, *vnetNodeIP, *bgpPeers, uint32(*bgpASN), *bgpRouterID, *bgpNextHop, *bgpServiceVIPs, *bgpPrefixes)
 	if err != nil {
@@ -246,6 +252,8 @@ func run() int {
 		DefaultBackend:               *backend,
 		ImageRoot:                    *imageRoot,
 		ImageCacheDir:                *imageCacheDir,
+		Exports:                      exports,
+		ExportDir:                    *exportDir,
 		VFIOAllowlist:                vfioAllowlist,
 		MdevParents:                  agent.ParseMdevParents(*mdevParentsRaw),
 		MigrationPeer:                peer,
@@ -429,7 +437,7 @@ func configureMigration(ctx context.Context, log *slog.Logger, cancel context.Ca
 // down with it -- console is a purely optional, add-on capability, and
 // e.g. a port already in use on a shared host should just mean "no
 // console today," not "no Machine reconciliation either."
-func configureConsole(ctx context.Context, log *slog.Logger, fc *fluxvm.Client, addr, token, tlsCertPath, tlsKeyPath string) {
+func configureConsole(ctx context.Context, log *slog.Logger, fc *fluxvm.Client, exports *diskexport.Registry, addr, token, tlsCertPath, tlsKeyPath string) {
 	if strings.TrimSpace(token) == "" {
 		log.Warn("VNC console relay disabled; set --console-token/$KAIRON_NODE_CONSOLE_TOKEN to enable")
 		return
@@ -455,7 +463,7 @@ func configureConsole(ctx context.Context, log *slog.Logger, fc *fluxvm.Client, 
 		return
 	}
 	server := &http.Server{
-		Handler:           (&consoleproxy.Server{Flux: fc, Token: token}).Handler(),
+		Handler:           (&consoleproxy.Server{Flux: fc, Token: token, Exports: exports}).Handler(),
 		TLSConfig:         tlsConfig,
 		ReadHeaderTimeout: 5 * time.Second,
 		// No WriteTimeout/IdleTimeout: a VNC session is a long-lived

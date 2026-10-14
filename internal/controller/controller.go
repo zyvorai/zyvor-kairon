@@ -72,6 +72,8 @@ type Controller struct {
 	drsLastPlan    string
 	staleEvacMu    sync.Mutex
 	staleEvacNoted map[string]bool
+	exposeMu       sync.Mutex
+	exposeWarned   bool
 	// CiliumAttach enables reconcile of CiliumExternalWorkload for Machines
 	// with spec.network.ciliumAttach. Off by default (Helm network.ciliumAttach).
 	CiliumAttach bool
@@ -150,11 +152,18 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 	machines, volumesNotReady := c.reconcileAtlasVolumes(ctx, machines)
 	c.reconcileCiliumAttach(ctx, machines)
 	c.reconcileCiliumPolicySync(ctx)
+	c.reconcileExposedServices(ctx, machines)
+	c.reconcileLifecycle(ctx, machines, time.Now())
 	nodes, err := c.Kube.ListNodes(ctx)
 	if err != nil {
 		return err
 	}
 	nodeLoad := scheduler.BuildNodeLoad(machines)
+	agentSessions, err := c.listAgentSessions(ctx)
+	if err != nil {
+		return err
+	}
+	reserveAgentSessions(nodeLoad, agentSessions)
 	machineIndex := indexMachines(machines)
 
 	migrations, err := c.Kube.ListMachineMigrations(ctx)
@@ -268,6 +277,7 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	seedQuotaWithAgentSessions(quotaTrackers, agentSessions)
 	draPlacements, err := c.buildDRAPlacements(ctx, machines)
 	if err != nil {
 		return err
@@ -428,6 +438,7 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 		markScheduled(machines, m, node, cpuset, topoAlloc)
 		c.Log.Info("scheduled machine", "namespace", m.Namespace(), "machine", m.Metadata.Name, "node", node)
 	}
+	c.reconcileAgentSessions(ctx, agentSessions, nodes, machines, nodeLoad, quotaTrackers)
 	c.preemptForPending(ctx, unschedulable, machines, migrations)
 
 	// observedQuotas carries each tracker's final Spec/Status pair (seeded

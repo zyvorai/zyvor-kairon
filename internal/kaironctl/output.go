@@ -58,6 +58,8 @@ func resourcePlural(resource string) (plural string, core bool, ok bool) {
 		return "machinesnapshots", false, true
 	case "restore", "restores", "machinesnapshotrestore", "machinesnapshotrestores":
 		return "machinesnapshotrestores", false, true
+	case "export", "exports", "machineexport", "machineexports":
+		return "machineexports", false, true
 	case "backup", "backups", "machinebackup", "machinebackups":
 		return "machinebackups", false, true
 	case "backuprestore", "backuprestores", "machinebackuprestore", "machinebackuprestores":
@@ -72,8 +74,16 @@ func resourcePlural(resource string) (plural string, core bool, ok bool) {
 		return "machinepools", false, true
 	case "machineclaim", "machineclaims", "claim", "claims":
 		return "machineclaims", false, true
+	case "agentsession", "agentsessions", "asess":
+		return "agentsessions", false, true
 	case "instancetype", "instancetypes", "machineinstancetype", "machineinstancetypes":
 		return "machineinstancetypes", false, true
+	case "clusterinstancetype", "clusterinstancetypes", "machineclusterinstancetype", "machineclusterinstancetypes", "mcit":
+		return "machineclusterinstancetypes", false, true
+	case "preference", "preferences", "machinepreference", "machinepreferences", "mpref":
+		return "machinepreferences", false, true
+	case "clusterpreference", "clusterpreferences", "machineclusterpreference", "machineclusterpreferences", "mcpref":
+		return "machineclusterpreferences", false, true
 	case "migrationpolicy", "migrationpolicies":
 		return "migrationpolicies", false, true
 	case "snapshotschedule", "snapshotschedules", "machinesnapshotschedule", "machinesnapshotschedules":
@@ -105,7 +115,7 @@ func listPath(plural string, core bool, ns string) string {
 	if core {
 		return "/api/v1/" + plural
 	}
-	if plural == "nodetopologies" {
+	if plural == "nodetopologies" || plural == "machineclusterinstancetypes" || plural == "machineclusterpreferences" {
 		return fmt.Sprintf("/apis/%s/v1/%s", crdGroup, plural)
 	}
 	return fmt.Sprintf("/apis/%s/v1/namespaces/%s/%s", crdGroup, url.PathEscape(ns), plural)

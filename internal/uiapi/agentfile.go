@@ -60,7 +60,7 @@ func (s *Server) requireGuestFileAccess(w http.ResponseWriter, r *http.Request, 
 		return m, "", false
 	}
 	username = usernameFromContext(r.Context())
-	if !s.isAdminIdentity(r.Context(), username) {
+	if !s.guestExecAllowed(r.Context(), m, username) {
 		if s.Log != nil {
 			s.Log.Warn("uiapi agent-file denied: not an admin account", "username", username, "namespace", namespace, "name", name)
 		}
@@ -77,6 +77,16 @@ func (s *Server) requireGuestFileAccess(w http.ResponseWriter, r *http.Request, 
 	if s.ConsoleToken == "" || s.ConsolePort == "" {
 		writeError(w, http.StatusNotImplemented, "guest file access is not enabled on this deployment")
 		return m, "", false
+	}
+	m, woke, err := s.ensureAwake(r.Context(), m)
+	if err != nil {
+		writeWakeError(w, err)
+		return m, "", false
+	}
+	if woke {
+		if nodeAddr, err := s.nodeInternalIP(r.Context(), m.Status.NodeName); err == nil {
+			s.waitForGuestAgent(r.Context(), nodeAddr, m)
+		}
 	}
 	if m.Status.Phase != "Running" {
 		writeError(w, http.StatusConflict, "machine is not Running")

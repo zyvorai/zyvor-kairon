@@ -84,13 +84,13 @@ rules:
     resources: ["events"]
     verbs: ["create"]
   - apiGroups: ["kairon.zyvor.dev"]
-    resources: ["machines", "machines/status", "machinemigrations", "machinemigrations/status", "machinesnapshots", "machinesnapshots/status", "machinenetworkpolicies", "machinenetworkpolicies/status", "networksecuritygroups", "networksecuritygroups/status", "machinequotas", "machinequotas/status", "machinesnapshotrestores", "machinesnapshotrestores/status", "machinesets", "machinesets/status", "machinepools", "machinepools/status", "machineclaims", "machineclaims/status", "migrationpolicies", "migrationpolicies/status", "machinebackups", "machinebackups/status", "machinebackuprestores", "machinebackuprestores/status", "virtualnetworks", "virtualnetworks/status", "macnetworks", "macnetworks/status"]
+    resources: ["machines", "machines/status", "machinemigrations", "machinemigrations/status", "machinesnapshots", "machinesnapshots/status", "machinenetworkpolicies", "machinenetworkpolicies/status", "networksecuritygroups", "networksecuritygroups/status", "machinequotas", "machinequotas/status", "machinesnapshotrestores", "machinesnapshotrestores/status", "machinesets", "machinesets/status", "machinepools", "machinepools/status", "machineclaims", "machineclaims/status", "migrationpolicies", "migrationpolicies/status", "machinebackups", "machinebackups/status", "machinebackuprestores", "machinebackuprestores/status", "virtualnetworks", "virtualnetworks/status", "macnetworks", "macnetworks/status", "agentsessions", "agentsessions/status"]
     verbs: ["get", "list", "watch", "patch"]
   - apiGroups: ["kairon.zyvor.dev"]
     # Read-only: MachineInstanceType is pure reference data
     # kairon-controller looks up to resolve spec.instanceTypeName, never
     # writes -- see internal/controller/instancetype.go.
-    resources: ["machineinstancetypes", "machineimages", "nodetopologies"]
+    resources: ["machineinstancetypes", "machineclusterinstancetypes", "machinepreferences", "machineclusterpreferences", "machineimages", "nodetopologies"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["kairon.zyvor.dev"]
     # MachineAcceleratorProfiles are expanded into Machines' spec.devices
@@ -206,6 +206,16 @@ rules:
     # device itself.
     resources: ["resourceclaims", "resourceslices"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    # Lists the Services `kaironctl expose` labeled
+    # kairon.zyvor.dev/expose-machine; never creates or edits a Service.
+    resources: ["services"]
+    verbs: ["list"]
+  - apiGroups: ["discovery.k8s.io"]
+    # Keeps each exposed Service's EndpointSlice on its Machine's current
+    # guest IP (internal/controller/expose.go).
+    resources: ["endpointslices"]
+    verbs: ["get", "create", "update"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -247,6 +257,19 @@ rules:
     verbs: ["create"]
   - apiGroups: ["kairon.zyvor.dev"]
     resources: ["machines", "machines/status", "machinemigrations", "machinemigrations/status", "machinenetworkpolicies", "machinenetworkpolicies/status", "networksecuritygroups", "networksecuritygroups/status", "machinebackups", "machinebackups/status", "machinebackuprestores", "machinebackuprestores/status"]
+    verbs: ["get", "list", "watch", "patch"]
+  # MachineExport: kairon-node prepares the disk and reports status
+  # (internal/agent/export.go).
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machineexports"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machineexports/status"]
+    verbs: ["patch"]
+  # AgentSession: kairon-node creates the session in its FluxVM, mirrors it
+  # into status and removes its finalizer (internal/agent/agentsession.go).
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["agentsessions", "agentsessions/status"]
     verbs: ["get", "list", "watch", "patch"]
   # Read-only: internal/agent/hotplug.go's own resize-past-quota self-check
   # (independent of webhook.enabled) needs to list MachineQuotas/Machines
@@ -316,6 +339,16 @@ rules:
   - apiGroups: ["kairon.zyvor.dev"]
     resources: ["machinesnapshotrestores"]
     verbs: ["get", "list", "watch", "create", "delete"]
+  # Agent sessions (internal/uiapi/agentsessions.go): the verb relay reads
+  # them, a fork creates one child per new FluxVM session, the dashboard
+  # deletes them.
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["agentsessions"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  # The dashboard's Exports page and download proxy (internal/uiapi/exports.go).
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machineexports"]
+    verbs: ["get", "list", "watch", "create", "delete"]
   # Read-only: the six CRDs kairon-ui's own dashboard/REST routes list (see
   # internal/uiapi/fleet.go) -- GET /api/v1/quotas/disruption-budgets/
   # machinesets/instancetypes/migration-policies/snapshot-schedules. This
@@ -329,7 +362,7 @@ rules:
   # suspend/resume toggle, handleSuspendMachineSnapshotSchedule) -- all
   # already-shipped mutations that were equally broken.
   - apiGroups: ["kairon.zyvor.dev"]
-    resources: ["machinequotas", "machinedisruptionbudgets", "machineinstancetypes", "machineimages", "migrationpolicies", "machinepools", "machineclaims", "nodetopologies", "virtualnetworks", "macnetworks"]
+    resources: ["machinequotas", "machinedisruptionbudgets", "machineinstancetypes", "machineclusterinstancetypes", "machinepreferences", "machineclusterpreferences", "machineimages", "migrationpolicies", "machinepools", "machineclaims", "nodetopologies", "virtualnetworks", "macnetworks"]
     verbs: ["get", "list", "watch"]
   # The dashboard creates and deletes backups and creates restores
   # (internal/uiapi/backups.go), same as `kaironctl backup`.
@@ -365,6 +398,16 @@ metadata: {name: kairon-controller-dr-peers, namespace: kairon-system}
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
+    verbs: ["get"]
+---
+# kaironctl adm log-verbosity writes this ConfigMap; components only read it.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: kairon-log-levels, namespace: kairon-system}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["kairon-log-levels"]
     verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -430,6 +473,15 @@ metadata: {name: kairon-controller-leader-election, namespace: kairon-system}
 roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: kairon-controller-leader-election}
 subjects:
   - {kind: ServiceAccount, name: kairon-controller, namespace: kairon-system}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: kairon-log-levels, namespace: kairon-system}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: kairon-log-levels}
+subjects:
+  - {kind: ServiceAccount, name: kairon-controller, namespace: kairon-system}
+  - {kind: ServiceAccount, name: kairon-node, namespace: kairon-system}
+  - {kind: ServiceAccount, name: kairon-ui, namespace: kairon-system}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

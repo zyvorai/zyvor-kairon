@@ -40,6 +40,7 @@ func cmdMigrate(ctx context.Context, kc *kube.Client, args []string) {
 	fs.UintVar(&f.compressionLevel, "compression-level", 0, "adaptive: compression level (zstd 1-20, zlib 1-9)")
 	fs.Uint64Var(&f.maxBandwidth, "max-bandwidth-mbps", 0, "adaptive: bandwidth ceiling")
 	fs.BoolVar(&f.adaptiveBandwidth, "adaptive-bandwidth", false, "adaptive: raise bandwidth towards --max-bandwidth-mbps while throughput keeps up")
+	dryRun := fs.Bool("dry-run", false, "create the MachineMigration with dryRun=All: admission (budgets, policies) runs, nothing is stored")
 	_ = fs.Parse(args[1:])
 	f.set = map[string]bool{}
 	fs.Visit(func(fl *flag.Flag) { f.set[fl.Name] = true })
@@ -54,6 +55,13 @@ func cmdMigrate(ctx context.Context, kc *kube.Client, args []string) {
 		TypeMeta: model.TypeMeta{APIVersion: model.APIVersion, Kind: model.KindMachineMigration},
 		Metadata: model.ObjectMeta{Name: *name, Namespace: *ns},
 		Spec:     spec,
+	}
+	if *dryRun {
+		if _, err := kc.DryRunCreateMachineMigration(ctx, *ns, migration); err != nil {
+			fatal(err)
+		}
+		okf("machinemigration/%s would be created (server dry run: admission accepted it, nothing changed)", *name)
+		return
 	}
 	out, err := kc.CreateMachineMigration(ctx, *ns, migration)
 	if err != nil {

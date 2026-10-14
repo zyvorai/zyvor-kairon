@@ -106,6 +106,7 @@ OVERRIDES = {
     # node-scoped list). Bodies have no path literal for the regex to read.
     "ListMachines": ("kairon.zyvor.dev", "machines", "list"),
     "ListMachineMigrations": ("kairon.zyvor.dev", "machinemigrations", "list"),
+    "ListAgentSessions": ("kairon.zyvor.dev", "agentsessions", "list"),
     # Watch lives in internal/kube/watch.go; same resources as the List forms.
     "WatchMachines": ("kairon.zyvor.dev", "machines", "watch"),
     "WatchMachineMigrations": ("kairon.zyvor.dev", "machinemigrations", "watch"),
@@ -116,6 +117,9 @@ OVERRIDES = {
     "CreateDNSEndpoint": ("externaldns.k8s.io", "dnsendpoints", "create"),
     "PatchDNSEndpoint": ("externaldns.k8s.io", "dnsendpoints", "patch"),
     "DeleteDNSEndpoint": ("externaldns.k8s.io", "dnsendpoints", "delete"),
+    # ?dryRun=All writes; the apiserver still authorizes the real verb.
+    "DryRunPatchMachine": ("kairon.zyvor.dev", "machines", "patch"),
+    "DryRunCreateMachineMigration": ("kairon.zyvor.dev", "machinemigrations", "create"),
 }
 
 VERB_PREFIXES = [

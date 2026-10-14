@@ -233,6 +233,10 @@ func TestImageRootRejectsTraversal(t *testing.T) {
 	}))
 	defer ks.Close()
 	fs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/agents/sessions" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 		t.Fatal("FluxVM should not be called for rejected image path")
 	}))
 	defer fs.Close()

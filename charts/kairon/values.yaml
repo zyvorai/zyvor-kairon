@@ -751,6 +751,12 @@ ui:
     # has no real Kubernetes User to check RBAC against, so it's denied
     # outright when this is true. See docs/guides/kairon-ui-console-rbac.md.
     rbacConsoleCheck: false
+    # sandboxOperatorExec, when true, lets a non-admin operator who may
+    # open a Machine's console also exec, transfer files and use the
+    # sandbox HTTP proxy -- but only on Machines labelled
+    # kairon.zyvor.dev/sandbox=true. Off by default: guest exec stays
+    # admin-only. See docs/guides/agent-sandboxes.md.
+    sandboxOperatorExec: false
     namespaceScoping:
       # enabled turns on per-namespace authorization for kairon-ui's own
       # HTTP layer: once true, a non-admin session-token operator (a
@@ -872,6 +878,12 @@ ui:
   # in front of the pod and speaks HTTP to it; logins and tokens are then
   # clear text on the pod network. Cannot be combined with tls.secretName.
   insecureHttp: false
+  agentSessions:
+    # previews serves AgentSession preview URLs unauthenticated at
+    # /preview/<namespace>/<name>/<token>/ (the 256-bit token is the
+    # credential). Pages run in a sandboxed opaque origin and cannot set
+    # cookies. Off by default. See docs/guides/agent-sessions.md.
+    previews: false
   ingress:
     enabled: false
     className: ""

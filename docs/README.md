@@ -15,6 +15,9 @@ The root [README](https://github.com/zyvorai/zyvor-kairon/blob/main/README.md) i
 | Install and run a first Machine | [getting-started.md](getting-started.md) |
 | Deploy to a host in one command, no local build | [getting-started.md#fastest-path](getting-started.md#fastest-path) |
 | Check that it all works | [guides/selftest.md](guides/selftest.md) (`kaironctl selftest`) |
+| See what's new in v0.10.0 and how to upgrade | [RELEASE_NOTES.md](https://github.com/zyvorai/zyvor-kairon/blob/main/RELEASE_NOTES.md) (agent sessions, agent sandboxes, cross-cluster DR, Mac Fabric, GPUs, DRS, NVMe-oF; HTTPS and console TLS by default) |
+| Find the kaironctl verb for a virtctl command | [CLI.md#coming-from-virtctl](CLI.md#coming-from-virtctl) |
+| Give an AI coding agent its own VM | [guides/agent-sessions.md](guides/agent-sessions.md) · [guides/agent-sandboxes.md](guides/agent-sandboxes.md) |
 | Ten-minute architecture tour | [../ARCHITECTURE.md](https://github.com/zyvorai/zyvor-kairon/blob/main/ARCHITECTURE.md) |
 | Deep architecture reference | [architecture.md](architecture.md) |
 | Full feature inventory | [WHAT_SHIPS.md](WHAT_SHIPS.md) |
@@ -64,6 +67,8 @@ The root [README](https://github.com/zyvorai/zyvor-kairon/blob/main/README.md) i
 | [`guides/machine-images.md`](guides/machine-images.md) | `MachineImage`: a cluster-scoped, versioned catalog of boot disks and ISOs, pinned into a Machine by digest once |
 | [`guides/machine-install-media.md`](guides/machine-install-media.md) | `spec.cdroms` + `spec.image.blank`: install Windows or Linux from an ISO onto an empty disk |
 | [`guides/machine-sets.md`](guides/machine-sets.md) | `MachineSet`: replica reconciliation, `RollingUpdate`/`Recreate` rollout strategy |
+| [`guides/agent-sandboxes.md`](guides/agent-sandboxes.md) | `spec.lifecycle` idle suspend, wake on connect and max lifetime; paused warm pools; per-claim usage; the SDK `Sandbox` class |
+| [`guides/agent-sessions.md`](guides/agent-sessions.md) | `AgentSession`: FluxVM agent sessions with workspace, policy, checkpoints, forks, jobs, files, git, previews and an exportable trajectory; admin approvals, chunked uploads, an interactive shell, credential grants, and the Mac guest's screen and input (experimental) |
 | [`guides/machine-fork.md`](guides/machine-fork.md) | `kaironctl fork` / `fork_machine`: live copies of a Running Machine from one memory snapshot |
 | [`guides/machine-pools.md`](guides/machine-pools.md) | `MachinePool` / `MachineClaim`: warm, pre-booted Machines claimed in one reconcile tick |
 | [`guides/machine-instance-types.md`](guides/machine-instance-types.md) | `MachineInstanceType`: a reusable named CPU/memory shape resolved into `spec.resources` once |
@@ -95,6 +100,7 @@ The root [README](https://github.com/zyvorai/zyvor-kairon/blob/main/README.md) i
 | [`guides/machine-guest-agent.md`](guides/machine-guest-agent.md) | `spec.guestAgent`: real `qemu-guest-agent`-reported `status.guestIP`, including `user`/SLIRP networking |
 | [`guides/machine-guest-exec.md`](guides/machine-guest-exec.md) | Guest exec (`qemu-guest-agent`), and the smaller API-only fsfreeze-status/firewall endpoints alongside it |
 | [`guides/machine-guest-agent-files.md`](guides/machine-guest-agent-files.md) | Guest file access and the backend-agnostic vsock-agent guest exec, both over `spec.guestAgent.console` |
+| [`guides/machine-port-forward.md`](guides/machine-port-forward.md) | `kaironctl port-forward`, `ssh` and `scp`: reach a port inside a Machine through the console relay, without a Service or a route to the guest network |
 | [`guides/machine-text-console.md`](guides/machine-text-console.md) | Interactive in-browser text console over FluxVM's own proprietary vsock guest agent |
 | [`guides/machine-logs.md`](guides/machine-logs.md) | Streaming a Machine's real captured serial console output -- Kairon's `kubectl logs`/`-f` equivalent |
 | [`guides/machine-vm-state-snapshot.md`](guides/machine-vm-state-snapshot.md) | Full hypervisor-level VM-state checkpoint/restore (RAM, CPU, device state) -- distinct from `MachineSnapshot`'s disk-content-only CSI snapshot |
@@ -129,4 +135,4 @@ The root [README](https://github.com/zyvorai/zyvor-kairon/blob/main/README.md) i
 | [`WHAT_SHIPS.md`](WHAT_SHIPS.md) | Full feature inventory (was README “What ships today”) |
 | [`CLI.md`](CLI.md) | Full `kaironctl` / `kubectl kairon` command reference (Cobra, embedded Helm, Krew) |
 | [`DEPENDENCIES.md`](DEPENDENCIES.md) | Stdlib-only controller/node vs named exceptions (CLI Helm, OIDC, CSI) |
-| [`STATUS.md`](STATUS.md) | v0.9.1 status + production gaps |
+| [`STATUS.md`](STATUS.md) | v0.10.0 status + production gaps |

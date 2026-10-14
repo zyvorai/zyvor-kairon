@@ -71,11 +71,11 @@ const crdGroup = "kairon.zyvor.dev"
 
 // coreCRDs are the kairon.zyvor.dev CRDs the chart installs (plural names).
 var coreCRDs = []string{
-	"machines", "machinemigrations", "machinesnapshots", "machinesnapshotrestores", "machinesnapshotschedules",
+	"machines", "machinemigrations", "machinesnapshots", "machinesnapshotrestores", "machineexports", "machinesnapshotschedules",
 	"machinesets", "machinepools", "machineclaims", "machinequotas", "machinedisruptionbudgets",
-	"machineimages", "machineinstancetypes", "machinenetworkpolicies", "networksecuritygroups",
+	"machineimages", "machineinstancetypes", "machineclusterinstancetypes", "machinepreferences", "machineclusterpreferences", "machinenetworkpolicies", "networksecuritygroups",
 	"migrationpolicies", "machinebackups", "machinebackuprestores", "machinebackuppolicies",
-	"machineprotectionplans", "macnetworks", "machineacceleratorprofiles", "nodetopologies",
+	"machineprotectionplans", "macnetworks", "machineacceleratorprofiles", "nodetopologies", "agentsessions",
 }
 
 func newDoctorCmd(opts *Options) *cobra.Command {

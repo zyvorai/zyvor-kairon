@@ -5,18 +5,81 @@ different site, an object-storage bucket, a laptop) -- for cross-cluster
 clone, off-site backup, or migrating a Machine's data to a completely
 different platform.
 
-## Why this is standard Kubernetes tooling, not new Kairon machinery
+## Built in: `MachineExport` and `kaironctl export`
 
-Kairon has no Pod/Job/Service creation of its own anywhere -- `kairon-node`
-talks to FluxVM directly and never runs a Machine inside a Pod (see
-[`ARCHITECTURE.md`](https://github.com/zyvorai/kairon/blob/main/ARCHITECTURE.md)), the same reason there's no
-"export server" this project could invent without taking on a real, new
-category of Kubernetes API surface (Pod scheduling, Service exposure, its
-own RBAC) purely to duplicate what a one-off Pod already does perfectly
-well. **Getting disk content out of a `PersistentVolume` is a solved,
-standard Kubernetes problem** -- a short-lived Pod that mounts the same
-PVC read-only and streams it wherever you want. This runbook shows the
-pattern, not a new tool.
+Like KubeVirt's `VirtualMachineExport`, but with no export Pod or
+Service. The node that holds the disk serves it through its existing
+relay, and kairon-ui proxies the download:
+
+```bash
+kaironctl stop web-1            # or: kaironctl halt web-1
+kaironctl export machine web-1 -o web-1.qcow2 --format qcow2
+```
+
+`kaironctl export machine` creates a `MachineExport`, waits until it is
+`Ready`, downloads it through kairon-ui (`KAIRON_UI_URL`,
+`KAIRON_UI_TOKEN`), then deletes the export unless you pass `--keep`.
+An interrupted download resumes when you rerun it with the same `--name`.
+`-o -` writes to stdout. The dashboard's **Exports** page offers the same
+flow, with a one-time download link.
+
+```yaml
+apiVersion: kairon.zyvor.dev/v1
+kind: MachineExport
+metadata: {name: web-1-export, namespace: default}
+spec:
+  machineName: web-1
+  format: qcow2     # or raw; empty keeps the disk's own format
+  ttl: 2h           # default 2h, max 168h
+```
+
+How it works:
+
+- kairon-node on the Machine's node resolves the boot disk. A `Halted`
+  Machine keeps its FluxVM record, so its live disk path is used. A
+  `Stopped` Machine has no FluxVM VM any more, so only a hostPath or
+  local PersistentVolume boot disk can be exported.
+- If `spec.format` differs from the disk's own format, or the disk is a
+  qcow2 overlay with a backing file (the usual FluxVM layout), kairon-node
+  runs `qemu-img convert` into `--export-dir` (default
+  `/var/lib/kairon-node/exports`, inside the unit's state directory);
+  `status.phase` is `Preparing` meanwhile. The download is always a
+  standalone image. The copy is removed when the export expires or is
+  deleted.
+- The node relay serves only disks its own agent registered for a `Ready`
+  export. It never serves a path taken from a request or from object
+  status. Downloads go through the shared node relay token, and support
+  HTTP Range requests for resuming.
+- kairon-ui serves `GET /api/v1/exports/{namespace}/{name}/download` (bearer
+  auth) and `POST .../link`, which returns a single-use
+  `/api/v1/export-links/{ticket}` URL valid for 30 seconds, for browsers.
+  Both apply the console access rules: a Machine annotated
+  `kairon.zyvor.dev/console-allowed-users` can only be exported by those
+  users or an admin.
+- If the Machine starts again, the export drops back to `Pending` and the
+  node stops serving it. A download already in flight keeps reading the
+  file, so don't start the Machine until the download is done.
+
+Real limits of the built-in path:
+
+- The source is a Machine. To export a `MachineSnapshot`, restore it into
+  a new Machine first (`kaironctl restore SNAP --target-claim C --machine
+  M`), then export that Machine.
+- CSI-backed and Atlas rbd boot volumes can't be exported while the
+  Machine is `Stopped`. Halt the Machine instead, or use the Pod pattern
+  below.
+- Needs the console relay (`console.enabled` in the chart), since that's
+  the path the bytes take.
+- kairon-node must be able to read the disk file. That holds for the host
+  install (`deploy-remote.sh`, kairon-node as a systemd service). The
+  Helm chart's DaemonSet runs kairon-node as non-root without the disk
+  directories mounted, so exports fail there with a permission or
+  not-found message until that changes.
+
+## The Pod pattern, for what the built-in path doesn't cover
+
+For CSI volumes, snapshot-only data, or pushing straight to object
+storage from inside the cluster, mount the PVC in a short-lived Pod.
 
 ## Step 1: get a consistent copy first (don't export a live boot disk directly)
 
@@ -82,12 +145,10 @@ and boot a new Machine from it normally -- see
 [`machine-storage.md`](guides/machine-storage.md)/
 [`machine-image-import.md`](guides/machine-image-import.md).
 
-## Real limits today
+## Real limits of the Pod pattern
 
 - **No Kairon-specific tooling.** This is plain Kubernetes primitives
-  (`Pod`, `PersistentVolumeClaim`, `kubectl cp`) -- no `kaironctl export`
-  command, no ticket/auth mechanism, no progress tracking. If your
-  workflow needs those, script this pattern yourself.
+  (`Pod`, `PersistentVolumeClaim`, `kubectl cp`), with no progress tracking.
 - **No built-in encryption or compression choice.** The example above
   gzips; swap in whatever your own security/bandwidth requirements need
   (the export Pod's command is yours to change).

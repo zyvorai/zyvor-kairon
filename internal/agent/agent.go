@@ -6,6 +6,7 @@ package agent
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -15,10 +16,13 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"google.golang.org/grpc"
 
+	"github.com/zyvorai/kairon/internal/diskexport"
 	"github.com/zyvorai/kairon/internal/fluxvm"
 	"github.com/zyvorai/kairon/internal/hotplugpersist"
 	"github.com/zyvorai/kairon/internal/kube"
@@ -106,6 +110,15 @@ type Agent struct {
 	// unaffected either way. Same fail-closed convention as
 	// CSISocketPath above.
 	ImageCacheDir string
+	// Exports is shared with the node relay, which serves only its entries.
+	Exports *diskexport.Registry
+	// ExportDir holds MachineExport copies converted to another format.
+	ExportDir  string
+	exportJobs sync.Map
+	cloneJobs  sync.Map
+	// activity holds the last activity sample per runtime ID.
+	activity      sync.Map
+	activityPrune atomic.Int64
 	// RegistryHTTP is the client spec.image.source.oci pulls use; nil
 	// means http.DefaultClient.
 	RegistryHTTP *http.Client
@@ -183,6 +196,7 @@ type Agent struct {
 	vnet           vnetState
 	// hibernationSweptAt throttles sweepMovedHibernations.
 	hibernationSweptAt time.Time
+	sessions           agentSessionState
 }
 
 func (a *Agent) Reconcile(ctx context.Context) error {
@@ -243,6 +257,11 @@ func (a *Agent) Reconcile(ctx context.Context) error {
 	if err := a.reconcileBackups(ctx, local); err != nil {
 		a.Log.Error("machine backup reconcile failed", "error", err)
 	}
+	if err := a.reconcileExports(ctx, local); err != nil {
+		a.Log.Error("machine export reconcile failed", "error", err)
+	}
+	a.sweepClones(local)
+	a.reconcileAgentSessions(ctx)
 	migSelector := model.MigrationSourceNodeLabelSelector(a.NodeName)
 	migrations, err := a.Kube.ListMachineMigrationsWithSelector(ctx, migSelector)
 	if err != nil {
@@ -323,6 +342,25 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 	// against --image-root.
 	usingSandboxTemplate := m.Spec.Sandbox != nil && m.Spec.Sandbox.TemplateName != ""
 	usingCatalogImage := m.Spec.Image.CatalogName != ""
+	cloned := false
+	if m.Metadata.Annotations[model.AnnotationCloneFrom] != "" && !usingSandboxTemplate {
+		path, ready, err := a.cloneBootDisk(ctx, m)
+		if err != nil {
+			return err
+		}
+		if !ready {
+			status := m.Status
+			status.Phase = "Pending"
+			status.NodeName = a.NodeName
+			status.Message = "copying the disk of machine/" + m.Metadata.Annotations[model.AnnotationCloneFrom]
+			status.Conditions = model.SetCondition(status.Conditions, model.Condition{
+				Type: "Ready", Status: "False", Reason: "CloningDisk", Message: status.Message,
+			})
+			return a.patchMachineStatusIfChanged(ctx, m, status)
+		}
+		m.Spec.Image = model.ImageSpec{Path: path, DiskSize: m.Spec.Image.DiskSize}
+		usingCatalogImage, cloned = false, true
+	}
 	var volStatus csiVolumeStatus
 	var dataDisks []fluxvm.DataDisk
 	if !usingSandboxTemplate && !usingCatalogImage {
@@ -382,7 +420,7 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 				return err
 			}
 		}
-		if len(m.Spec.Volumes) == 0 && m.Spec.Image.Source == nil && !m.Spec.Image.Blank {
+		if len(m.Spec.Volumes) == 0 && m.Spec.Image.Source == nil && !m.Spec.Image.Blank && !cloned {
 			// Only fence plain spec.image.path against ImageRoot -- a
 			// PVC-resolved path already went through a stronger gate (the PVC
 			// had to exist and be Bound, not just be a string any Machine
@@ -431,6 +469,19 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 			Type: "Ready", Status: "False", Reason: "IncomingRuntimeMissing", Message: status.Message,
 		})
 		return a.patchMachineStatusIfChanged(ctx, m, status)
+	}
+	pendingRestart := restartRequest(m)
+	if pendingRestart != "" && rec != nil && normalizePhase(rec.Status) == "Running" {
+		inFlight, err := a.migrationInFlightFor(ctx, m)
+		if err != nil {
+			return fmt.Errorf("check in-flight migrations before restart: %w", err)
+		}
+		if !inFlight {
+			a.Log.Info("restart requested; stopping runtime", "namespace", m.Namespace(), "machine", m.Metadata.Name, "runtimeID", rec.ID(), "request", pendingRestart)
+			if rec, err = a.Flux.Stop(ctx, rec.ID()); err != nil {
+				return fmt.Errorf("restart: stop runtime: %w", err)
+			}
+		}
 	}
 	freshlyCreated := rec == nil
 	restarted := false
@@ -569,6 +620,10 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 	status.RuntimeID = rec.ID()
 	status.GuestIP = rec.GuestIP
 	status.Message = ""
+	status.ShutdownDeadline = ""
+	if pendingRestart != "" && (freshlyCreated || restarted) {
+		status.LastRestartRequest = pendingRestart
+	}
 	if rec.Hibernation == nil && status.Hibernation != nil {
 		status.Hibernation = nil
 		status.Conditions = model.SetCondition(status.Conditions, model.Condition{
@@ -628,7 +683,8 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 	// ResourceUsage is volatile: it does not by itself trigger a status
 	// patch (see patchMachineStatusIfChanged), so kaironctl top reflects
 	// the last meaningful status write rather than every 3s tick.
-	if usage, err := a.Flux.GetStats(ctx, rec.ID()); err == nil {
+	usage, usageErr := a.Flux.GetStats(ctx, rec.ID())
+	if usageErr == nil {
 		status.ResourceUsage = &model.ResourceUsage{
 			CPUPercent: usage.CPUUsagePercent, MemoryBytes: usage.MemoryUsageBytes,
 			DiskReadBytes: usage.DiskReadBytes, DiskWriteBytes: usage.DiskWriteBytes,
@@ -636,11 +692,15 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 		if a.Metrics != nil {
 			a.Metrics.ObserveMachineUsageFreshness(m.Namespace(), m.Metadata.Name)
 		}
+	} else {
+		usage = nil
 	}
+	a.observeActivity(m, rec, usage, &status, time.Now())
 	if err := a.projectNetworkStatus(ctx, m, rec, &status); err != nil {
 		return err
 	}
 	a.reconcileGuestQuiesce(ctx, m, rec)
+	a.reconcileGuestFreeze(ctx, m, rec, time.Now())
 	appliedServiceFabric, err := a.reconcileServiceFabric(ctx, m, status.GuestIP)
 	if err != nil {
 		return err
@@ -685,6 +745,9 @@ func (a *Agent) ensureStopped(ctx context.Context, m model.Machine) error {
 	if err != nil {
 		return err
 	}
+	if wait, err := a.awaitGuestShutdown(ctx, m, rec, time.Now()); wait || err != nil {
+		return err
+	}
 	if rec != nil && rec.ID() != "" {
 		if err := a.Flux.Delete(ctx, rec.ID()); err != nil {
 			return err
@@ -709,6 +772,7 @@ func (a *Agent) ensureStopped(ctx context.Context, m model.Machine) error {
 	status.Phase = "Stopped"
 	status.NodeName = a.NodeName
 	status.RuntimeID = ""
+	status.ShutdownDeadline = ""
 	status.Hibernation = nil
 	status.GuestIP = ""
 	status.Network = nil
@@ -734,14 +798,20 @@ func (a *Agent) ensurePaused(ctx context.Context, m model.Machine) error {
 		return err
 	}
 	status := m.Status
-	if rec == nil {
-		status.Phase = "Pending"
-		status.NodeName = a.NodeName
-		status.Message = "cannot pause: no existing runtime -- set powerState to Running first, then Paused"
-		status.Conditions = model.SetCondition(status.Conditions, model.Condition{
-			Type: "Ready", Status: "False", Reason: "NoRuntime", Message: status.Message,
-		})
-		return a.patchMachineStatusIfChanged(ctx, m, status)
+	if rec == nil || normalizePhase(rec.Status) == "Stopped" {
+		// Start paused (kaironctl start --paused): boot the runtime through
+		// the normal Running path, then pause it in this same pass.
+		boot := m
+		boot.Spec.PowerState = "Running"
+		if err := a.reconcileMachine(ctx, boot); err != nil {
+			return err
+		}
+		if rec, err = a.current(ctx, m); err != nil {
+			return err
+		}
+		if rec == nil {
+			return fmt.Errorf("start paused: runtime for %s/%s was not created", m.Namespace(), m.Metadata.Name)
+		}
 	}
 	if !strings.EqualFold(rec.Status, "Paused") {
 		rec, err = a.Flux.Pause(ctx, rec.ID())
@@ -790,6 +860,9 @@ func (a *Agent) ensureHalted(ctx context.Context, m model.Machine) error {
 		})
 		return a.patchMachineStatusIfChanged(ctx, m, status)
 	}
+	if wait, err := a.awaitGuestShutdown(ctx, m, rec, time.Now()); wait || err != nil {
+		return err
+	}
 	if normalizePhase(rec.Status) != "Stopped" {
 		rec, err = a.Flux.Stop(ctx, rec.ID())
 		if err != nil {
@@ -820,6 +893,7 @@ func (a *Agent) ensureHalted(ctx context.Context, m model.Machine) error {
 	status.Phase = "Halted"
 	status.NodeName = a.NodeName
 	status.RuntimeID = rec.ID()
+	status.ShutdownDeadline = ""
 	status.Hibernation = nil
 	status.GuestIP = ""
 	status.Network = nil
@@ -1616,6 +1690,46 @@ func readyStatus(phase string) string {
 // treated as volatile and does not alone force a write). When a patch is
 // needed, the fresh ResourceUsage is included so the last meaningful
 // write still carries a recent sample for kaironctl top.
+// statusMergePatch is updated as a merge patch that also clears what
+// updated dropped from old: omitempty leaves a cleared field out of the
+// JSON, and a merge patch keeps omitted keys, so each one is sent as null.
+func statusMergePatch(old, updated any) (map[string]any, error) {
+	oldMap, err := toJSONMap(old)
+	if err != nil {
+		return nil, err
+	}
+	newMap, err := toJSONMap(updated)
+	if err != nil {
+		return nil, err
+	}
+	nullRemoved(oldMap, newMap)
+	return newMap, nil
+}
+
+func toJSONMap(v any) (map[string]any, error) {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]any{}
+	return out, json.Unmarshal(raw, &out)
+}
+
+func nullRemoved(old, updated map[string]any) {
+	for k, ov := range old {
+		nv, ok := updated[k]
+		if !ok {
+			updated[k] = nil
+			continue
+		}
+		om, oIsMap := ov.(map[string]any)
+		nm, nIsMap := nv.(map[string]any)
+		if oIsMap && nIsMap {
+			nullRemoved(om, nm)
+		}
+	}
+}
+
 func (a *Agent) patchMachineStatusIfChanged(ctx context.Context, m model.Machine, status model.MachineStatus) error {
 	status.ObservedGeneration = m.Metadata.Generation
 	if a.Metrics != nil {
@@ -1624,14 +1738,12 @@ func (a *Agent) patchMachineStatusIfChanged(ctx context.Context, m model.Machine
 	if model.MachineStatusEqualIgnoringVolatile(m.Status, status) {
 		return nil
 	}
-	if err := a.Kube.PatchMachineStatus(ctx, m.Namespace(), m.Metadata.Name, status); err != nil {
+	fields, err := statusMergePatch(m.Status, status)
+	if err != nil {
 		return err
 	}
-	// A merge patch leaves omitted fields alone; removing one takes null.
-	if m.Status.Hibernation != nil && status.Hibernation == nil {
-		if err := a.Kube.PatchMachineStatusFields(ctx, m.Namespace(), m.Metadata.Name, map[string]any{"hibernation": nil}); err != nil {
-			return err
-		}
+	if err := a.Kube.PatchMachineStatusFields(ctx, m.Namespace(), m.Metadata.Name, fields); err != nil {
+		return err
 	}
 	// Best-effort Event so `kaironctl events` / `kubectl get events` show
 	// lifecycle transitions; a failure here must never fail reconcile.
