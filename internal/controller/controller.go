@@ -72,6 +72,8 @@ type Controller struct {
 	drsLastPlan    string
 	staleEvacMu    sync.Mutex
 	staleEvacNoted map[string]bool
+	exposeMu       sync.Mutex
+	exposeWarned   bool
 	// CiliumAttach enables reconcile of CiliumExternalWorkload for Machines
 	// with spec.network.ciliumAttach. Off by default (Helm network.ciliumAttach).
 	CiliumAttach bool
@@ -150,6 +152,7 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 	machines, volumesNotReady := c.reconcileAtlasVolumes(ctx, machines)
 	c.reconcileCiliumAttach(ctx, machines)
 	c.reconcileCiliumPolicySync(ctx)
+	c.reconcileExposedServices(ctx, machines)
 	nodes, err := c.Kube.ListNodes(ctx)
 	if err != nil {
 		return err

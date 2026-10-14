@@ -43,7 +43,7 @@ rules:
     # Read-only: MachineInstanceType is pure reference data
     # kairon-controller looks up to resolve spec.instanceTypeName, never
     # writes -- see internal/controller/instancetype.go.
-    resources: ["machineinstancetypes", "machineimages", "nodetopologies"]
+    resources: ["machineinstancetypes", "machineclusterinstancetypes", "machinepreferences", "machineclusterpreferences", "machineimages", "nodetopologies"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["kairon.zyvor.dev"]
     # MachineAcceleratorProfiles are expanded into Machines' spec.devices
@@ -159,6 +159,16 @@ rules:
     # device itself.
     resources: ["resourceclaims", "resourceslices"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    # Lists the Services `kaironctl expose` labeled
+    # kairon.zyvor.dev/expose-machine; never creates or edits a Service.
+    resources: ["services"]
+    verbs: ["list"]
+  - apiGroups: ["discovery.k8s.io"]
+    # Keeps each exposed Service's EndpointSlice on its Machine's current
+    # guest IP (internal/controller/expose.go).
+    resources: ["endpointslices"]
+    verbs: ["get", "create", "update"]
 {{ if .Values.network.ciliumAttach.enabled }}
   - apiGroups: ["cilium.io"]
     # Opt-in: reconcile CiliumExternalWorkload for Machines with
@@ -240,6 +250,14 @@ rules:
   - apiGroups: ["kairon.zyvor.dev"]
     resources: ["machines", "machines/status", "machinemigrations", "machinemigrations/status", "machinenetworkpolicies", "machinenetworkpolicies/status", "networksecuritygroups", "networksecuritygroups/status", "machinebackups", "machinebackups/status", "machinebackuprestores", "machinebackuprestores/status"]
     verbs: ["get", "list", "watch", "patch"]
+  # MachineExport: kairon-node prepares the disk and reports status
+  # (internal/agent/export.go).
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machineexports"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machineexports/status"]
+    verbs: ["patch"]
   # Read-only: internal/agent/hotplug.go's own resize-past-quota self-check
   # (independent of webhook.enabled) needs to list MachineQuotas/Machines
   # cluster-wide the same way the admission webhook's own equivalent check
@@ -1273,6 +1291,10 @@ rules:
   - apiGroups: ["kairon.zyvor.dev"]
     resources: ["machinesnapshotrestores"]
     verbs: ["get", "list", "watch", "create", "delete"]
+  # The dashboard's Exports page and download proxy (internal/uiapi/exports.go).
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machineexports"]
+    verbs: ["get", "list", "watch", "create", "delete"]
   # Read-only: the six CRDs kairon-ui's own dashboard/REST routes list (see
   # internal/uiapi/fleet.go) -- GET /api/v1/quotas/disruption-budgets/
   # machinesets/instancetypes/migration-policies/snapshot-schedules. This
@@ -1286,7 +1308,7 @@ rules:
   # suspend/resume toggle, handleSuspendMachineSnapshotSchedule) -- all
   # already-shipped mutations that were equally broken.
   - apiGroups: ["kairon.zyvor.dev"]
-    resources: ["machinequotas", "machinedisruptionbudgets", "machineinstancetypes", "machineimages", "migrationpolicies", "machinepools", "machineclaims", "nodetopologies", "virtualnetworks", "macnetworks"]
+    resources: ["machinequotas", "machinedisruptionbudgets", "machineinstancetypes", "machineclusterinstancetypes", "machinepreferences", "machineclusterpreferences", "machineimages", "migrationpolicies", "machinepools", "machineclaims", "nodetopologies", "virtualnetworks", "macnetworks"]
     verbs: ["get", "list", "watch"]
   # The dashboard creates and deletes backups and creates restores
   # (internal/uiapi/backups.go), same as `kaironctl backup`.

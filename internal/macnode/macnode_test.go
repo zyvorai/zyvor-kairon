@@ -54,6 +54,17 @@ func TestLabelsMakeTheNodeSchedulable(t *testing.T) {
 	}
 }
 
+func TestLinuxNodeIsNotLabelledVZ(t *testing.T) {
+	linux := Info{CPUs: 12, MemoryMiB: 32768, Arch: "amd64", OS: "linux", InternalIP: "175.110.122.71"}
+	l := Labels("lab-2", linux)
+	if _, ok := l[LabelBackendVZ]; ok {
+		t.Fatalf("a Linux host must not claim the vz backend: %v", l)
+	}
+	if l["kubernetes.io/os"] != "linux" || l[model.CapableLabel] != "true" {
+		t.Fatalf("labels = %v", l)
+	}
+}
+
 func TestBuiltNodeIsTaintedVMOnlyAndReady(t *testing.T) {
 	n := BuildNode("macmini", mac)
 	taints := n["spec"].(map[string]any)["taints"].([]map[string]string)

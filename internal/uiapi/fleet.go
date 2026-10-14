@@ -138,6 +138,33 @@ func (s *Server) handleListInstanceTypes(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, items)
 }
 
+func (s *Server) handleListPreferences(w http.ResponseWriter, r *http.Request) {
+	items, err := s.Kube.ListMachinePreferencesNamespace(r.Context(), namespaceParam(r))
+	if err != nil {
+		writeUpstreamError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) handleListClusterInstanceTypes(w http.ResponseWriter, r *http.Request) {
+	items, err := s.Kube.ListMachineClusterInstanceTypes(r.Context())
+	if err != nil {
+		writeUpstreamError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (s *Server) handleListClusterPreferences(w http.ResponseWriter, r *http.Request) {
+	items, err := s.Kube.ListMachineClusterPreferences(r.Context())
+	if err != nil {
+		writeUpstreamError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
 func (s *Server) handleListMigrationPolicies(w http.ResponseWriter, r *http.Request) {
 	items, err := s.Kube.ListMigrationPoliciesNamespace(r.Context(), namespaceParam(r))
 	if err != nil {

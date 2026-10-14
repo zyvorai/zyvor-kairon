@@ -314,12 +314,15 @@ func (s *Server) handleConsole(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		nodePath = "text-console"
-	default: // "vnc"
+	case "vnc":
 		if backend := m.Spec.Runtime.Backend; backend != "" && backend != "auto" && backend != "qemu" {
 			writeError(w, http.StatusBadRequest, "VNC console is only available for the qemu backend")
 			return
 		}
 		nodePath = "console"
+	default:
+		writeError(w, http.StatusUnauthorized, "invalid or expired console ticket")
+		return
 	}
 	if m.Status.RuntimeID == "" || m.Status.NodeName == "" {
 		writeError(w, http.StatusConflict, "machine has no runtime yet")

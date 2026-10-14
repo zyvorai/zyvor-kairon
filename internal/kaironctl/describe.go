@@ -92,6 +92,8 @@ func cmdDescribe(ctx context.Context, kc *kube.Client, args []string) {
 		out, err = kc.GetMachineSnapshot(ctx, ns, name)
 	case "restore", "restores", "machinesnapshotrestores":
 		out, err = kc.GetMachineSnapshotRestore(ctx, ns, name)
+	case "export", "exports", "machineexport", "machineexports":
+		out, err = kc.GetMachineExport(ctx, ns, name)
 	case "backup", "backups", "machinebackups":
 		out, err = kc.GetMachineBackup(ctx, ns, name)
 	case "backuprestore", "backuprestores", "machinebackuprestores":
@@ -104,6 +106,12 @@ func cmdDescribe(ctx context.Context, kc *kube.Client, args []string) {
 		out, err = kc.GetMachineSet(ctx, ns, name)
 	case "instancetype", "instancetypes", "machineinstancetypes":
 		out, err = kc.GetMachineInstanceType(ctx, ns, name)
+	case "clusterinstancetype", "clusterinstancetypes", "machineclusterinstancetypes", "mcit":
+		out, err = kc.GetMachineClusterInstanceType(ctx, name)
+	case "preference", "preferences", "machinepreferences", "mpref":
+		out, err = kc.GetMachinePreference(ctx, ns, name)
+	case "clusterpreference", "clusterpreferences", "machineclusterpreferences", "mcpref":
+		out, err = kc.GetMachineClusterPreference(ctx, name)
 	case "migrationpolicy", "migrationpolicies":
 		out, err = kc.GetMigrationPolicy(ctx, ns, name)
 	case "networkpolicy", "networkpolicies", "machinenetworkpolicies":

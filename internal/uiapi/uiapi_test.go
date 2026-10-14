@@ -48,6 +48,7 @@ type fakeKube struct {
 	backups           map[string]model.MachineBackup
 	backupRestores    []model.MachineBackupRestore
 	backupPolicies    map[string]model.MachineBackupPolicy
+	exports           map[string]model.MachineExport
 	// patches records every raw merge-patch body, keyed by object path.
 	patches  map[string][]string
 	podsJSON []map[string]any
@@ -92,6 +93,13 @@ func (f *fakeKube) handler() http.Handler {
 					_ = json.NewEncoder(w).Encode(map[string]any{"type": "ADDED", "object": json.RawMessage(raw)})
 				}
 			}
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/apis/kairon.zyvor.dev/v1/namespaces/default/machineexports/"):
+			e, ok := f.exports[strings.TrimPrefix(r.URL.Path, "/apis/kairon.zyvor.dev/v1/namespaces/default/machineexports/")]
+			if !ok {
+				http.Error(w, `{"kind":"Status","code":404}`, http.StatusNotFound)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(e)
 		case r.Method == http.MethodPost && r.URL.Path == "/apis/kairon.zyvor.dev/v1/namespaces/default/machinebackups":
 			var b model.MachineBackup
 			_ = json.NewDecoder(r.Body).Decode(&b)

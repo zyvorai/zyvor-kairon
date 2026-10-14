@@ -60,6 +60,8 @@ func canonicalKind(kind string) (string, error) {
 		return "snapshot", nil
 	case "restore", "restores", "machinesnapshotrestores":
 		return "restore", nil
+	case "export", "exports", "machineexport", "machineexports":
+		return "export", nil
 	case "backup", "backups", "machinebackups":
 		return "backup", nil
 	case "backuprestore", "backuprestores", "machinebackuprestores":
@@ -76,6 +78,12 @@ func canonicalKind(kind string) (string, error) {
 		return "machineclaim", nil
 	case "instancetype", "instancetypes", "machineinstancetypes":
 		return "instancetype", nil
+	case "clusterinstancetype", "clusterinstancetypes", "machineclusterinstancetypes", "mcit":
+		return "clusterinstancetype", nil
+	case "preference", "preferences", "machinepreferences", "mpref":
+		return "preference", nil
+	case "clusterpreference", "clusterpreferences", "machineclusterpreferences", "mcpref":
+		return "clusterpreference", nil
 	case "migrationpolicy", "migrationpolicies":
 		return "migrationpolicy", nil
 	case "snapshotschedule", "snapshotschedules", "machinesnapshotschedules":
@@ -110,6 +118,8 @@ func deleteByKindName(ctx context.Context, kc *kube.Client, ns, kind, name strin
 		return canonical, kc.DeleteMachineSnapshot(ctx, ns, name)
 	case "restore":
 		return canonical, kc.DeleteMachineSnapshotRestore(ctx, ns, name)
+	case "export":
+		return canonical, kc.DeleteMachineExport(ctx, ns, name)
 	case "backup":
 		return canonical, kc.DeleteMachineBackup(ctx, ns, name)
 	case "backuprestore":
@@ -126,6 +136,12 @@ func deleteByKindName(ctx context.Context, kc *kube.Client, ns, kind, name strin
 		return canonical, kc.DeleteMachineClaim(ctx, ns, name)
 	case "instancetype":
 		return canonical, kc.DeleteMachineInstanceType(ctx, ns, name)
+	case "clusterinstancetype":
+		return canonical, kc.DeleteMachineClusterInstanceType(ctx, name)
+	case "preference":
+		return canonical, kc.DeleteMachinePreference(ctx, ns, name)
+	case "clusterpreference":
+		return canonical, kc.DeleteMachineClusterPreference(ctx, name)
 	case "migrationpolicy":
 		return canonical, kc.DeleteMigrationPolicy(ctx, ns, name)
 	case "snapshotschedule":
@@ -192,6 +208,14 @@ func matchingNames(ctx context.Context, kc *kube.Client, ns, kind string, select
 		}
 	case "restore", "restores", "machinesnapshotrestores":
 		items, err := kc.ListMachineSnapshotRestoresNamespace(ctx, ns)
+		if err != nil {
+			return nil, err
+		}
+		for _, it := range items {
+			names = appendIfMatch(names, it.Metadata.Name, it.Metadata.Labels, selector)
+		}
+	case "export", "exports", "machineexport", "machineexports":
+		items, err := kc.ListMachineExportsNamespace(ctx, ns)
 		if err != nil {
 			return nil, err
 		}

@@ -103,12 +103,15 @@ Starts a proxy on `127.0.0.1` that forwards to the `kairon-ui` Service through t
 ## Resources & power
 
 ```text
-kaironctl get [machines|migrations|snapshots|restores|quotas|budgets|machinesets|machinepools|machineclaims|instancetypes|migrationpolicies|snapshotschedules|networkpolicies|securitygroups|backups|backuprestores|protectionplans|macnetworks|nodes|nodetopologies|acceleratorprofiles] [--selector k=v]
+kaironctl get [machines|migrations|snapshots|restores|quotas|budgets|machinesets|machinepools|machineclaims|instancetypes|clusterinstancetypes|preferences|clusterpreferences|migrationpolicies|snapshotschedules|networkpolicies|securitygroups|backups|backuprestores|protectionplans|macnetworks|nodes|nodetopologies|acceleratorprofiles] [--selector k=v]
 kaironctl describe [RESOURCE] NAME   # machine: adds an elastic-memory line from status.memory
 kaironctl create NAME --image PATH [--cpu N] [--memory SIZE] [--backend qemu|…]
                  [--forward hostPort:guestPort[/proto]] [--hostname NAME] [--user NAME]
                  [--ssh-key KEY] [--package PKG] [--runcmd CMD] [--priority N]
+                 [--instance-type NAME [--cluster-instance-type]] [--preference NAME [--cluster-preference]]
+                 [--dry-run] [-o yaml|json]   # every create kind; --dry-run prints and needs no cluster
 kaironctl create machineset|machinepool|instancetype|migrationpolicy|snapshotschedule|quota|budget|networkpolicy|securitygroup NAME …
+kaironctl expand (MACHINE | -f FILE|-) [-o yaml|json]   # spec with instance type and preference applied
 kaironctl create snapshotschedule NAME --selector k=v (--interval-seconds N | --daily-at HH:MM)
                  [--jitter-seconds N] [--max-age-seconds N]   # exactly one of interval / daily-at
 kaironctl delete [RESOURCE] NAME
@@ -121,10 +124,21 @@ kaironctl import ova SOURCE [--url URL] [--name NAME] [--no-repair] [--dry-run] 
 kaironctl claim POOL [NAME] [--label k=v] [--retain] [--ttl 1h] [--allow-fqdn H] [--allow-sni N] [--allow-cidr C] [--allow-port P] [--allow-dns N] [--allow-icmp] [--wait 60s | --no-wait]
 kaironctl fork MACHINE [--count N] [--prefix P] [--wait 60s | --no-wait]   # see guides/machine-fork.md
 kaironctl start|stop|pause|resume|halt|hibernate MACHINE   # hibernate: guides/machine-hibernate.md
+kaironctl stop|halt MACHINE [--grace-period N | --force]   # N seconds for the guest to power off first (guest agent)
+kaironctl restart|reset MACHINE                           # power-cycle a Running Machine on the same node
+kaironctl soft-reboot MACHINE                             # guest OS reboots itself (guest agent, admin)
+kaironctl wait MACHINE [--for phase=Running|ip|agent|ssh[=PORT]|port=PORT|delete] [--timeout 5m]
+kaironctl expose MACHINE --port P [--target-port T] [--type ClusterIP|NodePort|LoadBalancer] [--name N] [--protocol TCP|UDP|SCTP] [--node-port N] [--dry-run]
+kaironctl console MACHINE [--log FILE] [--no-frame]       # Ctrl+] detaches
+kaironctl vnc MACHINE [--proxy-only] [--address 127.0.0.1] [--port N]
+kaironctl open MACHINE [--print]                          # dashboard inspector (KAIRON_UI_URL)
 kaironctl disk attach|detach MACHINE NAME [--claim PVC]   # live, see guides/machine-hotplug.md
 kaironctl disk list MACHINE
 kaironctl nic add|remove MACHINE NAME [--bridge BR] [--mac MAC]
 kaironctl nic list MACHINE
+kaironctl port-forward MACHINE [LOCAL:]REMOTE [--address 127.0.0.1] [--stdio]   # guides/machine-port-forward.md
+kaironctl ssh [USER@]MACHINE [-p PORT] [-- SSH-ARGS...]
+kaironctl scp [-r] [-P PORT] SRC... DST   # remote operands: [USER@]MACHINE:PATH
 kaironctl top [machines|nodes] [--selector k=v] [-o json|yaml]
 kaironctl trigger snapshotschedule NAME
 kaironctl network status MACHINE [--flows] [--drop-reasons] [--limit N]
@@ -167,6 +181,40 @@ and any matching `MachineNetworkPolicy` with `spec.cilium.sync`. `--flows` /
 
 See [ebpf-edge.md](ebpf-edge.md).
 
+## Coming from virtctl
+
+| virtctl | kaironctl |
+| --- | --- |
+| `start`, `stop`, `pause`, `unpause` | `start`, `stop`, `pause`, `resume` |
+| `stop --force --grace-period N` | `stop --force`, `stop --grace-period N` |
+| `restart` | `restart` (alias `reset`) |
+| `soft-reboot` | `soft-reboot` |
+| `console` | `console` |
+| `vnc [--proxy-only]` | `vnc [--proxy-only]` |
+| `ssh`, `scp`, `port-forward` | `ssh`, `scp`, `port-forward` |
+| `migrate`, `migrate-cancel` | `migrate`, `cancel-migration` |
+| `vmexport create\|download\|delete` | `export create\|list\|download\|delete`, or `export machine` for all of it at once |
+| `memory-dump get\|download\|remove` | `memory-dump get\|download\|remove` |
+| `guestosinfo`, `fslist`, `userlist` | `guest osinfo`, `guest fslist`, `guest userlist` |
+| `credentials add-ssh-key\|remove-ssh-key\|set-password` | `credentials add-ssh-key\|remove-ssh-key\|set-password` |
+| `expose` | `expose` |
+| `create vm --dry-run`, `expand` | `create … --dry-run -o yaml`, `expand` |
+| `addvolume`, `removevolume` | `disk attach`, `disk detach` |
+| `image-upload` | `image upload` |
+| — | `wait`, `open` |
+
+Notes:
+
+- **Through kairon-ui.** `console`, `vnc`, `soft-reboot`, `memory-dump`, `export download`, `guest …`, `credentials`, `wait --for agent|ssh|port` and `open` go through kairon-ui. They need `KAIRON_UI_URL` and, when kairon-ui authenticates, `KAIRON_UI_TOKEN`. Guest exec, guest files, `credentials` and `memory-dump` need an administrator account.
+- **`console`** draws a window-style header (machine, namespace, node, phase, backend, IP and size), then hands the terminal to the guest's serial console. `Ctrl+]` detaches. `--log FILE` appends everything the console prints, and `--no-frame` skips the header. It needs a Running Machine with `spec.guestAgent.console`.
+- **`vnc`** listens on `127.0.0.1` and starts a viewer: Screen Sharing on macOS, `remote-viewer` or `vncviewer` elsewhere. `--proxy-only` just prints the address. Each viewer connection gets its own single-use ticket. It needs the qemu backend.
+- **Restart and reset are the same.** FluxVM has no reset, and its stop is already an immediate power-off. `restart` sets `kairon.zyvor.dev/restart-requested`, kairon-node stops and starts the runtime on the same node and records the request in `status.lastRestartRequest`, and it waits while a migration is in flight. `soft-reboot` reboots only the guest OS.
+- **Graceful stop.** `stop --grace-period N` (at most 600) stores `kairon.zyvor.dev/stop-grace-period-seconds`. Later stops then ask the guest agent to power off and stop the runtime once the guest is down or the period ends; `status.shutdownDeadline` shows the deadline. Without `spec.guestAgent.enabled` the stop is immediate. `--force` stops at once and clears the stored period.
+- **`expose`** creates a Service without a selector, because Machines are VMs rather than pods, plus an EndpointSlice with the guest IP. kairon-controller keeps that slice current when the IP changes (restart, migration) and marks it ready only while the Machine is Running. The Machine owns the Service, so deleting the Machine deletes it. The guest IP must be routable from the cluster's nodes; a NAT-only guest network is reachable from its own node alone.
+- **`credentials`** changes a running Linux guest in place. SSH keys are edited through the guest agent (`spec.guestAgent.enabled`): adding skips keys already present and matches on the key data, not the comment. `set-password` writes `USER:PASSWORD` to a root-only file through the FluxVM guest agent (`spec.guestAgent.console`) and pipes it into `chpasswd`, which removes the file, so the password never appears on a command line. It prompts twice without echo, or reads one line with `--password-stdin`.
+- **`guest osinfo|fslist|userlist`** run `/etc/os-release`/`uname`, `df -PT` and `who` in the guest, falling back to PowerShell on Windows guests. `fslist` hides pseudo filesystems unless `--all` is given.
+- **`wait`** exits 0 once the condition holds and non-zero on timeout. When waiting for a phase it fails at once if the Machine goes `Failed`, which makes it suitable for CI.
+
 ## Migrate / recover / fence / snapshot
 
 ```text
@@ -178,8 +226,28 @@ kaironctl fence MACHINE --reason REASON
 kaironctl node fence NODE --reason REASON | --clear   # attestation for --stale-evacuation
 kaironctl node topology NODE                         # NUMA nodes, devices and the Machines holding them
 kaironctl snapshot MACHINE [--name NAME] [--class CLASS] [--volume NAME]...
-kaironctl restore SNAPSHOT --target-claim NAME
+kaironctl restore SNAPSHOT --target-claim NAME [--machine NAME [--start]]   # --machine also creates a Machine booting from the claim
 kaironctl volumes MACHINE [-n NS] [-o table|json]
+kaironctl export machine MACHINE -o FILE|- [--format qcow2|raw] [--ttl 2h] [--name NAME] [--keep]   # Machine must be Stopped or Halted; via kairon-ui
+kaironctl export create MACHINE [--format qcow2|raw] [--ttl 2h] [--name NAME] [--wait] [--timeout D]   # prints the export name
+kaironctl export list [-o json|yaml]
+kaironctl export download NAME -o FILE|- [--timeout D]
+kaironctl export delete NAME...
+kaironctl memory-dump get MACHINE [-o FILE] [--timeout D]   # QEMU; pauses the guest while it dumps
+kaironctl memory-dump download MACHINE TOKEN [-o FILE]
+kaironctl memory-dump remove MACHINE TOKEN
+kaironctl guest exec MACHINE [--agent] [--timeout 30] -- COMMAND [ARGS...]   # via kairon-ui; exits with the guest's code
+kaironctl guest osinfo|fslist [--all]|userlist MACHINE [-o json|yaml]   # guest agent; Linux and Windows
+kaironctl credentials add-ssh-key|remove-ssh-key MACHINE --user U (--key KEY | --file FILE|-)
+kaironctl credentials set-password MACHINE --user U [--password-stdin]
+kaironctl guest firewall open MACHINE RULE PORT [--protocol tcp|udp] | close MACHINE RULE
+kaironctl guest fsfreeze-status|freeze|thaw|frozen|pressure|cpuset MACHINE
+kaironctl guest vm-snapshot|vm-restore MACHINE TAG   # full VM state; restore restarts the VM in place
+kaironctl runtime capabilities|sandboxes|templates|catalog|pools NODE
+kaironctl runtime templates build NODE NAME IMAGE-REF
+kaironctl runtime catalog add NODE NAME SOURCE [--format] | delete|rename|clone|export|read-only NODE NAME ... | clean NODE
+kaironctl runtime pools create NODE NAME --size N --template FILE.json | claim NODE POOL [--name] [--ttl S] | get|delete NODE NAME
+kaironctl runtime egress-check NODE HOST
 kaironctl backup create MACHINE [--name NAME] [--quiesce auto|required|never] [--atlas] [--atlas-bucket ID] [--keep N]
 kaironctl backup list
 kaironctl backup restore BACKUP [--machine NAME] [--storage-class NAME]   # Machine must be halted

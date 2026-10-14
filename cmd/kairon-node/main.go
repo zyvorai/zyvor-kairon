@@ -24,6 +24,7 @@ import (
 	"github.com/zyvorai/kairon/internal/agent"
 	"github.com/zyvorai/kairon/internal/bgp"
 	"github.com/zyvorai/kairon/internal/consoleproxy"
+	"github.com/zyvorai/kairon/internal/diskexport"
 	"github.com/zyvorai/kairon/internal/fluxvm"
 	"github.com/zyvorai/kairon/internal/health"
 	"github.com/zyvorai/kairon/internal/kube"
@@ -82,6 +83,7 @@ func run() int {
 	fluxURL := flag.String("fluxvm-url", env("FLUXVM_URL", "http://127.0.0.1:7788"), "node-local FluxVM URL")
 	backend := flag.String("default-backend", env("KAIRON_DEFAULT_BACKEND", osDefault("qemu", "vz")), "backend used when Machine runtime.backend is auto")
 	imageRoot := flag.String("image-root", env("KAIRON_IMAGE_ROOT", osDefault("/var/lib/fluxvm/images", macSupport("FluxVM/images"))), "allowed root for Machine image paths")
+	exportDir := flag.String("export-dir", env("KAIRON_EXPORT_DIR", "/var/lib/kairon/exports"), "directory for MachineExport copies converted to another disk format")
 	imageCacheDir := flag.String("image-cache-dir", env("KAIRON_IMAGE_CACHE_DIR", ""), "directory kairon-node downloads/caches spec.image.source images into, keyed by digest -- empty (the default) refuses any Machine that sets spec.image.source; see docs/guides/machine-image-import.md")
 	vfioAllowlistRaw := flag.String("vfio-allowlist", env("KAIRON_VFIO_ALLOWLIST", ""), "comma-separated PCI BDFs this node permits for DRA-backed VFIO passthrough")
 	mdevParentsRaw := flag.String("mdev-parents", env("KAIRON_MDEV_PARENTS", ""), "comma-separated mediated device parents (PCI BDFs or names such as mbochs) the scheduler may create vGPUs on; empty allows every parent")
@@ -92,7 +94,7 @@ func run() int {
 	migrationServerName := flag.String("migration-server-name", env("KAIRON_MIGRATION_SERVER_NAME", "kairon-node"), "TLS server name expected from migration peers; empty verifies the peer IP from the URL")
 	migrationStateDir := flag.String("migration-state-dir", env("KAIRON_MIGRATION_STATE_DIR", osDefault("/var/run/kairon/migrations", macSupport("Kairon/migrations"))), "destination migration session journal")
 	migrationAdapterSocket := flag.String("migration-adapter-socket", env("KAIRON_MIGRATION_ADAPTER_SOCKET", ""), "optional Kairon migration adapter Unix socket")
-	migrationPort := flag.Int("migration-port", 9443, "peer migration TCP port advertised through node InternalIP")
+	migrationPort := flag.Int("migration-port", int(envUint("KAIRON_MIGRATION_PORT", 9443)), "peer migration TCP port this node dials on a target's InternalIP; every node in the cluster must listen on it (--migration-addr)")
 	migrationHeartbeatTTL := flag.Duration("migration-heartbeat-ttl", 0, "how long a destination-side Prepared migration session may go without a heartbeat from its source before this node self-aborts it, releasing whatever it reserved -- closes the gap where a source kairon-node crashes or is fenced between a successful Prepare and ever calling Commit/Abort. Zero (the default) disables this entirely: no reaper goroutine, no behavior change from before this existed. A non-zero value should be set comfortably larger than several multiples of --interval (the source heartbeats once per reconcile tick) to tolerate transient blips; the reaper itself checks every TTL/4 (floored at 10s).")
 	consoleAddr := flag.String("console-addr", env("KAIRON_NODE_CONSOLE_ADDR", ":8090"), "VNC console relay listen address")
 	consoleToken := flag.String("console-token", os.Getenv("KAIRON_NODE_CONSOLE_TOKEN"), "shared bearer token kairon-ui must present for VNC console relay (default: $KAIRON_NODE_CONSOLE_TOKEN); empty disables the console listener")
@@ -112,7 +114,8 @@ func run() int {
 	atlasRBDPools := flag.String("atlas-rbd-pools", env("KAIRON_ATLAS_RBD_POOLS", ""), "comma-separated Ceph pools this node may boot Atlas rbd-mode volumes from (FluxVM storage=ceph-rbd-in-place, credentials from FluxVM's own config); empty (the default) refuses atlas.mode=rbd -- see docs/guides/machine-storage-atlas.md")
 	reservedCPUs := flag.String("reserved-cpus", env("KAIRON_RESERVED_CPUS", ""), "cpuset kept off the discovered kairon.zyvor.dev/pinnable-cpus label (OS, kubelet, kairon-node), e.g. 0-1; empty (the default) publishes no label -- see docs/guides/machine-cpu-pinning.md")
 	cpuManagerState := flag.String("cpu-manager-state", env("KAIRON_CPU_MANAGER_STATE", "/var/lib/kubelet/cpu_manager_state"), "kubelet cpu_manager_state file; exclusive pod CPUs listed there are kept off the pinnable set")
-	registerNode := flag.Bool("register-node", env("KAIRON_REGISTER_NODE", fmt.Sprint(runtime.GOOS == "darwin")) == "true", "create and heartbeat this host's Kubernetes Node object (a Mac has no kubelet to do it); on by default on macOS")
+	registerNode := flag.Bool("register-node", env("KAIRON_REGISTER_NODE", fmt.Sprint(runtime.GOOS == "darwin")) == "true", "create and heartbeat this host's Kubernetes Node object (a Mac, or a Linux host with no kubelet, has nothing else to do it); on by default on macOS")
+	nodeIP := flag.String("node-ip", env("KAIRON_NODE_IP", ""), "InternalIP the registered Node publishes (--register-node), which migration peers dial; empty (the default) is the host's first private IPv4")
 	mlxURL := flag.String("mlx-url", env("KAIRON_MLX_URL", ""), "loopback OpenAI-compatible endpoint of this Mac's MLX runtime (Velora); when set the Node gets the kairon.zyvor.dev/mlx=true label and an inference-url annotation")
 	tbFabric := flag.String("thunderbolt-fabric", env("KAIRON_THUNDERBOLT_FABRIC", ""), "name of the group of Macs cabled together over Thunderbolt; with a Thunderbolt Bridge address the Node gets kairon.zyvor.dev/thunderbolt-fabric=<name> and MacNetworks with spec.fabric run over it")
 	fabricSecretFile := flag.String("mac-fabric-secret-file", env("KAIRON_MAC_FABRIC_SECRET_FILE", ""), "file with the secret every Mac shares, from which MacNetwork keys are derived; empty leaves MacNetworks off on this Mac (docs/guides/mac-fabric.md)")
@@ -163,11 +166,18 @@ func run() int {
 		log.Error("invalid third-party CSI driver list", "error", err)
 		return 2
 	}
+	if *nodeIP != "" && net.ParseIP(*nodeIP) == nil {
+		log.Error("invalid --node-ip", "value", *nodeIP)
+		return 2
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 	if *registerNode {
 		discover := func(ctx context.Context) macnode.Info {
 			info := macnode.Discover()
+			if *nodeIP != "" {
+				info.InternalIP = *nodeIP
+			}
 			info.MLXURL = *mlxURL
 			info.ThunderboltFabric = *tbFabric
 			if h, err := fc.AppleHost(ctx); err == nil {
@@ -223,7 +233,8 @@ func run() int {
 		return 2
 	}
 
-	configureConsole(ctx, log, fc, *consoleAddr, *consoleToken, *consoleTLSCert, *consoleTLSKey)
+	exports := &diskexport.Registry{}
+	configureConsole(ctx, log, fc, exports, *consoleAddr, *consoleToken, *consoleTLSCert, *consoleTLSKey)
 
 	vnetCfg, err := configureVirtualNetworks(ctx, log, kc, node, *vnetSync, *vnetUplink, *vnetNodeIP, *bgpPeers, uint32(*bgpASN), *bgpRouterID, *bgpNextHop, *bgpServiceVIPs, *bgpPrefixes)
 	if err != nil {
@@ -238,6 +249,8 @@ func run() int {
 		DefaultBackend:               *backend,
 		ImageRoot:                    *imageRoot,
 		ImageCacheDir:                *imageCacheDir,
+		Exports:                      exports,
+		ExportDir:                    *exportDir,
 		VFIOAllowlist:                vfioAllowlist,
 		MdevParents:                  agent.ParseMdevParents(*mdevParentsRaw),
 		MigrationPeer:                peer,
@@ -421,7 +434,7 @@ func configureMigration(ctx context.Context, log *slog.Logger, cancel context.Ca
 // down with it -- console is a purely optional, add-on capability, and
 // e.g. a port already in use on a shared host should just mean "no
 // console today," not "no Machine reconciliation either."
-func configureConsole(ctx context.Context, log *slog.Logger, fc *fluxvm.Client, addr, token, tlsCertPath, tlsKeyPath string) {
+func configureConsole(ctx context.Context, log *slog.Logger, fc *fluxvm.Client, exports *diskexport.Registry, addr, token, tlsCertPath, tlsKeyPath string) {
 	if strings.TrimSpace(token) == "" {
 		log.Warn("VNC console relay disabled; set --console-token/$KAIRON_NODE_CONSOLE_TOKEN to enable")
 		return
@@ -447,7 +460,7 @@ func configureConsole(ctx context.Context, log *slog.Logger, fc *fluxvm.Client, 
 		return
 	}
 	server := &http.Server{
-		Handler:           (&consoleproxy.Server{Flux: fc, Token: token}).Handler(),
+		Handler:           (&consoleproxy.Server{Flux: fc, Token: token, Exports: exports}).Handler(),
 		TLSConfig:         tlsConfig,
 		ReadHeaderTimeout: 5 * time.Second,
 		// No WriteTimeout/IdleTimeout: a VNC session is a long-lived

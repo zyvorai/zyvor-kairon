@@ -26,7 +26,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/lab.sh"
 
 NAMESPACE="${KAIRON_HW_NAMESPACE:-default}"
 MACHINE=""; TARGET=""; DEST_SSH="${KAIRON_HW_TARGET_SSH:-}"
-ACTION="confirm-not-committed"; PORT=9443; TIMEOUT=900
+ACTION="confirm-not-committed"; PORT="${KAIRON_MIGRATION_PORT:-9443}"; TIMEOUT=900
 for arg in "$@"; do
   case "$arg" in
     --namespace=*) NAMESPACE="${arg#*=}" ;;

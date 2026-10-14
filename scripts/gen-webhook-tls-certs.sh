@@ -70,18 +70,19 @@ SAN_FQDN="$SERVICE_NAME.$NAMESPACE.svc"
 mkdir -p "$OUT_DIR"
 
 echo "[*] generating root CA (valid ${DAYS}d -- this is a throwaway/self-service CA, not for production use)"
-openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+openssl req -x509 -sha256 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -pkeyopt ec_param_enc:named_curve -nodes \
   -keyout "$OUT_DIR/ca-key.pem" -out "$OUT_DIR/ca.pem" \
-  -days "$DAYS" -subj "/CN=kairon-webhook-test-ca" 2>/dev/null
+  -days "$DAYS" -subj "/CN=kairon-webhook-test-ca" \
+  -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign" -addext "subjectKeyIdentifier=hash" 2>/dev/null
 
 echo "[*] generating webhook serving cert (SAN: DNS:$SAN_SHORT, DNS:$SAN_NS, DNS:$SAN_FQDN, serverAuth only -- kube-apiserver is the client here, never the other way around)"
-openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -pkeyopt ec_param_enc:named_curve -nodes \
   -keyout "$OUT_DIR/key.pem" -out "$OUT_DIR/csr.pem" \
   -subj "/CN=$SAN_FQDN" 2>/dev/null
-openssl x509 -req -in "$OUT_DIR/csr.pem" \
+openssl x509 -req -sha256 -in "$OUT_DIR/csr.pem" \
   -CA "$OUT_DIR/ca.pem" -CAkey "$OUT_DIR/ca-key.pem" -CAcreateserial \
   -out "$OUT_DIR/cert.pem" -days "$DAYS" \
-  -extfile <(printf 'subjectAltName=DNS:%s,DNS:%s,DNS:%s\nextendedKeyUsage=serverAuth\n' "$SAN_SHORT" "$SAN_NS" "$SAN_FQDN") \
+  -extfile <(printf 'subjectAltName=DNS:%s,DNS:%s,DNS:%s\nbasicConstraints=CA:FALSE\nsubjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n' "$SAN_SHORT" "$SAN_NS" "$SAN_FQDN") \
   2>/dev/null
 rm -f "$OUT_DIR/csr.pem" "$OUT_DIR/ca.srl"
 echo "    -> $OUT_DIR/{ca,cert,key}.pem"

@@ -28,6 +28,8 @@ type Record struct {
 	UUID    string `json:"uuid,omitempty"`
 	Name    string `json:"name,omitempty"`
 	Status  string `json:"status,omitempty"`
+	// Error is why a "failed" VM failed (FluxVM's VmRecord.error).
+	Error   string `json:"error,omitempty"`
 	Backend string `json:"backend,omitempty"`
 	GuestIP string `json:"guest_ip,omitempty"`
 	TapName string `json:"tap_name,omitempty"`
@@ -51,7 +53,12 @@ type Record struct {
 		VCPUs     uint32 `json:"vcpus,omitempty"`
 		MemoryMiB uint64 `json:"memory_mib,omitempty"`
 		Network   struct {
-			MAC string `json:"mac,omitempty"`
+			// Mode is user, tap, macvtap, ... (FluxVM's tagged enum).
+			Mode string `json:"mode,omitempty"`
+			// Forwards are user-mode host-to-guest port forwards.
+			Forwards []RecordForward `json:"forwards,omitempty"`
+			NetNS    bool            `json:"netns,omitempty"`
+			MAC      string          `json:"mac,omitempty"`
 			// Extra are the VM's extra NICs; an entry with no TapName
 			// is a slot freed by an unplug.
 			Extra []struct {
@@ -69,6 +76,13 @@ type Record struct {
 	// Hibernation is set while FluxVM holds the VM's saved state; the next
 	// Start resumes it.
 	Hibernation *Hibernation `json:"hibernation,omitempty"`
+}
+
+// RecordForward is one user-mode forward in a VM's create request.
+type RecordForward struct {
+	HostPort  uint16 `json:"host_port"`
+	GuestPort uint16 `json:"guest_port"`
+	Protocol  string `json:"protocol,omitempty"`
 }
 
 func (r Record) ID() string {
@@ -363,6 +377,13 @@ func (c *Client) RestoreBackup(ctx context.Context, id, name string) ([]string, 
 		return nil, fmt.Errorf("decode fluxvm restore response: %w", err)
 	}
 	return out.Restored, nil
+}
+
+// IsDiskGone reports whether err is FluxVM refusing to start a VM because
+// the disk on its record does not exist (for example a create that failed
+// before the disk was provisioned).
+func IsDiskGone(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "disk no longer exists")
 }
 
 func (c *Client) Ready(ctx context.Context) error {

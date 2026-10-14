@@ -79,6 +79,7 @@ const NAMESPACED_COLLECTIONS = new Set([
   'migrations',
   'snapshots',
   'restores',
+  'exports',
   'quotas',
   'machinepools',
   'machineclaims',

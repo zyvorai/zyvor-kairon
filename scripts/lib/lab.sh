@@ -16,6 +16,20 @@ LAB_API="apis/kairon.zyvor.dev/v1"
 
 lab_log() { echo "[$(date -u +%H:%M:%S)] $*" >&2; }
 
+# lab_retry N CMD... -- runs an idempotent CMD up to N times, 10s apart. An
+# apiserver can stall writes past the client timeout (k3s on SQLite under
+# load stalls for 20s+), which shouldn't fail a case that never got to run.
+lab_retry() {
+  local n="$1" i
+  shift
+  for ((i = 1; ; i++)); do
+    "$@" && return 0
+    (( i >= n )) && return 1
+    lab_log "retrying ($i/$n): $*"
+    sleep 10
+  done
+}
+
 # kube_curl METHOD PATH [JSON_BODY [CONTENT_TYPE]] -- prints the response body.
 kube_curl() {
   local method="$1" path="$2" body="${3:-}" ctype="${4:-application/json}"
@@ -129,7 +143,15 @@ start_migration() {
   local name
   name="$prefix-$machine-$(date -u +%Y%m%d-%H%M%S)"
   name="${name:0:63}"
-  "$KAIRONCTL" migrate "$machine" --namespace "$ns" --name="$name" --strategy="$strategy" --target-node="$target" "$@" >&2
+  local i
+  for ((i = 1; ; i++)); do
+    "$KAIRONCTL" migrate "$machine" --namespace "$ns" --name="$name" --strategy="$strategy" --target-node="$target" "$@" >&2 && break
+    # A create that timed out client-side may still have landed.
+    kube_curl GET "$(migration_path "$ns" "$name")" >/dev/null 2>&1 && break
+    (( i >= 3 )) && return 1
+    lab_log "retrying migration create ($i/3)"
+    sleep 10
+  done
   echo "$name"
 }
 
@@ -175,8 +197,10 @@ start_guest_load() {
   python3 -c 'import json,sys; r=json.loads(sys.argv[1]); sys.exit(0 if r.get("exitCode")==0 and "started" in r.get("stdout","") else 1)' "$out"
 }
 
+# The bracketed patterns keep pkill -f from matching this exec's own shell,
+# whose command line holds the same words.
 stop_guest_load() {
-  guest_exec "$1" "$2" 'pkill -f "stress-ng --vm" 2>/dev/null; pkill -f kairon-load 2>/dev/null; rm -f /dev/shm/kairon-load /tmp/kairon-load; true' >/dev/null 2>&1 || true
+  guest_exec "$1" "$2" 'pkill -f "[s]tress-ng --vm" 2>/dev/null; pkill -f "[k]airon-load" 2>/dev/null; rm -f /dev/shm/kairon-load /tmp/kairon-load; true' >/dev/null 2>&1 || true
 }
 
 # migration_field NS NAME EXPR

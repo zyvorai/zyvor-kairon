@@ -78,6 +78,11 @@ spec:
                       type: string
                     atlasJobID:
                       type: string
+              sourceSpec:
+                type: object
+                description: The Machine's spec when the snapshot started,
+                  used by MachineSnapshotRestore spec.machine.
+                x-kubernetes-preserve-unknown-fields: true
   - name: v1beta1
     served: true
     storage: false

@@ -23,6 +23,8 @@ export default function Restores({ prefillSnapshot }: { prefillSnapshot: string 
   const [targetClaimName, setTargetClaimName] = useState('');
   const [storageClassName, setStorageClassName] = useState('');
   const [storageSize, setStorageSize] = useState('');
+  const [machineName, setMachineName] = useState('');
+  const [startMachine, setStartMachine] = useState(false);
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -49,12 +51,15 @@ export default function Restores({ prefillSnapshot }: { prefillSnapshot: string 
         targetClaimName,
         storageClassName,
         storageSize,
+        machine: machineName ? { name: machineName, powerState: startMachine ? 'Running' : 'Stopped' } : undefined,
       });
       setSnapshotName('');
       setVolumeName('');
       setTargetClaimName('');
       setStorageClassName('');
       setStorageSize('');
+      setMachineName('');
+      setStartMachine(false);
       await refresh();
     } catch (err) {
       setMsg(String(err));
@@ -100,6 +105,14 @@ export default function Restores({ prefillSnapshot }: { prefillSnapshot: string 
               Storage size
               <input value={storageSize} onChange={(e) => setStorageSize(e.target.value)} placeholder="snapshot's own restoreSize if empty" />
             </label>
+            <label>
+              New machine name
+              <input value={machineName} onChange={(e) => setMachineName(e.target.value)} placeholder="optional: also create a Machine booting from the claim" />
+            </label>
+            <label>
+              <input type="checkbox" checked={startMachine} disabled={!machineName} onChange={(e) => setStartMachine(e.target.checked)} /> Start the
+              machine
+            </label>
           </div>
           <div className="formactions">
             <button className="primary" type="submit" disabled={busy}>
@@ -125,6 +138,7 @@ export default function Restores({ prefillSnapshot }: { prefillSnapshot: string 
               render: (r) => <span className={badgeClass(r.status?.phase || '')}>{r.status?.phase || 'Pending'}</span>,
             },
             { header: 'Restored claim', render: (r) => r.status?.restoredClaimName || '-' },
+            { header: 'Machine', render: (r) => r.status?.restoredMachineName || r.spec.machine?.name || '-' },
             { header: 'Message', render: (r) => r.status?.message || '-' },
             {
               header: '',

@@ -1041,6 +1041,71 @@ func TestRunningPhaseMigrationToleratesHeartbeatFailure(t *testing.T) {
 	}
 }
 
+func TestRunningMigrationSurvivesATransientAPIError(t *testing.T) {
+	item := model.MachineMigration{
+		Metadata: model.ObjectMeta{Name: "move-db", Namespace: "prod", UID: "migration-uid-1"},
+		Spec:     model.MachineMigrationSpec{MachineName: "db", Strategy: "live"},
+		Status: model.MachineMigrationStatus{
+			Phase: "Running", SourceNode: "worker-1", TargetNode: "worker-2", EffectiveStrategy: "live",
+			RuntimeID: "vm-1", SessionID: "kmm-1", TransferID: "xfer-1",
+		},
+	}
+	machine := model.Machine{
+		Metadata: model.ObjectMeta{Name: "db", Namespace: "prod", Finalizers: []string{model.Finalizer}},
+		Spec:     model.MachineSpec{NodeName: "worker-1", Image: model.ImageSpec{Path: "/images/db.qcow2"}, Resources: model.ResourceSpec{CPU: "2", Memory: "2Gi"}, Runtime: model.RuntimeSpec{Backend: "qemu"}, PowerState: "Running"},
+		Status:   model.MachineStatus{RuntimeID: "vm-1", Phase: "Running", NodeName: "worker-1"},
+	}
+	for _, code := range []int{http.StatusServiceUnavailable, http.StatusTooManyRequests} {
+		var patched []model.MachineMigrationStatus
+		ks := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.Method == http.MethodGet && r.URL.Path == "/apis/kairon.zyvor.dev/v1/machines":
+				_ = json.NewEncoder(w).Encode(model.MachineList{Items: []model.Machine{machine}})
+			case r.Method == http.MethodPatch && r.URL.Path == "/apis/kairon.zyvor.dev/v1/namespaces/prod/machines/db/status":
+				w.WriteHeader(http.StatusOK)
+			case r.Method == http.MethodGet && r.URL.Path == "/apis/kairon.zyvor.dev/v1/machinemigrations":
+				_ = json.NewEncoder(w).Encode(model.MachineMigrationList{Items: []model.MachineMigration{item}})
+			case r.Method == http.MethodGet && r.URL.Path == "/apis/kairon.zyvor.dev/v1/namespaces/prod/machines/db":
+				http.Error(w, "etcdserver: request timed out", code)
+			case r.Method == http.MethodPatch && r.URL.Path == "/apis/kairon.zyvor.dev/v1/namespaces/prod/machinemigrations/move-db/status":
+				var p struct {
+					Status model.MachineMigrationStatus `json:"status"`
+				}
+				_ = json.NewDecoder(r.Body).Decode(&p)
+				patched = append(patched, p.Status)
+				w.WriteHeader(http.StatusOK)
+			default:
+				http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusNotFound)
+			}
+		}))
+		fs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet && r.URL.Path == "/v1/vms/vm-1" {
+				_ = json.NewEncoder(w).Encode(fluxvm.Record{UUID: "vm-1", Name: machine.RuntimeName(), Status: "Running"})
+				return
+			}
+			http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusNotFound)
+		}))
+		kc, _ := kube.New(ks.URL, "", "", false)
+		kc.HTTP = ks.Client()
+		fc := fluxvm.New(fs.URL, "")
+		fc.HTTP = fs.Client()
+		a := &Agent{
+			NodeName: "worker-1", Kube: kc, Flux: fc, DefaultBackend: "qemu",
+			MigrationPeer: migration.NewClient(http.DefaultClient), SourceMigrator: &fakeSourceMigrator{},
+			MigrationPeerURL: func(context.Context, string) (string, error) { return "http://127.0.0.1:1", nil },
+			Log:              slog.New(slog.NewTextHandler(io.Discard, nil)),
+		}
+		if err := a.Reconcile(context.Background()); err != nil {
+			t.Fatalf("HTTP %d: reconcile: %v", code, err)
+		}
+		if len(patched) != 0 {
+			t.Fatalf("HTTP %d: a transient API error must leave the migration alone, got patches %+v", code, patched)
+		}
+		ks.Close()
+		fs.Close()
+	}
+}
+
 func runLiveAgentReconcile(t *testing.T, peerServer *httptest.Server, _ *fakePeerDestination, source *fakeSourceMigrator) model.MachineMigrationStatus {
 	t.Helper()
 	return runLiveAgentReconcileWithNetwork(t, peerServer, source, "")

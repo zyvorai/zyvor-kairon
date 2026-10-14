@@ -59,6 +59,16 @@ const (
 	// this is opt-in, never a behavior change for a Machine that doesn't
 	// set it.
 	AnnotationConsoleAllowedUsers = "kairon.zyvor.dev/console-allowed-users"
+	// AnnotationRestartRequested asks kairon-node to power-cycle a Running
+	// Machine (FluxVM stop, then start) once per distinct value; the value
+	// handled last is status.lastRestartRequest. kaironctl restart sets
+	// it to the current time (RFC3339).
+	AnnotationRestartRequested = "kairon.zyvor.dev/restart-requested"
+	// AnnotationStopGracePeriod (seconds) makes powerState Stopped or
+	// Halted first ask the guest agent to power the guest off, and only
+	// stop the runtime once it has or the period has passed. Unset or 0
+	// stops immediately. Needs spec.guestAgent.enabled.
+	AnnotationStopGracePeriod = "kairon.zyvor.dev/stop-grace-period-seconds"
 	// AnnotationCordonEvacuateAttemptedAt records the last time
 	// kairon-controller's opt-in cordon-evacuation reconcile step (see
 	// internal/controller/cordon.go) created, or tried and was
@@ -204,14 +214,22 @@ type MachineSpec struct {
 	// time this is set while Resources is still empty; editing either
 	// field afterward never re-resolves, matching every other
 	// creation-time-only field in this project.
-	InstanceTypeName string            `json:"instanceTypeName,omitempty"`
-	Image            ImageSpec         `json:"image"`
-	Resources        ResourceSpec      `json:"resources"`
-	Runtime          RuntimeSpec       `json:"runtime,omitempty"`
-	Network          NetworkSpec       `json:"network,omitempty"`
-	CloudInit        CloudInitSpec     `json:"cloudInit,omitempty"`
-	ServiceFabric    ServiceFabricSpec `json:"serviceFabric,omitempty"`
-	PowerState       string            `json:"powerState,omitempty"`
+	InstanceTypeName string `json:"instanceTypeName,omitempty"`
+	// InstanceTypeKind is MachineInstanceType (default, same namespace)
+	// or MachineClusterInstanceType (cluster-scoped).
+	InstanceTypeKind string `json:"instanceTypeKind,omitempty"`
+	// PreferenceName names a MachinePreference (same namespace) or, with
+	// PreferenceKind MachineClusterPreference, a cluster-scoped one.
+	// kairon-controller fills still-unset guest-OS fields from it once.
+	PreferenceName string            `json:"preferenceName,omitempty"`
+	PreferenceKind string            `json:"preferenceKind,omitempty"`
+	Image          ImageSpec         `json:"image"`
+	Resources      ResourceSpec      `json:"resources"`
+	Runtime        RuntimeSpec       `json:"runtime,omitempty"`
+	Network        NetworkSpec       `json:"network,omitempty"`
+	CloudInit      CloudInitSpec     `json:"cloudInit,omitempty"`
+	ServiceFabric  ServiceFabricSpec `json:"serviceFabric,omitempty"`
+	PowerState     string            `json:"powerState,omitempty"`
 	// Tenant is free-form metadata unless the Machine opts in. Admission
 	// enforces a DNS-1123 label when it is set, and rejects a later
 	// rename (internal/tenantfence). kairon.zyvor.dev/tenant-fence=true
@@ -1117,6 +1135,12 @@ type MachineStatus struct {
 	// Hibernation is set while the guest's state is saved
 	// (spec.powerState: Hibernated) and until it has resumed.
 	Hibernation *HibernationStatus `json:"hibernation,omitempty"`
+	// LastRestartRequest is the kairon.zyvor.dev/restart-requested value
+	// kairon-node last acted on.
+	LastRestartRequest string `json:"lastRestartRequest,omitempty"`
+	// ShutdownDeadline (RFC3339) is set while a graceful stop waits for
+	// the guest to power itself off; see AnnotationStopGracePeriod.
+	ShutdownDeadline string `json:"shutdownDeadline,omitempty"`
 	// ResourceUsage is this Machine's cgroup-derived resource usage as of
 	// the last *meaningful* status write (FluxVM's GET /v1/vms/{id}/stats).
 	// High-frequency samples go to Prometheus (kairon_machine_resource_usage)
@@ -1466,6 +1490,10 @@ type MachineSnapshotStatus struct {
 	Message         string                    `json:"message"`
 	ReadyToUse      bool                      `json:"readyToUse,omitempty"`
 	VolumeSnapshots []VolumeSnapshotReference `json:"volumeSnapshots,omitempty"`
+	// SourceSpec is the Machine's spec when the snapshot started, so a
+	// MachineSnapshotRestore with spec.machine can recreate the Machine
+	// after the original is gone.
+	SourceSpec *MachineSpec `json:"sourceSpec,omitempty"`
 }
 
 type VolumeSnapshotReference struct {

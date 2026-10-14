@@ -26,8 +26,8 @@ const missingSnapshotGracePeriod = 30 * time.Second
 
 // reconcileSnapshotRestore restores one volume of a Succeeded
 // MachineSnapshot into a brand-new PersistentVolumeClaim via the standard
-// CSI spec.dataSource restore flow. See model.MachineSnapshotRestore for
-// why this deliberately doesn't also create a Machine.
+// CSI spec.dataSource restore flow and, with spec.machine, creates a
+// Machine booting from it (see model.MachineSnapshotRestore).
 //
 // The referenced MachineSnapshot (or its underlying VolumeSnapshot) simply
 // not being ready *yet* is parked as Pending and retried next tick, not
@@ -75,11 +75,26 @@ func (c *Controller) reconcileSnapshotRestore(ctx context.Context, restore model
 		return c.parkRestorePending(ctx, restore, fmt.Sprintf("waiting for VolumeSnapshot %s to become ready to use", ref.VolumeSnapshotName))
 	}
 
+	var machineSpec *model.MachineSpec
+	if restore.Spec.Machine != nil {
+		if ref.AtlasSnapshotID != "" {
+			return fmt.Errorf("spec.machine is not supported for Atlas snapshots")
+		}
+		spec, err := c.restoredMachineSpec(ctx, restore, snapshot, ref.VolumeName)
+		if err != nil {
+			return err
+		}
+		machineSpec = &spec
+	}
+
 	existing, err := c.Kube.GetPersistentVolumeClaim(ctx, restore.Namespace(), restore.Spec.TargetClaimName)
 	if err != nil && !kube.IsNotFound(err) {
 		return err
 	}
 	if err == nil && existing.Metadata.Name != "" {
+		if err := c.ensureRestoredMachine(ctx, &restore, snapshot, machineSpec); err != nil {
+			return err
+		}
 		return c.finishRestoreFromPVCState(ctx, restore, existing)
 	}
 	if ref.AtlasSnapshotID != "" {
@@ -116,7 +131,65 @@ func (c *Controller) reconcileSnapshotRestore(ctx context.Context, restore model
 	if err != nil {
 		return fmt.Errorf("create restored PersistentVolumeClaim %s: %w", restore.Spec.TargetClaimName, err)
 	}
+	// Created before the claim binds: under WaitForFirstConsumer the
+	// Machine is what makes it bind.
+	if err := c.ensureRestoredMachine(ctx, &restore, snapshot, machineSpec); err != nil {
+		return err
+	}
 	return c.finishRestoreFromPVCState(ctx, restore, created)
+}
+
+// restoredMachineSpec is the spec of the Machine spec.machine asks for:
+// the snapshot's recorded source spec or, for a snapshot taken before
+// that was recorded, the source Machine as it is now.
+func (c *Controller) restoredMachineSpec(ctx context.Context, restore model.MachineSnapshotRestore, snapshot model.MachineSnapshot, volumeName string) (model.MachineSpec, error) {
+	if strings.TrimSpace(restore.Spec.Machine.Name) == "" {
+		return model.MachineSpec{}, fmt.Errorf("spec.machine.name is required")
+	}
+	var source model.MachineSpec
+	if snapshot.Status.SourceSpec != nil {
+		source = *snapshot.Status.SourceSpec
+	} else {
+		m, err := c.Kube.GetMachine(ctx, snapshot.Namespace(), snapshot.Spec.MachineName)
+		if err != nil {
+			return model.MachineSpec{}, fmt.Errorf("snapshot %s has no recorded source spec and Machine %s is unavailable: %w", snapshot.Metadata.Name, snapshot.Spec.MachineName, err)
+		}
+		source = m.Spec
+	}
+	return model.RestoredMachineSpec(source, volumeName, restore.Spec.TargetClaimName, restore.Spec.Machine.PowerState)
+}
+
+// ensureRestoredMachine creates the spec.machine Machine once. An existing
+// Machine of that name is accepted only if this restore created it.
+func (c *Controller) ensureRestoredMachine(ctx context.Context, restore *model.MachineSnapshotRestore, snapshot model.MachineSnapshot, spec *model.MachineSpec) error {
+	if spec == nil {
+		return nil
+	}
+	name := restore.Spec.Machine.Name
+	existing, err := c.Kube.GetMachine(ctx, restore.Namespace(), name)
+	switch {
+	case err == nil:
+		if existing.Metadata.Labels[model.LabelRestoredBy] != restore.Metadata.Name {
+			return fmt.Errorf("Machine %s already exists and was not created by this restore", name)
+		}
+	case kube.IsNotFound(err):
+		m := model.Machine{
+			TypeMeta: model.TypeMeta{APIVersion: model.APIVersion, Kind: "Machine"},
+			Metadata: model.ObjectMeta{Name: name, Namespace: restore.Namespace(), Labels: map[string]string{
+				model.LabelRestoredBy:                     restore.Metadata.Name,
+				"kairon.zyvor.dev/restored-from-snapshot": snapshot.Metadata.Name,
+			}},
+			Spec: *spec,
+		}
+		if _, err := c.Kube.CreateMachine(ctx, restore.Namespace(), m); err != nil {
+			return fmt.Errorf("create restored Machine %s: %w", name, err)
+		}
+		c.Log.Info("created restored machine", "namespace", restore.Namespace(), "restore", restore.Metadata.Name, "machine", name, "claim", restore.Spec.TargetClaimName)
+	default:
+		return err
+	}
+	restore.Status.RestoredMachineName = name
+	return nil
 }
 
 // finishRestoreFromPVCState reports the restore as Succeeded once the

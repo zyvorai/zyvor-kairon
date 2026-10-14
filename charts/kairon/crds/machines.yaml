@@ -77,6 +77,24 @@ spec:
                   real cpu/memory shape; enforced by kairon-controller/
                   kairon-node, not this schema, the same way spec.volumes
                   can substitute for image entirely.
+              instanceTypeKind:
+                type: string
+                enum:
+                - MachineInstanceType
+                - MachineClusterInstanceType
+                description: Kind instanceTypeName refers to. Defaults to
+                  MachineInstanceType (same namespace).
+              preferenceName:
+                type: string
+                description: Names a MachinePreference (same namespace) or,
+                  with preferenceKind MachineClusterPreference, a
+                  cluster-scoped one. kairon-controller fills still-unset
+                  guest-OS fields from it once.
+              preferenceKind:
+                type: string
+                enum:
+                - MachinePreference
+                - MachineClusterPreference
               image:
                 type: object
                 description: Either path (an already-present file/PVC-resolved
@@ -1113,6 +1131,12 @@ spec:
                     format: date-time
                   message:
                     type: string
+              lastRestartRequest:
+                type: string
+                description: The kairon.zyvor.dev/restart-requested value kairon-node last acted on.
+              shutdownDeadline:
+                type: string
+                description: Set while a graceful stop waits for the guest to power off (RFC3339).
               hibernation:
                 type: object
                 properties:

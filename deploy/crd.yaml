@@ -1764,6 +1764,179 @@ spec:
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
+  name: machineclusterinstancetypes.kairon.zyvor.dev
+spec:
+  group: kairon.zyvor.dev
+  scope: Cluster
+  names:
+    plural: machineclusterinstancetypes
+    singular: machineclusterinstancetype
+    kind: MachineClusterInstanceType
+    shortNames:
+    - mcit
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    additionalPrinterColumns: &columns
+    - name: CPU
+      type: string
+      jsonPath: .spec.resources.cpu
+    - name: Memory
+      type: string
+      jsonPath: .spec.resources.memory
+    schema: &schema
+      openAPIV3Schema:
+        type: object
+        required:
+        - spec
+        properties:
+          spec:
+            type: object
+            required:
+            - resources
+            properties:
+              resources:
+                type: object
+                required:
+                - cpu
+                - memory
+                properties:
+                  cpu:
+                    type: string
+                    minLength: 1
+                  memory:
+                    type: string
+                    minLength: 1
+                  maxCpu:
+                    type: string
+                  maxMemory:
+                    type: string
+                  hugepages:
+                    type: boolean
+                  numaNode:
+                    type: integer
+                    minimum: 0
+                  cpuSet:
+                    type: string
+                  cpuPinning:
+                    type: boolean
+                  allocatedCpuSet:
+                    type: array
+                    items:
+                      type: integer
+                      minimum: 0
+                  limits:
+                    type: object
+                    properties:
+                      cpuQuotaPercent:
+                        type: integer
+                        minimum: 1
+                      memoryMaxBytes:
+                        type: integer
+                        format: int64
+                        minimum: 1
+                      ioWeight:
+                        type: integer
+                        minimum: 1
+                        maximum: 10000
+                      pidsMax:
+                        type: integer
+                        format: int64
+                        minimum: 1
+                      cpuSetCpus:
+                        type: array
+                        items:
+                          type: integer
+                          minimum: 0
+  - name: v1beta1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1beta1 is deprecated; use kairon.zyvor.dev/v1
+    additionalPrinterColumns: *columns
+    schema: *schema
+  - name: v1alpha1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1alpha1 is deprecated; use kairon.zyvor.dev/v1
+    additionalPrinterColumns: *columns
+    schema: *schema
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: machineclusterpreferences.kairon.zyvor.dev
+spec:
+  group: kairon.zyvor.dev
+  scope: Cluster
+  names:
+    plural: machineclusterpreferences
+    singular: machineclusterpreference
+    kind: MachineClusterPreference
+    shortNames:
+    - mcpref
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    additionalPrinterColumns: &columns
+    - name: Guest OS
+      type: string
+      jsonPath: .spec.guestOS
+    - name: Backend
+      type: string
+      jsonPath: .spec.backend
+    schema: &schema
+      openAPIV3Schema:
+        type: object
+        required:
+        - spec
+        properties:
+          spec:
+            type: object
+            description: Guest-OS defaults a Machine picks up through
+              spec.preferenceName. Each field fills a Machine field only
+              while it is unset -- see docs/guides/machine-instance-types.md.
+            properties:
+              backend:
+                type: string
+                description: Fills spec.runtime.backend.
+              architecture:
+                type: string
+                description: Fills spec.placement.architecture.
+              secureBoot:
+                type: boolean
+                description: Turns on spec.security.secureBoot.
+              tpm:
+                type: boolean
+                description: Turns on spec.security.tpm.
+              guestAgent:
+                type: boolean
+                description: Turns on spec.guestAgent.enabled.
+              guestOS:
+                type: string
+                description: Free-form hint shown by kaironctl and the
+                  dashboard; changes nothing on the Machine.
+  - name: v1beta1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1beta1 is deprecated; use kairon.zyvor.dev/v1
+    additionalPrinterColumns: *columns
+    schema: *schema
+  - name: v1alpha1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1alpha1 is deprecated; use kairon.zyvor.dev/v1
+    additionalPrinterColumns: *columns
+    schema: *schema
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
   name: machinedisruptionbudgets.kairon.zyvor.dev
 spec:
   group: kairon.zyvor.dev
@@ -1828,6 +2001,99 @@ spec:
                 type: integer
               disruptionsAllowed:
                 type: integer
+  - name: v1beta1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1beta1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema
+  - name: v1alpha1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1alpha1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: machineexports.kairon.zyvor.dev
+spec:
+  group: kairon.zyvor.dev
+  scope: Namespaced
+  names:
+    plural: machineexports
+    singular: machineexport
+    kind: MachineExport
+    shortNames:
+    - mexport
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    subresources: &subresources
+      status: {}
+    additionalPrinterColumns: &columns
+    - name: Machine
+      type: string
+      jsonPath: .spec.machineName
+    - name: Format
+      type: string
+      jsonPath: .status.format
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    - name: Expires
+      type: string
+      jsonPath: .status.expiresAt
+    schema: &schema
+      openAPIV3Schema:
+        type: object
+        required:
+        - spec
+        properties:
+          spec:
+            type: object
+            required:
+            - machineName
+            properties:
+              machineName:
+                type: string
+                minLength: 1
+                description: The Machine whose boot disk is served. It must be
+                  Stopped or Halted while the export is Ready.
+              format:
+                type: string
+                enum:
+                - qcow2
+                - raw
+                description: Empty serves the disk in its own format.
+              ttl:
+                type: string
+                description: Go duration from creation (default 2h, max 168h).
+          status:
+            type: object
+            properties:
+              phase:
+                type: string
+              nodeName:
+                type: string
+              format:
+                type: string
+              sizeBytes:
+                type: integer
+                format: int64
+              expiresAt:
+                type: string
+                format: date-time
+              downloadPath:
+                type: string
+              message:
+                type: string
   - name: v1beta1
     served: true
     storage: false
@@ -2686,6 +2952,76 @@ spec:
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
+  name: machinepreferences.kairon.zyvor.dev
+spec:
+  group: kairon.zyvor.dev
+  scope: Namespaced
+  names:
+    plural: machinepreferences
+    singular: machinepreference
+    kind: MachinePreference
+    shortNames:
+    - mpref
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    additionalPrinterColumns: &columns
+    - name: Guest OS
+      type: string
+      jsonPath: .spec.guestOS
+    - name: Backend
+      type: string
+      jsonPath: .spec.backend
+    schema: &schema
+      openAPIV3Schema:
+        type: object
+        required:
+        - spec
+        properties:
+          spec:
+            type: object
+            description: Guest-OS defaults a Machine picks up through
+              spec.preferenceName. Each field fills a Machine field only
+              while it is unset -- see docs/guides/machine-instance-types.md.
+            properties:
+              backend:
+                type: string
+                description: Fills spec.runtime.backend.
+              architecture:
+                type: string
+                description: Fills spec.placement.architecture.
+              secureBoot:
+                type: boolean
+                description: Turns on spec.security.secureBoot.
+              tpm:
+                type: boolean
+                description: Turns on spec.security.tpm.
+              guestAgent:
+                type: boolean
+                description: Turns on spec.guestAgent.enabled.
+              guestOS:
+                type: string
+                description: Free-form hint shown by kaironctl and the
+                  dashboard; changes nothing on the Machine.
+  - name: v1beta1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1beta1 is deprecated; use kairon.zyvor.dev/v1
+    additionalPrinterColumns: *columns
+    schema: *schema
+  - name: v1alpha1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1alpha1 is deprecated; use kairon.zyvor.dev/v1
+    additionalPrinterColumns: *columns
+    schema: *schema
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
   name: machineprotectionplans.kairon.zyvor.dev
 spec:
   group: kairon.zyvor.dev
@@ -3065,6 +3401,24 @@ spec:
                   real cpu/memory shape; enforced by kairon-controller/
                   kairon-node, not this schema, the same way spec.volumes
                   can substitute for image entirely.
+              instanceTypeKind:
+                type: string
+                enum:
+                - MachineInstanceType
+                - MachineClusterInstanceType
+                description: Kind instanceTypeName refers to. Defaults to
+                  MachineInstanceType (same namespace).
+              preferenceName:
+                type: string
+                description: Names a MachinePreference (same namespace) or,
+                  with preferenceKind MachineClusterPreference, a
+                  cluster-scoped one. kairon-controller fills still-unset
+                  guest-OS fields from it once.
+              preferenceKind:
+                type: string
+                enum:
+                - MachinePreference
+                - MachineClusterPreference
               image:
                 type: object
                 description: Either path (an already-present file/PVC-resolved
@@ -4101,6 +4455,12 @@ spec:
                     format: date-time
                   message:
                     type: string
+              lastRestartRequest:
+                type: string
+                description: The kairon.zyvor.dev/restart-requested value kairon-node last acted on.
+              shutdownDeadline:
+                type: string
+                description: Set while a graceful stop waits for the guest to power off (RFC3339).
               hibernation:
                 type: object
                 properties:
@@ -4511,6 +4871,22 @@ spec:
                 type: string
               storageSize:
                 type: string
+              machine:
+                type: object
+                description: Also create a Machine that boots from the
+                  restored claim, copied from the snapshot's source spec.
+                  The restored volume must be the boot volume (volumes[0]).
+                required:
+                - name
+                properties:
+                  name:
+                    type: string
+                    minLength: 1
+                  powerState:
+                    type: string
+                    enum:
+                    - Running
+                    - Stopped
           status:
             type: object
             properties:
@@ -4519,6 +4895,8 @@ spec:
               message:
                 type: string
               restoredClaimName:
+                type: string
+              restoredMachineName:
                 type: string
               atlasJobID:
                 type: string
@@ -4616,6 +4994,11 @@ spec:
                       type: string
                     atlasJobID:
                       type: string
+              sourceSpec:
+                type: object
+                description: The Machine's spec when the snapshot started,
+                  used by MachineSnapshotRestore spec.machine.
+                x-kubernetes-preserve-unknown-fields: true
   - name: v1beta1
     served: true
     storage: false

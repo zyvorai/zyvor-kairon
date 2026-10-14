@@ -22,6 +22,8 @@ type createRestoreRequest struct {
 	TargetClaimName  string `json:"targetClaimName"`
 	StorageClassName string `json:"storageClassName"`
 	StorageSize      string `json:"storageSize"`
+	// Machine also creates a Machine booting from the restored claim.
+	Machine *model.RestoreMachineSpec `json:"machine,omitempty"`
 }
 
 func (s *Server) handleListRestores(w http.ResponseWriter, r *http.Request) {
@@ -60,6 +62,7 @@ func (s *Server) handleCreateRestore(w http.ResponseWriter, r *http.Request) {
 			TargetClaimName:  req.TargetClaimName,
 			StorageClassName: req.StorageClassName,
 			StorageSize:      req.StorageSize,
+			Machine:          req.Machine,
 		},
 	}
 	out, err := s.Kube.CreateMachineSnapshotRestore(r.Context(), ns, restore)

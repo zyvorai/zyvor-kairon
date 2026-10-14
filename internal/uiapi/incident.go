@@ -61,6 +61,25 @@ func (s *Server) handleGetDiagnostics(w http.ResponseWriter, r *http.Request) {
 	s.relayDiagnostics(w, ctx, http.MethodGet, nodeAddr, "diagnostics/"+url.PathEscape(runtimeID)+"/"+url.PathEscape(r.PathValue("token")), nil)
 }
 
+// handleDeleteDiagnostics removes a bundle, and its memory dump, from the
+// Machine's node.
+func (s *Server) handleDeleteDiagnostics(w http.ResponseWriter, r *http.Request) {
+	if !s.requireIncidentAdmin(w, r) {
+		return
+	}
+	namespace, name := r.PathValue("namespace"), r.PathValue("name")
+	nodeAddr, runtimeID, ok := s.requireDiagnosticsAccess(w, r, namespace, name)
+	if !ok {
+		return
+	}
+	if s.Log != nil {
+		s.Log.Info("incident bundle delete requested", "username", usernameFromContext(r.Context()), "namespace", namespace, "machine", name)
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), execRelayClientTimeout)
+	defer cancel()
+	s.relayDiagnostics(w, ctx, http.MethodDelete, nodeAddr, "diagnostics/"+url.PathEscape(runtimeID)+"/"+url.PathEscape(r.PathValue("token")), nil)
+}
+
 // handleDiagnosticsFile streams a finished bundle (tar.gz) or its guest
 // memory dump. No timeout beyond the client's: a dump is as large as the
 // guest's memory.

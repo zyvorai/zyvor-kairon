@@ -342,7 +342,8 @@ func TestNodeStagesAndPublishesAnNVMeBlockVolume(t *testing.T) {
 
 	// Publish resolves the symlink itself; a fake /dev path can't be
 	// EvalSymlink'd, so point the link at a real file standing in for it.
-	fakeDev := filepath.Join(t.TempDir(), "nvme0n1")
+	devDir, _ := filepath.EvalSymlinks(t.TempDir())
+	fakeDev := filepath.Join(devDir, "nvme0n1")
 	_ = os.WriteFile(fakeDev, nil, 0o600)
 	_ = os.Remove(StagedDevicePath(staging))
 	_ = os.Symlink(fakeDev, StagedDevicePath(staging))
@@ -384,7 +385,7 @@ func TestNodeStagesAndPublishesAnNVMeBlockVolume(t *testing.T) {
 
 func TestNodeStagesAnISCSIBlockVolumeWithoutFormatting(t *testing.T) {
 	f := newTestNodeServer(t)
-	dir := t.TempDir()
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
 	dev := filepath.Join(dir, "sdz")
 	_ = os.WriteFile(dev, nil, 0o600)
 	link := filepath.Join(dir, "by-path")

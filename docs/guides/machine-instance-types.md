@@ -80,24 +80,90 @@ existing Machine's resources, edit `spec.resources` directly (a hotplug
 resize -- see [`machine-hotplug.md`](machine-hotplug.md)) the same way
 you always could.
 
-## Real limits today (first cut)
+## Cluster-wide instance types
 
-- **Resource shape only** -- no OS-preference bundling (preferred backend,
-  guest OS hints, boot firmware defaults) the way KubeVirt's separate
-  `VirtualMachinePreference` CRD offers. A `MachineInstanceType` is
-  exactly `spec.resources`, nothing else, for this first cut.
-- **Namespace-scoped, not cluster-wide.** A `MachineInstanceType` must
-  live in the same namespace as every Machine that references it -- no
-  cluster-scoped catalog of shared instance types yet.
-- **No admission-time validation of the reference.** With
-  `webhook.enabled`, a `Machine` naming a nonexistent `instanceTypeName`
-  is still accepted at `CREATE` -- it just stays unresolved (and
-  eventually surfaces a clear "cpu quantity is empty" error at FluxVM
-  creation time) rather than being rejected up front.
+A `MachineClusterInstanceType` has the same spec but no namespace, so one
+catalog serves every namespace. Point a Machine at it with
+`spec.instanceTypeKind`:
+
+```yaml
+apiVersion: kairon.zyvor.dev/v1
+kind: MachineClusterInstanceType
+metadata:
+  name: c2-4
+spec:
+  resources: {cpu: "2", memory: 4Gi}
+---
+apiVersion: kairon.zyvor.dev/v1
+kind: Machine
+metadata: {name: web-1, namespace: prod}
+spec:
+  instanceTypeName: c2-4
+  instanceTypeKind: MachineClusterInstanceType
+  image: {path: /var/lib/fluxvm/images/ubuntu-24.04.qcow2}
+  powerState: Running
+```
+
+`kaironctl create web-1 --image PATH --instance-type c2-4 --cluster-instance-type`
+does the same. `kaironctl get clusterinstancetypes` lists them.
+
+## Preferences
+
+A `MachinePreference` (namespaced) or `MachineClusterPreference`
+(cluster-scoped) holds the guest-OS defaults KubeVirt keeps in
+`VirtualMachinePreference`. A Machine names one with
+`spec.preferenceName` (and `spec.preferenceKind: MachineClusterPreference`
+for the cluster-scoped kind):
+
+```yaml
+apiVersion: kairon.zyvor.dev/v1
+kind: MachineClusterPreference
+metadata:
+  name: windows-11
+spec:
+  guestOS: windows
+  backend: qemu
+  architecture: amd64
+  secureBoot: true
+  tpm: true
+  guestAgent: true
+```
+
+| Preference field | Fills on the Machine |
+|---|---|
+| `backend` | `spec.runtime.backend` |
+| `architecture` | `spec.placement.architecture` |
+| `secureBoot`, `tpm` | `spec.security.secureBoot`, `spec.security.tpm` |
+| `guestAgent` | `spec.guestAgent.enabled` |
+| `guestOS` | nothing; a label for `kaironctl` and the dashboard |
+
+`kairon-controller` applies the preference once, before scheduling, and
+only to fields the Machine leaves unset: an explicit value always wins.
+It records what it applied in the
+`kairon.zyvor.dev/preference-applied` annotation; editing the preference
+later does not change Machines that already have it. Booleans can only
+turn a feature on, because `false` on the Machine is the same as unset.
+`kaironctl create NAME --preference windows-11 --cluster-preference`
+leaves `--backend` unset unless you pass it.
+
+## Admission checks
+
+With `webhook.enabled`, creating a Machine is refused when it names an
+instance type or preference that does not exist, or an unknown
+`instanceTypeKind`/`preferenceKind`. A Machine that sets
+`spec.resources` itself is not checked against its instance type, since
+the instance type would never be used. Without the webhook, a missing
+reference leaves the Machine unresolved and the controller retries every
+tick, as before.
+
+## Real limits today
+
+- **Preferences cover five fields.** There is no NIC model, disk bus or
+  machine-type preference, because the Machine spec has no such fields
+  for the root disk or primary NIC.
 - **No `kairon-ui` picker yet.** The dashboard's Machine-create form
-  doesn't yet offer a dropdown of available instance types -- set
-  `spec.instanceTypeName` via `kaironctl`/`kubectl`/the API directly.
-  `kaironctl get instancetypes` (or `kubectl get machineinstancetypes`)
-  at least lists what's available to choose from, and so does `kairon-ui`'s
-  own read-only "Instance types" dashboard page (`GET /api/v1/instancetypes`)
-  -- just not yet wired into the Machine-create form itself.
+  doesn't offer a dropdown of instance types or preferences -- set them
+  via `kaironctl`/`kubectl`/the API. The "Instance types" dashboard page
+  lists namespaced and cluster-wide instance types and preferences
+  (`GET /api/v1/instancetypes`, `/api/v1/cluster-instancetypes`,
+  `/api/v1/preferences`, `/api/v1/cluster-preferences`).
