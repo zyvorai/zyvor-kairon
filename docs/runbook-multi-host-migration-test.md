@@ -120,11 +120,11 @@ both hosts (matches `deploy-remote.sh --uninstall --purge`'s own semantics).
 
 ## Lessons from the first real two-host run (2026-10-14)
 
-Hosts `80.79.5.173` (FluxVM 0.3.0, QEMU 10.2.1) and `175.110.122.71`
-(FluxVM 0.4.8, QEMU 8.2.2), 175 exporting `/srv/kairon-shared` over NFS to 80.
+Hosts `80.79.5.173` (QEMU 10.2.1) and `175.110.122.71` (QEMU 8.2.2), both
+FluxVM 0.4.8, 175 exporting `/srv/kairon-shared` over NFS to 80.
 Check these before blaming Kairon for a stalled or `Blocked` live migration:
 
-- **Same FluxVM on both hosts, new enough for `storage: shared`.** A live
+- **Same FluxVM build on both hosts, new enough for `storage: shared`.** A live
   migration is refused with `live migration needs the disk on shared storage
   (storage: shared ...)`, and a Machine create fails with `storage: unknown
   variant 'shared'` (HTTP 422), when a host's FluxVM predates that mode.
@@ -139,6 +139,24 @@ Check these before blaming Kairon for a stalled or `Blocked` live migration:
   nothing on the target. Orphaned CNI BPF programs (for example Cilium's
   `cil_from_netdev` left on the NIC after uninstalling k3s) can drop it
   silently; a reboot clears them.
+- **FluxVM's sandbox must be able to write the shared path.** `fluxvm.service`
+  runs with `ProtectSystem=strict`; without `ReadWritePaths=-/srv/kairon-shared`
+  (a drop-in under `/etc/systemd/system/fluxvm.service.d/`) a shared-disk
+  Machine fails with `writing shared disk lock …disk.img.fluxvm-lock…: Read-only
+  file system` even though root can write the mount.
+- **Migrate old → new QEMU only.** QEMU migrates to the same or a newer
+  release. A Machine booted on the newer host gets that release's machine type
+  (`pc-q35-10.2`), which the older host refuses (`this host's QEMU cannot boot
+  the source's machine type`), and even an older machine type fails to load CPU
+  state on the older QEMU. Boot Machines on the oldest host and migrate toward
+  the newest; the matrix assumes it can bounce back, so run cases from a
+  Machine freshly created on the old host.
+- **Slow links need a lighter load.** On 1 Gbit the 256 MiB default dirtying
+  rate nearly equals the link rate; pre-copy took ~10 min and tripped the
+  600 s timeout. Use `KAIRON_HW_LOAD_MIB=64` and a larger `KAIRON_HW_TIMEOUT`.
+- **Do not let a case time out mid-cutover.** The next drill then collides with
+  the still-running migration (`shared disk … is in use`, a paused source in
+  `postmigrate`). Check `query-status` on the source before re-running.
 - **Adapter ordering.** After a reboot, `kairon-migration-adapter-fluxvm` can
   fail with "Dependency failed" if `fluxvm.service` was not up yet; check
   `systemctl is-active` on both hosts before starting.

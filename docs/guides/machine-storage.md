@@ -85,7 +85,9 @@ spec:
 Pair it with a Bound claim and `spec.volumes[0].claimName`. `spec.image.path`
 Machines are never live-migrated: the migration is `Blocked` with "live
 migration needs the disk on shared storage". Every node's FluxVM must support
-`storage: shared`. See
+`storage: shared`, and its systemd unit (which runs `ProtectSystem=strict`)
+needs the shared directory in `ReadWritePaths` (for example a drop-in with
+`ReadWritePaths=-/srv/kairon-shared`). See
 [runbook-multi-host-migration-test.md](../runbook-multi-host-migration-test.md).
 
 ## Real limits today
