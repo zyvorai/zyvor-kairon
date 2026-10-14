@@ -70,6 +70,44 @@ func TestHandleExecDeniesNonAdmin(t *testing.T) {
 	}
 }
 
+func TestHandleExecSandboxOperatorExec(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		enabled bool
+		label   string
+		denied  bool
+	}{
+		{"off", false, "true", true},
+		{"on, not a sandbox", true, "", true},
+		{"on, sandbox", true, "true", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fk := newFakeKube()
+			fk.machines["vm1"] = model.Machine{
+				Metadata: model.ObjectMeta{Name: "vm1", Namespace: "default", Labels: map[string]string{model.LabelSandbox: tc.label}},
+				Spec:     model.MachineSpec{GuestAgent: model.GuestAgentSpec{Enabled: true}},
+				Status:   model.MachineStatus{Phase: "Running", NodeName: "worker-1", RuntimeID: "runtime-1"},
+			}
+			kubeSrv := httptest.NewServer(fk.handler())
+			defer kubeSrv.Close()
+			s := &Server{
+				Kube:                mustKubeClientAt(t, kubeSrv.URL),
+				Users:               []User{{Username: "alice", PasswordHash: hashFor(t, "correct-horse")}},
+				SessionSecret:       []byte("test-session-secret"),
+				ConsoleToken:        "x",
+				ConsolePort:         "8090",
+				SandboxOperatorExec: tc.enabled,
+			}
+			h := s.Handler()
+			token := loginToken(t, h, "alice", "correct-horse")
+			rr := doJSON(t, h, http.MethodPost, "/api/v1/machines/default/vm1/exec", token, execRequest{Path: "/bin/echo"})
+			if got := rr.Code == http.StatusForbidden; got != tc.denied {
+				t.Fatalf("status %d (%s), want denied=%v", rr.Code, rr.Body.String(), tc.denied)
+			}
+		})
+	}
+}
+
 func TestHandleExecDeniesWhenNotEnabled(t *testing.T) {
 	fk := newFakeKube()
 	fk.machines["vm1"] = model.Machine{

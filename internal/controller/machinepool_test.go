@@ -25,6 +25,7 @@ type poolFake struct {
 	created      []model.Machine
 	deleted      []string
 	machinePatch map[string]map[string]any
+	specPatch    map[string]map[string]any
 	claimStatus  map[string]model.MachineClaimStatus
 	poolStatus   model.MachinePoolStatus
 	finalizers   map[string][]string
@@ -36,7 +37,7 @@ type poolFake struct {
 
 func newPoolTestController(t *testing.T) (*Controller, *poolFake) {
 	t.Helper()
-	fake := &poolFake{machinePatch: map[string]map[string]any{}, claimStatus: map[string]model.MachineClaimStatus{}, finalizers: map[string][]string{}, policies: map[string]model.MachineNetworkPolicy{}, snapshots: map[string]model.MachineSnapshot{}}
+	fake := &poolFake{machinePatch: map[string]map[string]any{}, specPatch: map[string]map[string]any{}, claimStatus: map[string]model.MachineClaimStatus{}, finalizers: map[string][]string{}, policies: map[string]model.MachineNetworkPolicy{}, snapshots: map[string]model.MachineSnapshot{}}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fake.mu.Lock()
 		defer fake.mu.Unlock()
@@ -116,9 +117,13 @@ func newPoolTestController(t *testing.T) (*Controller, *poolFake) {
 				_, _ = io.WriteString(w, `{"kind":"Status","reason":"Conflict","code":409}`)
 				return
 			}
-			var meta map[string]any
+			var meta, spec map[string]any
 			_ = json.Unmarshal(body["metadata"], &meta)
 			fake.machinePatch[name] = meta
+			if body["spec"] != nil {
+				_ = json.Unmarshal(body["spec"], &spec)
+				fake.specPatch[name] = spec
+			}
 			_, _ = io.WriteString(w, `{}`)
 		case r.Method == http.MethodPatch && strings.HasSuffix(path, "/status") && strings.HasPrefix(path, "machineclaims/"):
 			var st model.MachineClaimStatus
@@ -426,5 +431,70 @@ func TestMachineClaimWithoutEgressCreatesNoPolicy(t *testing.T) {
 	c.reconcileMachineClaims(t.Context(), []model.MachineClaim{testClaim("c1", time.Second)}, machines)
 	if len(fake.policyOps) != 0 || fake.claimStatus["c1"].EgressPolicy != "" {
 		t.Fatalf("ops = %v status = %+v", fake.policyOps, fake.claimStatus["c1"])
+	}
+}
+
+func TestPausedPoolPausesAfterWarmupAndBindResumes(t *testing.T) {
+	c, fake := newPoolTestController(t)
+	pool := testPool(3)
+	pool.Spec.WarmPowerState = "Paused"
+	pool.Spec.WarmupSeconds = 60
+	hash := machineSetTemplateHash(pool.Spec.Template)
+	parked := poolMember("p1-parked", hash, model.PoolStateWarm, "Paused", time.Hour)
+	parked.Spec.PowerState = "Paused"
+	machines := []model.Machine{
+		poolMember("p1-warm", hash, model.PoolStateWarm, "Running", 2*time.Minute),
+		poolMember("p1-fresh", hash, model.PoolStateWarm, "Running", 10*time.Second),
+		parked,
+	}
+	c.reconcileMachinePools(t.Context(), []model.MachinePool{pool}, machines, map[string]bool{})
+	if fake.specPatch["p1-warm"]["powerState"] != "Paused" {
+		t.Fatalf("warmed-up member not paused: %v", fake.specPatch)
+	}
+	if _, ok := fake.specPatch["p1-fresh"]; ok {
+		t.Fatalf("member paused before warmup: %v", fake.specPatch["p1-fresh"])
+	}
+	if fake.poolStatus.ReadyReplicas != 3 {
+		t.Fatalf("paused members should count as ready: %+v", fake.poolStatus)
+	}
+
+	claims := []model.MachineClaim{testClaim("c1", time.Second)}
+	c.reconcileMachineClaims(t.Context(), claims, []model.Machine{parked})
+	if got := fake.claimStatus["c1"]; got.Phase != model.ClaimBound || got.MachineName != "p1-parked" {
+		t.Fatalf("claim = %+v", got)
+	}
+	if fake.specPatch["p1-parked"]["powerState"] != "Running" {
+		t.Fatalf("bind did not resume: %v", fake.specPatch["p1-parked"])
+	}
+	ann, _ := fake.machinePatch["p1-parked"]["annotations"].(map[string]any)
+	if ann[model.AnnotationLifecycleStart] == nil || ann[model.AnnotationLastActivity] == nil {
+		t.Fatalf("bind did not reset lifecycle clocks: %v", ann)
+	}
+}
+
+func TestRunningPoolResumesParkedMembers(t *testing.T) {
+	pool := testPool(1)
+	m := poolMember("p1-a", "h", model.PoolStateWarm, "Paused", time.Hour)
+	m.Spec.PowerState = "Paused"
+	if got := warmPowerTarget(pool.Spec, m, time.Now()); got != "Running" {
+		t.Fatalf("got %q", got)
+	}
+	pool.Spec.Template.Spec.PowerState = "Paused"
+	if got := warmPowerTarget(pool.Spec, m, time.Now()); got != "" {
+		t.Fatalf("template asks for Paused; got %q", got)
+	}
+}
+
+func TestMachineClaimAccruesUsage(t *testing.T) {
+	c, fake := newPoolTestController(t)
+	claim := testClaim("c1", time.Hour)
+	bound := time.Now().Add(-2 * time.Minute)
+	claim.Status = model.MachineClaimStatus{Phase: model.ClaimBound, MachineName: "m1", BoundAt: &bound}
+	m := poolMember("m1", "h", model.PoolStateClaimed, "Running", time.Hour)
+	m.Spec.Resources = model.ResourceSpec{CPU: "2", Memory: "2Gi"}
+	c.reconcileMachineClaims(t.Context(), []model.MachineClaim{claim}, []model.Machine{m})
+	u := fake.claimStatus["c1"].Usage
+	if u.ActiveSeconds < 119 || u.VCPUSeconds != 2*float64(u.ActiveSeconds) || u.MemoryGiBSeconds != 2*float64(u.ActiveSeconds) {
+		t.Fatalf("usage = %+v", u)
 	}
 }

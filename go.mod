@@ -6,6 +6,7 @@ require (
 	github.com/coder/websocket v1.8.15
 	github.com/container-storage-interface/spec v1.13.0
 	github.com/coreos/go-oidc/v3 v3.21.0
+	github.com/creack/pty v1.1.18
 	github.com/go-jose/go-jose/v4 v4.1.5
 	github.com/google/go-sev-guest v0.15.0
 	github.com/google/go-tdx-guest v0.3.1

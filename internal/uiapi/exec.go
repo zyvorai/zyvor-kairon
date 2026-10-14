@@ -120,7 +120,7 @@ func (s *Server) execGate(w http.ResponseWriter, r *http.Request) (m model.Machi
 		return m, "", "", false
 	}
 	username = usernameFromContext(r.Context())
-	if !s.isAdminIdentity(r.Context(), username) {
+	if !s.guestExecAllowed(r.Context(), m, username) {
 		if s.Log != nil {
 			s.Log.Warn("uiapi exec denied: not an admin account", "username", username, "namespace", namespace, "name", name)
 		}
@@ -136,6 +136,11 @@ func (s *Server) execGate(w http.ResponseWriter, r *http.Request) (m model.Machi
 	}
 	if s.ConsoleToken == "" || s.ConsolePort == "" {
 		writeError(w, http.StatusNotImplemented, "exec is not enabled on this deployment")
+		return m, "", "", false
+	}
+	m, woke, err := s.ensureAwake(r.Context(), m)
+	if err != nil {
+		writeWakeError(w, err)
 		return m, "", "", false
 	}
 	if m.Status.Phase != "Running" {
@@ -154,6 +159,9 @@ func (s *Server) execGate(w http.ResponseWriter, r *http.Request) (m model.Machi
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return m, "", "", false
+	}
+	if woke {
+		s.waitForGuestAgent(r.Context(), nodeAddr, m)
 	}
 	return m, username, nodeAddr, true
 }

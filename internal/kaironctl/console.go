@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image/png"
 	"io"
 	"net"
 	"net/http"
@@ -455,5 +456,55 @@ without a password, use --proxy-only with another viewer.`,
 	cmd.Flags().BoolVar(&proxyOnly, "proxy-only", false, "only run the local proxy; do not start a viewer")
 	cmd.Flags().StringVar(&address, "address", "127.0.0.1", "local address to listen on")
 	cmd.Flags().IntVar(&port, "port", 0, "local port (0 picks a free one)")
+	cmd.AddCommand(newVNCScreenshotCmd(opts))
+	return cmd
+}
+
+func newVNCScreenshotCmd(opts *Options) *cobra.Command {
+	var file string
+	var timeout time.Duration
+	cmd := &cobra.Command{
+		Use:   "screenshot MACHINE",
+		Short: "Save a PNG of a Machine's graphical display",
+		Long: `Read one frame of a running Machine's VNC display (qemu backend) through the
+console relay and save it as PNG, like virtctl vnc screenshot. Needs
+KAIRON_UI_URL (and KAIRON_UI_TOKEN); the display must not require a VNC password.`,
+		Example: `  $ kaironctl vnc screenshot win-1
+  $ kaironctl vnc screenshot win-1 -o boot.png`,
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeMachineNames(&opts.Namespace),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
+			defer cancel()
+			conn, err := dialConsole(ctx, opts.Namespace, args[0], "vnc", 0, 0)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = conn.Close() }()
+			_ = conn.SetDeadline(time.Now().Add(timeout))
+			img, err := rfbScreenshot(conn)
+			if err != nil {
+				return err
+			}
+			if file == "" {
+				file = args[0] + "-" + time.Now().Format("20060102-150405") + ".png"
+			}
+			f, err := os.Create(file)
+			if err != nil {
+				return err
+			}
+			if err := png.Encode(f, img); err != nil {
+				_ = f.Close()
+				return err
+			}
+			if err := f.Close(); err != nil {
+				return err
+			}
+			okf("%s (%dx%d)", file, img.Bounds().Dx(), img.Bounds().Dy())
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&file, "file", "o", "", "output PNG (default MACHINE-TIMESTAMP.png)")
+	cmd.Flags().DurationVar(&timeout, "timeout", 30*time.Second, "give up after this long")
 	return cmd
 }

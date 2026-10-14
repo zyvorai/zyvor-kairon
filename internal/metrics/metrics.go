@@ -126,6 +126,7 @@ type Recorder struct {
 	memory    *memoryMetrics
 	vnet      *vnetMetrics
 	placement *placementMetrics
+	sandbox   *sandboxMetrics
 	dr        *drMetrics
 	accel     *acceleratorMetrics
 
@@ -258,6 +259,7 @@ func NewRecorder() *Recorder {
 	r.backup = newBackupMetrics(reg)
 	r.topology = newTopologyMetrics(reg)
 	r.placement = newPlacementMetrics(reg)
+	r.sandbox = newSandboxMetrics(reg)
 	r.dr = newDRMetrics(reg)
 	r.accel = newAcceleratorMetrics(reg)
 	return r

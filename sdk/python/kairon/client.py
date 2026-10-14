@@ -408,6 +408,13 @@ class UIClient:
         self._http.request("POST", self._machine(name) + "/agent-file/put", {
             "path": path, "contentBase64": base64.b64encode(data).decode(), "mode": mode})
 
+    def get_file(self, name: str, path: str) -> bytes:
+        """Read a guest file over the vsock agent (spec.guestAgent.console)."""
+        if not path.startswith("/"):
+            raise ValueError("file needs an absolute path")
+        out = self._http.request("POST", self._machine(name) + "/agent-file/get", {"path": path})
+        return base64.b64decode((out or {}).get("contentBase64", ""))
+
     def capabilities(self, node: str) -> dict:
         return self._http.request("GET", "/api/v1/nodes/" + _segment(node) + "/capabilities")
 

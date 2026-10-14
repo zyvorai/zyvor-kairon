@@ -25,6 +25,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/zyvorai/kairon/internal/kube"
+	"github.com/zyvorai/kairon/internal/loglevel"
 	"github.com/zyvorai/kairon/internal/metrics"
 	"github.com/zyvorai/kairon/internal/ratelimit"
 	"github.com/zyvorai/kairon/internal/uiapi"
@@ -74,7 +75,8 @@ func run() int {
 		return 0
 	}
 
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logLevel := new(slog.LevelVar)
+	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel}))
 	atlasToken := os.Getenv("KAIRON_UI_ATLAS_TOKEN")
 	if *atlasTokenFile != "" {
 		b, err := os.ReadFile(*atlasTokenFile)
@@ -142,6 +144,7 @@ func run() int {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
+	go loglevel.Watch(ctx, kc, loglevel.Namespace(), "ui", "", logLevel, log)
 
 	var rateLimiter *ratelimit.Limiter
 	if *rateLimitRPS > 0 {
@@ -233,6 +236,7 @@ func run() int {
 		// RBACConsoleCheck false (the default) is unchanged, annotation-
 		// only console authorization -- see uiapi.Server's own doc comment.
 		RBACConsoleCheck:        env("KAIRON_UI_RBAC_CONSOLE_CHECK", "false") == "true",
+		SandboxOperatorExec:     env("KAIRON_UI_SANDBOX_OPERATOR_EXEC", "false") == "true",
 		Metrics:                 rec,
 		RateLimit:               rateLimiter,
 		TrustedProxyHeader:      *trustedProxyHeader,

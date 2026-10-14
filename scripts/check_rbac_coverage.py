@@ -116,6 +116,9 @@ OVERRIDES = {
     "CreateDNSEndpoint": ("externaldns.k8s.io", "dnsendpoints", "create"),
     "PatchDNSEndpoint": ("externaldns.k8s.io", "dnsendpoints", "patch"),
     "DeleteDNSEndpoint": ("externaldns.k8s.io", "dnsendpoints", "delete"),
+    # ?dryRun=All writes; the apiserver still authorizes the real verb.
+    "DryRunPatchMachine": ("kairon.zyvor.dev", "machines", "patch"),
+    "DryRunCreateMachineMigration": ("kairon.zyvor.dev", "machinemigrations", "create"),
 }
 
 VERB_PREFIXES = [

@@ -150,9 +150,13 @@ func cmdGet(ctx context.Context, kc *kube.Client, args []string) {
 			fatal(err)
 		}
 		items = selectorFilter(items, selector, func(p model.MachinePool) map[string]string { return p.Metadata.Labels })
-		fmt.Printf("NAME\tWARM\tREADY\tCLAIMED\n")
+		fmt.Printf("NAME\tWARM\tREADY\tCLAIMED\tWARM-STATE\n")
 		for _, p := range items {
-			fmt.Printf("%s\t%d\t%d\t%d\n", p.Metadata.Name, p.Spec.Replicas, p.Status.ReadyReplicas, p.Status.Claimed)
+			warm := p.Spec.WarmPowerState
+			if warm == "" {
+				warm = "Running"
+			}
+			fmt.Printf("%s\t%d\t%d\t%d\t%s\n", p.Metadata.Name, p.Spec.Replicas, p.Status.ReadyReplicas, p.Status.Claimed, warm)
 		}
 	case "machineclaim", "machineclaims", "claim", "claims":
 		items, err := kc.ListMachineClaimsNamespace(ctx, ns)
@@ -160,9 +164,11 @@ func cmdGet(ctx context.Context, kc *kube.Client, args []string) {
 			fatal(err)
 		}
 		items = selectorFilter(items, selector, func(c model.MachineClaim) map[string]string { return c.Metadata.Labels })
-		fmt.Printf("NAME\tPOOL\tPHASE\tMACHINE\tBIND-MS\n")
+		fmt.Printf("NAME\tPOOL\tPHASE\tMACHINE\tBIND-MS\tACTIVE\tSUSPENDED\tVCPU-S\n")
 		for _, c := range items {
-			fmt.Printf("%s\t%s\t%s\t%s\t%d\n", c.Metadata.Name, c.Spec.PoolName, style.Phase(os.Stdout, dash(c.Status.Phase)), dash(c.Status.MachineName), c.Status.BindMillis)
+			u := c.Status.Usage
+			fmt.Printf("%s\t%s\t%s\t%s\t%d\t%s\t%s\t%.0f\n", c.Metadata.Name, c.Spec.PoolName, style.Phase(os.Stdout, dash(c.Status.Phase)), dash(c.Status.MachineName), c.Status.BindMillis,
+				time.Duration(u.ActiveSeconds)*time.Second, time.Duration(u.SuspendedSeconds)*time.Second, u.VCPUSeconds)
 		}
 	case "instancetype", "instancetypes", "machineinstancetypes":
 		items, err := kc.ListMachineInstanceTypesNamespace(ctx, ns)

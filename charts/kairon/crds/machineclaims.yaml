@@ -90,6 +90,19 @@ spec:
                 type: integer
               egressPolicy:
                 type: string
+              usage:
+                type: object
+                properties:
+                  activeSeconds:
+                    type: integer
+                  suspendedSeconds:
+                    type: integer
+                  vcpuSeconds:
+                    type: number
+                  memoryGiBSeconds:
+                    type: number
+                  lastAccrued:
+                    type: string
               message:
                 type: string
   - name: v1beta1

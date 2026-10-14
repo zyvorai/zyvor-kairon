@@ -4,10 +4,14 @@
 package kaironctl
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/zyvorai/kairon/internal/kube"
 	"github.com/zyvorai/kairon/internal/model"
 )
 
@@ -47,5 +51,40 @@ func TestRestartPatchIsUniquePerCall(t *testing.T) {
 	b := restartPatch(now.Add(time.Millisecond))["metadata"].(map[string]any)["annotations"].(map[string]string)[model.AnnotationRestartRequested]
 	if a == b || a != "2026-10-14T06:00:00Z" {
 		t.Fatalf("a=%q b=%q", a, b)
+	}
+}
+
+func TestCmdPowerDryRunAndPaused(t *testing.T) {
+	type call struct{ query, state string }
+	var calls []call
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var p struct {
+			Spec struct {
+				PowerState string `json:"powerState"`
+			} `json:"spec"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&p)
+		calls = append(calls, call{r.URL.RawQuery, p.Spec.PowerState})
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	kc := &kube.Client{BaseURL: srv.URL, HTTP: srv.Client()}
+	cmdPower(context.Background(), kc, []string{"web-1", "--paused"}, "Running")
+	cmdPower(context.Background(), kc, []string{"web-1", "--dry-run"}, "Stopped")
+	want := []call{{"", "Paused"}, {"dryRun=All", "Stopped"}}
+	if len(calls) != 2 || calls[0] != want[0] || calls[1] != want[1] {
+		t.Fatalf("calls %+v, want %+v", calls, want)
+	}
+}
+
+func TestFreezePatches(t *testing.T) {
+	now := time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC)
+	ann := freezePatch(now, 5*time.Minute)["metadata"].(map[string]any)["annotations"].(map[string]any)
+	if ann[model.AnnotationFsFreezeUntil] != "2026-10-14T12:05:00Z" {
+		t.Fatalf("freeze %v", ann)
+	}
+	ann = unfreezePatch()["metadata"].(map[string]any)["annotations"].(map[string]any)
+	if v, ok := ann[model.AnnotationFsFreezeUntil]; !ok || v != nil {
+		t.Fatalf("unfreeze %v", ann)
 	}
 }

@@ -65,6 +65,12 @@ spec:
                   spec:
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
+              warmPowerState:
+                type: string
+                enum: ["", Running, Paused]
+              warmupSeconds:
+                type: integer
+                minimum: 0
           status:
             type: object
             properties:

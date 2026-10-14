@@ -401,6 +401,17 @@ export class Client {
   }
 }
 export interface ExecResult {exitCode: number; stdout: string; stderr: string}
+export function toBase64(data: Uint8Array): string {
+  let s = '';
+  for (let i = 0; i < data.length; i += 0x8000) s += String.fromCharCode(...data.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+export function fromBase64(text: string): Uint8Array {
+  const s = atob(text.replace(/\s+/g, ''));
+  const out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+  return out;
+}
 export class UIClient {
   private readonly http: HTTP;
   readonly namespace: string;
@@ -418,6 +429,17 @@ export class UIClient {
     if (!Number.isInteger(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > 300) throw new Error('timeoutSeconds must be 1..300');
     return this.http.request('POST', this.machine(name) + '/agent-exec', {command, timeoutSeconds}, {timeoutMs: (timeoutSeconds + 15) * 1000});
   }
+  /** Write a guest file over the vsock agent (spec.guestAgent.console). */
+  async putFile(name: string, path: string, data: Uint8Array, mode = 0o600): Promise<void> {
+    if (data.length > 3 * 1024 * 1024 || !path.startsWith('/') || mode < 0 || mode > 0o777) throw new Error('file needs an absolute path, <=3 MiB content and a mode <=0777');
+    await this.http.request('POST', this.machine(name) + '/agent-file/put', {path, contentBase64: toBase64(data), mode});
+  }
+  /** Read a guest file over the vsock agent (spec.guestAgent.console). */
+  async getFile(name: string, path: string): Promise<Uint8Array> {
+    if (!path.startsWith('/')) throw new Error('file needs an absolute path');
+    const out = await this.http.request('POST', this.machine(name) + '/agent-file/get', {path}) as {contentBase64?: string} | null;
+    return fromBase64(out?.contentBase64 ?? '');
+  }
   capabilities(node: string): Promise<Record<string, Json>> {
     return this.http.request('GET', `/api/v1/nodes/${segment(node)}/capabilities`);
   }
@@ -429,3 +451,4 @@ export class UIClient {
     return this.http.request('GET', '/api/v1/usage.csv?' + new URLSearchParams({namespace: this.namespace}), undefined, {raw: true});
   }
 }
+export {CommandError, Process, Sandbox, SANDBOX_LABEL, type SandboxOptions} from './sandbox.js';

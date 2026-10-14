@@ -28,6 +28,7 @@ import (
 	"github.com/zyvorai/kairon/internal/fluxvm"
 	"github.com/zyvorai/kairon/internal/health"
 	"github.com/zyvorai/kairon/internal/kube"
+	"github.com/zyvorai/kairon/internal/loglevel"
 	"github.com/zyvorai/kairon/internal/macnode"
 	"github.com/zyvorai/kairon/internal/metrics"
 	"github.com/zyvorai/kairon/internal/migration"
@@ -147,7 +148,8 @@ func run() int {
 		fmt.Fprintln(os.Stderr, "NODE_NAME is required")
 		return 2
 	}
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logLevel := new(slog.LevelVar)
+	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel}))
 	kc, err := kube.FromEnvironment()
 	if err != nil {
 		log.Error("kubernetes client", "error", err)
@@ -172,6 +174,7 @@ func run() int {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
+	go loglevel.Watch(ctx, kc, loglevel.Namespace(), "node", node, logLevel, log)
 	if *registerNode {
 		discover := func(ctx context.Context) macnode.Info {
 			info := macnode.Discover()

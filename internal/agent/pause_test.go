@@ -136,17 +136,30 @@ func TestEnsurePausedIsANoOpWhenAlreadyPaused(t *testing.T) {
 	}
 }
 
-func TestEnsurePausedWithNoRuntimeReportsPending(t *testing.T) {
+func TestEnsurePausedWithNoRuntimeBootsThenPauses(t *testing.T) {
 	m := pausedMachine("Paused")
-	m.Status.RuntimeID = "" // never created
+	m.Status.RuntimeID = "" // never created: kaironctl start --paused
 	var gotStatus model.MachineStatus
 	ks := fakeKubeForMachine(t, &m, &gotStatus)
 	defer ks.Close()
 
+	var created, paused bool
 	fs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/vms" && r.URL.Query().Get("name") == "kairon-prod-db":
-			_ = json.NewEncoder(w).Encode([]fluxvm.Record{})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/vms":
+			recs := []fluxvm.Record{}
+			if created {
+				recs = append(recs, fluxvm.Record{UUID: "vm-9", Name: "kairon-prod-db", Status: "Running"})
+			}
+			_ = json.NewEncoder(w).Encode(recs)
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/vms":
+			created = true
+			_ = json.NewEncoder(w).Encode(fluxvm.Record{UUID: "vm-9", Name: "kairon-prod-db", Status: "Running"})
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/vms/vm-9":
+			_ = json.NewEncoder(w).Encode(fluxvm.Record{UUID: "vm-9", Name: "kairon-prod-db", Status: "Running"})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/vms/vm-9/pause":
+			paused = true
+			_ = json.NewEncoder(w).Encode(fluxvm.Record{UUID: "vm-9", Status: "Paused"})
 		default:
 			http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusNotFound)
 		}
@@ -161,8 +174,11 @@ func TestEnsurePausedWithNoRuntimeReportsPending(t *testing.T) {
 	if err := a.Reconcile(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if gotStatus.Phase != "Pending" || gotStatus.Message == "" {
-		t.Fatalf("expected a Pending status with an explanatory message, got %+v", gotStatus)
+	if !created || !paused {
+		t.Fatalf("created=%v paused=%v, want both", created, paused)
+	}
+	if gotStatus.Phase != "Paused" || gotStatus.RuntimeID != "vm-9" {
+		t.Fatalf("unexpected status: %+v", gotStatus)
 	}
 }
 

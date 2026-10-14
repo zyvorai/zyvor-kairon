@@ -47,6 +47,12 @@ const (
 	// forks the parent's FluxVM runtime (POST /v1/vms/{id}/fork) instead
 	// of booting a new one. See docs/guides/machine-fork.md.
 	AnnotationForkFrom = "kairon.zyvor.dev/fork-from"
+	// AnnotationCloneFrom names a Halted Machine in the same namespace on
+	// the same node. Before first boot, kairon-node flattens that
+	// Machine's disk into its image cache and boots this Machine from the
+	// copy instead of spec.image.
+	AnnotationCloneFrom = "kairon.zyvor.dev/clone-from"
+	LabelClonedFrom     = "kairon.zyvor.dev/cloned-from"
 	// LabelForkedFrom is stamped on fork children so they can be listed
 	// by parent.
 	LabelForkedFrom        = "kairon.zyvor.dev/forked-from"
@@ -110,6 +116,13 @@ const (
 	// failure mode kairon-node must never silently abandon.
 	AnnotationQuiesceRequest = "kairon.zyvor.dev/quiesce-request"
 	AnnotationQuiesceStatus  = "kairon.zyvor.dev/quiesce-status"
+	// AnnotationFsFreezeUntil (RFC 3339) asks kairon-node to keep the
+	// guest's filesystems frozen until then (kaironctl freeze); it thaws
+	// them and removes the request at that time, so a forgotten freeze
+	// cannot wedge the guest. Removing it (kaironctl unfreeze) thaws at
+	// once. kairon-node confirms a freeze with AnnotationFsFrozen.
+	AnnotationFsFreezeUntil = "kairon.zyvor.dev/fs-frozen-until"
+	AnnotationFsFrozen      = "kairon.zyvor.dev/fs-frozen"
 	// AnnotationSnapshotScheduleTriggerNow requests an immediate,
 	// out-of-band MachineSnapshotSchedule run -- kairon-controller's
 	// analog of `kubectl create job --from=cronjob`, but implemented as
@@ -241,6 +254,9 @@ type MachineSpec struct {
 	// quota and disruption boundary.
 	Tenant     string `json:"tenant,omitempty"`
 	TTLSeconds int64  `json:"ttlSeconds,omitempty"`
+	// Lifecycle bounds the Machine's lifetime and suspends it when idle.
+	// See LifecycleSpec and docs/guides/agent-sandboxes.md.
+	Lifecycle *LifecycleSpec `json:"lifecycle,omitempty"`
 	// Priority orders competition among Machines that are all still
 	// unscheduled (spec.nodeName empty) at the start of the same
 	// reconcile tick -- kairon-controller attempts higher-Priority
@@ -893,6 +909,16 @@ func ValidateCdroms(cdroms []MachineCdrom) error {
 	return nil
 }
 
+// ValidateMachineCdromsUpdate is ValidateCdromsUpdate, except that a
+// Machine held Stopped with no runtime may change spec.cdroms freely: the
+// next boot creates its drives from scratch (kaironctl cdrom insert).
+func ValidateMachineCdromsUpdate(old, updated Machine) error {
+	if old.DesiredPowerState() == "Stopped" && old.Status.RuntimeID == "" {
+		return nil
+	}
+	return ValidateCdromsUpdate(old.Spec.Cdroms, updated.Spec.Cdroms)
+}
+
 // ValidateCdromsUpdate allows an update to spec.cdroms only to remove
 // entries: FluxVM can eject install media from a created VM but not insert
 // new media. An imageRef entry that kairon-controller has since resolved
@@ -1141,6 +1167,8 @@ type MachineStatus struct {
 	// ShutdownDeadline (RFC3339) is set while a graceful stop waits for
 	// the guest to power itself off; see AnnotationStopGracePeriod.
 	ShutdownDeadline string `json:"shutdownDeadline,omitempty"`
+	// Lifecycle is kairon-node's activity record for spec.lifecycle.
+	Lifecycle *LifecycleStatus `json:"lifecycle,omitempty"`
 	// ResourceUsage is this Machine's cgroup-derived resource usage as of
 	// the last *meaningful* status write (FluxVM's GET /v1/vms/{id}/stats).
 	// High-frequency samples go to Prometheus (kairon_machine_resource_usage)
