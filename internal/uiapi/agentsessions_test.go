@@ -5,6 +5,7 @@ package uiapi
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/coder/websocket"
 
 	"github.com/zyvorai/kairon/internal/consoleproxy"
 	"github.com/zyvorai/kairon/internal/fluxvm"
@@ -107,6 +110,19 @@ func newSessionWorld(t *testing.T) *sessionWorld {
 			_, _ = io.WriteString(w, `{"items":[{"token":"`+testPreviewToken+`","port":3000}]}`)
 		case r.URL.Path == base+"/trajectory":
 			_, _ = io.WriteString(w, `{"steps":[]}`)
+		case strings.HasPrefix(r.URL.Path, base+"/approvals/"), r.URL.Path == base+"/grants":
+			body, _ := io.ReadAll(r.Body)
+			_, _ = w.Write(body)
+		case r.URL.Path == base+"/pty":
+			c, err := websocket.Accept(w, r, nil)
+			if err != nil {
+				return
+			}
+			_, msg, err := c.Read(r.Context())
+			if err == nil {
+				_ = c.Write(r.Context(), websocket.MessageBinary, append([]byte("echo:"), msg...))
+			}
+			_ = c.Close(websocket.StatusNormalClosure, "exit=0")
 		case strings.HasPrefix(r.URL.Path, "/preview/"+testPreviewToken+"/"):
 			w.Header().Set("Content-Type", "text/html")
 			w.Header().Set("Set-Cookie", "app=1; Path=/")
@@ -167,6 +183,51 @@ func TestAgentSessionVerbsNeedExecGrant(t *testing.T) {
 	w.server.SandboxOperatorExec = true
 	if rr := doJSON(t, w.handler, http.MethodPost, "/api/v1/agentsessions/default/work/exec", w.op, map[string]any{"command": "id"}); rr.Code != http.StatusOK {
 		t.Fatalf("operator with sandboxOperatorExec = %d %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestAgentSessionApprovalsAndGrantsNeedAdmin(t *testing.T) {
+	w := newSessionWorld(t)
+	w.server.SandboxOperatorExec = true
+	approve := "/api/v1/agentsessions/default/work/approvals/" + childSessionID + "/approve"
+	if rr := doJSON(t, w.handler, http.MethodPost, approve, w.op, map[string]any{}); rr.Code != http.StatusForbidden {
+		t.Fatalf("operator approving = %d", rr.Code)
+	}
+	if rr := doJSON(t, w.handler, http.MethodPost, "/api/v1/agentsessions/default/work/grants", w.op, map[string]any{"secret_ref": "gh"}); rr.Code != http.StatusForbidden {
+		t.Fatalf("operator granting = %d", rr.Code)
+	}
+	rr := doJSON(t, w.handler, http.MethodPost, approve, w.admin, map[string]any{"note": "looks fine"})
+	var got map[string]any
+	if rr.Code != http.StatusOK || json.Unmarshal(rr.Body.Bytes(), &got) != nil || got["note"] != "by root via kairon-ui: looks fine" {
+		t.Fatalf("admin approve = %d %s", rr.Code, rr.Body.String())
+	}
+	rr = doJSON(t, w.handler, http.MethodPost, "/api/v1/agentsessions/default/work/approvals/"+childSessionID+"/deny", w.admin, nil)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"note":"by root via kairon-ui"`) {
+		t.Fatalf("admin deny = %d %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestAgentSessionPtyWebSocketThroughRelays(t *testing.T) {
+	w := newSessionWorld(t)
+	ui := httptest.NewServer(w.handler)
+	t.Cleanup(ui.Close)
+	ctx := t.Context()
+	c, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(ui.URL, "http")+"/api/v1/agentsessions/default/work/pty?cols=80&rows=24",
+		&websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Bearer " + w.admin}}})
+	if err != nil {
+		t.Fatalf("dial pty: %v", err)
+	}
+	defer func() { _ = c.CloseNow() }()
+	if err := c.Write(ctx, websocket.MessageBinary, []byte("ls\n")); err != nil {
+		t.Fatal(err)
+	}
+	if _, msg, err := c.Read(ctx); err != nil || string(msg) != "echo:ls\n" {
+		t.Fatalf("pty read = %q, %v", msg, err)
+	}
+	_, _, err = c.Read(ctx)
+	var ce websocket.CloseError
+	if !errors.As(err, &ce) || ce.Reason != "exit=0" {
+		t.Fatalf("close = %v", err)
 	}
 }
 

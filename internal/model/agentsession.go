@@ -146,6 +146,9 @@ type AgentFilesystemPolicy struct {
 type AgentProcessPolicy struct {
 	Allow []string `json:"allow,omitempty"`
 	Deny  []string `json:"deny,omitempty"`
+	// Ask lists commands that run only after an admin approves them; a
+	// command matching one also satisfies a non-empty Allow.
+	Ask []string `json:"ask,omitempty"`
 }
 
 // AgentBudget limits what the session may consume; absent limits do not
@@ -357,7 +360,7 @@ func validateAgentPolicy(p *AgentPolicy) error {
 		for _, list := range []struct {
 			name     string
 			patterns []string
-		}{{"allow", pr.Allow}, {"deny", pr.Deny}} {
+		}{{"allow", pr.Allow}, {"deny", pr.Deny}, {"ask", pr.Ask}} {
 			for _, pat := range list.patterns {
 				if pat = strings.TrimSpace(pat); pat == "" || len(pat) > 256 {
 					return fmt.Errorf("policy.process.%s entries are non-empty strings of at most 256 characters", list.name)

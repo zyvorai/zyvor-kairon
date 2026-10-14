@@ -77,7 +77,8 @@ func TestAgentSessionRelayRefuses(t *testing.T) {
 	}{
 		{http.MethodDelete, "/agent-sessions/" + testSessionID, http.StatusNotFound},
 		{http.MethodPost, "/agent-sessions/" + testSessionID + "/tokens", http.StatusNotFound},
-		{http.MethodPost, "/agent-sessions/" + testSessionID + "/approvals/x", http.StatusNotFound},
+		{http.MethodGet, "/agent-sessions/" + testSessionID + "/ssh", http.StatusNotFound},
+		{http.MethodPost, "/agent-sessions/" + testSessionID + "/pty-ticket", http.StatusNotFound},
 		{http.MethodGet, "/agent-sessions/not-a-uuid/events", http.StatusBadRequest},
 		{http.MethodGet, "/agent-preview/short/", http.StatusNotFound},
 	}

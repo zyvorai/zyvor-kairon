@@ -383,7 +383,9 @@ and others; they never apply). Write tools, only with `--allow-write`:
 `session_restore`, `session_fork`, `session_job_start`,
 `session_write_file`, `session_git_commit`, `session_preview`; the readers
 are `session_list`, `session_get`, `session_job_read`, `session_read_file`,
-`session_git` and `session_trajectory`). Write calls go to a hash-chained audit
+`session_git`, `session_trajectory`, `session_approvals` and `session_probe`;
+a command that needs a human's approval comes back as `approval_required`
+with an id to pass as `approvalId` once an admin approved it). Write calls go to a hash-chained audit
 log (`--audit-log`, default `~/.kairon/audit.jsonl`; `--audit-configmap
 ns/name` mirrors it) and are refused if it cannot be written.
 `delete_machine`, `fork_machine` and `machine_backup` restore/delete also need
@@ -422,15 +424,19 @@ rest (`migration-claim`, `cpu-label`, `gateway`). The MCP server also offers the
 
 ```bash
 kaironctl session run NAME [--agent codex] [--git URL] [--preset offline|developer-safe|open]
-        [--network-default deny|allow] [--allow-host H]... [--process-deny GLOB]...
+        [--network-default deny|allow] [--allow-host H]... [--process-deny GLOB]... [--process-ask GLOB]...
         [--fs-read P]... [--fs-write P]... [--cpu N] [--memory 4Gi] [--ttl 2h] [--max-execs N] [--no-wait]
 kaironctl session list | get NAME | rm NAME...
-kaironctl session exec NAME -- COMMAND            # exits with the command's code
+kaironctl session exec NAME [--approval-id ID] [--approval-wait 2m] -- COMMAND   # exits with the command's code
+kaironctl session shell NAME [--plain] [-- COMMAND]  # interactive terminal
+kaironctl session approvals NAME [--all] ; approve NAME ID [--note T] ; deny NAME ID   # approve/deny: admin only
 kaironctl session checkpoint NAME [--tag T] [--disk-only] ; session restore NAME TAG
 kaironctl session fork NAME [--count N] ; session promote CHILD [--dry-run]
 kaironctl session rollout NAME --count N [--keep] -- COMMAND
-kaironctl session bg NAME -- COMMAND ; jobs NAME ; logs NAME JOB [-f] ; kill NAME JOB
+kaironctl session bg NAME [--approval-id ID] -- COMMAND ; jobs NAME ; logs NAME JOB [-f] ; kill NAME JOB
 kaironctl session ls NAME [PATH] ; cat NAME PATH [-o F] ; put NAME LOCAL GUEST-PATH ; rm-file NAME PATH [-r]
+kaironctl session probe NAME
+kaironctl session grant NAME REF --host H... [--value-env VAR | --value-from-secret S/KEY] [--ttl 1h] ; grants NAME ; revoke-grant NAME [ID|--all]
 kaironctl session git NAME status|diff|log|commit MESSAGE|branch NAME
 kaironctl session expose NAME PORT ; previews NAME ; unexpose NAME TOKEN
 kaironctl session timeline NAME [--trajectory] ; artifacts NAME
@@ -441,7 +447,8 @@ An `AgentSession` is a FluxVM agent session with its own sandbox VM
 (today Mac nodes on FluxVM 0.4.8 or later). `run`, `list`, `get` and `rm`
 talk to the cluster; every other verb goes through kairon-ui
 (`KAIRON_UI_URL`, `KAIRON_UI_TOKEN`) and needs an admin, or any named
-operator with `ui.auth.sandboxOperatorExec`. `get`, `describe` and
+operator with `ui.auth.sandboxOperatorExec`. `approve`, `deny` and the
+grant commands always need an admin. `get`, `describe` and
 `delete` also accept `agentsession` (`asess`). See
 [guides/agent-sessions.md](guides/agent-sessions.md).
 

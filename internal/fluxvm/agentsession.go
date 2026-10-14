@@ -50,6 +50,7 @@ type AgentSessionPolicy struct {
 	Process    *struct {
 		Allow []string `json:"allow"`
 		Deny  []string `json:"deny"`
+		Ask   []string `json:"ask"`
 	} `json:"process,omitempty"`
 	Unenforced         []string `json:"unenforced"`
 	Enforcement        string   `json:"enforcement,omitempty"`
@@ -198,6 +199,9 @@ func AgentSessionCreateBody(spec model.AgentSessionSpec) (map[string]any, error)
 			}
 			if len(pr.Deny) > 0 {
 				proc["deny"] = pr.Deny
+			}
+			if len(pr.Ask) > 0 {
+				proc["ask"] = pr.Ask
 			}
 			policy["process"] = proc
 		}

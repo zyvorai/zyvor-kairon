@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {AgentSession, CommandError, SessionError, UIClient, fromBase64, sessionSpec, toBase64} from '../dist/index.js';
+import {APIError, AgentSession, ApprovalRequired, CommandError, SessionError, UIClient, fromBase64, sessionSpec, toBase64} from '../dist/index.js';
 
 function fakeUI() {
   const files = new Map();
@@ -63,4 +63,54 @@ test('UIClient session paths', async () => {
   assert.equal(seen[1][1], 'http://127.0.0.1:1/api/v1/agentsessions?namespace=dev');
   assert.deepEqual(JSON.parse(seen[1][2]), {name: 'new', spec: {agent: 'a'}, labels: {}});
   for (const bad of ['/exec', '../x', 'files/../../etc']) assert.throws(() => ui.sessionCall('work', 'GET', bad));
+});
+
+const APPROVAL = '11111111-2222-4333-8444-555555555555';
+const UPLOAD = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+
+test('a 428 becomes ApprovalRequired and approvalId is sent on the retry', async () => {
+  const bodies = [];
+  const fetch = async (url, init) => {
+    const body = JSON.parse(init.body);
+    bodies.push(body);
+    if (!body.approval_id) {
+      return new Response(JSON.stringify({approval_required: true, approval_id: APPROVAL, matched: 'git push*', summary: body.command}), {status: 428});
+    }
+    return new Response('{"exit_code":0,"stdout":"pushed"}', {status: 200});
+  };
+  const s = new AgentSession(new UIClient('http://127.0.0.1:1', 't', {fetch}), 'work');
+  await assert.rejects(s.exec('git push'), e => e instanceof ApprovalRequired && e instanceof APIError && e.approvalId === APPROVAL && e.matched === 'git push*');
+  assert.equal((await s.exec('git push', {approvalId: APPROVAL, approvalWaitSeconds: 30})).stdout, 'pushed');
+  assert.deepEqual(bodies.at(-1), {command: 'git push', approval_id: APPROVAL, approval_wait_seconds: 30});
+  await assert.rejects(s.exec('ls', {approvalId: 'nope'}));
+  await assert.rejects(s.exec('ls', {approvalWaitSeconds: 500}));
+  assert.deepEqual(sessionSpec({processAsk: ['deploy *']}), {policy: {process: {ask: ['deploy *']}}});
+});
+
+test('large writes upload in chunks, resume on 409 and verify the checksum', async () => {
+  let stored = new Uint8Array(0);
+  let meta;
+  let conflict = true;
+  let completed = false;
+  const ui = {
+    async sessionCall(name, method, verb, body, options = {}) {
+      if (verb === 'uploads') { meta = body; return {id: UPLOAD}; }
+      if (verb === `uploads/${UPLOAD}` && method === 'PUT') {
+        if (options.query.offset > 0 && conflict) { conflict = false; throw new APIError(409, 'PUT'); }
+        const next = new Uint8Array(stored.length + options.data.length);
+        next.set(stored); next.set(options.data, stored.length); stored = next;
+        return {received: stored.length};
+      }
+      if (verb === `uploads/${UPLOAD}` && method === 'GET') return {state: 'open', received: stored.length};
+      if (verb === `uploads/${UPLOAD}/complete`) { completed = true; return {state: 'complete'}; }
+      throw new Error('unexpected ' + method + ' ' + verb);
+    },
+  };
+  const data = new Uint8Array(9 * 1024 * 1024 + 123).map((_, i) => i % 251);
+  await new AgentSession(ui, 'work').writeFile('/workspace/big.bin', data);
+  assert.ok(completed && !conflict);
+  assert.deepEqual(stored, data);
+  const digest = Buffer.from(await crypto.subtle.digest('SHA-256', data)).toString('hex');
+  assert.equal(meta.sha256, digest);
+  assert.equal(meta.size, data.length);
 });

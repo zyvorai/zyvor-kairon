@@ -15,8 +15,15 @@ import (
 // reach through this relay, keyed by the first path segment after the
 // session id. Deleting the session itself is not here: that goes through
 // the AgentSession resource so the finalizer and quota stay in step.
-// Approvals, grants, tokens, uploads and ssh are left out on purpose.
+// tokens and ssh are left out on purpose: a session token only works on
+// FluxVM's node-local port, and ssh hands out the host's shared sandbox
+// key. pty-ticket is for browsers talking to FluxVM directly.
 var agentSessionVerbs = map[string]bool{
+	"approvals":  true,
+	"grants":     true,
+	"probe":      true,
+	"pty":        true,
+	"uploads":    true,
 	"exec":       true,
 	"checkpoint": true,
 	"restore":    true,
