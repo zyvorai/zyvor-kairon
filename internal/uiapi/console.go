@@ -263,6 +263,8 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]any{
 		"consoleEnabled": s.ConsoleToken != "" && s.ConsolePort != "",
 		"atlasEnabled":   s.atlasEnabled(),
+
+		"agentSessionPreviews": s.AgentSessionPreviews,
 	}
 	if s.AtlasConsoleURL != "" {
 		resp["atlasConsoleURL"] = s.AtlasConsoleURL

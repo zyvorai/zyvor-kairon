@@ -18,13 +18,13 @@ import time
 from contextlib import contextmanager
 from typing import Any, Iterator
 from urllib.error import HTTPError
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
 
 API_VERSION = "kairon.zyvor.dev/v1"
 FLEET_VERSION = "fleet.kairon.zyvor.dev/v1alpha1"
 KINDS = {
-    "machines": "Machine", "machinepools": "MachinePool",
+    "machines": "Machine", "machinepools": "MachinePool", "agentsessions": "AgentSession",
     "machineclaims": "MachineClaim", "machinesnapshots": "MachineSnapshot",
     "machinesnapshotrestores": "MachineSnapshotRestore",
     "machinemigrations": "MachineMigration", "machinequotas": "MachineQuota",
@@ -421,6 +421,37 @@ class UIClient:
     def topology(self, node: str) -> dict:
         """The node's NodeTopology status and the Machines' topology allocations on it."""
         return self._http.request("GET", "/api/v1/nodes/" + _segment(node) + "/topology")
+
+    def _session(self, name: str) -> str:
+        return f"/api/v1/agentsessions/{self.namespace}/{_segment(name)}"
+
+    def create_session(self, name: str, spec: dict, *, labels: dict | None = None) -> dict:
+        """Create an AgentSession (a FluxVM agent session) in the namespace."""
+        return self._http.request("POST", "/api/v1/agentsessions?" + urlencode({"namespace": self.namespace}),
+                                  {"name": _segment(name), "spec": spec, "labels": labels or {}})
+
+    def get_session(self, name: str) -> dict:
+        return self._http.request("GET", self._session(name))
+
+    def list_sessions(self) -> list[dict]:
+        return self._http.request("GET", "/api/v1/agentsessions?" + urlencode({"namespace": self.namespace})) or []
+
+    def delete_session(self, name: str) -> None:
+        try:
+            self._http.request("DELETE", self._session(name))
+        except APIError as exc:
+            if exc.status != 404:
+                raise
+
+    def session_call(self, name: str, method: str, verb: str, body: Any = None, *,
+                     query: dict | None = None, timeout: float | None = None) -> Any:
+        """One FluxVM session verb (exec, jobs/..., files/..., git/..., preview, ...) through kairon-ui."""
+        if not verb or verb.startswith("/") or ".." in verb.split("/"):
+            raise ValueError("verb must be a relative session route")
+        path = self._session(name) + "/" + quote(verb, safe="/")
+        if query:
+            path += "?" + urlencode(query)
+        return self._http.request(method, path, body, timeout=timeout)
 
     def usage_csv(self) -> str:
         return self._http.request("GET", "/api/v1/usage.csv?" + urlencode({"namespace": self.namespace}), raw=True)

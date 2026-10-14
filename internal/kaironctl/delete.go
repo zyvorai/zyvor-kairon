@@ -76,6 +76,8 @@ func canonicalKind(kind string) (string, error) {
 		return "machinepool", nil
 	case "machineclaim", "machineclaims", "claim", "claims":
 		return "machineclaim", nil
+	case "agentsession", "agentsessions", "asess":
+		return "agentsession", nil
 	case "instancetype", "instancetypes", "machineinstancetypes":
 		return "instancetype", nil
 	case "clusterinstancetype", "clusterinstancetypes", "machineclusterinstancetypes", "mcit":
@@ -134,6 +136,8 @@ func deleteByKindName(ctx context.Context, kc *kube.Client, ns, kind, name strin
 		return canonical, kc.DeleteMachinePool(ctx, ns, name)
 	case "machineclaim":
 		return canonical, kc.DeleteMachineClaim(ctx, ns, name)
+	case "agentsession":
+		return canonical, kc.DeleteAgentSession(ctx, ns, name)
 	case "instancetype":
 		return canonical, kc.DeleteMachineInstanceType(ctx, ns, name)
 	case "clusterinstancetype":
@@ -272,6 +276,14 @@ func matchingNames(ctx context.Context, kc *kube.Client, ns, kind string, select
 		}
 	case "machineclaim", "machineclaims", "claim", "claims":
 		items, err := kc.ListMachineClaimsNamespace(ctx, ns)
+		if err != nil {
+			return nil, err
+		}
+		for _, it := range items {
+			names = appendIfMatch(names, it.Metadata.Name, it.Metadata.Labels, selector)
+		}
+	case "agentsession", "agentsessions", "asess":
+		items, err := kc.ListAgentSessionsNamespace(ctx, ns)
 		if err != nil {
 			return nil, err
 		}

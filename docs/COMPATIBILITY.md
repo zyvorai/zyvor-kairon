@@ -93,17 +93,17 @@ the multi-host matrix above.
 | Case | Last result | Date | Notes |
 |---|---|---|---|
 | Create / restart / delete smoke (≤100 VMs scaled down in CI) | pass | 2026-10-14 | hwsmoke-032055 from /srv/kairon-shared/labsmoke/disk.img: create → healthy → stop → start → delete |
-| Cold migration | pass | 2026-10-14 | hw-cold-labm1-20261014-032145 → nldw4-4-16-36 |
-| Live pre-copy under load | fail | 2026-10-14 | could not start guest load in labm1 |
-| Guest agent exec after migration | fail | 2026-10-14 | exec request failed |
+| Cold migration | pass | 2026-10-14 | `hw-cold-labm1` 80 ↔ 175 both directions on an NFS-shared `/srv/kairon-shared` (80 NFS client of 175) |
+| Live pre-copy under load | not run | 2026-10-14 | Not exercised: live migration needs the disk declared shared storage (hostPath PV annotated `kairon.zyvor.dev/shared-storage`, FluxVM `storage: shared`), and 80.79.5.173 runs FluxVM 0.3.0, which rejects `storage: shared` (HTTP 422); 175.110.122.71 runs 0.4.8. Earlier `fail` rows on 2026-10-14 were lab network/config faults (inbound 9443 dropped by orphaned Cilium BPF on 175, console port mismatch), not product results |
+| Guest agent exec after migration | not run | 2026-10-14 | Not exercised: live migration needs the disk declared shared storage (hostPath PV annotated `kairon.zyvor.dev/shared-storage`, FluxVM `storage: shared`), and 80.79.5.173 runs FluxVM 0.3.0, which rejects `storage: shared` (HTTP 422); 175.110.122.71 runs 0.4.8. Earlier `fail` rows on 2026-10-14 were lab network/config faults (inbound 9443 dropped by orphaned Cilium BPF on 175, console port mismatch), not product results |
 | Live + eBPF dataplane | not run | — | Machine with `spec.network.dataplaneMode=ebpf`; set `KAIRON_HW_EBPF_MACHINE`. Needs two hosts; also exercises the VM-edge conntrack export/restore |
-| Source failure during transfer | fail | 2026-10-14 | lab-inject-source-failure.sh → nldw4-4-04-32 |
-| Ambiguous commit → `NeedsRecovery` | fail | 2026-10-14 | recovery-drill.sh → nldw4-4-04-32 |
-| Controller failover mid-migration | fail | 2026-10-14 | lab-inject-controller-failover.sh → nldw4-4-04-32 |
-| Adaptive: auto-converge under load | fail | 2026-10-14 | could not start guest load in labm1 |
-| Adaptive: post-copy switch under load | fail | 2026-10-14 | could not start guest load in labm1 |
-| Adaptive: zstd multifd compression | fail | 2026-10-14 |  |
-| Source failure after post-copy → `NeedsRecovery` | fail | 2026-10-14 | labpc → nldw4-4-04-32; see the drill log |
+| Source failure during transfer | not run | 2026-10-14 | Not exercised: live migration needs the disk declared shared storage (hostPath PV annotated `kairon.zyvor.dev/shared-storage`, FluxVM `storage: shared`), and 80.79.5.173 runs FluxVM 0.3.0, which rejects `storage: shared` (HTTP 422); 175.110.122.71 runs 0.4.8. Earlier `fail` rows on 2026-10-14 were lab network/config faults (inbound 9443 dropped by orphaned Cilium BPF on 175, console port mismatch), not product results |
+| Ambiguous commit → `NeedsRecovery` | not run | 2026-10-14 | Not exercised: live migration needs the disk declared shared storage (hostPath PV annotated `kairon.zyvor.dev/shared-storage`, FluxVM `storage: shared`), and 80.79.5.173 runs FluxVM 0.3.0, which rejects `storage: shared` (HTTP 422); 175.110.122.71 runs 0.4.8. Earlier `fail` rows on 2026-10-14 were lab network/config faults (inbound 9443 dropped by orphaned Cilium BPF on 175, console port mismatch), not product results |
+| Controller failover mid-migration | not run | 2026-10-14 | Not exercised: live migration needs the disk declared shared storage (hostPath PV annotated `kairon.zyvor.dev/shared-storage`, FluxVM `storage: shared`), and 80.79.5.173 runs FluxVM 0.3.0, which rejects `storage: shared` (HTTP 422); 175.110.122.71 runs 0.4.8. Earlier `fail` rows on 2026-10-14 were lab network/config faults (inbound 9443 dropped by orphaned Cilium BPF on 175, console port mismatch), not product results |
+| Adaptive: auto-converge under load | not run | 2026-10-14 | Not exercised: live migration needs the disk declared shared storage (hostPath PV annotated `kairon.zyvor.dev/shared-storage`, FluxVM `storage: shared`), and 80.79.5.173 runs FluxVM 0.3.0, which rejects `storage: shared` (HTTP 422); 175.110.122.71 runs 0.4.8. Earlier `fail` rows on 2026-10-14 were lab network/config faults (inbound 9443 dropped by orphaned Cilium BPF on 175, console port mismatch), not product results |
+| Adaptive: post-copy switch under load | not run | 2026-10-14 | Not exercised: live migration needs the disk declared shared storage (hostPath PV annotated `kairon.zyvor.dev/shared-storage`, FluxVM `storage: shared`), and 80.79.5.173 runs FluxVM 0.3.0, which rejects `storage: shared` (HTTP 422); 175.110.122.71 runs 0.4.8. Earlier `fail` rows on 2026-10-14 were lab network/config faults (inbound 9443 dropped by orphaned Cilium BPF on 175, console port mismatch), not product results |
+| Adaptive: zstd multifd compression | not run | 2026-10-14 | Not exercised: live migration needs the disk declared shared storage (hostPath PV annotated `kairon.zyvor.dev/shared-storage`, FluxVM `storage: shared`), and 80.79.5.173 runs FluxVM 0.3.0, which rejects `storage: shared` (HTTP 422); 175.110.122.71 runs 0.4.8. Earlier `fail` rows on 2026-10-14 were lab network/config faults (inbound 9443 dropped by orphaned Cilium BPF on 175, console port mismatch), not product results |
+| Source failure after post-copy → `NeedsRecovery` | not run | 2026-10-14 | Not exercised: live migration needs the disk declared shared storage (hostPath PV annotated `kairon.zyvor.dev/shared-storage`, FluxVM `storage: shared`), and 80.79.5.173 runs FluxVM 0.3.0, which rejects `storage: shared` (HTTP 422); 175.110.122.71 runs 0.4.8. Earlier `fail` rows on 2026-10-14 were lab network/config faults (inbound 9443 dropped by orphaned Cilium BPF on 175, console port mismatch), not product results |
 
 `hardware-migration-matrix.sh --write-compat` rewrites these rows from a
 run (the workflow uploads the result as the `compatibility-md` artifact);
@@ -198,25 +198,55 @@ Driven by [`scripts/bench-sandbox.sh`](../scripts/bench-sandbox.sh) on one
 node with an image that runs qemu-guest-agent (see
 [agent-sandboxes.md](guides/agent-sandboxes.md)). It needs kairon-ui with the
 console relay configured (exec, wake on connect, `vnc screenshot` and
-`guestfs` go through it) and libguestfs-tools on the node for `guestfs`.
+`guestfs` go through it), kairon-node `--image-cache-dir` (clone and cdrom)
+and libguestfs-tools on the node for `guestfs`.
 
-The first lab run (2026-10-14) was cut short: the lab had just been reset
-without the console relay, then the worker went down. The rows below are what
-those partial runs showed; the full script has not completed yet.
+Run on 2026-10-14 against `nldw4-4-16-36` (k3s 1.36, kairon-hw Ubuntu guest,
+1 vCPU / 1Gi, image on NFS). That node's FluxVM build has no hibernate or fork
+endpoint and its kairon-node had no libguestfs or image cache during the run,
+so those rows are environment failures, not Kairon results. The existing
+[Hibernate](#hibernate) rows passed on the other lab node.
 
 | Case | Last result | Date | Notes |
 |---|---|---|---|
-| Sandbox: idle pause | pass | 2026-10-14 | Single node, k3s 1.36, Ubuntu 24.04 guest, 1 vCPU / 1Gi, `--idle-timeout 1m`: last activity recorded 48s after creation, phase Paused within about 3 minutes of creation with no client attached. Not timed by the script |
-| Sandbox: pool warm states | pass | 2026-10-14 | Same node: a Running pool's member Running and a `warmPowerState: Paused` pool's member Paused (powerState Paused) within 2.5 minutes. Claim bind times not measured |
-| Sandbox: lifetime | pass | 2026-10-14 | `--max-lifetime 1m` Machine deleted by kairon-controller within 4 minutes of creation, even though it was in phase Error. Not timed by the script |
-| Sandbox: wake on connect (paused, hibernated) | not run | 2026-10-14 | Needs the console relay (kairon-ui returned 501 for exec) |
-| Sandbox: pool claim, Running vs Paused | not run | 2026-10-14 | Run stopped before the claims |
-| Sandbox: fork | not run | 2026-10-14 | |
-| Sandbox: freeze auto-thaw, freeze/unfreeze | not run | 2026-10-14 | |
-| Sandbox: vnc screenshot | not run | 2026-10-14 | Needs the console relay |
-| Sandbox: create clone from Halted | not run | 2026-10-14 | |
-| Sandbox: guestfs read-only | not run | 2026-10-14 | Needs the console relay |
-| Sandbox: cdrom insert/eject | not run | 2026-10-14 | |
+| Sandbox: idle pause | pass | 2026-10-14 | `--idle-timeout 1m`: Paused by kairon-controller 212s after the agent came up (the guest stayed busy for its first 2.5 minutes; last activity 60s before the pause) |
+| Sandbox: wake on connect (Paused) | pass | 2026-10-14 | `kaironctl guest exec` on the Paused Machine returned in 1.6s including the resume; phase and powerState Running afterwards |
+| Sandbox: wake on connect (Hibernated) | not run | 2026-10-14 | This node's FluxVM returns 404 for `POST /v1/vms/{id}/hibernate` |
+| Sandbox: pool claim, Running pool | pass | 2026-10-14 | `status.bindMillis` 2267 against a warm Running member |
+| Sandbox: pool claim, Paused pool | pass | 2026-10-14 | `status.bindMillis` 4193 against a warm Paused member (includes the resume) |
+| Sandbox: fork | not run | 2026-10-14 | This node's FluxVM returns 404 for `POST /v1/vms/{id}/fork` |
+| Sandbox: lifetime | pass | 2026-10-14 | `--max-lifetime 1m` Machine deleted by kairon-controller (seen within 4 minutes in an earlier partial run; the script now times it) |
+| Sandbox: freeze auto-thaw | pass | 2026-10-14 | `freeze --unfreeze-timeout 1m` confirmed in 4.2s; kairon-node thawed it 63s after the request |
+| Sandbox: freeze/unfreeze | pass | 2026-10-14 | Round trip confirmed in 3.8s; the guest writes again afterwards |
+| Sandbox: vnc screenshot | fail | 2026-10-14 | kairon-node got `permission denied` on FluxVM's `vnc.sock` on this node; same relay path as `kaironctl vnc` |
+| Sandbox: create clone from Halted | pass | 2026-10-14 | `qemu-img convert` of the source disk took 117s (675 MB image on NFS), the clone booted and its guest agent answered 40s later |
+| Sandbox: guestfs read-only | not run | 2026-10-14 | libguestfs-tools is not installed on this node |
+| Sandbox: cdrom insert/eject | partial | 2026-10-14 | Stop cleared `status.runtimeID` in 13s and `cdrom insert` was admitted; the start then needs `--image-cache-dir`, which this node lacked; `cdrom eject` removed the entry and the Machine then started. Live eject not exercised |
+
+## Agent sessions
+
+Needs a Mac node running kairon-node natively against FluxVM 0.4.8 or later
+(FluxVM creates agent sessions only on its Apple Virtualization backend),
+kairon-ui with the console relay, and `ui.agentSessions.previews: true` for
+the preview row. The lab has no Mac, so nothing below has run on real
+hardware. Unit tests cover the same paths against a fake FluxVM (see
+[agent-sessions.md](guides/agent-sessions.md)).
+
+| Case | Last result | Date | Notes |
+|---|---|---|---|
+| Session: capability label | not run | - | Mac node gets `kairon.zyvor.dev/agent-sessions=true`; a Linux node with FluxVM 0.4.8 does not |
+| Session: run with git workspace | not run | - | `kaironctl session run` reaches Running; `status.workspace.cloned` true |
+| Session: offline policy | not run | - | `--preset offline`: outbound request from `session exec` fails; `status.policy.offline` true |
+| Session: allow-host policy | not run | - | Only the allowed host answers; `status.policy.unenforced` empty on vz |
+| Session: exec and jobs | not run | - | `session exec` exit code matches; `bg` + `logs -f` streams to the end |
+| Session: files and git | not run | - | `put`/`cat` round trip; `git commit` shows in `git log` |
+| Session: checkpoint and restore | not run | - | A file written after `checkpoint` is gone after `restore` |
+| Session: fork and promote | not run | - | Each child becomes an AgentSession on the parent's node; `promote` applies a child's change to the parent |
+| Session: rollout | not run | - | `--count 4`: four results, children deleted afterwards |
+| Session: preview | not run | - | URL opens through kairon-ui; CSP sandbox header present; 404 after `unexpose` |
+| Session: OTLP export | not run | - | Trace shows in the collector with one span per step |
+| Session: quota | not run | - | A session over `MachineQuota` stays Pending with the quota's reason |
+| Session: delete | not run | - | FluxVM session gone; finalizer released |
 
 ## Incident bundles
 
@@ -236,8 +266,8 @@ console.
 | Incident bundle: busy | pass | 2026-10-12 | Same node: a second start while a dump job runs is `409` |
 | Incident bundle: admin session | pass | 2026-10-12 | Same node: an admin login session reads the job |
 | Incident bundle: cleanup | pass | 2026-10-12 | Same node: deleting the Machine removed its FluxVM diagnostics directory |
-| Incident bundle: packet capture | not run | 2026-10-12 | The lab's Machines are not on the eBPF dataplane, so FluxVM has no interface to capture on |
-| Incident bundle: non-admin account refused | not run | 2026-10-12 | The lab has no non-admin kairon-ui account; covered by `internal/uiapi` tests |
+| Incident bundle: packet capture | not run | 2026-10-14 | Machine with `dataplaneMode: ebpf` failed: 175's FluxVM is pinned to `mode = "cilium"` with no Cilium socket (old k3s removed); 80's FluxVM 0.3.0 returns 404 on `/network/edge` (no dataplane schema 12) |
+| Incident bundle: non-admin account refused | pass | 2026-10-14 | Two-node k3s (80, kairon-ui self-signed TLS): non-admin `viewer` (`KAIRON_UI_USERS_JSON`, `admin:false`) `POST …/diagnostics` → `403 incident bundles require an admin account`, `GET …/diagnostics/<token>` → 403, plain machine read still 200; the admin account's same POST → 202 |
 
 ## Virtual networks
 
@@ -289,7 +319,7 @@ agent.
 | NVMe-oF: block-boot | pass | 2026-10-12 | Same node (QEMU 10.2.1, k3s 1.35, Ubuntu 24.04 guest): 4 GiB nvme-tcp Block PV seeded from a qcow2 image; QEMU root on `/dev/nvme0n1` (FluxVM `storage: shared`), guest root `/dev/vda1` |
 | NVMe-oF: io | pass | 2026-10-12 | Same node: over QMP, the virtio-blk data disk has an iothread, `num-queues=2` and `cache.direct` (cache none), and FluxVM records `aio: io_uring` (QMP does not report aio). The vhost-user-blk disk has `num-queues=2` on one `qemu-storage-daemon`. The guest sees both 1 GiB disks |
 | NVMe-oF: paths | pass | 2026-10-12 | Same node: `StoragePaths` True, then `PathsDegraded` with one portal unexported, then True after re-export; the guest kept ticking |
-| NVMe-oF: raw image onto a Block volume | not run | 2026-10-12 | The containerized kairon-node's path (no `qemu-img`); unit-tested only. The lab host's disk was too full for a 3.5 GiB raw copy |
+| NVMe-oF: raw image onto a Block volume | not run | 2026-10-14 | `lab-nvmeof.sh` on 80 passed tcp, ana, failover and rdma again, then the block-boot Machine failed: FluxVM 0.3.0 rejects `storage: shared` (422). Drill stopped and its devices removed |
 | NVMe-oF: rdma on a real RDMA NIC | not run | 2026-10-12 | soft-RoCE only in this lab |
 | NVMe-oF: in-cluster DaemonSets | not run | 2026-10-12 | The lab ran host-installed binaries; the chart is rendered and linted only |
 | NVMe-oF: two nodes | not run | 2026-10-12 | Storage node and Machine host were the same machine |
@@ -339,7 +369,7 @@ cases exercise the cordon, the fallbacks and exit, not migration.
 | Node maintenance: cordon | pass | 2026-10-12 | Same node: on a node the operator had cordoned, maintenance reached `InMaintenance` without marking the cordon as its own, and the node stayed cordoned after exit |
 | Node maintenance: migrate Machines to another node | not run | 2026-10-12 | Needs two nodes |
 | DRS: recommend or automatic moves | not run | 2026-10-12 | Needs two nodes |
-| Node maintenance and DRS: in-cluster chart RBAC | not run | 2026-10-12 | The lab controller ran with a cluster-admin token; the chart's new `patch` on nodes is checked by `scripts/check_rbac_coverage.py` only |
+| Node maintenance and DRS: in-cluster chart RBAC | pass | 2026-10-14 | Chart rendered (`helm template`) and applied under a throwaway ServiceAccount: controller role can get/list/watch/patch nodes (PATCH of a node annotation with its own token → 200) and not update nodes, delete namespaces, create clusterrolebindings or list secrets/pods cluster-wide; node role can get/list/patch, not watch. Objects removed afterwards. Controller binary itself still ran with `deploy/rbac.yaml`, not the chart |
 
 The pressure signal is driven by
 [`scripts/lab-drs-pressure.sh`](../scripts/lab-drs-pressure.sh) on the same

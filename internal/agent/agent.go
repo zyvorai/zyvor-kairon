@@ -6,6 +6,7 @@ package agent
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -195,6 +196,7 @@ type Agent struct {
 	vnet           vnetState
 	// hibernationSweptAt throttles sweepMovedHibernations.
 	hibernationSweptAt time.Time
+	sessions           agentSessionState
 }
 
 func (a *Agent) Reconcile(ctx context.Context) error {
@@ -259,6 +261,7 @@ func (a *Agent) Reconcile(ctx context.Context) error {
 		a.Log.Error("machine export reconcile failed", "error", err)
 	}
 	a.sweepClones(local)
+	a.reconcileAgentSessions(ctx)
 	migSelector := model.MigrationSourceNodeLabelSelector(a.NodeName)
 	migrations, err := a.Kube.ListMachineMigrationsWithSelector(ctx, migSelector)
 	if err != nil {
@@ -1640,6 +1643,46 @@ func readyStatus(phase string) string {
 // treated as volatile and does not alone force a write). When a patch is
 // needed, the fresh ResourceUsage is included so the last meaningful
 // write still carries a recent sample for kaironctl top.
+// statusMergePatch is updated as a merge patch that also clears what
+// updated dropped from old: omitempty leaves a cleared field out of the
+// JSON, and a merge patch keeps omitted keys, so each one is sent as null.
+func statusMergePatch(old, updated any) (map[string]any, error) {
+	oldMap, err := toJSONMap(old)
+	if err != nil {
+		return nil, err
+	}
+	newMap, err := toJSONMap(updated)
+	if err != nil {
+		return nil, err
+	}
+	nullRemoved(oldMap, newMap)
+	return newMap, nil
+}
+
+func toJSONMap(v any) (map[string]any, error) {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]any{}
+	return out, json.Unmarshal(raw, &out)
+}
+
+func nullRemoved(old, updated map[string]any) {
+	for k, ov := range old {
+		nv, ok := updated[k]
+		if !ok {
+			updated[k] = nil
+			continue
+		}
+		om, oIsMap := ov.(map[string]any)
+		nm, nIsMap := nv.(map[string]any)
+		if oIsMap && nIsMap {
+			nullRemoved(om, nm)
+		}
+	}
+}
+
 func (a *Agent) patchMachineStatusIfChanged(ctx context.Context, m model.Machine, status model.MachineStatus) error {
 	status.ObservedGeneration = m.Metadata.Generation
 	if a.Metrics != nil {
@@ -1648,19 +1691,12 @@ func (a *Agent) patchMachineStatusIfChanged(ctx context.Context, m model.Machine
 	if model.MachineStatusEqualIgnoringVolatile(m.Status, status) {
 		return nil
 	}
-	if err := a.Kube.PatchMachineStatus(ctx, m.Namespace(), m.Metadata.Name, status); err != nil {
+	fields, err := statusMergePatch(m.Status, status)
+	if err != nil {
 		return err
 	}
-	// A merge patch leaves omitted fields alone; removing one takes null.
-	if m.Status.Hibernation != nil && status.Hibernation == nil {
-		if err := a.Kube.PatchMachineStatusFields(ctx, m.Namespace(), m.Metadata.Name, map[string]any{"hibernation": nil}); err != nil {
-			return err
-		}
-	}
-	if m.Status.ShutdownDeadline != "" && status.ShutdownDeadline == "" {
-		if err := a.Kube.PatchMachineStatusFields(ctx, m.Namespace(), m.Metadata.Name, map[string]any{"shutdownDeadline": nil}); err != nil {
-			return err
-		}
+	if err := a.Kube.PatchMachineStatusFields(ctx, m.Namespace(), m.Metadata.Name, fields); err != nil {
+		return err
 	}
 	// Best-effort Event so `kaironctl events` / `kubectl get events` show
 	// lifecycle transitions; a failure here must never fail reconcile.

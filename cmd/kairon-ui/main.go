@@ -237,6 +237,7 @@ func run() int {
 		// only console authorization -- see uiapi.Server's own doc comment.
 		RBACConsoleCheck:        env("KAIRON_UI_RBAC_CONSOLE_CHECK", "false") == "true",
 		SandboxOperatorExec:     env("KAIRON_UI_SANDBOX_OPERATOR_EXEC", "false") == "true",
+		AgentSessionPreviews:    env("KAIRON_UI_AGENT_SESSION_PREVIEWS", "false") == "true",
 		Metrics:                 rec,
 		RateLimit:               rateLimiter,
 		TrustedProxyHeader:      *trustedProxyHeader,

@@ -37,6 +37,7 @@ import { api, logout, SESSION_CHANGED_EVENT, token, UNAUTHORIZED_EVENT, username
 import { Machine } from './types';
 import Storage from './pages/Storage';
 import Pools from './pages/Pools';
+import AgentSessions from './pages/AgentSessions';
 import Images from './pages/Images';
 import Backups from './pages/Backups';
 import BackupPolicies from './pages/BackupPolicies';
@@ -230,6 +231,7 @@ export default function App() {
     network: <NetworkOverview />,
     storage: <Storage />,
     pools: <Pools />,
+    'agent-sessions': <AgentSessions />,
     images: <Images />,
     backups: <Backups />,
     'backup-policies': <BackupPolicies />,

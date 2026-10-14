@@ -99,6 +99,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /diagnostics/{runtimeID}/{token}", s.handleGetDiagnostics)
 	mux.HandleFunc("DELETE /diagnostics/{runtimeID}/{token}", s.handleDeleteDiagnostics)
 	mux.HandleFunc("GET /diagnostics/{runtimeID}/{token}/{file}", s.handleDiagnosticsFile)
+	mux.HandleFunc("/agent-sessions/{id}", s.handleAgentSession)
+	mux.HandleFunc("/agent-sessions/{id}/{rest...}", s.handleAgentSession)
+	mux.HandleFunc("/agent-preview/{token}/{rest...}", s.handleAgentPreview)
 	return mux
 }
 

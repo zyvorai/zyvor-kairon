@@ -83,6 +83,7 @@ const NAMESPACED_COLLECTIONS = new Set([
   'quotas',
   'machinepools',
   'machineclaims',
+  'agentsessions',
   'machinebackups',
   'machinebackuprestores',
   'machinebackuppolicies',

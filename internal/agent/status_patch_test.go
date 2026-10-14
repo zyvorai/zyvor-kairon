@@ -123,3 +123,42 @@ func TestReconcileSkipsStatusPatchWhenUnchanged(t *testing.T) {
 		t.Fatal("expected ResourceUsage retained from first meaningful write")
 	}
 }
+
+func TestStatusMergePatchNullsClearedFields(t *testing.T) {
+	old := model.MachineStatus{
+		Phase:       "Halted",
+		RuntimeID:   "vm-123",
+		GuestIP:     "10.44.0.8",
+		Message:     "halted",
+		Hibernation: &model.HibernationStatus{Node: "worker-1"},
+		Lifecycle:   &model.LifecycleStatus{LastActivityTime: "2026-10-14T06:40:26Z"},
+	}
+	updated := old
+	updated.Phase = "Stopped"
+	updated.RuntimeID = ""
+	updated.GuestIP = ""
+	updated.Message = ""
+	updated.Hibernation = nil
+	updated.Lifecycle = &model.LifecycleStatus{}
+
+	fields, err := statusMergePatch(old, updated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fields["phase"] != "Stopped" {
+		t.Fatalf("phase = %v", fields["phase"])
+	}
+	for _, k := range []string{"runtimeID", "guestIP", "hibernation"} {
+		v, ok := fields[k]
+		if !ok || v != nil {
+			t.Fatalf("%s: want explicit null, got %v (present=%v)", k, v, ok)
+		}
+	}
+	lc, _ := fields["lifecycle"].(map[string]any)
+	if v, ok := lc["lastActivityTime"]; !ok || v != nil {
+		t.Fatalf("nested lifecycle.lastActivityTime: want null, got %v (present=%v)", v, ok)
+	}
+	if _, ok := fields["nodeName"]; ok {
+		t.Fatal("a field absent from both sides must stay out of the patch")
+	}
+}

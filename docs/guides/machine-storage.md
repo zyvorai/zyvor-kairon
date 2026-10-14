@@ -59,6 +59,35 @@ on kairon-node's `PATH` for this, so the kairon-node container image
 takes raw images only
 (see [machine-storage-nvmeof.md](machine-storage-nvmeof.md)).
 
+## Shared hostPath volumes (live migration)
+
+A `hostPath` PersistentVolume annotated `kairon.zyvor.dev/shared-storage: "true"`
+says its directory is one shared filesystem (NFS, for example) mounted at the
+same path on every node. A Machine booting from it opens `disk.img` in place
+(FluxVM `storage: shared`) instead of through a node-local overlay, which is
+what lets it live-migrate between nodes. Kairon cannot verify the claim: a
+path that is not really shared corrupts the disk on the first migration.
+
+```yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: db-root
+  annotations: {kairon.zyvor.dev/shared-storage: "true"}
+spec:
+  capacity: {storage: 20Gi}
+  accessModes: [ReadWriteMany]
+  storageClassName: ""
+  hostPath: {path: /srv/kairon-shared/db}     # contains disk.img
+  claimRef: {namespace: default, name: db-root}
+```
+
+Pair it with a Bound claim and `spec.volumes[0].claimName`. `spec.image.path`
+Machines are never live-migrated: the migration is `Blocked` with "live
+migration needs the disk on shared storage". Every node's FluxVM must support
+`storage: shared`. See
+[runbook-multi-host-migration-test.md](../runbook-multi-host-migration-test.md).
+
 ## Real limits today
 
 - **Boot volume:** `spec.volumes[0]` is the boot disk (`disk.img` inside the

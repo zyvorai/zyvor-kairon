@@ -690,6 +690,52 @@ func (c *Client) PatchMachineClaimStatus(ctx context.Context, ns, name string, s
 	return c.request(ctx, http.MethodPatch, namespacedObjectPath(ns, "machineclaims", name)+"/status", map[string]any{"status": status}, nil, "application/merge-patch+json")
 }
 
+func (c *Client) ListAgentSessions(ctx context.Context) ([]model.AgentSession, error) {
+	return c.ListAgentSessionsWithSelector(ctx, "")
+}
+
+func (c *Client) ListAgentSessionsWithSelector(ctx context.Context, labelSelector string) ([]model.AgentSession, error) {
+	var list model.AgentSessionList
+	path := "/apis/kairon.zyvor.dev/v1/agentsessions"
+	if labelSelector != "" {
+		path += "?labelSelector=" + url.QueryEscape(labelSelector)
+	}
+	err := c.request(ctx, http.MethodGet, path, nil, &list, "")
+	return list.Items, err
+}
+
+func (c *Client) ListAgentSessionsNamespace(ctx context.Context, ns string) ([]model.AgentSession, error) {
+	var list model.AgentSessionList
+	err := c.request(ctx, http.MethodGet, namespacePath(ns, "agentsessions"), nil, &list, "")
+	return list.Items, err
+}
+
+func (c *Client) GetAgentSession(ctx context.Context, ns, name string) (model.AgentSession, error) {
+	var s model.AgentSession
+	err := c.request(ctx, http.MethodGet, namespacedObjectPath(ns, "agentsessions", name), nil, &s, "")
+	return s, err
+}
+
+func (c *Client) CreateAgentSession(ctx context.Context, ns string, s model.AgentSession) (model.AgentSession, error) {
+	var out model.AgentSession
+	err := c.request(ctx, http.MethodPost, namespacePath(ns, "agentsessions"), s, &out, "")
+	return out, err
+}
+
+func (c *Client) DeleteAgentSession(ctx context.Context, ns, name string) error {
+	return c.request(ctx, http.MethodDelete, namespacedObjectPath(ns, "agentsessions", name), nil, nil, "")
+}
+
+func (c *Client) PatchAgentSession(ctx context.Context, ns, name string, patch map[string]any) error {
+	return c.request(ctx, http.MethodPatch, namespacedObjectPath(ns, "agentsessions", name), patch, nil, "application/merge-patch+json")
+}
+
+// PatchAgentSessionStatusFields merge-patches status with fields as given,
+// so a nil value clears that field.
+func (c *Client) PatchAgentSessionStatusFields(ctx context.Context, ns, name string, fields map[string]any) error {
+	return c.request(ctx, http.MethodPatch, namespacedObjectPath(ns, "agentsessions", name)+"/status", map[string]any{"status": fields}, nil, "application/merge-patch+json")
+}
+
 func (c *Client) ListMachineBackups(ctx context.Context) ([]model.MachineBackup, error) {
 	var list model.MachineBackupList
 	err := c.request(ctx, http.MethodGet, "/apis/kairon.zyvor.dev/v1/machinebackups", nil, &list, "")

@@ -877,6 +877,7 @@ func kaironTools(opts *Options, newKube func() (*kube.Client, error)) []mcp.Tool
 		},
 	}
 	tools = append(tools, agentPlaneTools()...)
+	tools = append(tools, sessionTools(nsDefault, withKube)...)
 	return append(tools, agentPlaneKubeTools(nsDefault, withKube)...)
 }
 
