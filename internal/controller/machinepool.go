@@ -61,6 +61,7 @@ func (c *Controller) reconcileMachineClaim(ctx context.Context, claim model.Mach
 		}
 		status.Phase = model.ClaimBound
 		status.Message = ""
+		c.accrueClaimUsage(&status, claim, m, time.Now())
 		policy, err := c.ensureClaimEgress(ctx, claim, status.MachineName)
 		status.EgressPolicy = policy
 		if err != nil {
@@ -125,6 +126,27 @@ func (c *Controller) reconcileMachineClaim(ctx context.Context, claim model.Mach
 	return status, nil
 }
 
+// accrueClaimUsage meters the bound Machine into status.Usage and the
+// claim usage metrics.
+func (c *Controller) accrueClaimUsage(status *model.MachineClaimStatus, claim model.MachineClaim, m model.Machine, now time.Time) {
+	var bound time.Time
+	if status.BoundAt != nil {
+		bound = *status.BoundAt
+	}
+	vcpus, memGiB := 0.0, 0.0
+	if n, err := model.ParseVCPUs(m.Spec.Resources.CPU); err == nil {
+		vcpus = float64(n)
+	}
+	if mib, err := model.ParseMemoryMiB(m.Spec.Resources.Memory); err == nil {
+		memGiB = float64(mib) / 1024
+	}
+	usage, active, suspended := model.AccrueClaimUsage(status.Usage, bound, m.Status.Phase, vcpus, memGiB, now)
+	status.Usage = usage
+	if c.Metrics != nil {
+		c.Metrics.ObserveClaimUsage(claim.Namespace(), active, suspended, active*vcpus, active*memGiB)
+	}
+}
+
 // warmMembers returns the pool's Running, unclaimed members, oldest first,
 // and how many more are still booting.
 func warmMembers(ns, pool string, machines []model.Machine, bound map[string]bool) (ready []model.Machine, warming int) {
@@ -134,7 +156,7 @@ func warmMembers(ns, pool string, machines []model.Machine, bound map[string]boo
 			m.Metadata.DeletionTimestamp != nil || bound[ns+"/"+m.Metadata.Name] {
 			continue
 		}
-		if m.Status.Phase == "Running" {
+		if warmReady(m) {
 			ready = append(ready, m)
 		} else {
 			warming++
@@ -146,9 +168,43 @@ func warmMembers(ns, pool string, machines []model.Machine, bound map[string]boo
 	return ready, warming
 }
 
-// bindMachine relabels m as claimed. The patch carries m's resourceVersion,
-// so a Machine another writer touched since the listing fails with 409
-// instead of being bound twice.
+// warmReady reports whether a warm member can be bound now: Running, or
+// Paused by a Paused pool (binding resumes it).
+func warmReady(m model.Machine) bool {
+	return m.Status.Phase == "Running" || (m.Status.Phase == "Paused" && m.Spec.PowerState == "Paused")
+}
+
+// warmPowerTarget is the powerState a warm member should be patched to
+// for its pool's warmPowerState, or "" to leave it: a Paused pool pauses
+// members once they have run for warmupSeconds; a Running pool resumes
+// any its earlier Paused setting left parked.
+func warmPowerTarget(spec model.MachinePoolSpec, m model.Machine, now time.Time) string {
+	if spec.WarmPowerState == "Paused" {
+		if m.Status.Phase == "Running" && (m.Spec.PowerState == "" || m.Spec.PowerState == "Running") && now.Sub(runningSince(m)) >= spec.Warmup() {
+			return "Paused"
+		}
+		return ""
+	}
+	if m.Spec.PowerState == "Paused" && spec.Template.Spec.PowerState != "Paused" {
+		return "Running"
+	}
+	return ""
+}
+
+// runningSince is when m last became Ready, else its creation time.
+func runningSince(m model.Machine) time.Time {
+	for _, cond := range m.Status.Conditions {
+		if cond.Type == "Ready" && cond.Status == "True" && !cond.LastTransitionTime.IsZero() {
+			return cond.LastTransitionTime
+		}
+	}
+	return m.Metadata.CreationTimestamp
+}
+
+// bindMachine relabels m as claimed, resumes it if its pool paused it, and
+// restarts its spec.lifecycle clocks. The patch carries m's
+// resourceVersion, so a Machine another writer touched since the listing
+// fails with 409 instead of being bound twice.
 func (c *Controller) bindMachine(ctx context.Context, claim model.MachineClaim, m model.Machine) error {
 	labels := map[string]any{}
 	for k, v := range claim.Spec.Labels {
@@ -156,11 +212,19 @@ func (c *Controller) bindMachine(ctx context.Context, claim model.MachineClaim, 
 	}
 	labels[model.LabelPoolState] = model.PoolStateClaimed
 	labels[model.LabelMachineClaim] = claim.Metadata.Name
-	meta := map[string]any{"labels": labels}
+	now := time.Now().UTC().Format(time.RFC3339)
+	meta := map[string]any{"labels": labels, "annotations": map[string]any{
+		model.AnnotationLifecycleStart: now,
+		model.AnnotationLastActivity:   now,
+	}}
 	if m.Metadata.ResourceVersion != "" {
 		meta["resourceVersion"] = m.Metadata.ResourceVersion
 	}
-	return c.Kube.PatchMachine(ctx, m.Namespace(), m.Metadata.Name, map[string]any{"metadata": meta})
+	patch := map[string]any{"metadata": meta}
+	if m.Spec.PowerState == "Paused" {
+		patch["spec"] = map[string]any{"powerState": "Running"}
+	}
+	return c.Kube.PatchMachine(ctx, m.Namespace(), m.Metadata.Name, patch)
 }
 
 // ensureClaimEgress keeps the claim's egress MachineNetworkPolicy in step
@@ -243,6 +307,15 @@ func (c *Controller) releaseMachineClaim(ctx context.Context, claim model.Machin
 	finals := model.RemoveFinalizer(claim.Metadata.Finalizers, model.FinalizerMachineClaim)
 	if err := c.Kube.PatchMachineClaim(ctx, claim.Namespace(), claim.Metadata.Name, map[string]any{"metadata": map[string]any{"finalizers": finals}}); err != nil {
 		c.Log.Error("machineclaim finalizer removal failed", "namespace", claim.Namespace(), "claim", claim.Metadata.Name, "error", err)
+		return
+	}
+	if name != "" {
+		u := claim.Status.Usage
+		msg := fmt.Sprintf("released %s: active %s, suspended %s, %.0f vCPU-s, %.0f GiB-s",
+			name, time.Duration(u.ActiveSeconds)*time.Second, time.Duration(u.SuspendedSeconds)*time.Second, u.VCPUSeconds, u.MemoryGiBSeconds)
+		if err := c.Kube.RecordEvent(ctx, claim.Namespace(), model.KindMachineClaim, claim.Metadata.Name, claim.Metadata.UID, "Released", msg, "Normal"); err != nil {
+			c.Log.Debug("record claim release event failed", "claim", claim.Metadata.Name, "error", err)
+		}
 	}
 }
 
@@ -289,7 +362,7 @@ func (c *Controller) reconcileMachinePool(ctx context.Context, pool model.Machin
 			continue
 		}
 		current = append(current, m)
-		if m.Status.Phase == "Running" {
+		if warmReady(m) {
 			ready++
 		}
 	}
@@ -304,6 +377,20 @@ func (c *Controller) reconcileMachinePool(ctx context.Context, pool model.Machin
 		finals := append(append([]string{}, pool.Metadata.Finalizers...), model.FinalizerMachinePool)
 		if err := c.Kube.PatchMachinePool(ctx, ns, name, map[string]any{"metadata": map[string]any{"finalizers": finals}}); err != nil {
 			return status, fmt.Errorf("add machinepool finalizer: %w", err)
+		}
+	}
+
+	for _, m := range current {
+		want := warmPowerTarget(pool.Spec, m, time.Now())
+		if want == "" {
+			continue
+		}
+		patch := map[string]any{"spec": map[string]any{"powerState": want}}
+		if m.Metadata.ResourceVersion != "" {
+			patch["metadata"] = map[string]any{"resourceVersion": m.Metadata.ResourceVersion}
+		}
+		if err := c.Kube.PatchMachine(ctx, ns, m.Metadata.Name, patch); err != nil && !kube.IsConflict(err) && !kube.IsNotFound(err) {
+			return status, fmt.Errorf("set warm machine %s to %s: %w", m.Metadata.Name, want, err)
 		}
 	}
 
@@ -322,9 +409,9 @@ func (c *Controller) reconcileMachinePool(ctx context.Context, pool model.Machin
 			}
 		}
 	case len(current) > desired:
-		// Trim booting members before Running ones.
+		// Trim booting members before ready ones.
 		sort.SliceStable(current, func(i, j int) bool {
-			return current[i].Status.Phase != "Running" && current[j].Status.Phase == "Running"
+			return !warmReady(current[i]) && warmReady(current[j])
 		})
 		for _, m := range current[:len(current)-desired] {
 			if err := c.Kube.DeleteMachine(ctx, ns, m.Metadata.Name); err != nil && !kube.IsNotFound(err) {

@@ -234,6 +234,22 @@ func (c *Client) PatchMachine(ctx context.Context, ns, name string, patch map[st
 	return c.request(ctx, http.MethodPatch, namespacedObjectPath(ns, "machines", name), patch, nil, "application/merge-patch+json")
 }
 
+// DryRunPatchMachine sends patch with dryRun=All: admission webhooks and
+// schema validation run, nothing is stored. It returns the Machine as the
+// apiserver would have stored it.
+func (c *Client) DryRunPatchMachine(ctx context.Context, ns, name string, patch map[string]any) (model.Machine, error) {
+	var out model.Machine
+	err := c.request(ctx, http.MethodPatch, namespacedObjectPath(ns, "machines", name)+"?dryRun=All", patch, &out, "application/merge-patch+json")
+	return out, err
+}
+
+// DryRunCreateMachineMigration is CreateMachineMigration with dryRun=All.
+func (c *Client) DryRunCreateMachineMigration(ctx context.Context, ns string, m model.MachineMigration) (model.MachineMigration, error) {
+	var out model.MachineMigration
+	err := c.request(ctx, http.MethodPost, namespacePath(ns, "machinemigrations")+"?dryRun=All", m, &out, "")
+	return out, err
+}
+
 func (c *Client) PatchMachineStatus(ctx context.Context, ns, name string, status model.MachineStatus) error {
 	return c.request(ctx, http.MethodPatch, namespacedObjectPath(ns, "machines", name)+"/status", map[string]any{"status": status}, nil, "application/merge-patch+json")
 }
@@ -1208,6 +1224,12 @@ func (c *Client) GetConfigMap(ctx context.Context, ns, name string) (model.Confi
 	path := fmt.Sprintf("/api/v1/namespaces/%s/configmaps/%s", url.PathEscape(ns), url.PathEscape(name))
 	err := c.request(ctx, http.MethodGet, path, nil, &cm, "")
 	return cm, err
+}
+
+func (c *Client) CreateConfigMap(ctx context.Context, cm model.ConfigMap) error {
+	cm.APIVersion, cm.Kind = "v1", "ConfigMap"
+	path := fmt.Sprintf("/api/v1/namespaces/%s/configmaps", url.PathEscape(cm.Metadata.Namespace))
+	return c.request(ctx, http.MethodPost, path, cm, nil, "")
 }
 
 func (c *Client) PatchConfigMapData(ctx context.Context, ns, name string, data map[string]any) error {

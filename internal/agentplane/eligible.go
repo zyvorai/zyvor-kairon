@@ -8,7 +8,7 @@ import "github.com/zyvorai/kairon/internal/model"
 // EligibleWarm reports whether a Running warm Machine may be bound to
 // this claim. Empty tenant and hypervisor constraints match anything.
 func EligibleWarm(claim model.MachineClaim, m model.Machine) bool {
-	if m.Status.Phase != "" && m.Status.Phase != "Running" {
+	if m.Status.Phase != "" && m.Status.Phase != "Running" && (m.Status.Phase != "Paused" || m.Spec.PowerState != "Paused") {
 		return false
 	}
 	if m.Metadata.Labels != nil && m.Metadata.Labels[model.LabelPoolState] != "" && m.Metadata.Labels[model.LabelPoolState] != model.PoolStateWarm {

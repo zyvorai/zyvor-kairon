@@ -152,6 +152,10 @@ type Server struct {
 	// own existing "no real identity" precedent for the empty-username
 	// case). See docs/guides/kairon-ui-console-rbac.md.
 	RBACConsoleCheck bool
+	// SandboxOperatorExec opens guest exec, file transfer and the sandbox
+	// HTTP proxy to non-admin operators, on Machines labelled
+	// model.LabelSandbox=true only; consoleAuthorized still applies.
+	SandboxOperatorExec bool
 	// consoleTickets backs the console feature's single-use WebSocket
 	// tickets; zero value is ready to use.
 	consoleTickets sync.Map

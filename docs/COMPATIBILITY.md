@@ -92,18 +92,18 @@ the multi-host matrix above.
 
 | Case | Last result | Date | Notes |
 |---|---|---|---|
-| Create / restart / delete smoke (≤100 VMs scaled down in CI) | not run | — | Multi-host matrix; single-host create/stop/start smoke is green above |
-| Cold migration | not run | — | |
-| Live pre-copy under load | not run | — | |
-| Guest agent exec after migration | not run | — | `echo` through kairon-ui → kairon-node → qemu-guest-agent in the migrated Machine; needs `spec.guestAgent.enabled` and `KAIRON_UI_URL`/`KAIRON_UI_TOKEN` |
+| Create / restart / delete smoke (≤100 VMs scaled down in CI) | pass | 2026-10-14 | hwsmoke-032055 from /srv/kairon-shared/labsmoke/disk.img: create → healthy → stop → start → delete |
+| Cold migration | pass | 2026-10-14 | hw-cold-labm1-20261014-032145 → nldw4-4-16-36 |
+| Live pre-copy under load | fail | 2026-10-14 | could not start guest load in labm1 |
+| Guest agent exec after migration | fail | 2026-10-14 | exec request failed |
 | Live + eBPF dataplane | not run | — | Machine with `spec.network.dataplaneMode=ebpf`; set `KAIRON_HW_EBPF_MACHINE`. Needs two hosts; also exercises the VM-edge conntrack export/restore |
-| Source failure during transfer | not run | — | |
-| Ambiguous commit → `NeedsRecovery` | not run | — | |
-| Controller failover mid-migration | not run | — | |
-| Adaptive: auto-converge under load | not run | — | `--strategy adaptive --auto-converge` with the guest dirtying `KAIRON_HW_ADAPTIVE_LOAD_MIB` through a `KAIRON_HW_ADAPTIVE_BANDWIDTH_MBPS` link; needs an `auto-converge`/`throttle` action, no post-copy, and `status.progress` |
-| Adaptive: post-copy switch under load | not run | — | `--post-copy --post-copy-after=20s` under the same load; needs a `postcopy` action and `status.adaptive.postCopyStarted` |
-| Adaptive: zstd multifd compression | not run | — | `--compression=zstd --compression-level=3` on an idle guest; needs `status.progress.compressionRatioPercent` above 100 |
-| Source failure after post-copy → `NeedsRecovery` | not run | — | `lab-inject-postcopy-source-failure.sh` kills the source QEMU after the switch on the disposable `KAIRON_HW_POSTCOPY_MACHINE`; must land `NeedsRecovery` with the source not resumed, then `ForceAbort` |
+| Source failure during transfer | fail | 2026-10-14 | lab-inject-source-failure.sh → nldw4-4-04-32 |
+| Ambiguous commit → `NeedsRecovery` | fail | 2026-10-14 | recovery-drill.sh → nldw4-4-04-32 |
+| Controller failover mid-migration | fail | 2026-10-14 | lab-inject-controller-failover.sh → nldw4-4-04-32 |
+| Adaptive: auto-converge under load | fail | 2026-10-14 | could not start guest load in labm1 |
+| Adaptive: post-copy switch under load | fail | 2026-10-14 | could not start guest load in labm1 |
+| Adaptive: zstd multifd compression | fail | 2026-10-14 |  |
+| Source failure after post-copy → `NeedsRecovery` | fail | 2026-10-14 | labpc → nldw4-4-04-32; see the drill log |
 
 `hardware-migration-matrix.sh --write-compat` rewrites these rows from a
 run (the workflow uploads the result as the `compatibility-md` artifact);
@@ -191,6 +191,32 @@ real hosts sharing the hibernation directory and an RBD root disk.
 | Hibernate: resume | pass | 2026-10-12 | Same node: Running in 16s with `resumeNode` set to the node; tick 4 -> 6, same boot id and `/dev/shm` marker; `status.hibernation` cleared |
 | Hibernate: discard | pass | 2026-10-12 | Same node: `discard-hibernation` annotation gave a new boot id; annotation removed, `status.hibernation` cleared |
 | Hibernate: resume on another node | not run | 2026-10-12 | Needs two nodes sharing the hibernation directory and a shared root disk |
+
+## Agent sandboxes
+
+Driven by [`scripts/bench-sandbox.sh`](../scripts/bench-sandbox.sh) on one
+node with an image that runs qemu-guest-agent (see
+[agent-sandboxes.md](guides/agent-sandboxes.md)). It needs kairon-ui with the
+console relay configured (exec, wake on connect, `vnc screenshot` and
+`guestfs` go through it) and libguestfs-tools on the node for `guestfs`.
+
+The first lab run (2026-10-14) was cut short: the lab had just been reset
+without the console relay, then the worker went down. The rows below are what
+those partial runs showed; the full script has not completed yet.
+
+| Case | Last result | Date | Notes |
+|---|---|---|---|
+| Sandbox: idle pause | pass | 2026-10-14 | Single node, k3s 1.36, Ubuntu 24.04 guest, 1 vCPU / 1Gi, `--idle-timeout 1m`: last activity recorded 48s after creation, phase Paused within about 3 minutes of creation with no client attached. Not timed by the script |
+| Sandbox: pool warm states | pass | 2026-10-14 | Same node: a Running pool's member Running and a `warmPowerState: Paused` pool's member Paused (powerState Paused) within 2.5 minutes. Claim bind times not measured |
+| Sandbox: lifetime | pass | 2026-10-14 | `--max-lifetime 1m` Machine deleted by kairon-controller within 4 minutes of creation, even though it was in phase Error. Not timed by the script |
+| Sandbox: wake on connect (paused, hibernated) | not run | 2026-10-14 | Needs the console relay (kairon-ui returned 501 for exec) |
+| Sandbox: pool claim, Running vs Paused | not run | 2026-10-14 | Run stopped before the claims |
+| Sandbox: fork | not run | 2026-10-14 | |
+| Sandbox: freeze auto-thaw, freeze/unfreeze | not run | 2026-10-14 | |
+| Sandbox: vnc screenshot | not run | 2026-10-14 | Needs the console relay |
+| Sandbox: create clone from Halted | not run | 2026-10-14 | |
+| Sandbox: guestfs read-only | not run | 2026-10-14 | Needs the console relay |
+| Sandbox: cdrom insert/eject | not run | 2026-10-14 | |
 
 ## Incident bundles
 

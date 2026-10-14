@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"google.golang.org/grpc"
@@ -113,6 +114,10 @@ type Agent struct {
 	// ExportDir holds MachineExport copies converted to another format.
 	ExportDir  string
 	exportJobs sync.Map
+	cloneJobs  sync.Map
+	// activity holds the last activity sample per runtime ID.
+	activity      sync.Map
+	activityPrune atomic.Int64
 	// RegistryHTTP is the client spec.image.source.oci pulls use; nil
 	// means http.DefaultClient.
 	RegistryHTTP *http.Client
@@ -253,6 +258,7 @@ func (a *Agent) Reconcile(ctx context.Context) error {
 	if err := a.reconcileExports(ctx, local); err != nil {
 		a.Log.Error("machine export reconcile failed", "error", err)
 	}
+	a.sweepClones(local)
 	migSelector := model.MigrationSourceNodeLabelSelector(a.NodeName)
 	migrations, err := a.Kube.ListMachineMigrationsWithSelector(ctx, migSelector)
 	if err != nil {
@@ -333,6 +339,25 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 	// against --image-root.
 	usingSandboxTemplate := m.Spec.Sandbox != nil && m.Spec.Sandbox.TemplateName != ""
 	usingCatalogImage := m.Spec.Image.CatalogName != ""
+	cloned := false
+	if m.Metadata.Annotations[model.AnnotationCloneFrom] != "" && !usingSandboxTemplate {
+		path, ready, err := a.cloneBootDisk(ctx, m)
+		if err != nil {
+			return err
+		}
+		if !ready {
+			status := m.Status
+			status.Phase = "Pending"
+			status.NodeName = a.NodeName
+			status.Message = "copying the disk of machine/" + m.Metadata.Annotations[model.AnnotationCloneFrom]
+			status.Conditions = model.SetCondition(status.Conditions, model.Condition{
+				Type: "Ready", Status: "False", Reason: "CloningDisk", Message: status.Message,
+			})
+			return a.patchMachineStatusIfChanged(ctx, m, status)
+		}
+		m.Spec.Image = model.ImageSpec{Path: path, DiskSize: m.Spec.Image.DiskSize}
+		usingCatalogImage, cloned = false, true
+	}
 	var volStatus csiVolumeStatus
 	var dataDisks []fluxvm.DataDisk
 	if !usingSandboxTemplate && !usingCatalogImage {
@@ -392,7 +417,7 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 				return err
 			}
 		}
-		if len(m.Spec.Volumes) == 0 && m.Spec.Image.Source == nil && !m.Spec.Image.Blank {
+		if len(m.Spec.Volumes) == 0 && m.Spec.Image.Source == nil && !m.Spec.Image.Blank && !cloned {
 			// Only fence plain spec.image.path against ImageRoot -- a
 			// PVC-resolved path already went through a stronger gate (the PVC
 			// had to exist and be Bound, not just be a string any Machine
@@ -655,7 +680,8 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 	// ResourceUsage is volatile: it does not by itself trigger a status
 	// patch (see patchMachineStatusIfChanged), so kaironctl top reflects
 	// the last meaningful status write rather than every 3s tick.
-	if usage, err := a.Flux.GetStats(ctx, rec.ID()); err == nil {
+	usage, usageErr := a.Flux.GetStats(ctx, rec.ID())
+	if usageErr == nil {
 		status.ResourceUsage = &model.ResourceUsage{
 			CPUPercent: usage.CPUUsagePercent, MemoryBytes: usage.MemoryUsageBytes,
 			DiskReadBytes: usage.DiskReadBytes, DiskWriteBytes: usage.DiskWriteBytes,
@@ -663,11 +689,15 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 		if a.Metrics != nil {
 			a.Metrics.ObserveMachineUsageFreshness(m.Namespace(), m.Metadata.Name)
 		}
+	} else {
+		usage = nil
 	}
+	a.observeActivity(m, rec, usage, &status, time.Now())
 	if err := a.projectNetworkStatus(ctx, m, rec, &status); err != nil {
 		return err
 	}
 	a.reconcileGuestQuiesce(ctx, m, rec)
+	a.reconcileGuestFreeze(ctx, m, rec, time.Now())
 	appliedServiceFabric, err := a.reconcileServiceFabric(ctx, m, status.GuestIP)
 	if err != nil {
 		return err
@@ -765,14 +795,20 @@ func (a *Agent) ensurePaused(ctx context.Context, m model.Machine) error {
 		return err
 	}
 	status := m.Status
-	if rec == nil {
-		status.Phase = "Pending"
-		status.NodeName = a.NodeName
-		status.Message = "cannot pause: no existing runtime -- set powerState to Running first, then Paused"
-		status.Conditions = model.SetCondition(status.Conditions, model.Condition{
-			Type: "Ready", Status: "False", Reason: "NoRuntime", Message: status.Message,
-		})
-		return a.patchMachineStatusIfChanged(ctx, m, status)
+	if rec == nil || normalizePhase(rec.Status) == "Stopped" {
+		// Start paused (kaironctl start --paused): boot the runtime through
+		// the normal Running path, then pause it in this same pass.
+		boot := m
+		boot.Spec.PowerState = "Running"
+		if err := a.reconcileMachine(ctx, boot); err != nil {
+			return err
+		}
+		if rec, err = a.current(ctx, m); err != nil {
+			return err
+		}
+		if rec == nil {
+			return fmt.Errorf("start paused: runtime for %s/%s was not created", m.Namespace(), m.Metadata.Name)
+		}
 	}
 	if !strings.EqualFold(rec.Status, "Paused") {
 		rec, err = a.Flux.Pause(ctx, rec.ID())

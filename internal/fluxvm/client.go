@@ -28,6 +28,8 @@ type Record struct {
 	UUID    string `json:"uuid,omitempty"`
 	Name    string `json:"name,omitempty"`
 	Status  string `json:"status,omitempty"`
+	// PID is the VMM process on the VM host, 0 when not running.
+	PID int `json:"pid,omitempty"`
 	// Error is why a "failed" VM failed (FluxVM's VmRecord.error).
 	Error   string `json:"error,omitempty"`
 	Backend string `json:"backend,omitempty"`

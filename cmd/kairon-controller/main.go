@@ -25,6 +25,7 @@ import (
 	"github.com/zyvorai/kairon/internal/health"
 	"github.com/zyvorai/kairon/internal/kube"
 	"github.com/zyvorai/kairon/internal/leaderelection"
+	"github.com/zyvorai/kairon/internal/loglevel"
 	"github.com/zyvorai/kairon/internal/metrics"
 	"github.com/zyvorai/kairon/internal/oteltrace"
 	"github.com/zyvorai/kairon/internal/scheduler"
@@ -99,7 +100,8 @@ func run() int {
 		fmt.Println(version)
 		return 0
 	}
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logLevel := new(slog.LevelVar)
+	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel}))
 	if (*webhookTLSCert == "") != (*webhookTLSKey == "") {
 		log.Error("secure startup refused", "reason", "-webhook-tls-cert and -webhook-tls-key must be set together")
 		return 1
@@ -154,6 +156,7 @@ func run() int {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
+	go loglevel.Watch(ctx, kc, loglevel.Namespace(), "controller", "", logLevel, log)
 	rec := metrics.NewRecorder()
 	kc.Observe = rec.ObserveAPIRequest
 	hs := &health.Server{Metrics: rec.Handler()}

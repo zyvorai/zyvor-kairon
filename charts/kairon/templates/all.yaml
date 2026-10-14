@@ -228,6 +228,25 @@ subjects:
   - {kind: ServiceAccount, name: kairon-controller, namespace: {{ .Release.Namespace }}}
 ---
 {{ end }}
+# kaironctl adm log-verbosity writes this ConfigMap; components only read it.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: kairon-log-levels, namespace: {{ .Release.Namespace }}}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["kairon-log-levels"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: kairon-log-levels, namespace: {{ .Release.Namespace }}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: kairon-log-levels}
+subjects:
+  - {kind: ServiceAccount, name: kairon-controller, namespace: {{ .Release.Namespace }}}
+  - {kind: ServiceAccount, name: kairon-node, namespace: {{ .Release.Namespace }}}
+  - {kind: ServiceAccount, name: kairon-ui, namespace: {{ .Release.Namespace }}}
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata: {name: kairon-node}
@@ -1538,6 +1557,10 @@ spec:
 {{ end }}
 {{ if .Values.ui.auth.rbacConsoleCheck }}
             - name: KAIRON_UI_RBAC_CONSOLE_CHECK
+              value: "true"
+{{ end }}
+{{ if .Values.ui.auth.sandboxOperatorExec }}
+            - name: KAIRON_UI_SANDBOX_OPERATOR_EXEC
               value: "true"
 {{ end }}
 {{ if .Values.ui.insecureHttp }}

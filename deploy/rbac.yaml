@@ -389,6 +389,16 @@ rules:
     resources: ["secrets"]
     verbs: ["get"]
 ---
+# kaironctl adm log-verbosity writes this ConfigMap; components only read it.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: kairon-log-levels, namespace: kairon-system}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["kairon-log-levels"]
+    verbs: ["get"]
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata: {name: kairon-controller-leader-election, namespace: kairon-system}
@@ -452,6 +462,15 @@ metadata: {name: kairon-controller-leader-election, namespace: kairon-system}
 roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: kairon-controller-leader-election}
 subjects:
   - {kind: ServiceAccount, name: kairon-controller, namespace: kairon-system}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: kairon-log-levels, namespace: kairon-system}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: kairon-log-levels}
+subjects:
+  - {kind: ServiceAccount, name: kairon-controller, namespace: kairon-system}
+  - {kind: ServiceAccount, name: kairon-node, namespace: kairon-system}
+  - {kind: ServiceAccount, name: kairon-ui, namespace: kairon-system}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

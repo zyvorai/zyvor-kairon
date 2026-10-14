@@ -63,6 +63,7 @@ New since v0.6.0 (latest tag: v0.9.1; the first rows below are on `main`, not ye
 | **Import from VMware** | `kaironctl import ova` streams an OVA once, reads vCPU, memory and firmware from the OVF, and FluxVM converts and repairs the disk. [Guide →](docs/guides/migrate-from-vmware.md) |
 | **Warm pools and claims** | `MachinePool` keeps booted Machines ready; a `MachineClaim` binds one in a single reconcile tick, with per-claim egress allowlists. [Guide →](docs/guides/machine-pools.md) |
 | **VM fork** | `kaironctl fork` and the MCP `fork_machine` tool fork a running Machine through FluxVM. [Guide →](docs/guides/machine-fork.md) |
+| **Agent sandboxes (experimental)** | `spec.lifecycle` pauses idle Machines and wakes them on connect, deletes them after a max lifetime; paused warm pools, per-claim usage, and `Sandbox` classes in both SDKs. [Guide →](docs/guides/agent-sandboxes.md) |
 | **Backups** | `MachineBackup` and `MachineBackupRestore` with guest filesystem freeze, plus Atlas S3 backup jobs for Atlas volumes. Incremental S3 backups with policies and GFS retention (experimental). [Guide →](docs/guides/machine-backup.md) |
 | **Live disks and NICs** | Hot-attach PVC disks and hot-add or remove extra NICs on running Machines (`kaironctl disk`, `kaironctl nic`). [Guide →](docs/guides/machine-hotplug.md) |
 | **Tenant fence** | `kairon.zyvor.dev/tenant-fence` turns `spec.tenant` into an east-west deny of other tenants' guest addresses in the namespace. [Guide →](docs/guides/tenant-fence.md) |

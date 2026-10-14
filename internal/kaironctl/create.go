@@ -37,10 +37,26 @@ func machineSpecFromFlags(fs *flag.FlagSet) (spec func() model.MachineSpec, imag
 	preference := fs.String("preference", "", "MachinePreference supplying guest-OS defaults (backend unless --backend is given)")
 	clusterPreference := fs.Bool("cluster-preference", false, "--preference names a cluster-scoped MachineClusterPreference")
 	priority := fs.Int("priority", 0, "scheduling priority: when a reconcile tick can't fit every pending Machine (node capacity or MachineQuota), higher values are attempted first; default 0, negative values are valid for a below-default class")
+	idleTimeout := fs.Duration("idle-timeout", 0, "apply --idle-action after this long with no guest CPU/disk activity and no console, exec or port-forward use (e.g. 10m; min 1m)")
+	idleAction := fs.String("idle-action", "", "Pause (default), Hibernate, Halt, Stop or Delete")
+	maxLifetime := fs.Duration("max-lifetime", 0, "delete the Machine this long after creation (or after a claim binds it), e.g. 24h")
+	wakeOnConnect := fs.Bool("wake-on-connect", false, "resume an idle-suspended Machine when console, exec, port-forward or the sandbox proxy connects")
 	return func() model.MachineSpec {
 		pf, err := parseForwards(forwards)
 		if err != nil {
 			fatal(err)
+		}
+		var lifecycle *model.LifecycleSpec
+		if *idleTimeout > 0 || *maxLifetime > 0 || *idleAction != "" || *wakeOnConnect {
+			lifecycle = &model.LifecycleSpec{
+				IdleTimeoutSeconds: int64(idleTimeout.Seconds()),
+				IdleAction:         *idleAction,
+				MaxLifetimeSeconds: int64(maxLifetime.Seconds()),
+				WakeOnConnect:      *wakeOnConnect,
+			}
+			if err := model.ValidateLifecycle(lifecycle); err != nil {
+				fatal(err)
+			}
 		}
 		set := map[string]bool{}
 		fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
@@ -78,6 +94,7 @@ func machineSpecFromFlags(fs *flag.FlagSet) (spec func() model.MachineSpec, imag
 			GuestAgent: model.GuestAgentSpec{Enabled: *guestAgent},
 			PowerState: "Running",
 			Priority:   int32(*priority),
+			Lifecycle:  lifecycle,
 		}
 	}, image
 }
@@ -95,7 +112,7 @@ func machineSpecFromFlags(fs *flag.FlagSet) (spec func() model.MachineSpec, imag
 // create-a-Machine behavior below, byte-for-byte unchanged.
 func cmdCreate(ctx context.Context, kc *kube.Client, args []string) {
 	if len(args) < 1 {
-		fatal(fmt.Errorf("usage: kaironctl create NAME --image PATH [flags] | create machineset|machinepool|instancetype|migrationpolicy|snapshotschedule|quota|budget|networkpolicy|securitygroup NAME [flags]"))
+		fatal(fmt.Errorf("usage: kaironctl create NAME --image PATH [flags] | create machineset|machinepool|instancetype|migrationpolicy|snapshotschedule|quota|budget|networkpolicy|securitygroup NAME [flags] | create clone SOURCE --name NEW"))
 	}
 	switch strings.ToLower(args[0]) {
 	case "machineset", "machinesets":
@@ -124,6 +141,9 @@ func cmdCreate(ctx context.Context, kc *kube.Client, args []string) {
 		return
 	case "securitygroup", "securitygroups", "networksecuritygroups":
 		cmdCreateSecurityGroup(ctx, kc, args[1:])
+		return
+	case "clone":
+		cmdCreateClone(ctx, kc, args[1:])
 		return
 	}
 	name := args[0]
@@ -206,6 +226,8 @@ func cmdCreateMachinePool(ctx context.Context, kc *kube.Client, args []string) {
 	fs := flag.NewFlagSet("create machinepool", flag.ExitOnError)
 	ns := fs.String("namespace", "default", "namespace")
 	replicas := fs.Int("replicas", 1, "warm (unclaimed) Machines to keep booted")
+	warmState := fs.String("warm-power-state", "", "Running (default) or Paused: pause members after --warmup so they hold memory but no CPU; a claim resumes one in milliseconds")
+	warmup := fs.Duration("warmup", 0, "with --warm-power-state Paused, how long a member runs before it is paused (default 30s)")
 	var labels stringSliceFlag
 	fs.Var(&labels, "label", "label key=value applied to every pool member (repeatable)")
 	specFn, image := machineSpecFromFlags(fs)
@@ -213,6 +235,11 @@ func cmdCreateMachinePool(ctx context.Context, kc *kube.Client, args []string) {
 	_ = fs.Parse(args[1:])
 	if *image == "" {
 		fatal(fmt.Errorf("--image PATH is required"))
+	}
+	switch *warmState {
+	case "", "Running", "Paused":
+	default:
+		fatal(fmt.Errorf("--warm-power-state must be Running or Paused"))
 	}
 	labelMap, err := parseKeyValues(labels)
 	if err != nil {
@@ -222,8 +249,10 @@ func cmdCreateMachinePool(ctx context.Context, kc *kube.Client, args []string) {
 		TypeMeta: model.TypeMeta{APIVersion: model.APIVersion, Kind: model.KindMachinePool},
 		Metadata: model.ObjectMeta{Name: name, Namespace: *ns},
 		Spec: model.MachinePoolSpec{
-			Replicas: *replicas,
-			Template: model.MachineTemplate{Labels: labelMap, Spec: specFn()},
+			Replicas:       *replicas,
+			Template:       model.MachineTemplate{Labels: labelMap, Spec: specFn()},
+			WarmPowerState: *warmState,
+			WarmupSeconds:  int64(warmup.Seconds()),
 		},
 	}
 	if co.preview(pool) {

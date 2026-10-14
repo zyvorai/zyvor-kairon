@@ -50,6 +50,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /console/{runtimeID}", s.handleConsole)
 	mux.HandleFunc("POST /exec/{runtimeID}", s.handleExec)
 	mux.HandleFunc("GET /text-console/{runtimeID}", s.handleTextConsole)
+	mux.HandleFunc("GET /guestfs/{runtimeID}", s.handleGuestfs)
 	mux.HandleFunc("GET /portforward/{runtimeID}", s.handlePortForward)
 	mux.HandleFunc("POST /agent-file/put/{runtimeID}", s.handleAgentPutFile)
 	mux.HandleFunc("POST /agent-file/get/{runtimeID}", s.handleAgentGetFile)

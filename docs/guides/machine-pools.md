@@ -50,6 +50,11 @@ A claim with no Running warm member stays `Pending` with a message like
 `no Running warm machine in pool "agents" (2 warming)` and binds as soon as one
 is ready.
 
+With `spec.warmPowerState: Paused` (experimental), a member runs for
+`spec.warmupSeconds` (default 30) and is then paused, so the pool holds memory
+but no CPU. A Paused member counts as warm, and binding resumes it in
+milliseconds. See [Agent sandboxes](agent-sandboxes.md#paused-warm-pools).
+
 ## Claim lifecycle
 
 | Field | Effect |
@@ -62,6 +67,7 @@ is ready.
 | `status.phase` | `Pending`, `Bound`, or `Lost` (the Machine was deleted out from under the claim). |
 | `status.bindMillis` | Claim creation to bind, in milliseconds. |
 | `status.egressPolicy` | Name of the MachineNetworkPolicy enforcing `spec.egress`. |
+| `status.usage` | Active and suspended seconds, vCPU and GiB-memory seconds accrued while bound (experimental, see [Agent sandboxes](agent-sandboxes.md#claim-usage)). A `Released` Event keeps the final figures. |
 
 ## Per-claim egress
 

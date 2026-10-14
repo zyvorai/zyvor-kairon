@@ -104,6 +104,10 @@ func cmdDescribe(ctx context.Context, kc *kube.Client, args []string) {
 		out, err = kc.GetMachineDisruptionBudget(ctx, ns, name)
 	case "machineset", "machinesets":
 		out, err = kc.GetMachineSet(ctx, ns, name)
+	case "machinepool", "machinepools", "pool", "pools":
+		out, err = kc.GetMachinePool(ctx, ns, name)
+	case "machineclaim", "machineclaims", "claim", "claims":
+		out, err = kc.GetMachineClaim(ctx, ns, name)
 	case "instancetype", "instancetypes", "machineinstancetypes":
 		out, err = kc.GetMachineInstanceType(ctx, ns, name)
 	case "clusterinstancetype", "clusterinstancetypes", "machineclusterinstancetypes", "mcit":
@@ -602,6 +606,9 @@ func describeMachine(ctx context.Context, kc *kube.Client, ns, name string) {
 	if line := hibernationSummary(m); line != "" {
 		fmt.Println(line)
 	}
+	if line := lifecycleSummary(m, time.Now()); line != "" {
+		fmt.Println(line)
+	}
 	if m.Spec.Tenant != "" {
 		fence := "off"
 		if m.Metadata.Annotations["kairon.zyvor.dev/tenant-fence"] == "true" {
@@ -639,6 +646,47 @@ func hibernationSummary(m model.Machine) string {
 		line += ": " + h.Message
 	}
 	return line
+}
+
+// lifecycleSummary is the one-line reading of spec.lifecycle: idle time so
+// far, what happens at the timeout, and when the Machine expires.
+func lifecycleSummary(m model.Machine, now time.Time) string {
+	l := m.Spec.Lifecycle
+	if l == nil {
+		return ""
+	}
+	var parts []string
+	if l.IdleTimeoutSeconds > 0 {
+		last := ""
+		if m.Status.Lifecycle != nil {
+			last = m.Status.Lifecycle.LastActivityTime
+		}
+		if a := m.Metadata.Annotations[model.AnnotationLastActivity]; a > last {
+			last = a
+		}
+		idle := "no activity reported yet"
+		if t, err := time.Parse(time.RFC3339, last); err == nil {
+			idle = "idle " + now.Sub(t).Round(time.Second).String()
+		}
+		parts = append(parts, fmt.Sprintf("%s of %s, then %s", idle, time.Duration(l.IdleTimeoutSeconds)*time.Second, l.EffectiveIdleAction()))
+	}
+	if at := m.Metadata.Annotations[model.AnnotationIdleSuspended]; at != "" {
+		parts = append(parts, "idle-suspended at "+at)
+	}
+	if l.WakeOnConnect {
+		parts = append(parts, "wakes on connect")
+	}
+	if l.MaxLifetimeSeconds > 0 {
+		start := m.Metadata.CreationTimestamp
+		if t, err := time.Parse(time.RFC3339, m.Metadata.Annotations[model.AnnotationLifecycleStart]); err == nil {
+			start = t
+		}
+		parts = append(parts, "expires in "+start.Add(time.Duration(l.MaxLifetimeSeconds)*time.Second).Sub(now).Round(time.Second).String())
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "lifecycle: " + strings.Join(parts, ", ")
 }
 
 // elasticMemorySummary is the one-line reading of status.memory: how much

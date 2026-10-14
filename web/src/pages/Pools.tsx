@@ -12,13 +12,26 @@ interface Meta {
 }
 interface Pool {
   metadata: Meta;
-  spec: { replicas: number };
+  spec: { replicas: number; warmPowerState?: string };
   status?: { replicas?: number; readyReplicas?: number; claimed?: number; message?: string };
 }
 interface Claim {
   metadata: Meta;
   spec: { poolName: string; reclaimPolicy?: string; ttlSeconds?: number };
-  status?: { phase?: string; machineName?: string; bindMillis?: number; message?: string };
+  status?: {
+    phase?: string;
+    machineName?: string;
+    bindMillis?: number;
+    message?: string;
+    usage?: { activeSeconds?: number; suspendedSeconds?: number; vcpuSeconds?: number };
+  };
+}
+
+function seconds(s?: number): string {
+  if (!s) return '-';
+  if (s < 120) return `${s}s`;
+  if (s < 7200) return `${Math.round(s / 60)}m`;
+  return `${(s / 3600).toFixed(1)}h`;
 }
 
 // Pools shows MachinePools (warm VM capacity) and the MachineClaims bound to
@@ -50,6 +63,7 @@ export default function Pools() {
           columns={[
             { header: 'Name', render: (p) => p.metadata.name },
             { header: 'Warm target', render: (p) => p.spec.replicas },
+            { header: 'Warm state', render: (p) => p.spec.warmPowerState || 'Running' },
             { header: 'Ready', render: (p) => `${p.status?.readyReplicas ?? 0}/${p.status?.replicas ?? 0}` },
             { header: 'Claimed', render: (p) => p.status?.claimed ?? 0 },
             { header: 'Message', render: (p) => p.status?.message || '' },
@@ -68,6 +82,8 @@ export default function Pools() {
             { header: 'Phase', render: (c) => <span className={badgeClass(c.status?.phase || 'Pending')}>{c.status?.phase || 'Pending'}</span> },
             { header: 'Machine', render: (c) => c.status?.machineName || '-' },
             { header: 'Bind time', render: (c) => (c.status?.bindMillis ? `${c.status.bindMillis} ms` : '-') },
+            { header: 'Active', render: (c) => seconds(c.status?.usage?.activeSeconds) },
+            { header: 'Suspended', render: (c) => seconds(c.status?.usage?.suspendedSeconds) },
             { header: 'Reclaim', render: (c) => c.spec.reclaimPolicy || 'Delete' },
           ]}
         />

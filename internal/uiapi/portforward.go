@@ -44,6 +44,10 @@ func (s *Server) handlePortForward(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "not authorized to reach this machine")
 		return
 	}
+	if m, _, err = s.ensureAwake(r.Context(), m); err != nil {
+		writeWakeError(w, err)
+		return
+	}
 	if m.Status.Phase != "Running" {
 		writeError(w, http.StatusConflict, "machine is not Running")
 		return
@@ -95,6 +99,7 @@ func (s *Server) handlePortForward(w http.ResponseWriter, r *http.Request) {
 	}
 	start := time.Now()
 	ctx := r.Context()
+	defer s.keepActive(m)()
 	relay(
 		websocket.NetConn(ctx, downstream, websocket.MessageBinary),
 		websocket.NetConn(ctx, upstream, websocket.MessageBinary),

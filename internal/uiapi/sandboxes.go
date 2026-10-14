@@ -138,7 +138,7 @@ func (s *Server) requireSandboxAccess(w http.ResponseWriter, r *http.Request, na
 		return "", "", "", false
 	}
 	username = usernameFromContext(r.Context())
-	if !s.isAdminIdentity(r.Context(), username) {
+	if !s.guestExecAllowed(r.Context(), m, username) {
 		if s.Log != nil {
 			s.Log.Warn("uiapi sandbox-http denied: not an admin account", "username", username, "namespace", namespace, "name", name)
 		}
@@ -158,6 +158,10 @@ func (s *Server) requireSandboxAccess(w http.ResponseWriter, r *http.Request, na
 	}
 	if m.Spec.Sandbox == nil {
 		writeError(w, http.StatusBadRequest, "spec.sandbox is required for the sandbox HTTP proxy")
+		return "", "", "", false
+	}
+	if m, _, err = s.ensureAwake(r.Context(), m); err != nil {
+		writeWakeError(w, err)
 		return "", "", "", false
 	}
 	if m.Status.Phase != "Running" {

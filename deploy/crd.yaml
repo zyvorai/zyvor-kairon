@@ -1742,6 +1742,19 @@ spec:
                 type: integer
               egressPolicy:
                 type: string
+              usage:
+                type: object
+                properties:
+                  activeSeconds:
+                    type: integer
+                  suspendedSeconds:
+                    type: integer
+                  vcpuSeconds:
+                    type: number
+                  memoryGiBSeconds:
+                    type: number
+                  lastAccrued:
+                    type: string
               message:
                 type: string
   - name: v1beta1
@@ -2919,6 +2932,12 @@ spec:
                   spec:
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
+              warmPowerState:
+                type: string
+                enum: ["", Running, Paused]
+              warmupSeconds:
+                type: integer
+                minimum: 0
           status:
             type: object
             properties:
@@ -3836,6 +3855,34 @@ spec:
                 type: integer
                 format: int64
                 minimum: 0
+              lifecycle:
+                type: object
+                description: >-
+                  Opt-in lifetime and idle handling. kairon-controller deletes
+                  the Machine after maxLifetimeSeconds and applies idleAction
+                  after idleTimeoutSeconds without guest or relay activity.
+                properties:
+                  maxLifetimeSeconds:
+                    type: integer
+                    format: int64
+                    minimum: 0
+                  idleTimeoutSeconds:
+                    type: integer
+                    format: int64
+                    minimum: 0
+                  idleAction:
+                    type: string
+                    enum: ["", Pause, Hibernate, Halt, Stop, Delete]
+                  idleCPUMillicores:
+                    type: integer
+                    format: int64
+                    minimum: 0
+                  wakeOnConnect:
+                    type: boolean
+                  wakeTimeoutSeconds:
+                    type: integer
+                    format: int64
+                    minimum: 0
               priority:
                 type: integer
                 format: int32
@@ -4461,6 +4508,12 @@ spec:
               shutdownDeadline:
                 type: string
                 description: Set while a graceful stop waits for the guest to power off (RFC3339).
+              lifecycle:
+                type: object
+                properties:
+                  lastActivityTime:
+                    type: string
+                    description: Last guest activity kairon-node saw (RFC3339).
               hibernation:
                 type: object
                 properties:

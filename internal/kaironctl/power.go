@@ -18,13 +18,37 @@ import (
 
 func cmdPower(ctx context.Context, kc *kube.Client, args []string, state string) {
 	ns, args := nsFlag(args)
-	if len(args) != 1 {
+	var dryRun, paused bool
+	var rest []string
+	for _, a := range args {
+		switch {
+		case a == "--dry-run" || a == "--dry-run=server":
+			dryRun = true
+		case a == "--paused" && state == "Running":
+			paused = true
+		default:
+			rest = append(rest, a)
+		}
+	}
+	if len(rest) != 1 {
 		fatal(fmt.Errorf("command requires NAME"))
 	}
-	if err := setPowerState(ctx, kc, ns, args[0], state); err != nil {
+	name := rest[0]
+	if paused {
+		// The node boots the runtime and pauses it in the same pass.
+		state = "Paused"
+	}
+	if dryRun {
+		if _, err := kc.DryRunPatchMachine(ctx, ns, name, map[string]any{"spec": map[string]any{"powerState": state}}); err != nil {
+			fatal(err)
+		}
+		okf("machine/%s -> %s (server dry run: admission accepted it, nothing changed)", name, state)
+		return
+	}
+	if err := setPowerState(ctx, kc, ns, name, state); err != nil {
 		fatal(err)
 	}
-	okf("machine/%s -> %s", args[0], state)
+	okf("machine/%s -> %s", name, state)
 }
 
 func setPowerState(ctx context.Context, kc *kube.Client, namespace, name, state string) error {
@@ -51,7 +75,7 @@ func stopPatch(state string, force bool, grace int) (map[string]any, error) {
 }
 
 func newStopCmd(opts *Options, use, state string) *cobra.Command {
-	var force bool
+	var force, dryRun bool
 	var grace int
 	cmd := &cobra.Command{
 		Use:   use + " MACHINE",
@@ -77,6 +101,13 @@ immediate. --force stops immediately and removes a stored grace period.`,
 			if err != nil {
 				return err
 			}
+			if dryRun {
+				if _, err := kc.DryRunPatchMachine(cmd.Context(), opts.Namespace, args[0], patch); err != nil {
+					return err
+				}
+				okf("machine/%s -> %s (server dry run: admission accepted it, nothing changed)", args[0], state)
+				return nil
+			}
 			if err := kc.PatchMachine(cmd.Context(), opts.Namespace, args[0], patch); err != nil {
 				return err
 			}
@@ -90,6 +121,7 @@ immediate. --force stops immediately and removes a stored grace period.`,
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "stop immediately and clear a stored grace period")
 	cmd.Flags().IntVar(&grace, "grace-period", 0, "seconds the guest gets to power itself off first")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "send the change with dryRun=All: admission runs, nothing is stored")
 	return cmd
 }
 
@@ -100,7 +132,8 @@ func restartPatch(now time.Time) map[string]any {
 }
 
 func newRestartCmd(opts *Options) *cobra.Command {
-	return &cobra.Command{
+	var dryRun bool
+	cmd := &cobra.Command{
 		Use:     "restart MACHINE",
 		Aliases: []string{"reset"},
 		Short:   "Power-cycle a Running Machine",
@@ -133,6 +166,13 @@ image.`,
 			if s := m.DesiredPowerState(); s != "Running" {
 				return fmt.Errorf("machine/%s has powerState %s; restart needs Running (use kaironctl start)", args[0], s)
 			}
+			if dryRun {
+				if _, err := kc.DryRunPatchMachine(cmd.Context(), opts.Namespace, args[0], restartPatch(time.Now())); err != nil {
+					return err
+				}
+				okf("machine/%s restart would be requested (server dry run, nothing changed)", args[0])
+				return nil
+			}
 			if err := kc.PatchMachine(cmd.Context(), opts.Namespace, args[0], restartPatch(time.Now())); err != nil {
 				return err
 			}
@@ -140,6 +180,8 @@ image.`,
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "send the request with dryRun=All: admission runs, nothing is stored")
+	return cmd
 }
 
 func newSoftRebootCmd(opts *Options) *cobra.Command {
