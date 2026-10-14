@@ -54,6 +54,22 @@ spec:
                 type: string
               storageSize:
                 type: string
+              machine:
+                type: object
+                description: Also create a Machine that boots from the
+                  restored claim, copied from the snapshot's source spec.
+                  The restored volume must be the boot volume (volumes[0]).
+                required:
+                - name
+                properties:
+                  name:
+                    type: string
+                    minLength: 1
+                  powerState:
+                    type: string
+                    enum:
+                    - Running
+                    - Stopped
           status:
             type: object
             properties:
@@ -62,6 +78,8 @@ spec:
               message:
                 type: string
               restoredClaimName:
+                type: string
+              restoredMachineName:
                 type: string
               atlasJobID:
                 type: string

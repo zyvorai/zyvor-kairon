@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -66,6 +67,18 @@ func IsConflict(err error) bool {
 		return e.StatusCode == http.StatusConflict
 	}
 	return false
+}
+
+// IsTransient reports whether err is worth retrying unchanged on a later
+// tick: API throttling or a server-side failure, or a transport timeout
+// (an apiserver whose datastore stalls longer than the client timeout).
+func IsTransient(err error) bool {
+	var apiErr *APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.StatusCode == http.StatusTooManyRequests || apiErr.StatusCode >= 500
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
 func FromEnvironment() (*Client, error) {
@@ -343,6 +356,38 @@ func (c *Client) GetMachineSnapshotRestore(ctx context.Context, ns, name string)
 
 func (c *Client) DeleteMachineSnapshotRestore(ctx context.Context, ns, name string) error {
 	return c.request(ctx, http.MethodDelete, namespacedObjectPath(ns, "machinesnapshotrestores", name), map[string]any{"apiVersion": "v1", "kind": "DeleteOptions", "propagationPolicy": "Foreground"}, nil, "")
+}
+
+func (c *Client) ListMachineExports(ctx context.Context) ([]model.MachineExport, error) {
+	var list model.MachineExportList
+	err := c.request(ctx, http.MethodGet, "/apis/kairon.zyvor.dev/v1/machineexports", nil, &list, "")
+	return list.Items, err
+}
+
+func (c *Client) ListMachineExportsNamespace(ctx context.Context, ns string) ([]model.MachineExport, error) {
+	var list model.MachineExportList
+	err := c.request(ctx, http.MethodGet, namespacePath(ns, "machineexports"), nil, &list, "")
+	return list.Items, err
+}
+
+func (c *Client) GetMachineExport(ctx context.Context, ns, name string) (model.MachineExport, error) {
+	var e model.MachineExport
+	err := c.request(ctx, http.MethodGet, namespacedObjectPath(ns, "machineexports", name), nil, &e, "")
+	return e, err
+}
+
+func (c *Client) CreateMachineExport(ctx context.Context, ns string, e model.MachineExport) (model.MachineExport, error) {
+	var out model.MachineExport
+	err := c.request(ctx, http.MethodPost, namespacePath(ns, "machineexports"), e, &out, "")
+	return out, err
+}
+
+func (c *Client) PatchMachineExportStatus(ctx context.Context, ns, name string, status model.MachineExportStatus) error {
+	return c.request(ctx, http.MethodPatch, namespacedObjectPath(ns, "machineexports", name)+"/status", map[string]any{"status": status}, nil, "application/merge-patch+json")
+}
+
+func (c *Client) DeleteMachineExport(ctx context.Context, ns, name string) error {
+	return c.request(ctx, http.MethodDelete, namespacedObjectPath(ns, "machineexports", name), nil, nil, "")
 }
 
 func (c *Client) ListMachineNetworkPolicies(ctx context.Context) ([]model.MachineNetworkPolicy, error) {
@@ -777,6 +822,60 @@ func (c *Client) CreateMachineInstanceType(ctx context.Context, ns string, it mo
 	var out model.MachineInstanceType
 	err := c.request(ctx, http.MethodPost, namespacePath(ns, "machineinstancetypes"), it, &out, "")
 	return out, err
+}
+
+func (c *Client) ListMachineClusterInstanceTypes(ctx context.Context) ([]model.MachineClusterInstanceType, error) {
+	var list model.MachineClusterInstanceTypeList
+	err := c.request(ctx, http.MethodGet, "/apis/kairon.zyvor.dev/v1/machineclusterinstancetypes", nil, &list, "")
+	return list.Items, err
+}
+
+func (c *Client) GetMachineClusterInstanceType(ctx context.Context, name string) (model.MachineClusterInstanceType, error) {
+	var it model.MachineClusterInstanceType
+	err := c.request(ctx, http.MethodGet, "/apis/kairon.zyvor.dev/v1/machineclusterinstancetypes/"+url.PathEscape(name), nil, &it, "")
+	return it, err
+}
+
+func (c *Client) DeleteMachineClusterInstanceType(ctx context.Context, name string) error {
+	return c.request(ctx, http.MethodDelete, "/apis/kairon.zyvor.dev/v1/machineclusterinstancetypes/"+url.PathEscape(name), nil, nil, "")
+}
+
+func (c *Client) ListMachinePreferences(ctx context.Context) ([]model.MachinePreference, error) {
+	var list model.MachinePreferenceList
+	err := c.request(ctx, http.MethodGet, "/apis/kairon.zyvor.dev/v1/machinepreferences", nil, &list, "")
+	return list.Items, err
+}
+
+func (c *Client) ListMachinePreferencesNamespace(ctx context.Context, ns string) ([]model.MachinePreference, error) {
+	var list model.MachinePreferenceList
+	err := c.request(ctx, http.MethodGet, namespacePath(ns, "machinepreferences"), nil, &list, "")
+	return list.Items, err
+}
+
+func (c *Client) GetMachinePreference(ctx context.Context, ns, name string) (model.MachinePreference, error) {
+	var p model.MachinePreference
+	err := c.request(ctx, http.MethodGet, namespacedObjectPath(ns, "machinepreferences", name), nil, &p, "")
+	return p, err
+}
+
+func (c *Client) DeleteMachinePreference(ctx context.Context, ns, name string) error {
+	return c.request(ctx, http.MethodDelete, namespacedObjectPath(ns, "machinepreferences", name), nil, nil, "")
+}
+
+func (c *Client) ListMachineClusterPreferences(ctx context.Context) ([]model.MachineClusterPreference, error) {
+	var list model.MachineClusterPreferenceList
+	err := c.request(ctx, http.MethodGet, "/apis/kairon.zyvor.dev/v1/machineclusterpreferences", nil, &list, "")
+	return list.Items, err
+}
+
+func (c *Client) GetMachineClusterPreference(ctx context.Context, name string) (model.MachineClusterPreference, error) {
+	var p model.MachineClusterPreference
+	err := c.request(ctx, http.MethodGet, "/apis/kairon.zyvor.dev/v1/machineclusterpreferences/"+url.PathEscape(name), nil, &p, "")
+	return p, err
+}
+
+func (c *Client) DeleteMachineClusterPreference(ctx context.Context, name string) error {
+	return c.request(ctx, http.MethodDelete, "/apis/kairon.zyvor.dev/v1/machineclusterpreferences/"+url.PathEscape(name), nil, nil, "")
 }
 
 func (c *Client) ListMigrationPolicies(ctx context.Context) ([]model.MigrationPolicy, error) {

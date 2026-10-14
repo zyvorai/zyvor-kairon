@@ -14,8 +14,16 @@
 #   KAIRON_HW_EBPF_MACHINE     # optional; Machine with dataplaneMode=ebpf (live-ebpf)
 #   KAIRON_HW_IMAGE            # optional; image path for the create/stop/start/delete
 #                              # smoke (without it, smoke checks KAIRON_HW_MACHINE health)
+#   KAIRON_HW_SMOKE_FLAGS      # optional; extra `kaironctl create` flags for the smoke
+#                              # Machine, word-split; "--guest-agent --runcmd=true"
+#                              # gives it QGA plus a cloud-init seed, so a guest IP
 #   KAIRON_HW_SOURCE_SSH / KAIRON_HW_TARGET_SSH
 #                              # user@host for the drills that inject failures
+#   KAIRON_HW_SOURCE_NODE_UNIT / KAIRON_HW_TARGET_NODE_UNIT
+#                              # optional; kairon-node's systemd unit on each host
+#                              # for source-failure (default KAIRON_HW_NODE_UNIT,
+#                              # else kairon-node), for a host that runs a second
+#                              # instance under another unit name
 #   KAIRON_HW_CONTROLLER_SSH   # optional; restart a systemd controller instead of
 #                              # deleting controller Pods
 #   KAIRON_HW_REQUIRE_GUEST_IP # 1 (default): "healthy" also needs status.guestIP
@@ -104,7 +112,7 @@ migrate_and_verify() {
   local machine="$1" strategy="$2" dest mig
   shift 2
   dest="$(next_target "$machine")"
-  mig="$(start_migration "$NAMESPACE" "$machine" "$dest" "$strategy" "hw-${case:-$strategy}" "$@")"
+  mig="$(start_migration "$NAMESPACE" "$machine" "$dest" "$strategy" "hw-${case:-$strategy}" "$@")" || return 1
   wait_until "$TIMEOUT" "$mig terminal" migration_in "$NAMESPACE" "$mig" Succeeded Failed Blocked Cancelled NeedsRecovery || return 1
   local phase
   phase="$(migration_phase "$NAMESPACE" "$mig")"
@@ -202,16 +210,17 @@ smoke() {
     NOTE="${MACHINE} not healthy"
     return 1
   fi
-  local name path
+  local name path extra=()
   name="hwsmoke-$(date -u +%H%M%S)"
   path="$(machine_path "$NAMESPACE" "$name")"
-  "$KAIRONCTL" create "$name" --namespace "$NAMESPACE" --image="$KAIRON_HW_IMAGE" --cpu=1 --memory=1Gi >&2
+  read -r -a extra <<<"${KAIRON_HW_SMOKE_FLAGS:-}"
+  "$KAIRONCTL" create "$name" --namespace "$NAMESPACE" --image="$KAIRON_HW_IMAGE" --cpu=1 --memory=1Gi "${extra[@]}" >&2
   local ok=0
   {
     wait_until "$TIMEOUT" "$name healthy" machine_healthy "$NAMESPACE" "$name" &&
-      "$KAIRONCTL" stop "$name" --namespace "$NAMESPACE" >&2 &&
+      lab_retry 3 "$KAIRONCTL" stop "$name" --namespace "$NAMESPACE" >&2 &&
       wait_until "$TIMEOUT" "$name Stopped" machine_is "$NAMESPACE" "$name" '(o.get("status") or {}).get("phase") == "Stopped"' &&
-      "$KAIRONCTL" start "$name" --namespace "$NAMESPACE" >&2 &&
+      lab_retry 3 "$KAIRONCTL" start "$name" --namespace "$NAMESPACE" >&2 &&
       wait_until "$TIMEOUT" "$name healthy again" machine_healthy "$NAMESPACE" "$name"
   } || ok=1
   "$KAIRONCTL" delete machine "$name" --namespace "$NAMESPACE" >&2 || ok=1
@@ -314,8 +323,12 @@ for case in "${CASES[@]}"; do
     source-failure)
       if [[ -n "${KAIRON_HW_SOURCE_SSH:-}" && -n "${KAIRON_HW_TARGET_SSH:-}" ]]; then
         src_ssh="$KAIRON_HW_SOURCE_SSH"
-        [[ "$(machine_node "$NAMESPACE" "$MACHINE")" == "$TARGET" ]] && src_ssh="$KAIRON_HW_TARGET_SSH"
-        drill "$T_SRC" lab-inject-source-failure.sh --source-ssh="$src_ssh"
+        src_unit="${KAIRON_HW_SOURCE_NODE_UNIT:-${KAIRON_HW_NODE_UNIT:-kairon-node}}"
+        if [[ "$(machine_node "$NAMESPACE" "$MACHINE")" == "$TARGET" ]]; then
+          src_ssh="$KAIRON_HW_TARGET_SSH"
+          src_unit="${KAIRON_HW_TARGET_NODE_UNIT:-${KAIRON_HW_NODE_UNIT:-kairon-node}}"
+        fi
+        drill "$T_SRC" lab-inject-source-failure.sh --source-ssh="$src_ssh" --unit="$src_unit"
       else
         record "$T_SRC" "not run" "set KAIRON_HW_SOURCE_SSH and KAIRON_HW_TARGET_SSH"
       fi

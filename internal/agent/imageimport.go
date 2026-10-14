@@ -140,7 +140,7 @@ func writeSparseFile(path string, size int64) error {
 // sizeGiB. An existing non-empty disk is never touched, so this only ever
 // runs before a Machine's first boot. A Block-mode volume gets the image
 // written onto the device (see seedBlockDevice).
-func populateBootVolume(bootDisk, sourcePath string, sizeGiB uint64) error {
+func populateBootVolume(bootDisk, sourcePath string, sizeGiB uint64, raw bool) error {
 	fi, err := os.Stat(bootDisk)
 	switch {
 	case err == nil && fi.Mode()&os.ModeDevice != 0:
@@ -156,7 +156,42 @@ func populateBootVolume(bootDisk, sourcePath string, sizeGiB uint64) error {
 		}
 		return writeSparseFile(bootDisk, int64(sizeGiB)<<30)
 	}
+	if raw {
+		return convertRawAtomic(sourcePath, bootDisk)
+	}
 	return copyFileAtomic(sourcePath, bootDisk)
+}
+
+// convertRawAtomic is copyFileAtomic for a disk FluxVM opens as raw: a
+// qcow2 source is converted with qemu-img on the way.
+func convertRawAtomic(src, dst string) error {
+	magic := make([]byte, len(qcow2Magic))
+	f, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	_, err = io.ReadFull(f, magic)
+	_ = f.Close()
+	if err != nil && err != io.ErrUnexpectedEOF {
+		return fmt.Errorf("read image %s: %w", src, err)
+	}
+	if !bytes.Equal(magic, qcow2Magic) {
+		return copyFileAtomic(src, dst)
+	}
+	if _, err := exec.LookPath(qemuImg); err != nil {
+		return fmt.Errorf("a shared-storage boot disk is raw; converting qcow2 image %s needs qemu-img on kairon-node's PATH, or use a raw image", src)
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(dst), ".seed-*")
+	if err != nil {
+		return fmt.Errorf("seed boot volume: %w", err)
+	}
+	tmpPath := tmp.Name()
+	_ = tmp.Close()
+	defer func() { _ = os.Remove(tmpPath) }()
+	if out, err := exec.Command(qemuImg, "convert", "-O", "raw", src, tmpPath).CombinedOutput(); err != nil {
+		return fmt.Errorf("convert image %s to raw: %w: %s", src, err, strings.TrimSpace(string(out)))
+	}
+	return os.Rename(tmpPath, dst)
 }
 
 // qemuImg is the qemu-img binary seedBlockDevice runs for a qcow2 image; a

@@ -490,12 +490,32 @@ func (a *adapter) sourceStart(w http.ResponseWriter, r *http.Request) {
 	if c := req.Options.Compression; c != nil {
 		startReq.Compression = &compression{Algorithm: c.Algorithm, Level: c.Level}
 	}
+	transferID := req.Session.ID // FluxVM's migration state is keyed by the source VM id, not a separate transfer id -- reuse the session id as our own handle.
+	// kairon-node repeats a start whose status write it lost; a second QEMU
+	// migrate would fail (or, after completion, strand the paused source),
+	// so a known session reports the transfer it already has.
+	a.mu.Lock()
+	startedRT, started := a.sourceRTID[transferID]
+	a.mu.Unlock()
+	if started {
+		if startedRT != req.RuntimeID {
+			writeError(w, http.StatusConflict, fmt.Errorf("session %q already migrates runtime %q", transferID, startedRT))
+			return
+		}
+		var status migrationStatus
+		if _, err := a.flux.do(r.Context(), http.MethodGet, "/v1/vms/"+req.RuntimeID+"/migration/status", nil, &status); err != nil {
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
+		a.log.Info("fluxvm: source migration already started; reporting it", "session", transferID, "runtimeID", req.RuntimeID)
+		writeJSON(w, http.StatusOK, toTransferStatus(transferID, status))
+		return
+	}
 	var status migrationStatus
 	if _, err := a.flux.do(r.Context(), http.MethodPost, "/v1/vms/"+req.RuntimeID+"/migration/start", startReq, &status); err != nil {
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
-	transferID := req.Session.ID // FluxVM's migration state is keyed by the source VM id, not a separate transfer id -- reuse the session id as our own handle.
 	a.mu.Lock()
 	a.sourceRTID[transferID] = req.RuntimeID
 	a.mu.Unlock()

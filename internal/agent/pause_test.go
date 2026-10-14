@@ -36,10 +36,19 @@ func pausedMachine(powerState string) model.Machine {
 // capturing whatever status gets patched onto it.
 func fakeKubeForMachine(t *testing.T, m *model.Machine, gotStatus *model.MachineStatus) *httptest.Server {
 	t.Helper()
+	return fakeKubeForMachineWithMigrations(t, m, gotStatus, nil)
+}
+
+// fakeKubeForMachineWithMigrations also lists migrations in m's namespace
+// (a nil slice answers 404, as an apiserver without the CRD would).
+func fakeKubeForMachineWithMigrations(t *testing.T, m *model.Machine, gotStatus *model.MachineStatus, migrations []model.MachineMigration) *httptest.Server {
+	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/apis/kairon.zyvor.dev/v1/machines":
 			_ = json.NewEncoder(w).Encode(model.MachineList{Items: []model.Machine{*m}})
+		case migrations != nil && r.Method == http.MethodGet && r.URL.Path == "/apis/kairon.zyvor.dev/v1/namespaces/prod/machinemigrations":
+			_ = json.NewEncoder(w).Encode(model.MachineMigrationList{Items: migrations})
 		case r.Method == http.MethodPatch && r.URL.Path == "/apis/kairon.zyvor.dev/v1/namespaces/prod/machines/db/status":
 			var p struct {
 				Status model.MachineStatus `json:"status"`

@@ -5,6 +5,13 @@ import { useState } from 'react';
 import { api, apiErrorText, apiJSON, downloadFile, isAdmin } from '../api';
 import JsonTerminal, { Field } from './JsonTerminal';
 
+interface DiagBundle {
+  token: string;
+  state: string;
+  error?: string;
+  size_bytes?: number;
+}
+
 interface Capture {
   token: string;
   seconds?: number;
@@ -25,6 +32,8 @@ export default function MachineOps({ namespace, name }: { namespace: string; nam
   const [cmd, setCmd] = useState('');
   const [cap, setCap] = useState({ seconds: '30', filter: '' });
   const [captures, setCaptures] = useState<Capture[]>([]);
+  const [diag, setDiag] = useState({ pcapSeconds: '0', redact: true });
+  const [bundle, setBundle] = useState<DiagBundle>();
 
   async function run(title: string, fn: () => Promise<unknown>) {
     setBusy(title);
@@ -45,6 +54,22 @@ export default function MachineOps({ namespace, name }: { namespace: string; nam
       const items = Array.isArray(list) ? list : list.items ?? [];
       setCaptures(items);
       return list;
+    });
+  }
+
+  async function collectBundle() {
+    await run('incident bundle', async () => {
+      let job = await apiJSON<DiagBundle>(`${base}/diagnostics`, 'POST', {
+        redact: diag.redact,
+        pcap_seconds: Number(diag.pcapSeconds) || undefined,
+      });
+      setBundle(job);
+      for (let i = 0; job.state === 'running' && i < 300; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        job = await api<DiagBundle>(`${base}/diagnostics/${encodeURIComponent(job.token)}`);
+        setBundle(job);
+      }
+      return job;
     });
   }
 
@@ -87,6 +112,29 @@ export default function MachineOps({ namespace, name }: { namespace: string; nam
             <button disabled={!!busy || !cmd} onClick={() => post('agent-exec', 'agent-exec', { command: cmd, timeoutSeconds: 30 })}>
               Run
             </button>
+          </div>
+
+          <h4>Incident bundle</h4>
+          <div className="opform">
+            <Field label="Packet capture seconds (0 for none)">
+              <input type="number" value={diag.pcapSeconds} onChange={(e) => setDiag({ ...diag, pcapSeconds: e.target.value })} />
+            </Field>
+            <label>
+              <input type="checkbox" checked={diag.redact} onChange={(e) => setDiag({ ...diag, redact: e.target.checked })} /> Redact secrets
+            </label>
+            <button disabled={!!busy} onClick={collectBundle}>Collect</button>
+            {bundle?.state === 'done' && (
+              <button
+                className="sm"
+                onClick={() =>
+                  downloadFile(`${base}/diagnostics/${encodeURIComponent(bundle.token)}/bundle`, `${name}-incident.tar.gz`).catch((e) =>
+                    setOut({ title: 'download', error: apiErrorText(e) }),
+                  )
+                }
+              >
+                Download .tar.gz
+              </button>
+            )}
           </div>
 
           <h4>Guest firewall</h4>

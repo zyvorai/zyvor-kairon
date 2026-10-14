@@ -212,8 +212,10 @@ Flags:
   --migration-key=PATH    Local node private key PEM matching --migration-cert.
   --migration-server-name=NAME  Expected TLS ServerName from migration peers
                           (default kairon-node).
-  --migration-port=N      Migration mTLS peer port (default 9443), same
-                          auto-fallback-if-busy behavior as --node-port.
+  --migration-port=N      Migration mTLS peer port (default 9443). Every node
+                          must use the same port; the deploy fails if it is
+                          busy. A hostPort or NodePort rule can claim the
+                          port without a listener showing up here.
   --migration-adapter-socket=PATH  Unix socket path for the local migration
                           adapter (default /run/kairon/migration-adapter.sock).
                           Only meaningful once migration mTLS is configured.
@@ -1354,8 +1356,10 @@ fi
 RESOLVED_NODE_PORT="$(resolve_port "$NODE_PORT" "$NODE_PORT_EXPLICIT" "node" "$(unit_port /etc/systemd/system/kairon-node.service health-addr)")" || exit 1
 NODE_EXEC_ARGS="--interval=$INTERVAL --health-addr=:$RESOLVED_NODE_PORT --edge-baseline-file=/var/lib/kairon-node/edge-baseline.json"
 if [[ "$MIGRATION_CONFIGURED" == "1" ]]; then
-  RESOLVED_MIGRATION_PORT="$(resolve_port "$MIGRATION_PORT" "$MIGRATION_PORT_EXPLICIT" "migration")" || exit 1
-  NODE_EXEC_ARGS="$NODE_EXEC_ARGS --migration-addr=:$RESOLVED_MIGRATION_PORT"
+  # Every node dials peers on its own --migration-port, so a per-host
+  # random fallback can't work: a busy port is an error.
+  RESOLVED_MIGRATION_PORT="$(resolve_port "$MIGRATION_PORT" 1 "migration")" || exit 1
+  NODE_EXEC_ARGS="$NODE_EXEC_ARGS --migration-addr=:$RESOLVED_MIGRATION_PORT --migration-port=$RESOLVED_MIGRATION_PORT"
 fi
 if [[ "$WITH_CONSOLE" == "1" ]]; then
   NODE_EXEC_ARGS="$NODE_EXEC_ARGS --console-addr=:$RESOLVED_CONSOLE_PORT"

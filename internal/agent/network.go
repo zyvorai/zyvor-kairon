@@ -413,11 +413,15 @@ const guestAgentRecheckInterval = 5 * time.Minute
 func (a *Agent) projectNetworkStatus(ctx context.Context, m model.Machine, rec *fluxvm.Record, status *model.MachineStatus) error {
 	guestIP := rec.GuestIP
 	var guestIPs []string
-	if guestIP == "" {
+	runtimeChanged := m.Status.RuntimeID != "" && m.Status.RuntimeID != rec.ID()
+	if guestIP == "" && !(runtimeChanged && m.Spec.GuestAgent.Enabled) {
 		// Preserve whatever was already resolved on a prior tick -- m.Status
 		// is this reconcile's untouched snapshot of the last-persisted
 		// status, unlike *status, which the caller already overwrote with
 		// this tick's (possibly empty) rec.GuestIP before calling here.
+		// With a guest agent to ask, a new runtime (a migration or a
+		// recreate) starts blank: the old address was reported by a VM
+		// that is gone, and the new one may not have booted.
 		guestIP = m.Status.GuestIP
 		guestIPs = m.Status.GuestIPs
 	}

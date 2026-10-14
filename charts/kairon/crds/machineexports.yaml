@@ -1,0 +1,95 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: machineexports.kairon.zyvor.dev
+spec:
+  group: kairon.zyvor.dev
+  scope: Namespaced
+  names:
+    plural: machineexports
+    singular: machineexport
+    kind: MachineExport
+    shortNames:
+    - mexport
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    subresources: &subresources
+      status: {}
+    additionalPrinterColumns: &columns
+    - name: Machine
+      type: string
+      jsonPath: .spec.machineName
+    - name: Format
+      type: string
+      jsonPath: .status.format
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    - name: Expires
+      type: string
+      jsonPath: .status.expiresAt
+    schema: &schema
+      openAPIV3Schema:
+        type: object
+        required:
+        - spec
+        properties:
+          spec:
+            type: object
+            required:
+            - machineName
+            properties:
+              machineName:
+                type: string
+                minLength: 1
+                description: The Machine whose boot disk is served. It must be
+                  Stopped or Halted while the export is Ready.
+              format:
+                type: string
+                enum:
+                - qcow2
+                - raw
+                description: Empty serves the disk in its own format.
+              ttl:
+                type: string
+                description: Go duration from creation (default 2h, max 168h).
+          status:
+            type: object
+            properties:
+              phase:
+                type: string
+              nodeName:
+                type: string
+              format:
+                type: string
+              sizeBytes:
+                type: integer
+                format: int64
+              expiresAt:
+                type: string
+                format: date-time
+              downloadPath:
+                type: string
+              message:
+                type: string
+  - name: v1beta1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1beta1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema
+  - name: v1alpha1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1alpha1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema

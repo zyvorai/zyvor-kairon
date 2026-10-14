@@ -15,10 +15,12 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc"
 
+	"github.com/zyvorai/kairon/internal/diskexport"
 	"github.com/zyvorai/kairon/internal/fluxvm"
 	"github.com/zyvorai/kairon/internal/hotplugpersist"
 	"github.com/zyvorai/kairon/internal/kube"
@@ -106,6 +108,11 @@ type Agent struct {
 	// unaffected either way. Same fail-closed convention as
 	// CSISocketPath above.
 	ImageCacheDir string
+	// Exports is shared with the node relay, which serves only its entries.
+	Exports *diskexport.Registry
+	// ExportDir holds MachineExport copies converted to another format.
+	ExportDir  string
+	exportJobs sync.Map
 	// RegistryHTTP is the client spec.image.source.oci pulls use; nil
 	// means http.DefaultClient.
 	RegistryHTTP *http.Client
@@ -243,6 +250,9 @@ func (a *Agent) Reconcile(ctx context.Context) error {
 	if err := a.reconcileBackups(ctx, local); err != nil {
 		a.Log.Error("machine backup reconcile failed", "error", err)
 	}
+	if err := a.reconcileExports(ctx, local); err != nil {
+		a.Log.Error("machine export reconcile failed", "error", err)
+	}
 	migSelector := model.MigrationSourceNodeLabelSelector(a.NodeName)
 	migrations, err := a.Kube.ListMachineMigrationsWithSelector(ctx, migSelector)
 	if err != nil {
@@ -261,6 +271,14 @@ func (a *Agent) Reconcile(ctx context.Context) error {
 		})
 		err := a.reconcileMigration(ctx, migration)
 		span.End(err)
+		if err != nil && kube.IsTransient(err) {
+			// Failing here would orphan a transfer QEMU is still running.
+			a.Log.Warn("migration reconcile hit a transient error; retrying next tick", "namespace", migration.Namespace(), "migration", migration.Metadata.Name, "error", err)
+			if a.Metrics != nil {
+				a.Metrics.ObserveReconcileItemError("migration")
+			}
+			continue
+		}
 		if err != nil {
 			status := migration.Status
 			status.Phase = "Failed"
@@ -356,9 +374,10 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 		} else if bootDisk, vs, err = a.resolveBootDiskPath(ctx, m); err != nil {
 			return err
 		}
-		if vs.Block && vs.Driver == "" {
-			// A Block volume of Kairon's own driver is the disk itself;
-			// a local qcow2 overlay would keep the writes on this node.
+		if (vs.Block && vs.Driver == "") || vs.Shared {
+			// A Block volume of Kairon's own driver, or a disk on a shared
+			// hostPath, is the disk itself; a local qcow2 overlay would keep
+			// the writes on this node.
 			m.Spec.Image.Storage = fluxvm.StorageShared
 		}
 		if bootDisk == "" {
@@ -369,7 +388,7 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 			if m.Spec.Image.DiskSize != "" {
 				sizeGiB, _ = model.ParseDiskSizeGiB(m.Spec.Image.DiskSize)
 			}
-			if err := populateBootVolume(bootDisk, seedPath, sizeGiB); err != nil {
+			if err := populateBootVolume(bootDisk, seedPath, sizeGiB, vs.Shared); err != nil {
 				return err
 			}
 		}
@@ -422,6 +441,19 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 			Type: "Ready", Status: "False", Reason: "IncomingRuntimeMissing", Message: status.Message,
 		})
 		return a.patchMachineStatusIfChanged(ctx, m, status)
+	}
+	pendingRestart := restartRequest(m)
+	if pendingRestart != "" && rec != nil && normalizePhase(rec.Status) == "Running" {
+		inFlight, err := a.migrationInFlightFor(ctx, m)
+		if err != nil {
+			return fmt.Errorf("check in-flight migrations before restart: %w", err)
+		}
+		if !inFlight {
+			a.Log.Info("restart requested; stopping runtime", "namespace", m.Namespace(), "machine", m.Metadata.Name, "runtimeID", rec.ID(), "request", pendingRestart)
+			if rec, err = a.Flux.Stop(ctx, rec.ID()); err != nil {
+				return fmt.Errorf("restart: stop runtime: %w", err)
+			}
+		}
 	}
 	freshlyCreated := rec == nil
 	restarted := false
@@ -510,6 +542,33 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 			return err
 		}
 		restarted = true
+	case strings.EqualFold(rec.Status, "failed") && m.DesiredPowerState() != "Stopped":
+		// FluxVM keeps the record of a create or start that failed (a
+		// host-side error, or a VMM that died), so without this the
+		// Machine would sit in Unknown after the cause is fixed.
+		ok, err := a.mayRestartFailedRuntime(ctx, m)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			break
+		}
+		a.Log.Warn("restarting failed runtime", "machine", m.Metadata.Name, "runtimeID", rec.ID(), "error", rec.Error)
+		failedID := rec.ID()
+		rec, err = a.Flux.Start(ctx, failedID)
+		if fluxvm.IsDiskGone(err) {
+			// Nothing on the record to keep; FluxVM never deletes a
+			// shared or in-place disk. The next tick creates afresh.
+			if derr := a.Flux.Delete(ctx, failedID); derr != nil {
+				return derr
+			}
+			a.Log.Warn("deleted failed runtime with no disk; recreating", "machine", m.Metadata.Name, "runtimeID", failedID)
+			return err
+		}
+		if err != nil {
+			return err
+		}
+		restarted = true
 	}
 	if !freshlyCreated && !usingSandboxTemplate {
 		if rec, err = a.ejectRemovedCdroms(ctx, m, rec); err != nil {
@@ -533,6 +592,10 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 	status.RuntimeID = rec.ID()
 	status.GuestIP = rec.GuestIP
 	status.Message = ""
+	status.ShutdownDeadline = ""
+	if pendingRestart != "" && (freshlyCreated || restarted) {
+		status.LastRestartRequest = pendingRestart
+	}
 	if rec.Hibernation == nil && status.Hibernation != nil {
 		status.Hibernation = nil
 		status.Conditions = model.SetCondition(status.Conditions, model.Condition{
@@ -649,6 +712,9 @@ func (a *Agent) ensureStopped(ctx context.Context, m model.Machine) error {
 	if err != nil {
 		return err
 	}
+	if wait, err := a.awaitGuestShutdown(ctx, m, rec, time.Now()); wait || err != nil {
+		return err
+	}
 	if rec != nil && rec.ID() != "" {
 		if err := a.Flux.Delete(ctx, rec.ID()); err != nil {
 			return err
@@ -673,6 +739,7 @@ func (a *Agent) ensureStopped(ctx context.Context, m model.Machine) error {
 	status.Phase = "Stopped"
 	status.NodeName = a.NodeName
 	status.RuntimeID = ""
+	status.ShutdownDeadline = ""
 	status.Hibernation = nil
 	status.GuestIP = ""
 	status.Network = nil
@@ -754,6 +821,9 @@ func (a *Agent) ensureHalted(ctx context.Context, m model.Machine) error {
 		})
 		return a.patchMachineStatusIfChanged(ctx, m, status)
 	}
+	if wait, err := a.awaitGuestShutdown(ctx, m, rec, time.Now()); wait || err != nil {
+		return err
+	}
 	if normalizePhase(rec.Status) != "Stopped" {
 		rec, err = a.Flux.Stop(ctx, rec.ID())
 		if err != nil {
@@ -784,6 +854,7 @@ func (a *Agent) ensureHalted(ctx context.Context, m model.Machine) error {
 	status.Phase = "Halted"
 	status.NodeName = a.NodeName
 	status.RuntimeID = rec.ID()
+	status.ShutdownDeadline = ""
 	status.Hibernation = nil
 	status.GuestIP = ""
 	status.Network = nil
@@ -803,7 +874,7 @@ func (a *Agent) ensureHalted(ctx context.Context, m model.Machine) error {
 // than share one across packages for a single boolean.
 func isNonTerminalMigrationPhase(phase string) bool {
 	switch phase {
-	case "Succeeded", "Failed", "Blocked", "":
+	case "Succeeded", "Failed", "Blocked", "Cancelled", "":
 		return false
 	}
 	return true
@@ -830,6 +901,31 @@ func (a *Agent) migrationInFlightFor(ctx context.Context, m model.Machine) (bool
 		}
 	}
 	return false, nil
+}
+
+// mayRestartFailedRuntime reports whether a failed FluxVM runtime for m may
+// be started again from its kept config. Not while a migration is moving m:
+// after a live or post-copy transfer the newest guest state can be on the
+// other host. The exception is a cold migration restarting m on this node,
+// which boots from the disk exactly as a fresh create would.
+func (a *Agent) mayRestartFailedRuntime(ctx context.Context, m model.Machine) (bool, error) {
+	migrations, err := a.Kube.ListMachineMigrationsNamespace(ctx, m.Namespace())
+	if err != nil {
+		if kube.IsNotFound(err) {
+			return true, nil
+		}
+		return false, err
+	}
+	for _, mig := range migrations {
+		if mig.Spec.MachineName != m.Metadata.Name || !isNonTerminalMigrationPhase(mig.Status.Phase) {
+			continue
+		}
+		if mig.Status.EffectiveStrategy == "cold" && mig.Status.Phase == "Restarting" && mig.Status.TargetNode == a.NodeName {
+			continue
+		}
+		return false, nil
+	}
+	return true, nil
 }
 
 func (a *Agent) cleanup(ctx context.Context, m model.Machine) error {
@@ -1522,6 +1618,11 @@ func (a *Agent) patchMachineStatusIfChanged(ctx context.Context, m model.Machine
 	// A merge patch leaves omitted fields alone; removing one takes null.
 	if m.Status.Hibernation != nil && status.Hibernation == nil {
 		if err := a.Kube.PatchMachineStatusFields(ctx, m.Namespace(), m.Metadata.Name, map[string]any{"hibernation": nil}); err != nil {
+			return err
+		}
+	}
+	if m.Status.ShutdownDeadline != "" && status.ShutdownDeadline == "" {
+		if err := a.Kube.PatchMachineStatusFields(ctx, m.Namespace(), m.Metadata.Name, map[string]any{"shutdownDeadline": nil}); err != nil {
 			return err
 		}
 	}

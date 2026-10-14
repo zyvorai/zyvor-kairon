@@ -31,6 +31,15 @@ func (s *Server) handleGetDiagnostics(w http.ResponseWriter, r *http.Request) {
 	s.relayDiagnostics(w, r, http.MethodGet, "/"+url.PathEscape(r.PathValue("token")), nil)
 }
 
+// handleDeleteDiagnostics removes a bundle and its memory dump from the
+// node. DELETE /v1/vms/{id}/diagnostics/{token}.
+func (s *Server) handleDeleteDiagnostics(w http.ResponseWriter, r *http.Request) {
+	if !s.checkToken(w, r) {
+		return
+	}
+	s.relayDiagnostics(w, r, http.MethodDelete, "/"+url.PathEscape(r.PathValue("token")), nil)
+}
+
 // handleDiagnosticsFile streams a finished bundle or its memory dump.
 // GET /v1/vms/{id}/diagnostics/{token}/{bundle|memory-dump}.
 func (s *Server) handleDiagnosticsFile(w http.ResponseWriter, r *http.Request) {

@@ -107,9 +107,23 @@ migrations, snapshots, and more. Same command tree as kubectl-kairon.`,
 		newDRSCmd(),
 		newAgentCmd(),
 		newDiagnoseCmd(opts),
+		newPortForwardCmd(opts),
+		newSSHCmd(opts),
+		newSCPCmd(opts),
+		newConsoleCmd(opts),
+		newVNCCmd(opts),
+		newExportCmd(opts),
+		newMemoryDumpCmd(opts),
+		newGuestCmd(opts),
+		newCredentialsCmd(opts),
+		newExposeCmd(opts),
+		newWaitCmd(opts),
+		newOpenCmd(opts),
+		newRuntimeCmd(),
 		legacyCmd(opts, "get", "List Kairon resources", getExamples, cmdGet),
 		legacyCmd(opts, "describe", "Show details of a Kairon resource", describeExamples, cmdDescribe),
-		legacyCmd(opts, "create", "Create a Machine or other Kairon resource", createExamples, cmdCreate),
+		newCreateCmd(opts),
+		newExpandCmd(opts),
 		legacyCmd(opts, "delete", "Delete a Kairon resource", deleteExamples, cmdDelete),
 		legacyCmd(opts, "edit", "Edit a Kairon resource (only flags you pass are patched)", editExamples, cmdEdit),
 		legacyCmd(opts, "scale", "Scale a MachineSet or MachinePool", scaleExamples, cmdScale),
@@ -119,10 +133,12 @@ migrations, snapshots, and more. Same command tree as kubectl-kairon.`,
 		legacyCmd(opts, "top", "Show live Machine or node resource usage", topExamples, cmdTop),
 		legacyCmd(opts, "trigger", "Trigger a SnapshotSchedule run now", triggerExamples, cmdTrigger),
 		powerCmd(opts, "start", "Running"),
-		powerCmd(opts, "stop", "Stopped"),
+		newStopCmd(opts, "stop", "Stopped"),
 		powerCmd(opts, "pause", "Paused"),
 		powerCmd(opts, "resume", "Running"),
-		powerCmd(opts, "halt", "Halted"),
+		newStopCmd(opts, "halt", "Halted"),
+		newRestartCmd(opts),
+		newSoftRebootCmd(opts),
 		powerCmd(opts, "hibernate", "Hibernated"),
 		legacyCmd(opts, "migrate", "Create a MachineMigration", migrateExamples, cmdMigrate),
 		legacyCmd(opts, "evacuate", "Migrate all Machines off a node", evacuateExamples, cmdEvacuate),
@@ -251,7 +267,8 @@ const describeExamples = `  $ kaironctl describe machine demo
   $ kaironctl describe quota team-payments`
 
 const createExamples = `  $ kaironctl create demo --image /var/lib/fluxvm/images/ubuntu.qcow2 --cpu 2 --memory 2Gi
-  $ kaironctl create machineset web --image /img.qcow2 --replicas 3 --label tier=web`
+  $ kaironctl create machineset web --image /img.qcow2 --replicas 3 --label tier=web
+  $ kaironctl create web-2 --image /img.qcow2 --instance-type m.large --dry-run -o yaml > web-2.yaml`
 
 const deleteExamples = `  $ kaironctl delete machine demo
   $ kaironctl delete machines --selector tier=web --dry-run`

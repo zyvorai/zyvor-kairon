@@ -967,6 +967,24 @@ func TestCmdCreatePriorityFlag(t *testing.T) {
 	}
 }
 
+func TestCmdCreateGuestAgentFlag(t *testing.T) {
+	s := &recordingServer{}
+	kc := testClient(t, s)
+	cmdCreate(context.Background(), kc, []string{"qga-vm", "--image", "/img.qcow2", "--guest-agent"})
+	spec, _ := s.body["spec"].(map[string]any)
+	if ga, _ := spec["guestAgent"].(map[string]any); ga["enabled"] != true {
+		t.Errorf("guestAgent = %v, want enabled", spec["guestAgent"])
+	}
+
+	s = &recordingServer{}
+	kc = testClient(t, s)
+	cmdCreate(context.Background(), kc, []string{"plain-vm", "--image", "/img.qcow2"})
+	spec, _ = s.body["spec"].(map[string]any)
+	if ga, _ := spec["guestAgent"].(map[string]any); ga["enabled"] != nil {
+		t.Errorf("guestAgent = %v, want disabled by default", spec["guestAgent"])
+	}
+}
+
 // TestCmdCreateOmitsPriorityByDefault confirms an unset --priority produces
 // no "priority" key at all (MachineSpec.Priority's own omitempty), not an
 // explicit 0 -- matching every other create verb's "unset means the API's

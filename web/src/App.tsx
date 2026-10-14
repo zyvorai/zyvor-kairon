@@ -15,6 +15,7 @@ import Machines from './pages/Machines';
 import Migrations from './pages/Migrations';
 import Snapshots from './pages/Snapshots';
 import Restores from './pages/Restores';
+import Exports from './pages/Exports';
 import Quotas from './pages/Quotas';
 import DisruptionBudgets from './pages/DisruptionBudgets';
 import MachineSets from './pages/MachineSets';
@@ -213,6 +214,7 @@ export default function App() {
     migrations: <Migrations prefillMachine={prefillMachine} />,
     snapshots: <Snapshots prefillMachine={prefillMachine} onRestore={goRestore} />,
     restores: <Restores prefillSnapshot={prefillSnapshot} />,
+    exports: <Exports />,
     quotas: <Quotas />,
     'disruption-budgets': <DisruptionBudgets />,
     machinesets: <MachineSets />,

@@ -265,6 +265,12 @@ func (c *Controller) validateMachineCreate(r *http.Request, req *admission.Reque
 	if err := validateResourceQuantities(m.Spec.Resources); err != nil {
 		return admission.Deny(err.Error())
 	}
+	if m.Metadata.Namespace == "" {
+		m.Metadata.Namespace = req.Namespace
+	}
+	if msg := c.checkInstanceTypeRefs(r.Context(), m); msg != "" {
+		return admission.Deny(msg)
+	}
 	if err := validateNetworkMAC(m.Spec.Network); err != nil {
 		return admission.Deny(err.Error())
 	}

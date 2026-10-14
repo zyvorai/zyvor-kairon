@@ -312,6 +312,35 @@ func TestSourceStartMapsAdaptiveOptions(t *testing.T) {
 	}
 }
 
+func TestSourceStartRepeatedReportsTheExistingTransfer(t *testing.T) {
+	starts := 0
+	a, _ := testAdapter(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/vms/vm-1/migration/start":
+			starts++
+			writeJSON(w, http.StatusOK, migrationStatus{Phase: "active", Status: "active"})
+		case "/v1/vms/vm-1/migration/status":
+			writeJSON(w, http.StatusOK, migrationStatus{Phase: "completed", Status: "completed"})
+		default:
+			http.Error(w, r.URL.Path, http.StatusNotFound)
+		}
+	}, nil)
+	req := migration.SourceRequest{Session: prepareSession(), RuntimeID: "vm-1", Endpoint: "tcp:10.0.0.5:1"}
+	if rec := sourceCall(t, a, a.sourceStart, "/v1/source/start", req); rec.Code != http.StatusOK {
+		t.Fatalf("first start = %d %s", rec.Code, rec.Body.String())
+	}
+	rec := sourceCall(t, a, a.sourceStart, "/v1/source/start", req)
+	var ts migration.TransferStatus
+	_ = json.NewDecoder(rec.Body).Decode(&ts)
+	if rec.Code != http.StatusOK || ts.Phase != "completed" || starts != 1 {
+		t.Fatalf("repeat start = %d %+v, starts = %d", rec.Code, ts, starts)
+	}
+	req.RuntimeID = "vm-2"
+	if rec := sourceCall(t, a, a.sourceStart, "/v1/source/start", req); rec.Code != http.StatusConflict {
+		t.Errorf("start for another runtime = %d, want 409", rec.Code)
+	}
+}
+
 func TestSourceTunePostCopyAndFinishUseTheSourceRuntime(t *testing.T) {
 	var paths []string
 	var tune tuneRequest

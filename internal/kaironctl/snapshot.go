@@ -60,6 +60,8 @@ func cmdRestore(ctx context.Context, kc *kube.Client, args []string) {
 	targetClaim := fs.String("target-claim", "", "name for the new PersistentVolumeClaim (required)")
 	storageClass := fs.String("storage-class", "", "StorageClass for the new PVC; empty uses the cluster default")
 	storageSize := fs.String("storage-size", "", "size for the new PVC; empty defaults to the VolumeSnapshot's own reported restoreSize")
+	machine := fs.String("machine", "", "also create a Machine with this name that boots from the restored claim (the boot volume must be the one restored)")
+	start := fs.Bool("start", false, "with --machine, create it Running instead of Stopped")
 	_ = fs.Parse(args[1:])
 	if *targetClaim == "" {
 		fatal(fmt.Errorf("--target-claim is required"))
@@ -78,11 +80,22 @@ func cmdRestore(ctx context.Context, kc *kube.Client, args []string) {
 			StorageSize:      *storageSize,
 		},
 	}
+	if *machine != "" {
+		power := "Stopped"
+		if *start {
+			power = "Running"
+		}
+		restore.Spec.Machine = &model.RestoreMachineSpec{Name: *machine, PowerState: power}
+	}
 	out, err := kc.CreateMachineSnapshotRestore(ctx, *ns, restore)
 	if err != nil {
 		fatal(err)
 	}
 	okf("machinesnapshotrestore/%s created", out.Metadata.Name)
+	if *machine != "" {
+		fmt.Printf("machine %q will be created from the snapshot, booting from %q\n", *machine, *targetClaim)
+		return
+	}
 	fmt.Printf("once Succeeded, point a new Machine's spec.volumes[0].claimName at %q\n", *targetClaim)
 }
 

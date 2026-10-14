@@ -81,15 +81,50 @@ spec:
   powerState: Running
 ```
 
-## Why this doesn't also create the Machine for you
+## Letting the restore create the Machine (`spec.machine`)
 
-The alternative -- `MachineSnapshotRestore` also constructing and creating a
-full `Machine` object -- would mean either requiring the original Machine to
-still exist (so its spec can be copied), which defeats the main real-world
-use case (the original Machine is gone, that's *why* you're restoring), or
-duplicating a whole Machine-spec templating scheme inside this CRD. Keeping
-storage restoration and VM creation as two separate, already-solved steps
-is simpler and works in the disaster-recovery case that actually matters.
+Step 2 is optional. Set `spec.machine` and the controller creates the
+Machine too, built from the spec the source Machine had when it was
+snapshotted:
+
+```yaml
+apiVersion: kairon.zyvor.dev/v1
+kind: MachineSnapshotRestore
+metadata: {name: web-restore, namespace: default}
+spec:
+  snapshotName: web-snap
+  targetClaimName: web-root-restored
+  machine:
+    name: web-restored
+    powerState: Stopped   # default; Running boots it as soon as the claim binds
+```
+
+Or from the CLI: `kaironctl restore web-snap --target-claim web-root-restored
+--machine web-restored [--start]`. The dashboard's Restores form has the
+same fields.
+
+How it works:
+
+- Each `MachineSnapshot` now records `status.sourceSpec` (a copy of
+  `Machine.spec` at snapshot time), so this works after the original
+  Machine is deleted. For snapshots taken before this field existed, the
+  controller falls back to the live source Machine, and fails the restore
+  if that Machine is gone.
+- The new Machine boots only from the restored claim: `spec.volumes` is
+  replaced with that claim, and `spec.disks` is cleared.
+  `nodeName`, the topology allocation, MAC addresses, the tap name, and
+  fixed VirtualNetwork IPs are cleared too, so the copy can run next to
+  the original without clashing.
+- The Machine is created right away, before the PVC binds, because
+  `WaitForFirstConsumer` storage classes only bind once a consumer is
+  scheduled. It gets the labels `kairon.zyvor.dev/restored-by=<restore>`
+  and `kairon.zyvor.dev/restored-from-snapshot=<snapshot>`. If a Machine
+  with that name already exists without the matching label, the restore
+  fails rather than taking it over.
+- Only the boot volume (`volumes[0]`) can be restored as a Machine. Any
+  other volume is refused; restore those without `spec.machine` and attach
+  them yourself.
+- Atlas snapshots are not supported with `spec.machine`.
 
 ## Real limits today (v1 of this feature)
 

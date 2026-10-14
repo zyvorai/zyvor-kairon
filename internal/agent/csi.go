@@ -31,6 +31,9 @@ type csiVolumeStatus struct {
 	// Block is a Block-mode volume of Kairon's own driver: the boot path is
 	// its /dev node, which FluxVM boots in place (storage shared).
 	Block bool
+	// Shared is a hostPath volume marked model.AnnotationSharedStorage:
+	// its disk.img is raw and FluxVM boots it in place too.
+	Shared bool
 }
 
 // csiNodeClient lazily dials CSISocketPath and caches the connection on

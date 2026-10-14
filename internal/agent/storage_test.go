@@ -78,6 +78,59 @@ func TestResolveBootDiskPathResolvesBoundHostPathPV(t *testing.T) {
 	}
 }
 
+func TestResolveBootDiskPathSharedHostPathBootsInPlace(t *testing.T) {
+	for _, c := range []struct {
+		name        string
+		annotations map[string]string
+		local       bool
+		want        bool
+	}{
+		{"annotated hostPath", map[string]string{model.AnnotationSharedStorage: "true"}, false, true},
+		{"plain hostPath", nil, false, false},
+		{"annotation not true", map[string]string{model.AnnotationSharedStorage: "yes"}, false, false},
+		{"annotated local PV", map[string]string{model.AnnotationSharedStorage: "true"}, true, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			pvc := model.PersistentVolumeClaim{
+				Metadata: model.ObjectMeta{Name: "root-pvc", Namespace: "prod"},
+				Spec:     model.PersistentVolumeClaimSpec{VolumeName: "pv-root"},
+				Status:   model.PersistentVolumeClaimStatus{Phase: "Bound"},
+			}
+			pv := model.PersistentVolume{Metadata: model.ObjectMeta{Name: "pv-root", Annotations: c.annotations}}
+			if c.local {
+				pv.Spec.Local = &model.LocalVolumeSource{Path: "/srv/shared/root"}
+			} else {
+				pv.Spec.HostPath = &model.HostPathVolumeSource{Path: "/srv/shared/root"}
+			}
+			ks := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/api/v1/namespaces/prod/persistentvolumeclaims/root-pvc":
+					_ = json.NewEncoder(w).Encode(pvc)
+				case "/api/v1/persistentvolumes/pv-root":
+					_ = json.NewEncoder(w).Encode(pv)
+				default:
+					http.Error(w, "unexpected", http.StatusNotFound)
+				}
+			}))
+			defer ks.Close()
+			kc, _ := kube.New(ks.URL, "", "", false)
+			kc.HTTP = ks.Client()
+			a := &Agent{Kube: kc, Log: slog.Default()}
+			m := model.Machine{
+				Metadata: model.ObjectMeta{Namespace: "prod"},
+				Spec:     model.MachineSpec{Volumes: []model.MachineVolume{{Name: "root", ClaimName: "root-pvc"}}},
+			}
+			got, vs, err := a.resolveBootDiskPath(context.Background(), m)
+			if err != nil {
+				t.Fatalf("resolveBootDiskPath: %v", err)
+			}
+			if got != filepath.Join("/srv/shared/root", bootDiskFileName) || vs.Shared != c.want {
+				t.Fatalf("got %q shared=%v, want shared=%v", got, vs.Shared, c.want)
+			}
+		})
+	}
+}
+
 func TestResolveBootDiskPathRejectsUnboundPVC(t *testing.T) {
 	pvc := model.PersistentVolumeClaim{
 		Metadata: model.ObjectMeta{Name: "root-pvc", Namespace: "prod"},

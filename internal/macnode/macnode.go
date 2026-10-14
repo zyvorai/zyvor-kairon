@@ -98,7 +98,9 @@ func Labels(name string, i Info) map[string]string {
 		"kubernetes.io/arch":     i.Arch,
 		"kubernetes.io/os":       i.OS,
 		model.CapableLabel:       "true",
-		LabelBackendVZ:           "true",
+	}
+	if i.OS == "darwin" {
+		l[LabelBackendVZ] = "true"
 	}
 	if i.MLXURL != "" {
 		l[LabelMLX] = "true"
@@ -248,7 +250,7 @@ func BuildStatus(i Info, now time.Time) map[string]any {
 	return map[string]any{"status": map[string]any{
 		"conditions": []map[string]string{{
 			"type": "Ready", "status": "True", "reason": "KaironNodeReady",
-			"message":           "kairon-node is running on this Mac and can start Machines through FluxVM",
+			"message":           "kairon-node is running on this host and can start Machines through FluxVM",
 			"lastHeartbeatTime": t, "lastTransitionTime": t,
 		}},
 		"addresses":   addr,

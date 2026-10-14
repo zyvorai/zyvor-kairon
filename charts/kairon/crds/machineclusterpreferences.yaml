@@ -1,0 +1,72 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: machineclusterpreferences.kairon.zyvor.dev
+spec:
+  group: kairon.zyvor.dev
+  scope: Cluster
+  names:
+    plural: machineclusterpreferences
+    singular: machineclusterpreference
+    kind: MachineClusterPreference
+    shortNames:
+    - mcpref
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    additionalPrinterColumns: &columns
+    - name: Guest OS
+      type: string
+      jsonPath: .spec.guestOS
+    - name: Backend
+      type: string
+      jsonPath: .spec.backend
+    schema: &schema
+      openAPIV3Schema:
+        type: object
+        required:
+        - spec
+        properties:
+          spec:
+            type: object
+            description: Guest-OS defaults a Machine picks up through
+              spec.preferenceName. Each field fills a Machine field only
+              while it is unset -- see docs/guides/machine-instance-types.md.
+            properties:
+              backend:
+                type: string
+                description: Fills spec.runtime.backend.
+              architecture:
+                type: string
+                description: Fills spec.placement.architecture.
+              secureBoot:
+                type: boolean
+                description: Turns on spec.security.secureBoot.
+              tpm:
+                type: boolean
+                description: Turns on spec.security.tpm.
+              guestAgent:
+                type: boolean
+                description: Turns on spec.guestAgent.enabled.
+              guestOS:
+                type: string
+                description: Free-form hint shown by kaironctl and the
+                  dashboard; changes nothing on the Machine.
+  - name: v1beta1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1beta1 is deprecated; use kairon.zyvor.dev/v1
+    additionalPrinterColumns: *columns
+    schema: *schema
+  - name: v1alpha1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1alpha1 is deprecated; use kairon.zyvor.dev/v1
+    additionalPrinterColumns: *columns
+    schema: *schema

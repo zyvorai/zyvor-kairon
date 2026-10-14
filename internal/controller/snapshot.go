@@ -48,6 +48,11 @@ func (c *Controller) reconcileSnapshot(ctx context.Context, snapshot model.Machi
 	if len(machine.Spec.Volumes) == 0 {
 		return fmt.Errorf("machine has no PVC-backed spec.volumes to snapshot")
 	}
+	if snapshot.Status.SourceSpec == nil {
+		// Carried by every status write below, which copy snapshot.Status.
+		source := machine.Spec
+		snapshot.Status.SourceSpec = &source
+	}
 	volumes, err := snapshotVolumes(snapshot, machine)
 	if err != nil {
 		return err

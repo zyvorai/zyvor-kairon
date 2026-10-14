@@ -123,15 +123,7 @@ func (s *Server) relayToNode(ctx context.Context, nodeAddr, nodePath string, bod
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		var upstreamErr struct {
-			Error string `json:"error"`
-		}
-		_ = json.NewDecoder(resp.Body).Decode(&upstreamErr)
-		msg := upstreamErr.Error
-		if msg == "" {
-			msg = fmt.Sprintf("node relay returned HTTP %d", resp.StatusCode)
-		}
-		return fmt.Errorf("%s", msg)
+		return fmt.Errorf("%s", relayErrorMessage(resp, "node relay"))
 	}
 	if out == nil {
 		return nil
@@ -163,15 +155,7 @@ func (s *Server) relayToNodeGet(ctx context.Context, nodeAddr, nodePath string, 
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		var upstreamErr struct {
-			Error string `json:"error"`
-		}
-		_ = json.NewDecoder(resp.Body).Decode(&upstreamErr)
-		msg := upstreamErr.Error
-		if msg == "" {
-			msg = fmt.Sprintf("node relay returned HTTP %d", resp.StatusCode)
-		}
-		return fmt.Errorf("%s", msg)
+		return fmt.Errorf("%s", relayErrorMessage(resp, "node relay"))
 	}
 	if out == nil {
 		return nil

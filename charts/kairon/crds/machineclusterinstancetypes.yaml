@@ -1,0 +1,105 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: machineclusterinstancetypes.kairon.zyvor.dev
+spec:
+  group: kairon.zyvor.dev
+  scope: Cluster
+  names:
+    plural: machineclusterinstancetypes
+    singular: machineclusterinstancetype
+    kind: MachineClusterInstanceType
+    shortNames:
+    - mcit
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    additionalPrinterColumns: &columns
+    - name: CPU
+      type: string
+      jsonPath: .spec.resources.cpu
+    - name: Memory
+      type: string
+      jsonPath: .spec.resources.memory
+    schema: &schema
+      openAPIV3Schema:
+        type: object
+        required:
+        - spec
+        properties:
+          spec:
+            type: object
+            required:
+            - resources
+            properties:
+              resources:
+                type: object
+                required:
+                - cpu
+                - memory
+                properties:
+                  cpu:
+                    type: string
+                    minLength: 1
+                  memory:
+                    type: string
+                    minLength: 1
+                  maxCpu:
+                    type: string
+                  maxMemory:
+                    type: string
+                  hugepages:
+                    type: boolean
+                  numaNode:
+                    type: integer
+                    minimum: 0
+                  cpuSet:
+                    type: string
+                  cpuPinning:
+                    type: boolean
+                  allocatedCpuSet:
+                    type: array
+                    items:
+                      type: integer
+                      minimum: 0
+                  limits:
+                    type: object
+                    properties:
+                      cpuQuotaPercent:
+                        type: integer
+                        minimum: 1
+                      memoryMaxBytes:
+                        type: integer
+                        format: int64
+                        minimum: 1
+                      ioWeight:
+                        type: integer
+                        minimum: 1
+                        maximum: 10000
+                      pidsMax:
+                        type: integer
+                        format: int64
+                        minimum: 1
+                      cpuSetCpus:
+                        type: array
+                        items:
+                          type: integer
+                          minimum: 0
+  - name: v1beta1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1beta1 is deprecated; use kairon.zyvor.dev/v1
+    additionalPrinterColumns: *columns
+    schema: *schema
+  - name: v1alpha1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1alpha1 is deprecated; use kairon.zyvor.dev/v1
+    additionalPrinterColumns: *columns
+    schema: *schema

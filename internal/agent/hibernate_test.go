@@ -67,6 +67,111 @@ func TestReconcileSelfHealsAFluxVMStoppedRuntime(t *testing.T) {
 	}
 }
 
+func TestReconcileRestartsAFailedRuntimeUnlessAMigrationIsMovingIt(t *testing.T) {
+	migration := func(strategy, phase, target string) model.MachineMigration {
+		return model.MachineMigration{
+			Metadata: model.ObjectMeta{Name: "mig", Namespace: "prod"},
+			Spec:     model.MachineMigrationSpec{MachineName: "db", Strategy: strategy, TargetNode: target},
+			Status:   model.MachineMigrationStatus{Phase: phase, EffectiveStrategy: strategy, TargetNode: target},
+		}
+	}
+	for _, tc := range []struct {
+		name       string
+		migrations []model.MachineMigration
+		wantStart  bool
+	}{
+		{"no migration CRD", nil, true},
+		{"no migration", []model.MachineMigration{}, true},
+		{"finished migration", []model.MachineMigration{migration("live", "Succeeded", "worker-2")}, true},
+		{"cancelled migration", []model.MachineMigration{migration("live", "Cancelled", "worker-2")}, true},
+		{"cold restart onto this node", []model.MachineMigration{migration("cold", "Restarting", "worker-1")}, true},
+		{"live migration in flight", []model.MachineMigration{migration("live", "Running", "worker-2")}, false},
+		{"post-copy needs recovery", []model.MachineMigration{migration("live", "NeedsRecovery", "worker-1")}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := pausedMachine("Running")
+			var gotStatus model.MachineStatus
+			ks := fakeKubeForMachineWithMigrations(t, &m, &gotStatus, tc.migrations)
+			defer ks.Close()
+
+			var startCalled bool
+			fs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.Method == http.MethodGet && r.URL.Path == "/v1/vms/vm-1":
+					status := "failed"
+					if startCalled {
+						status = "running"
+					}
+					_ = json.NewEncoder(w).Encode(fluxvm.Record{UUID: "vm-1", Status: status, Error: "writing shared disk lock: Read-only file system"})
+				case r.Method == http.MethodPost && r.URL.Path == "/v1/vms/vm-1/start":
+					startCalled = true
+					_ = json.NewEncoder(w).Encode(fluxvm.Record{UUID: "vm-1", Status: "running"})
+				default:
+					http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusNotFound)
+				}
+			}))
+			defer fs.Close()
+
+			kc, _ := kube.New(ks.URL, "", "", false)
+			kc.HTTP = ks.Client()
+			fc := fluxvm.New(fs.URL, "")
+			fc.HTTP = fs.Client()
+			a := &Agent{NodeName: "worker-1", Kube: kc, Flux: fc, DefaultBackend: "qemu", Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+			if err := a.Reconcile(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if startCalled != tc.wantStart {
+				t.Fatalf("Start called = %v, want %v", startCalled, tc.wantStart)
+			}
+			wantPhase := "Unknown"
+			if tc.wantStart {
+				wantPhase = "Running"
+			}
+			if gotStatus.Phase != wantPhase {
+				t.Fatalf("phase = %q, want %q", gotStatus.Phase, wantPhase)
+			}
+		})
+	}
+}
+
+func TestReconcileDeletesAFailedRuntimeWhoseDiskIsGone(t *testing.T) {
+	m := pausedMachine("Running")
+	var gotStatus model.MachineStatus
+	ks := fakeKubeForMachine(t, &m, &gotStatus)
+	defer ks.Close()
+
+	var deleted bool
+	fs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/vms/vm-1":
+			_ = json.NewEncoder(w).Encode(fluxvm.Record{UUID: "vm-1", Status: "failed"})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/vms/vm-1/start":
+			http.Error(w, `{"error":"cannot start vm-1: disk no longer exists at /var/lib/fluxvm/instances/vm-1/root.qcow2"}`, http.StatusBadRequest)
+		case r.Method == http.MethodDelete && r.URL.Path == "/v1/vms/vm-1":
+			deleted = true
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusNotFound)
+		}
+	}))
+	defer fs.Close()
+
+	kc, _ := kube.New(ks.URL, "", "", false)
+	kc.HTTP = ks.Client()
+	fc := fluxvm.New(fs.URL, "")
+	fc.HTTP = fs.Client()
+	a := &Agent{NodeName: "worker-1", Kube: kc, Flux: fc, DefaultBackend: "qemu", Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	if err := a.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !deleted {
+		t.Fatal("expected the failed runtime with no disk to be deleted so the next tick recreates it")
+	}
+	if gotStatus.Phase != "Error" {
+		t.Fatalf("phase = %q, want Error until the runtime is recreated", gotStatus.Phase)
+	}
+}
+
 // TestReconcileNeverStartsAnIntentionallyStoppedMachine is the regression
 // guard on the branch's own DesiredPowerState() != "Stopped" condition:
 // spec.powerState: Stopped goes through ensureStopped's own Delete path
