@@ -36,7 +36,7 @@ configured; see [OIDC](kairon-ui-oidc.md).
   to `false` so the password is random. Read the actual value with
   `kubectl -n kairon-system get secret kairon-ui-session -o jsonpath='{.data.defaultAdminPassword}' | base64 -d`.
 - `scripts/deploy-remote.sh --with-ui` seeds a lab `admin` account; see the
-  "Well-known default password" paragraph in [SECURITY.md](../../SECURITY.md)
+  "Well-known default password" paragraph in [SECURITY.md](https://github.com/zyvorai/zyvor-kairon/blob/main/SECURITY.md)
   before exposing the port beyond a lab network.
 - Signed-in operators change their own password from **Account**
   (`POST /api/v1/auth/password`).

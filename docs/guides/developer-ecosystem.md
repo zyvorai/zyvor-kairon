@@ -9,9 +9,9 @@ Kairon's developer kit provides dependency-free Python and TypeScript clients,
 reviewed deployment recipes, disposable VM CI, warm-pool/fleet composition,
 Terraform manifests, orphan cleanup and integration qualification tooling.
 
-Start with the [ecosystem guide](../../ecosystem/README.md),
-[Python SDK](../../sdk/python/README.md) or
-[TypeScript SDK](../../sdk/typescript/README.md).
+Start with the [ecosystem guide](https://github.com/zyvorai/zyvor-kairon/blob/main/ecosystem/README.md),
+[Python SDK](https://github.com/zyvorai/zyvor-kairon/blob/main/sdk/python/README.md) or
+[TypeScript SDK](https://github.com/zyvorai/zyvor-kairon/blob/main/sdk/typescript/README.md).
 
 Lifecycle operations use the caller's Kubernetes RBAC. Guest operations reuse
 the existing UI admin, namespace and Machine-access checks. SDKs do not change
