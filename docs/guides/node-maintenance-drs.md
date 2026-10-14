@@ -16,6 +16,8 @@ hibernate fallbacks, exit) and DRS in recommend mode have run on real hardware
 Migrating Machines to another node during maintenance, and DRS moves, have
 not: they need a second node.
 
+![Animated: node-1 enters maintenance, two Machines migrate away and a GPU Machine hibernates; node-3 comes under CPU pressure and DRS moves a Machine to node-2; maintenance ends and the GPU Machine resumes](../ux/anim/node-maintenance.svg)
+
 ## Maintenance mode
 
 ```sh

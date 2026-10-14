@@ -12,6 +12,8 @@ Mac Fabric turns several Apple silicon Macs into one pool of vz Machines.
 Start with [macos.md](../macos.md) (one Mac as a Node) and [macos-cluster.md](../macos-cluster.md) (why and how to
 build a Mac cluster). This page covers what changes with more than one Mac.
 
+![Animated: a Machine asking for an M4 lands on mac-a, a Machine on a MacNetwork lands on mac-b, and the two VMs talk over the Thunderbolt link](../ux/anim/mac-fabric.svg)
+
 ## How it fits together
 
 1. **Discovery.** On each Mac, kairon-node reads `machdep.cpu.brand_string`, `hw.model`, the performance and

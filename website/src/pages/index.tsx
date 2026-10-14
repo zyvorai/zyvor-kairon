@@ -1,6 +1,7 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
 // SPDX-License-Identifier: Apache-2.0
 
+import {useState} from 'react';
 import type {ReactNode} from 'react';
 import useBaseUrl from '@docusaurus/useBaseUrl';
 import Layout from '@theme/Layout';
@@ -27,6 +28,7 @@ const RELEASE_NOTES = 'https://github.com/zyvorai/zyvor-kairon/blob/v0.10.0/RELE
 
 const SUB_LINKS = [
   {to: '#new', label: 'New in v0.10'},
+  {to: '#see-it-move', label: 'See it move'},
   {to: '#numbers', label: 'Numbers'},
   {to: '#capabilities', label: 'Capabilities'},
   {to: '#deploy', label: 'One command'},
@@ -38,7 +40,7 @@ function Hero() {
   return (
     <Band tone="black" glow center>
       <p>
-        <TextLink to="#new">v0.10.0 is out: agent sessions, cross-cluster DR, Mac Fabric and virtctl parity ›</TextLink>
+        <TextLink to="#new">v0.10.0 is out: agent sessions, cross-cluster DR, Mac Fabric and virtctl parity</TextLink>
       </p>
       <Headline
         size="display"
@@ -127,6 +129,59 @@ function WhatsNew() {
             </Btn>
           </Actions>
         </div>
+      </div>
+    </Band>
+  );
+}
+
+type Diagram = {id: string; tab: string; doc: string; alt: string; caption: string};
+
+const DIAGRAMS: Diagram[] = [
+  {id: 'agent-session', tab: 'Agent sessions', doc: '/docs/guides/agent-sessions', alt: 'An agent’s commands pass through the AgentSession into the sandbox VM; git push waits for an admin, egress to an allowed host passes and an unknown host is refused, and the session checkpoints and forks', caption: 'Commands pass the policy, risky ones wait for an admin, and forks branch from a checkpoint.'},
+  {id: 'agent-sandbox', tab: 'Idle sandboxes', doc: '/docs/guides/agent-sandboxes', alt: 'A sandbox Machine is busy, goes idle, pauses itself when the idle timer runs out, and wakes when a client connects', caption: 'Busy, idle, paused with no CPU, then woken by the next connection.'},
+  {id: 'cross-cluster-dr', tab: 'Cross-cluster DR', doc: '/docs/guides/cross-cluster-dr', alt: 'Site A replicates restore points to site B; site A is lost; db then web start on site B, DNS moves and site A is fenced', caption: 'Replicate, lose a site, start Machines in order on the other one, move DNS and fence the old site.'},
+  {id: 'node-maintenance', tab: 'Maintenance and DRS', doc: '/docs/guides/node-maintenance-drs', alt: 'node-1 enters maintenance, two Machines migrate and a GPU Machine hibernates; DRS moves a Machine off a node under pressure; maintenance ends', caption: 'Drain a node, hibernate what cannot move, rebalance on pressure, and resume on exit.'},
+  {id: 'elastic-memory', tab: 'Elastic memory', doc: '/docs/guides/machine-elastic-memory', alt: 'Balloons inflate in three Machines down to their minimums under host pressure, the node reports pressure, then the balloons deflate', caption: 'Balloons give memory back under pressure, never below each Machine’s minimum.'},
+  {id: 'incremental-backup', tab: 'Incremental backups', doc: '/docs/guides/machine-backup-incremental', alt: 'A full backup uploads every block, incrementals upload only changed blocks, and a synthetic full merges the chain in S3', caption: 'One full, then only the changed blocks, merged into a synthetic full in S3.'},
+  {id: 'mac-fabric', tab: 'Mac Fabric', doc: '/docs/guides/mac-fabric', alt: 'A Machine asking for an M4 lands on mac-a, a Machine on a MacNetwork lands on mac-b, and the VMs talk over Thunderbolt', caption: 'Capability scheduling across Macs, and a private network over Thunderbolt.'},
+  {id: 'live-migration', tab: 'Live migration', doc: '/docs/guides/relocating-a-machine', alt: 'Live migration between two nodes over a mutually authenticated TLS link', caption: 'The source stays authoritative until the target has committed.'},
+];
+
+function SeeItMove() {
+  const [active, setActive] = useState(DIAGRAMS[0].id);
+  const base = useBaseUrl('/anim/');
+  const d = DIAGRAMS.find((x) => x.id === active) ?? DIAGRAMS[0];
+  return (
+    <Band tone="black" id="see-it-move" glow center>
+      <Headline
+        eyebrow="See it move"
+        title={
+          <>
+            How it works, <Grad>in motion.</Grad>
+          </>
+        }
+        lede="Each diagram loops through one feature from start to finish. Pick one; the guide has the details and the real limits."
+      />
+      <div className="zv-tabs" role="tablist" aria-label="Animated diagrams">
+        {DIAGRAMS.map((x) => (
+          <button
+            key={x.id}
+            id={`anim-tab-${x.id}`}
+            role="tab"
+            type="button"
+            className="zv-tab"
+            aria-selected={x.id === active}
+            aria-controls="anim-panel"
+            onClick={() => setActive(x.id)}>
+            {x.tab}
+          </button>
+        ))}
+      </div>
+      <div id="anim-panel" role="tabpanel" aria-labelledby={`anim-tab-${d.id}`}>
+        <Frame key={d.id} src={`${base}${d.id}.svg`} alt={`Animated: ${d.alt}`} caption={d.caption} />
+        <p>
+          <TextLink to={d.doc}>{d.tab} guide</TextLink>
+        </p>
       </div>
     </Band>
   );
@@ -342,6 +397,7 @@ export default function Home(): ReactNode {
       <main>
         <Hero />
         <WhatsNew />
+        <SeeItMove />
         <Numbers />
         <HowItWorks />
         <Capabilities />

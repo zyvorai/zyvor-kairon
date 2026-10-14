@@ -7,6 +7,8 @@ themselves after a deadline, start from a pool of paused VMs, and report
 what each claim used. All of it is opt-in and experimental; a Machine
 without `spec.lifecycle` behaves exactly as before.
 
+![Animated: a sandbox Machine is busy, goes idle, pauses itself when the idle timer runs out, and wakes when a client connects](../ux/anim/agent-sandbox.svg)
+
 ## Lifecycle
 
 ```yaml
