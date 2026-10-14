@@ -154,7 +154,7 @@ func fluxSession(id, state string, created time.Time) map[string]any {
 	return map[string]any{
 		"id": id, "agent": "custom", "sandbox_id": "sb-" + id[:4], "backend": "vz", "parent": nil, "children": []string{},
 		"state": state, "created_at": created.UTC().Format(time.RFC3339Nano), "expires_at": nil,
-		"capabilities": map[string]any{"snapshot": true, "fork": true, "pty": true, "confinement": false, "http_policy": false},
+		"capabilities": map[string]any{"snapshot": true, "fork": true, "pty": true, "confinement": false, "http_policy": false, "engine": "agent", "supervisor": true},
 		"policy":       map[string]any{"preset": "offline", "offline": true, "allow_hosts": []string{}, "unenforced": []string{}},
 		"workspace":    map[string]any{"path": "/workspace", "git": "https://x-token:s3cret@github.com/a/b", "mode": "clone", "cloned": true, "baseline": true, "note": nil},
 		"checkpoints":  []any{map[string]any{"tag": "c1", "memory": true, "created_at": created.UTC().Format(time.RFC3339)}},
@@ -169,6 +169,7 @@ func scheduledSession(name string) model.AgentSession {
 			NodeName:  "mac-1",
 			Workspace: &model.AgentWorkspace{Git: "https://github.com/a/b"},
 			Resources: model.AgentSessionResources{CPU: "2", Memory: "4Gi"},
+			Engine:    "agent",
 			Policy:    &model.AgentPolicy{Preset: "offline", Process: &model.AgentProcessPolicy{Ask: []string{"git push*"}}},
 		},
 	}
@@ -205,7 +206,7 @@ func TestAgentSessionCreateThenRunning(t *testing.T) {
 		t.Fatalf("status = %+v, want Creating with createRequestedAt", s.Status)
 	}
 	waitCreated(t, a, "prod/s1")
-	if w.createBody["runtime"].(map[string]any)["memory_mb"].(float64) != 4096 {
+	if rt := w.createBody["runtime"].(map[string]any); rt["memory_mb"].(float64) != 4096 || rt["engine"] != "agent" {
 		t.Fatalf("create body = %v", w.createBody)
 	}
 	if ask := w.createBody["policy"].(map[string]any)["process"].(map[string]any)["ask"].([]any); len(ask) != 1 || ask[0] != "git push*" {
@@ -219,7 +220,8 @@ func TestAgentSessionCreateThenRunning(t *testing.T) {
 	if strings.Contains(s.Status.Workspace.Git, "s3cret") {
 		t.Fatalf("workspace git not redacted: %q", s.Status.Workspace.Git)
 	}
-	if len(s.Status.Checkpoints) != 1 || s.Status.Usage == nil || s.Status.Usage.Execs != 3 || !s.Status.Capabilities.Fork {
+	if len(s.Status.Checkpoints) != 1 || s.Status.Usage == nil || s.Status.Usage.Execs != 3 || !s.Status.Capabilities.Fork ||
+		s.Status.Capabilities.Engine != "agent" || !s.Status.Capabilities.Supervisor {
 		t.Fatalf("status = %+v", s.Status)
 	}
 	if w.creates != 1 {

@@ -180,6 +180,46 @@ class ApprovalHTTPTests(unittest.TestCase):
             srv.server_close()
 
 
+class ScreenTests(unittest.TestCase):
+    def test_screenshot_returns_png_bytes(self):
+        png = b"\x89PNG\r\n\x1a\n\x00\xff"
+        seen = []
+
+        class H(BaseHTTPRequestHandler):
+            def do_GET(self):
+                seen.append(self.path)
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Length", str(len(png)))
+                self.end_headers()
+                self.wfile.write(png)
+
+            def log_message(self, *a):
+                pass
+
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            ui = UIClient(f"http://127.0.0.1:{srv.server_address[1]}", "t", namespace="dev")
+            self.assertEqual(AgentSession(ui, "work").screenshot(max_width=640), png)
+            self.assertEqual(seen, ["/api/v1/agentsessions/dev/work/screenshot?max_width=640"])
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+    def test_input(self):
+        s = AgentSession(FakeUI(), "work")
+        s.input({"action": "key", "key": "enter"})
+        self.assertEqual(s.ui.calls[-1][2:4], ("input", {"action": "key", "key": "enter"}))
+        s.input({"action": "click", "x": 1, "y": 2}, {"action": "type", "text": "hi"})
+        self.assertEqual(s.ui.calls[-1][3], {"actions": [{"action": "click", "x": 1, "y": 2},
+                                                         {"action": "type", "text": "hi"}]})
+        for bad in [(), ({"action": "tap"},), ("click",)]:
+            with self.assertRaises(ValueError):
+                s.input(*bad)
+        self.assertEqual(session_spec(image="agent-micro", engine="agent"), {"image": "agent-micro", "engine": "agent"})
+
+
 class UIClientSessionTests(unittest.TestCase):
     def test_paths(self):
         seen = []

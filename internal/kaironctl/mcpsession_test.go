@@ -95,7 +95,7 @@ func TestSessionMCPTools(t *testing.T) {
 	}
 	for name, tool := range tools {
 		read := name == "session_list" || name == "session_get" || name == "session_job_read" || name == "session_read_file" || name == "session_git" || name == "session_trajectory" ||
-			name == "session_approvals" || name == "session_probe"
+			name == "session_approvals" || name == "session_probe" || name == "session_screenshot"
 		if tool.Write == read {
 			t.Errorf("%s: Write = %v", name, tool.Write)
 		}

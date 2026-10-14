@@ -17,10 +17,18 @@ import {CommandError} from './sandbox.js';
 export class SessionError extends Error {}
 
 export interface SessionSpecOptions {
-  agent?: string; git?: string; workspace?: string; image?: string; cpu?: string; memory?: string;
+  agent?: string; git?: string; workspace?: string; image?: string; engine?: 'agent'; cpu?: string; memory?: string;
   preset?: 'offline' | 'developer-safe' | 'open'; allowHosts?: string[];
   processAllow?: string[]; processDeny?: string[]; processAsk?: string[]; ttlSeconds?: number;
   budget?: Record<string, number>; policy?: Record<string, Json>;
+}
+
+const INPUT_ACTIONS = new Set(['type', 'key', 'move', 'click', 'double_click', 'right_click', 'middle_click', 'down', 'up', 'drag', 'scroll']);
+
+/** One FluxVM display input action; coordinates are pixels of a screenshot of width screen_width. */
+export interface InputAction {
+  action: string; text?: string; key?: string; modifiers?: string[];
+  x?: number; y?: number; to_x?: number; to_y?: number; dx?: number; dy?: number; screen_width?: number;
 }
 
 /** An approved command's id, or how long to hold the request open for the decision (1-120 s). */
@@ -58,6 +66,7 @@ export function sessionSpec(o: SessionSpecOptions = {}): Record<string, Json> {
   if (o.agent) spec.agent = o.agent;
   if (o.git || o.workspace) spec.workspace = pick({git: o.git, path: o.workspace});
   if (o.image) spec.image = o.image;
+  if (o.engine) spec.engine = o.engine;
   if (o.cpu || o.memory) spec.resources = pick({cpu: o.cpu, memory: o.memory});
   const policy: Record<string, Json> = {};
   if (o.preset) policy.preset = o.preset;
@@ -109,7 +118,7 @@ export class AgentSession {
     }
   }
 
-  private call<T = Json>(method: string, verb: string, body?: unknown, options: {query?: Record<string, string | number | boolean>; timeoutMs?: number; data?: Uint8Array} = {}): Promise<T> {
+  private call<T = Json>(method: string, verb: string, body?: unknown, options: {query?: Record<string, string | number | boolean>; timeoutMs?: number; data?: Uint8Array; binary?: boolean} = {}): Promise<T> {
     return this.ui.sessionCall<T>(this.name, method, verb, body, options);
   }
 
@@ -170,6 +179,26 @@ export class AgentSession {
 
   /** Which tools the guest image has and which session features are ready. */
   probe(): Promise<Record<string, Json>> { return this.call('GET', 'probe', undefined, {timeoutMs: 60000}); }
+
+  /** The guest display of a Mac (vz) session as PNG bytes; maxWidth scales it down. */
+  screenshot(o: {maxWidth?: number} = {}): Promise<Uint8Array> {
+    return this.call<Uint8Array>('GET', 'screenshot', undefined, {
+      ...(o.maxWidth ? {query: {max_width: o.maxWidth}} : {}), timeoutMs: 60000, binary: true,
+    });
+  }
+
+  /**
+   * Keyboard and mouse input to a Mac session's display, sent in order. Actions are FluxVM's, e.g.
+   * `{action: 'click', x: 640, y: 400, screen_width: 1280}`, `{action: 'type', text: 'ls'}`,
+   * `{action: 'key', key: 'enter', modifiers: ['command']}`. Typed text stays out of the ledger.
+   */
+  input(...actions: InputAction[]): Promise<Json> {
+    if (actions.length < 1 || actions.length > 256) throw new Error('send 1-256 actions');
+    for (const a of actions) {
+      if (!a || !INPUT_ACTIONS.has(a.action)) throw new Error(`each action needs action: ${[...INPUT_ACTIONS].join(', ')}`);
+    }
+    return this.call('POST', 'input', actions.length === 1 ? actions[0] : {actions}, {timeoutMs: 120000});
+  }
 
   /**
    * Let the session's requests to hosts carry a credential it never sees (admin only). value is

@@ -20,6 +20,7 @@ func TestValidateAgentSessionSpec(t *testing.T) {
 		{Policy: &AgentPolicy{Filesystem: &AgentFilesystemPolicy{Read: []string{"/workspace/**"}, Write: []string{"/tmp/*"}, Enforcement: "best-effort"}}},
 		{Policy: &AgentPolicy{Process: &AgentProcessPolicy{Allow: []string{"git *"}, Deny: []string{"rm -rf *"}, Ask: []string{"git push*"}}}},
 		{Workspace: &AgentWorkspace{}, Budget: &AgentBudget{MaxExecs: 10, MaxWorkspaceBytes: 1 << 30}},
+		{Image: "agent-micro", Engine: "agent"},
 	}
 	for i, s := range ok {
 		if err := ValidateAgentSessionSpec(s); err != nil {
@@ -28,6 +29,7 @@ func TestValidateAgentSessionSpec(t *testing.T) {
 	}
 	bad := map[string]AgentSessionSpec{
 		"agent":                 {Agent: "has space"},
+		"engine":                {Engine: "ssh"},
 		"workspace.path":        {Workspace: &AgentWorkspace{Path: "relative"}},
 		"workspace.path.dotdot": {Workspace: &AgentWorkspace{Path: "/a/../b"}},
 		"workspace.mode":        {Workspace: &AgentWorkspace{Mode: "overlay"}},

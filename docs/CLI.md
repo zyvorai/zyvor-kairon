@@ -381,9 +381,10 @@ and others; they never apply). Write tools, only with `--allow-write`:
 `apply_claim_step`, `audit_record`, and the agent-session writers
 (`session_create`, `session_delete`, `session_exec`, `session_checkpoint`,
 `session_restore`, `session_fork`, `session_job_start`,
-`session_write_file`, `session_git_commit`, `session_preview`; the readers
+`session_write_file`, `session_git_commit`, `session_preview`, `session_input`; the readers
 are `session_list`, `session_get`, `session_job_read`, `session_read_file`,
-`session_git`, `session_trajectory`, `session_approvals` and `session_probe`;
+`session_git`, `session_trajectory`, `session_approvals`, `session_probe` and
+`session_screenshot`, which returns the image;
 a command that needs a human's approval comes back as `approval_required`
 with an id to pass as `approvalId` once an admin approved it). Write calls go to a hash-chained audit
 log (`--audit-log`, default `~/.kairon/audit.jsonl`; `--audit-configmap
@@ -425,10 +426,12 @@ rest (`migration-claim`, `cpu-label`, `gateway`). The MCP server also offers the
 ```bash
 kaironctl session run NAME [--agent codex] [--git URL] [--preset offline|developer-safe|open]
         [--network-default deny|allow] [--allow-host H]... [--process-deny GLOB]... [--process-ask GLOB]...
-        [--fs-read P]... [--fs-write P]... [--cpu N] [--memory 4Gi] [--ttl 2h] [--max-execs N] [--no-wait]
+        [--fs-read P]... [--fs-write P]... [--image I] [--engine agent] [--cpu N] [--memory 4Gi] [--ttl 2h] [--max-execs N] [--no-wait]
 kaironctl session list | get NAME | rm NAME...
 kaironctl session exec NAME [--approval-id ID] [--approval-wait 2m] -- COMMAND   # exits with the command's code
 kaironctl session shell NAME [--plain] [-- COMMAND]  # interactive terminal
+kaironctl session screenshot NAME [-o F.png] [--max-width W]   # Mac guest display
+kaironctl session input NAME type TEXT | key KEY [--mod M] | click X Y [--screen-width W] | drag X Y TO_X TO_Y | scroll DY [DX] [--screenshot F.png]
 kaironctl session approvals NAME [--all] ; approve NAME ID [--note T] ; deny NAME ID   # approve/deny: admin only
 kaironctl session checkpoint NAME [--tag T] [--disk-only] ; session restore NAME TAG
 kaironctl session fork NAME [--count N] ; session promote CHILD [--dry-run]

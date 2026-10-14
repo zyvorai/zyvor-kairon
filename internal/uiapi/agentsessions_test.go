@@ -4,6 +4,7 @@
 package uiapi
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -110,7 +111,11 @@ func newSessionWorld(t *testing.T) *sessionWorld {
 			_, _ = io.WriteString(w, `{"items":[{"token":"`+testPreviewToken+`","port":3000}]}`)
 		case r.URL.Path == base+"/trajectory":
 			_, _ = io.WriteString(w, `{"steps":[]}`)
-		case strings.HasPrefix(r.URL.Path, base+"/approvals/"), r.URL.Path == base+"/grants":
+		case r.URL.Path == base+"/screenshot":
+			w.Header().Set("Content-Type", "image/png")
+			w.Header().Set("X-Fluxvm-Screen-Width", r.URL.Query().Get("max_width"))
+			_, _ = w.Write(testPNG)
+		case strings.HasPrefix(r.URL.Path, base+"/approvals/"), r.URL.Path == base+"/grants", r.URL.Path == base+"/input":
 			body, _ := io.ReadAll(r.Body)
 			_, _ = w.Write(body)
 		case r.URL.Path == base+"/pty":
@@ -204,6 +209,24 @@ func TestAgentSessionApprovalsAndGrantsNeedAdmin(t *testing.T) {
 	rr = doJSON(t, w.handler, http.MethodPost, "/api/v1/agentsessions/default/work/approvals/"+childSessionID+"/deny", w.admin, nil)
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"note":"by root via kairon-ui"`) {
 		t.Fatalf("admin deny = %d %s", rr.Code, rr.Body.String())
+	}
+}
+
+var testPNG = []byte("\x89PNG\r\n\x1a\n\x00\xffpixels")
+
+func TestAgentSessionScreenThroughRelays(t *testing.T) {
+	w := newSessionWorld(t)
+	rr := doJSON(t, w.handler, http.MethodGet, "/api/v1/agentsessions/default/work/screenshot?max_width=640", w.admin, nil)
+	if rr.Code != http.StatusOK || rr.Header().Get("Content-Type") != "image/png" || rr.Header().Get("X-Fluxvm-Screen-Width") != "640" ||
+		!bytes.Equal(rr.Body.Bytes(), testPNG) {
+		t.Fatalf("screenshot = %d %q %q", rr.Code, rr.Header(), rr.Body.Bytes())
+	}
+	if rr := doJSON(t, w.handler, http.MethodPost, "/api/v1/agentsessions/default/work/input", w.op, map[string]any{"action": "key", "key": "enter"}); rr.Code != http.StatusForbidden {
+		t.Fatalf("operator input without sandboxOperatorExec = %d", rr.Code)
+	}
+	rr = doJSON(t, w.handler, http.MethodPost, "/api/v1/agentsessions/default/work/input", w.admin, map[string]any{"action": "key", "key": "enter"})
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"key":"enter"`) {
+		t.Fatalf("input = %d %s", rr.Code, rr.Body.String())
 	}
 }
 

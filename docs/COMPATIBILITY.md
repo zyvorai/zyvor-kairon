@@ -249,6 +249,9 @@ hardware. Unit tests cover the same paths against a fake FluxVM (see
 | Session: chunked upload | not run | - | `put` of a 50 MiB file: same sha256 in the guest; an interrupted put leaves no file |
 | Session: shell | not run | - | `session shell` echoes input, follows a window resize, exits with the shell's code; refused when the session has process rules |
 | Session: probe | not run | - | Lists the guest's git and node; `ready_for.git` true |
+| Session: screen | not run | - | FluxVM after 0.4.8: `session screenshot` saves a PNG of the guest display; `input click` and `type` change it; `session_screenshot` returns an image to an MCP client; the audit log has no typed text |
+| Session: engine | not run | - | `--engine agent` with a stock image: `Failed` with FluxVM's 409; with `agent-micro`: Running and `status.capabilities.engine` is `agent` |
+| Session: fork clone report | not run | - | Fork on APFS: `files_copied` 0, no warning |
 | Session: credential grant | not run | - | `grant --host api.github.com`: an authenticated API call from the guest succeeds, the guest's environment has no token; fails after `revoke-grant` |
 | Session: quota | not run | - | A session over `MachineQuota` stays Pending with the quota's reason |
 | Session: delete | not run | - | FluxVM session gone; finalizer released |

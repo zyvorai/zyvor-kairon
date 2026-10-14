@@ -2,7 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect } from 'vitest';
-import { approvalIDOf } from './AgentSessions';
+import { approvalIDOf, screenPoint } from './AgentSessions';
+
+describe('screenPoint', () => {
+  it('scales a click on the shown image to screenshot pixels', () => {
+    expect(screenPoint(100, 50, 512, 1024)).toEqual({ x: 200, y: 100, screen_width: 1024 });
+    expect(screenPoint(10, 20, 0, 800)).toEqual({ x: 10, y: 20, screen_width: 800 });
+  });
+});
 
 describe('approvalIDOf', () => {
   it('reads the approval id of a 428 body', () => {

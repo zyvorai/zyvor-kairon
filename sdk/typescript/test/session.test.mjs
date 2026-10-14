@@ -87,6 +87,25 @@ test('a 428 becomes ApprovalRequired and approvalId is sent on the retry', async
   assert.deepEqual(sessionSpec({processAsk: ['deploy *']}), {policy: {process: {ask: ['deploy *']}}});
 });
 
+test('screenshot returns PNG bytes and input sends actions in order', async () => {
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff]);
+  const seen = [];
+  const fetch = async (url, init) => {
+    seen.push([init.method, url, init.body]);
+    return url.includes('/screenshot') ? new Response(png, {status: 200, headers: {'Content-Type': 'image/png'}}) : new Response('{"ok":true}', {status: 200});
+  };
+  const s = new AgentSession(new UIClient('http://127.0.0.1:1', 't', {namespace: 'dev', fetch}), 'work');
+  assert.deepEqual(await s.screenshot({maxWidth: 640}), png);
+  assert.equal(seen[0][1], 'http://127.0.0.1:1/api/v1/agentsessions/dev/work/screenshot?max_width=640');
+  await s.input({action: 'key', key: 'enter'});
+  assert.deepEqual(JSON.parse(seen[1][2]), {action: 'key', key: 'enter'});
+  await s.input({action: 'click', x: 1, y: 2}, {action: 'type', text: 'hi'});
+  assert.deepEqual(JSON.parse(seen[2][2]), {actions: [{action: 'click', x: 1, y: 2}, {action: 'type', text: 'hi'}]});
+  assert.throws(() => s.input());
+  assert.throws(() => s.input({action: 'tap'}));
+  assert.deepEqual(sessionSpec({image: 'agent-micro', engine: 'agent'}), {image: 'agent-micro', engine: 'agent'});
+});
+
 test('large writes upload in chunks, resume on 409 and verify the checksum', async () => {
   let stored = new Uint8Array(0);
   let meta;

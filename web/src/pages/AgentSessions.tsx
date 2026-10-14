@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState } from 'react';
-import { api, apiErrorText, apiJSON, isAdmin } from '../api';
+import { api, apiErrorText, apiJSON, authHeaders, isAdmin } from '../api';
 import { badgeClass } from '../lib/phase';
 import { currentNamespace } from '../lib/namespace';
 import ResourceTable from '../components/ResourceTable';
@@ -19,6 +19,7 @@ interface Session {
     expiresAt?: string;
     checkpoints?: { tag: string; memory: boolean }[];
     usage?: { execs?: number; jobs?: number; children?: number };
+    capabilities?: { engine?: string; supervisor?: boolean };
     policy?: { unenforced?: string[]; offline?: boolean; allowHosts?: string[] };
   };
 }
@@ -58,6 +59,13 @@ export function approvalIDOf(e: unknown): string {
   } catch {
     return '';
   }
+}
+
+// screenPoint maps a click on the scaled screenshot to pixels of the
+// screenshot FluxVM sent (naturalWidth), which input takes with screen_width.
+export function screenPoint(offsetX: number, offsetY: number, shownWidth: number, naturalWidth: number) {
+  const scale = shownWidth > 0 ? naturalWidth / shownWidth : 1;
+  return { x: Math.round(offsetX * scale), y: Math.round(offsetY * scale), screen_width: naturalWidth };
 }
 
 const verbPath = (name: string, verb: string) =>
@@ -217,7 +225,28 @@ function SessionPanel({ session }: { session: Session }) {
   const [busy, setBusy] = useState(false);
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [waiting, setWaiting] = useState<{ id: string; command: string } | null>(null);
+  const [screen, setScreen] = useState('');
+  const [typed, setTyped] = useState('');
   const admin = isAdmin();
+  const hasScreen = running && session.status?.backend === 'vz';
+
+  useEffect(() => () => { if (screen) URL.revokeObjectURL(screen); }, [screen]);
+
+  const loadScreen = async () => {
+    const r = await fetch(verbPath(name, 'screenshot?max_width=1024'), { headers: authHeaders() });
+    if (!r.ok) throw new Error((await r.text()) || r.statusText);
+    setScreen(URL.createObjectURL(await r.blob()));
+  };
+  const sendInput = (action: Record<string, unknown>) =>
+    run(async () => {
+      await apiJSON(verbPath(name, 'input'), 'POST', action);
+      await new Promise((ok) => setTimeout(ok, 500));
+      await loadScreen();
+    });
+  const clickScreen = (e: React.MouseEvent<HTMLImageElement>) => {
+    const img = e.currentTarget;
+    sendInput({ action: 'click', ...screenPoint(e.nativeEvent.offsetX, e.nativeEvent.offsetY, img.clientWidth, img.naturalWidth) });
+  };
 
   const loadApprovals = () =>
     running
@@ -286,8 +315,12 @@ function SessionPanel({ session }: { session: Session }) {
       <p className="muted">
         FluxVM session {session.status?.sessionID || 'not created yet'}
         {session.status?.backend ? ` on ${session.status.backend}` : ''}
-        {session.spec.workspace?.git ? `, workspace from ${session.spec.workspace.git}` : ''}.
+        {session.spec.workspace?.git ? `, workspace from ${session.spec.workspace.git}` : ''}
+        {session.status?.capabilities?.engine ? `, ${session.status.capabilities.engine} engine` : ''}.
       </p>
+      {session.status?.capabilities?.engine === 'ssh' && (
+        <p className="msg">This guest runs on FluxVM's SSH engine: no job supervisor or filesystem confinement. Use the agent-micro image, or set spec.engine: agent to refuse it.</p>
+      )}
       {unenforced.length > 0 && <p className="msg">Accepted but not enforced by FluxVM: {unenforced.join(', ')}</p>}
       {msg && <p className="msg error">{msg}</p>}
 
@@ -353,6 +386,25 @@ function SessionPanel({ session }: { session: Session }) {
               },
             ]}
           />
+        </>
+      )}
+
+      {hasScreen && (
+        <>
+          <h4>Screen</h4>
+          <div className="formactions">
+            <button type="button" disabled={busy} onClick={() => run(loadScreen)}>
+              {screen ? 'Refresh' : 'Show screen'}
+            </button>
+            <input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="text to type" disabled={busy} />
+            <button type="button" disabled={busy || !typed} onClick={() => { sendInput({ action: 'type', text: typed }); setTyped(''); }}>
+              Type
+            </button>
+            <button type="button" disabled={busy} onClick={() => sendInput({ action: 'key', key: 'enter' })}>
+              Enter
+            </button>
+          </div>
+          {screen && <img src={screen} alt={`${name} display; click to click there`} onClick={clickScreen} style={{ maxWidth: '100%', cursor: 'crosshair' }} />}
         </>
       )}
 

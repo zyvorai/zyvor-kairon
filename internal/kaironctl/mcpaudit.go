@@ -70,6 +70,9 @@ func mcpPrincipal() string {
 // "claim" argument, else "name", so replay_audit can filter by it.
 func mcpAuditHook(log *agentplane.FileLog) func(context.Context, string, json.RawMessage, string) error {
 	return func(_ context.Context, tool string, args json.RawMessage, outcome string) error {
+		if tool == "session_input" {
+			args = redactTypedText(args)
+		}
 		var fields map[string]json.RawMessage
 		_ = json.Unmarshal(args, &fields)
 		var claim string

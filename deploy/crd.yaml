@@ -93,6 +93,12 @@ spec:
                 x-kubernetes-validations:
                 - rule: self == oldSelf
                   message: image is immutable
+              engine:
+                type: string
+                enum: ["agent"]
+                x-kubernetes-validations:
+                - rule: self == oldSelf
+                  message: engine is immutable
               policy:
                 type: object
                 x-kubernetes-validations:
@@ -217,6 +223,8 @@ spec:
                   pty: {type: boolean}
                   confinement: {type: boolean}
                   httpPolicy: {type: boolean}
+                  engine: {type: string}
+                  supervisor: {type: boolean}
               policy:
                 type: object
                 properties:

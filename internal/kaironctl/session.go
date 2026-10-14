@@ -40,7 +40,7 @@ func sessionPath(ns, name, suffix string) string {
 
 type sessionRunFlags struct {
 	agent, git, mode, path, image, cpu, memory, node string
-	preset, networkDefault                           string
+	engine, preset, networkDefault                   string
 	allowHosts, processAllow, processDeny            []string
 	processAsk                                       []string
 	fsRead, fsWrite                                  []string
@@ -54,6 +54,7 @@ func agentSessionSpec(f sessionRunFlags) (model.AgentSessionSpec, error) {
 	spec := model.AgentSessionSpec{
 		Agent:      f.agent,
 		Image:      f.image,
+		Engine:     f.engine,
 		Resources:  model.AgentSessionResources{CPU: f.cpu, Memory: f.memory},
 		TTLSeconds: int64(f.ttl / time.Second),
 		NodeName:   f.node,
@@ -215,6 +216,8 @@ named operator when ui.auth.sandboxOperatorExec is on.`,
 		},
 		newSessionExportCmd(opts),
 		newSessionShellCmd(opts),
+		newSessionScreenshotCmd(opts),
+		newSessionInputCmd(opts),
 		newSessionProbeCmd(opts),
 		newSessionApprovalsCmd(opts),
 		newSessionDecideCmd(opts, "approve"),
@@ -289,6 +292,7 @@ func newSessionRunCmd(opts *Options) *cobra.Command {
 	fl.StringVar(&f.path, "workspace", "", "guest workspace directory (default /workspace)")
 	fl.StringVar(&f.mode, "mode", "", "workspace mode: clone or readonly")
 	fl.StringVar(&f.image, "image", "", "FluxVM image for the session VM")
+	fl.StringVar(&f.engine, "engine", "", "agent: fail unless the Mac guest runs FluxVM's guest agent (not its SSH engine)")
 	fl.StringVar(&f.cpu, "cpu", "", "vCPUs (default 2)")
 	fl.StringVar(&f.memory, "memory", "", "memory, e.g. 4Gi (default 2Gi)")
 	fl.StringVar(&f.node, "node", "", "pin to this node instead of letting the controller choose")
@@ -426,6 +430,7 @@ type forkAnswer struct {
 		ID string `json:"id"`
 	} `json:"items"`
 	TotalMs       any      `json:"total_ms"`
+	FilesCopied   int64    `json:"files_copied"`
 	AgentSessions []string `json:"agentSessions"`
 	Errors        []string `json:"agentSessionErrors"`
 }
@@ -451,9 +456,12 @@ func newSessionForkCmd(opts *Options) *cobra.Command {
 		Short: "Fork live copies of the session; each child is its own AgentSession",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, raw, err := sessionFork(cmd.Context(), opts.Namespace, args[0], count, identity)
+			out, raw, err := sessionFork(cmd.Context(), opts.Namespace, args[0], count, identity)
 			if err != nil {
 				return err
+			}
+			if out.FilesCopied > 0 {
+				fmt.Fprintf(os.Stderr, "warning: %d files were copied rather than cloned (the node's FluxVM state is not on an APFS volume that can clone): slower forks and real disk use\n", out.FilesCopied)
 			}
 			return printRaw(raw)
 		},
