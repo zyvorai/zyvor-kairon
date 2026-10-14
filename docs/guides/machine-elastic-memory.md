@@ -12,6 +12,8 @@ Machines away.
 Experimental: see [Real limits today](#real-limits-today) and the lab rows
 in [`COMPATIBILITY.md`](../COMPATIBILITY.md#elastic-memory).
 
+![Animated: host memory pressure rises, balloons inflate in three Machines down to their minimums, the node reports KaironMemoryPressure, then pressure eases and the balloons deflate](../ux/anim/elastic-memory.svg)
+
 ## How it fits together
 
 1. **FluxVM** adds a `virtio-balloon-pci` device to QEMU VMs created with a

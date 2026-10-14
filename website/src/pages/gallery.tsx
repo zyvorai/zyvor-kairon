@@ -33,6 +33,13 @@ const DIAGRAMS = [
   {name: 'machine-lifecycle', alt: 'Machine lifecycle: Pending, Running, Paused, Halted, Stopped, Failed'},
   {name: 'live-migration', alt: 'Live migration between two nodes over a mutually authenticated TLS link (Preview)'},
   {name: 'no-pod-per-vm', alt: 'Idle control plane memory and time to SSH, Kairon against KubeVirt v1.9.0'},
+  {name: 'agent-session', alt: 'Agent sessions: commands pass the policy, git push waits for an admin, egress is allowed or refused, and the session checkpoints and forks (Experimental)'},
+  {name: 'agent-sandbox', alt: 'Agent sandboxes: a Machine goes idle, pauses itself and wakes on the next connection (Experimental)'},
+  {name: 'cross-cluster-dr', alt: 'Cross-cluster DR: replicate, lose a site, start Machines in order on the other site, move DNS and fence the old site (Experimental)'},
+  {name: 'node-maintenance', alt: 'Node maintenance and DRS: drain a node, hibernate what cannot move, rebalance on pressure (Experimental)'},
+  {name: 'elastic-memory', alt: 'Elastic memory: balloons give memory back under host pressure, never below each Machine’s minimum (Experimental)'},
+  {name: 'incremental-backup', alt: 'Incremental backups: one full, then only changed blocks, merged into a synthetic full in S3 (Experimental)'},
+  {name: 'mac-fabric', alt: 'Mac Fabric: capability scheduling across Macs and a private network over Thunderbolt (Experimental)'},
 ];
 
 function ShotCard({shot}: {shot: Shot}) {

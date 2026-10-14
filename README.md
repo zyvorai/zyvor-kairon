@@ -220,6 +220,25 @@ More pages: [gallery](https://zyvorai.github.io/zyvor-kairon/gallery). Screensho
 
 <img src="docs/ux/anim/no-pod-per-vm.svg" alt="Animated bars: idle control plane memory and time to SSH, Kairon against KubeVirt v1.9.0" width="100%">
 
+<details>
+<summary><b>New in v0.10.0, animated:</b> agent sessions, idle sandboxes, cross-cluster DR, maintenance and DRS, elastic memory, incremental backups, Mac Fabric</summary>
+
+<img src="docs/ux/anim/agent-session.svg" alt="Animated: an agent's commands pass through the AgentSession into the sandbox VM; git push waits for an admin, egress to an allowed host passes and an unknown host is refused" width="100%">
+
+<img src="docs/ux/anim/agent-sandbox.svg" alt="Animated: a sandbox Machine goes idle, pauses itself and wakes on the next connection" width="100%">
+
+<img src="docs/ux/anim/cross-cluster-dr.svg" alt="Animated: site A replicates to site B, site A is lost, db then web start on site B and DNS follows" width="100%">
+
+<img src="docs/ux/anim/node-maintenance.svg" alt="Animated: a node enters maintenance, Machines migrate or hibernate, DRS rebalances a node under pressure" width="100%">
+
+<img src="docs/ux/anim/elastic-memory.svg" alt="Animated: balloons inflate under host memory pressure down to each Machine's minimum, then deflate" width="100%">
+
+<img src="docs/ux/anim/incremental-backup.svg" alt="Animated: a full backup, two incrementals of changed blocks, and a synthetic full in S3" width="100%">
+
+<img src="docs/ux/anim/mac-fabric.svg" alt="Animated: Machines scheduled onto Macs by Apple capability, joined by a MacNetwork over Thunderbolt" width="100%">
+
+</details>
+
 ![Two Go binaries and your KVM hosts: kairon-controller, kairon-node, FluxVM and KVM under the Kubernetes API](docs/ux/readme-how-it-works.jpg)
 
 | Component | Port | Role |

@@ -12,6 +12,8 @@ If you want a long-lived Machine that suspends itself when idle, use
 agent needs checkpoint and restore, live forks, a ledger of what it ran, or
 an egress policy that FluxVM compiles and enforces per session.
 
+![Animated: an agent's commands pass through the AgentSession into the sandbox VM; git push waits for an admin's approval, egress to an allowed host passes and an unknown host is refused, and the session checkpoints and forks](../ux/anim/agent-session.svg)
+
 ## Requirements and limits
 
 - **FluxVM 0.4.8 or later on a Mac node.** FluxVM 0.4.8 only creates

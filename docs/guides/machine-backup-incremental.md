@@ -24,6 +24,8 @@ flowchart LR
 ```
 
 
+![Animated: a full backup uploads every disk block to S3, two incrementals upload only the changed blocks, and a synthetic full merges the chain](../ux/anim/incremental-backup.svg)
+
 ## What it needs
 
 | Requirement | Why |
