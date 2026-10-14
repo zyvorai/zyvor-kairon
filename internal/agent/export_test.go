@@ -159,6 +159,48 @@ func TestReconcileExportConvertsFormat(t *testing.T) {
 	}
 }
 
+func TestReconcileExportFlattensBackedQcow2(t *testing.T) {
+	fake := filepath.Join(t.TempDir(), "qemu-img")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\nfor a; do out=$a; done\nprintf 'QFI\\373flat' > \"$out\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	orig := qemuImg
+	qemuImg = fake
+	t.Cleanup(func() { qemuImg = orig })
+
+	for _, tc := range []struct {
+		name      string
+		backingAt byte
+		wantTemp  bool
+	}{
+		{"standalone", 0, false},
+		{"overlay", 0x70, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			volDir := t.TempDir()
+			hdr := []byte{'Q', 'F', 'I', 0xfb, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, tc.backingAt}
+			if err := os.WriteFile(filepath.Join(volDir, bootDiskFileName), hdr, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			f := newExportFixture(t, volDir, newExport(""))
+			var st model.MachineExportStatus
+			for i := 0; i < 50; i++ {
+				st = f.reconcile(t, "Stopped")
+				if st.Phase != "Preparing" {
+					break
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+			if st.Phase != "Ready" || st.Format != "qcow2" {
+				t.Fatalf("status %+v", st)
+			}
+			if e, _ := f.agent.Exports.Get("prod/disk"); e.Temp != tc.wantTemp {
+				t.Fatalf("entry %+v, want Temp=%v", e, tc.wantTemp)
+			}
+		})
+	}
+}
+
 func TestReconcileExportRefusesStoppedMachineWithoutVolumes(t *testing.T) {
 	f := newExportFixture(t, t.TempDir(), newExport(""))
 	m := model.Machine{Metadata: model.ObjectMeta{Name: "web", Namespace: "prod"}, Status: model.MachineStatus{Phase: "Stopped"}}

@@ -111,7 +111,12 @@ an immediate power-off. Use soft-reboot to have the guest OS reboot itself.
 
 Each call is a new request (kairon.zyvor.dev/restart-requested); kairon-node
 records the last one it acted on in status.lastRestartRequest. A restart waits
-while a migration of the Machine is in flight.`,
+while a migration of the Machine is in flight.
+
+Unlike virtctl restart, the VM is not rebuilt from the current spec: settings
+fixed when the runtime is created (such as spec.network.forwards) apply only
+after stop and start, which also resets a Machine without spec.volumes to its
+image.`,
 		Example: `  $ kaironctl restart web-1
   $ kaironctl reset web-1`,
 		Args:              cobra.ExactArgs(1),

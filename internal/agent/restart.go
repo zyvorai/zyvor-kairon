@@ -75,7 +75,9 @@ func (a *Agent) requestGuestPoweroff(ctx context.Context, m model.Machine, id st
 	t := uint64(10)
 	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	_, err := a.Flux.QGAExec(cctx, id, fluxvm.QGAExecRequest{Path: "/bin/sh", Args: []string{"-c", "systemctl poweroff || poweroff || shutdown -h now"}, TimeoutSeconds: &t})
+	// Detached and delayed: a synchronous poweroff kills the guest agent
+	// before it reports the exec result, which reads as a failure.
+	_, err := a.Flux.QGAExec(cctx, id, fluxvm.QGAExecRequest{Path: "/bin/sh", Args: []string{"-c", "(sleep 2; systemctl poweroff || poweroff || shutdown -h now) </dev/null >/dev/null 2>&1 &"}, TimeoutSeconds: &t})
 	if err != nil {
 		_, err = a.Flux.QGAExec(cctx, id, fluxvm.QGAExecRequest{Powershell: "Stop-Computer -Force", TimeoutSeconds: &t})
 	}

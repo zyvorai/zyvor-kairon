@@ -118,11 +118,12 @@ func TestHandlePortForwardRejects(t *testing.T) {
 		m      model.Machine
 		port   string
 		status int
+		body   string
 	}{
-		{"bad port", pfMachine(nil), "0", http.StatusBadRequest},
-		{"not running", model.Machine{Metadata: model.ObjectMeta{Name: "vm1", Namespace: "default"}, Status: model.MachineStatus{Phase: "Stopped"}}, "22", http.StatusConflict},
-		{"allowlist without identity", pfMachine(map[string]string{model.AnnotationConsoleAllowedUsers: "alice"}), "22", http.StatusForbidden},
-		{"port not forwarded", pfMachine(nil), "80", http.StatusBadGateway},
+		{"bad port", pfMachine(nil), "0", http.StatusBadRequest, ""},
+		{"not running", model.Machine{Metadata: model.ObjectMeta{Name: "vm1", Namespace: "default"}, Status: model.MachineStatus{Phase: "Stopped"}}, "22", http.StatusConflict, ""},
+		{"allowlist without identity", pfMachine(map[string]string{model.AnnotationConsoleAllowedUsers: "alice"}), "22", http.StatusForbidden, ""},
+		{"port not forwarded", pfMachine(nil), "80", http.StatusConflict, "guest port 80 is not forwarded"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -137,6 +138,12 @@ func TestHandlePortForwardRejects(t *testing.T) {
 					status = resp.StatusCode
 				}
 				t.Fatalf("status = %d, want %d (%v)", status, tc.status, err)
+			}
+			if tc.body != "" {
+				b, _ := io.ReadAll(resp.Body)
+				if !strings.Contains(string(b), tc.body) {
+					t.Fatalf("body = %q, want it to contain %q", b, tc.body)
+				}
 			}
 		})
 	}

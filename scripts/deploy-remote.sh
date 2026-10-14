@@ -863,6 +863,11 @@ run_deploy() {
       cp "$CONSOLE_TLS_CERT" "$local_stage/console-tls-cert.pem"
       cp "$CONSOLE_TLS_KEY" "$local_stage/console-tls-key.pem"
       ok "using provided console TLS materials (--console-tls-cert/-key/-ca)"
+      # A cert shared across nodes only verifies by name: without this,
+      # kairon-ui checks each node's IP against SANs naming only the first.
+      if command -v openssl >/dev/null 2>&1 && openssl x509 -in "$CONSOLE_TLS_CERT" -noout -text 2>/dev/null | grep -qE 'DNS:kairon-node(,|[[:space:]]*$)'; then
+        CONSOLE_TLS_SERVER_NAME="kairon-node"
+      fi
     else
       command -v openssl >/dev/null 2>&1 || die "--console-tls needs a certificate: install 'openssl' (used to auto-generate a self-signed one), or pass --console-tls-cert/-key/-ca"
       # Auto-generated, same convention as the console/UI tokens above: a
