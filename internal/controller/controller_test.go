@@ -1136,6 +1136,81 @@ func runConcurrencyQuotaCheck(t *testing.T, maxPerNode, maxCluster int, activeSo
 	return phase, message
 }
 
+// runSameMachineCheck seeds a migration of "db" in activePhase plus a Pending
+// migration of the same Machine, reconciles, and returns what happened to the
+// Pending one.
+func runSameMachineCheck(t *testing.T, activePhase string) (phase, message string) {
+	t.Helper()
+	maxPerNode, maxCluster, activeSourceNode, activeTargetNode := 0, 0, "worker-1", "worker-2"
+	machine := model.Machine{Metadata: model.ObjectMeta{Name: "db", Namespace: "prod"}, Spec: model.MachineSpec{NodeName: "worker-1", PowerState: "Running"}, Status: model.MachineStatus{NodeName: "worker-1", Phase: "Running"}}
+	active := model.MachineMigration{Metadata: model.ObjectMeta{Name: "active-mig", Namespace: "prod"}, Spec: model.MachineMigrationSpec{MachineName: "db"}, Status: model.MachineMigrationStatus{Phase: activePhase, SourceNode: activeSourceNode, TargetNode: activeTargetNode}}
+	pending := model.MachineMigration{Metadata: model.ObjectMeta{Name: "move-db", Namespace: "prod"}, Spec: model.MachineMigrationSpec{MachineName: "db", Strategy: "live"}}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/apis/kairon.zyvor.dev/v1/machines":
+			_ = json.NewEncoder(w).Encode(model.MachineList{Items: []model.Machine{machine}})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/nodes":
+			_ = json.NewEncoder(w).Encode(model.NodeList{Items: []model.Node{readyCapableNode("worker-1"), readyCapableNode("worker-2")}})
+		case r.Method == http.MethodGet && r.URL.Path == "/apis/kairon.zyvor.dev/v1/machinemigrations":
+			_ = json.NewEncoder(w).Encode(model.MachineMigrationList{Items: []model.MachineMigration{active, pending}})
+		case r.Method == http.MethodGet && r.URL.Path == "/apis/kairon.zyvor.dev/v1/machinesnapshots":
+			http.NotFound(w, r)
+		case r.Method == http.MethodPatch && r.URL.Path == "/apis/kairon.zyvor.dev/v1/namespaces/prod/machinemigrations/move-db/status":
+			var p struct {
+				Status model.MachineMigrationStatus `json:"status"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&p)
+			phase, message = p.Status.Phase, p.Status.Message
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPatch && r.URL.Path == "/apis/kairon.zyvor.dev/v1/namespaces/prod/machinemigrations/active-mig/status":
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	kc, _ := kube.New(srv.URL, "", "", false)
+	kc.HTTP = srv.Client()
+	ctl := &Controller{Kube: kc, Scheduler: scheduler.Scheduler{RequireCapableLabel: true}, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), MaxConcurrentPerNode: maxPerNode, MaxConcurrentCluster: maxCluster}
+	if err := ctl.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	return phase, message
+}
+
+func TestSecondMigrationOfTheSameMachineIsBlockedWhileOneIsActive(t *testing.T) {
+	// Adopting is the phase that mattered in the lab: the VM is already
+	// running on the target, so a second (cold) migration used to stop and
+	// delete it.
+	for _, active := range []string{"Starting", "Running", "Cutover", "Adopting", "Stopping", "Restarting", "NeedsRecovery"} {
+		t.Run(active, func(t *testing.T) {
+			phase, message := runSameMachineCheck(t, active)
+			if phase != "Blocked" || !strings.Contains(message, "another migration of this Machine is in progress") || !strings.Contains(message, "active-mig ("+active+")") {
+				t.Fatalf("phase=%q message=%q", phase, message)
+			}
+		})
+	}
+}
+
+func TestMigrationOfTheSameMachineIsAdmittedOnceThePreviousOneFinished(t *testing.T) {
+	for _, done := range []string{"Succeeded", "Failed", "Blocked", "Cancelled"} {
+		t.Run(done, func(t *testing.T) {
+			phase, _ := runSameMachineCheck(t, done)
+			if phase != "Starting" {
+				t.Fatalf("a finished %s migration must not block a new one: phase=%q", done, phase)
+			}
+		})
+	}
+}
+
+func TestMigrationOfAnotherMachineIsNotBlockedBySameMachineGuard(t *testing.T) {
+	// runConcurrencyQuotaCheck's active migration is for Machine "other".
+	phase, _ := runConcurrencyQuotaCheck(t, 0, 0, "worker-1", "worker-2")
+	if phase != "Starting" {
+		t.Fatalf("phase=%q, want Starting", phase)
+	}
+}
+
 func TestMigrationBlockedWhenPerNodeConcurrencyLimitReached(t *testing.T) {
 	// The active migration's source node is worker-1, same as "db"'s node --
 	// with a per-node limit of 1, the new Pending migration must be blocked.

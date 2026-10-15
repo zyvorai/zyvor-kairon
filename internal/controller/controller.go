@@ -105,13 +105,22 @@ func isActiveMigrationPhase(phase string) bool {
 type migrationLoad struct {
 	byNode map[string]int
 	total  int
+	// byMachine maps "namespace/machine" to the active migration touching
+	// it ("name (phase)"). A Machine has one migration in flight at a time:
+	// a second one would race the first over the same runtime and disk.
+	byMachine map[string]string
 }
 
+func machineKey(namespace, machine string) string { return namespace + "/" + machine }
+
 func newMigrationLoad(migrations []model.MachineMigration) *migrationLoad {
-	l := &migrationLoad{byNode: map[string]int{}}
+	l := &migrationLoad{byNode: map[string]int{}, byMachine: map[string]string{}}
 	for _, m := range migrations {
 		if !isActiveMigrationPhase(m.Status.Phase) {
 			continue
+		}
+		if _, ok := l.byMachine[machineKey(m.Namespace(), m.Spec.MachineName)]; !ok {
+			l.byMachine[machineKey(m.Namespace(), m.Spec.MachineName)] = fmt.Sprintf("%s (%s)", m.Metadata.Name, m.Status.Phase)
 		}
 		l.total++
 		if m.Status.SourceNode != "" {
@@ -536,6 +545,9 @@ func (c *Controller) reconcileMigration(ctx context.Context, migration model.Mac
 		if machine.Spec.NodeName == "" {
 			return c.blockMigration(ctx, migration, "Machine has not been scheduled yet")
 		}
+		if other, busy := load.byMachine[machineKey(migration.Namespace(), migration.Spec.MachineName)]; busy {
+			return c.blockMigration(ctx, migration, "another migration of this Machine is in progress: "+other+"; wait for it to finish, or resolve it if it is NeedsRecovery")
+		}
 		if c.MaxConcurrentCluster > 0 && load.total >= c.MaxConcurrentCluster {
 			return c.blockMigration(ctx, migration, fmt.Sprintf("cluster migration concurrency limit reached (%d active, max %d)", load.total, c.MaxConcurrentCluster))
 		}
@@ -586,6 +598,7 @@ func (c *Controller) reconcileMigration(ctx context.Context, migration model.Mac
 		status.EffectiveStrategy = strategy
 		status.Message = ""
 		load.admit(status.SourceNode, status.TargetNode)
+		load.byMachine[machineKey(migration.Namespace(), migration.Spec.MachineName)] = fmt.Sprintf("%s (%s)", migration.Metadata.Name, "Starting")
 		if strategy == "live" {
 			status.Phase = "Starting"
 			status.Message = "source node agent will securely prepare the target before touching the source runtime"

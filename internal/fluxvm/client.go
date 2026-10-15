@@ -402,6 +402,42 @@ func (c *Client) Ready(ctx context.Context) error {
 	return err
 }
 
+// preferredRecord picks the record a name should resolve to. A host can hold
+// several records with one name: leftovers of earlier runs (failed, stopped)
+// next to the live VM, and a migration adopts the incoming VM under the same
+// name as a record that may still be there. Taking the first would let the
+// agent reconcile a dead leftover while the live VM goes unseen, so the
+// Machine never reports Running and a migration waiting for that never
+// completes. A running record wins, then one in transition, then stopped, and
+// failed comes last; among equals the first listed is kept.
+func preferredRecord(records []Record) *Record {
+	if len(records) == 0 {
+		return nil
+	}
+	rank := func(r Record) int {
+		switch strings.ToLower(r.Status) {
+		case "running":
+			return 0
+		case "paused", "creating", "starting", "migrating", "pausing", "resuming":
+			return 1
+		case "failed", "error":
+			return 3
+		default:
+			if r.PID > 0 {
+				return 1
+			}
+			return 2
+		}
+	}
+	best := 0
+	for i := 1; i < len(records); i++ {
+		if rank(records[i]) < rank(records[best]) {
+			best = i
+		}
+	}
+	return &records[best]
+}
+
 func (c *Client) LookupByName(ctx context.Context, name string) (*Record, error) {
 	data, err := c.do(ctx, http.MethodGet, "/v1/vms?name="+url.QueryEscape(name), nil)
 	if err != nil {
@@ -409,10 +445,7 @@ func (c *Client) LookupByName(ctx context.Context, name string) (*Record, error)
 	}
 	var arr []Record
 	if json.Unmarshal(data, &arr) == nil {
-		if len(arr) == 0 {
-			return nil, nil
-		}
-		return &arr[0], nil
+		return preferredRecord(arr), nil
 	}
 	var wrapper struct {
 		Items []Record `json:"items"`
@@ -420,10 +453,10 @@ func (c *Client) LookupByName(ctx context.Context, name string) (*Record, error)
 	}
 	if err := json.Unmarshal(data, &wrapper); err == nil {
 		if len(wrapper.Items) > 0 {
-			return &wrapper.Items[0], nil
+			return preferredRecord(wrapper.Items), nil
 		}
 		if len(wrapper.VMs) > 0 {
-			return &wrapper.VMs[0], nil
+			return preferredRecord(wrapper.VMs), nil
 		}
 		return nil, nil
 	}
