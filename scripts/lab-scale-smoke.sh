@@ -42,7 +42,7 @@ import json, sys
 name, ns, run, label, url, digest, taints = sys.argv[1:8]
 tol = [{"key": k, "operator": "Exists", "effect": "NoSchedule"} for k in taints.split(",") if k]
 spec = {
-    "image": {"source": {"httpURL": url}, "digest": digest},
+    "image": {"source": {"httpURL": url, "format": "qcow2"}, "digest": digest},
     "resources": {"cpu": "1", "memory": "256Mi"},
     "runtime": {"backend": "qemu"},
     "network": {"mode": "user"},
