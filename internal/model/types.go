@@ -1526,7 +1526,8 @@ type MachineSnapshotSpec struct {
 }
 
 type MachineSnapshotStatus struct {
-	Phase string `json:"phase,omitempty"`
+	SourceUID string `json:"sourceUID,omitempty"`
+	Phase     string `json:"phase,omitempty"`
 	// No omitempty -- see MachineStatus.Message's comment.
 	Message         string                    `json:"message"`
 	ReadyToUse      bool                      `json:"readyToUse,omitempty"`
@@ -1632,8 +1633,10 @@ type VolumeSnapshotSource struct {
 }
 
 type VolumeSnapshotStatus struct {
-	ReadyToUse *bool                `json:"readyToUse,omitempty"`
-	Error      *VolumeSnapshotError `json:"error,omitempty"`
+	CreationTime                   *time.Time           `json:"creationTime,omitempty"`
+	BoundVolumeSnapshotContentName string               `json:"boundVolumeSnapshotContentName,omitempty"`
+	ReadyToUse                     *bool                `json:"readyToUse,omitempty"`
+	Error                          *VolumeSnapshotError `json:"error,omitempty"`
 	// RestoreSize is the minimum size a PVC restored from this snapshot
 	// must request -- set by the real CSI driver, read by
 	// MachineSnapshotRestore to size the new PVC when the request doesn't

@@ -5457,6 +5457,9 @@ spec:
                       type: string
                     atlasJobID:
                       type: string
+              sourceUID:
+                type: string
+                description: UID of the source Machine recorded with sourceSpec.
               sourceSpec:
                 type: object
                 description: The Machine's spec when the snapshot started,

@@ -31,6 +31,7 @@ import (
 	"github.com/zyvorai/kairon/internal/model"
 	"github.com/zyvorai/kairon/internal/nodeliveness"
 	"github.com/zyvorai/kairon/internal/oteltrace"
+	"github.com/zyvorai/kairon/internal/rehearsal"
 )
 
 var pciBDFPattern = regexp.MustCompile(`(?i)^(?:[0-9a-f]{4}:)?[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$`)
@@ -335,6 +336,25 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 	}
 	if m.DesiredPowerState() == model.PowerStateHibernated {
 		return a.ensureHibernated(ctx, m)
+	}
+	// Rehearsal copies may run only with the node-side isolation guard.
+	// Stop an existing copy if the bridge/guard changes between ticks.
+	if m.Metadata.Labels[rehearsal.RunLabel] != "" {
+		guardErr := rehearsal.CheckBridge(ctx, m.Spec.Network.Bridge)
+		node, nodeErr := a.Kube.GetNode(ctx, a.NodeName)
+		if nodeErr != nil || node.Metadata.Annotations[rehearsal.ReservationAnnotation] != m.Metadata.Labels[rehearsal.RunLabel] {
+			guardErr = errors.Join(nodeErr, fmt.Errorf("rehearsal node reservation is missing or owned by another run"))
+		}
+		if m.Metadata.Annotations[rehearsal.GuardAnnotation] != "v1" || m.Spec.Network.Mode != "tap" || m.Spec.Network.NetNS || m.Spec.Network.VirtualNetwork != nil || len(m.Spec.Network.ExtraInterfaces) != 0 || len(m.Spec.Network.Forwards) != 0 {
+			guardErr = fmt.Errorf("invalid rehearsal network or missing v1 guard annotation")
+		}
+		if guardErr != nil {
+			rec, stopErr := a.current(ctx, m)
+			if stopErr == nil && rec != nil {
+				_, stopErr = a.Flux.Stop(ctx, rec.ID())
+			}
+			return errors.Join(guardErr, stopErr)
+		}
 	}
 	// A template-based sandbox boots from FluxVM's own pre-baked template
 	// spec, not spec.image/spec.volumes at all -- skip resolving a boot

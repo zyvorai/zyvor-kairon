@@ -1,0 +1,50 @@
+{
+  "apiVersion": "changeplan.kairon.zyvor.dev/v1alpha1",
+  "name": "checkpointed-disk-attachment",
+  "namespace": "default",
+  "timeoutSeconds": 120,
+  "stages": [
+    {
+      "name": "attach-data",
+      "kind": "Machine",
+      "target": "demo-db",
+      "changes": {
+        "/spec/disks": [
+          {
+            "name": "data",
+            "claimName": "demo-data"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "name": "application-health",
+          "machine": "demo-db",
+          "path": "/usr/bin/python3",
+          "args": [
+            "/opt/kairon-rehearsal/app.py",
+            "probe",
+            "--url",
+            "http://127.0.0.1:8080/health"
+          ],
+          "timeoutSeconds": 10
+        }
+      ],
+      "rollbackChecks": [
+        {
+          "name": "application-health-after-rollback",
+          "machine": "demo-db",
+          "path": "/usr/bin/python3",
+          "args": [
+            "/opt/kairon-rehearsal/app.py",
+            "probe",
+            "--url",
+            "http://127.0.0.1:8080/health"
+          ],
+          "timeoutSeconds": 10
+        }
+      ],
+      "checkpoint": "demo-db-before-disk-change"
+    }
+  ]
+}

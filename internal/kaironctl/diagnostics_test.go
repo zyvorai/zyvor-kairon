@@ -33,7 +33,6 @@ type fakeCluster struct {
 	webhookNoCA  bool
 	noWorkloads  bool // controller/node Deployment and DaemonSet absent (systemd install)
 	logTail      string
-	requests     []string
 }
 
 func newFakeCluster() *fakeCluster {
@@ -56,7 +55,6 @@ func podsJSON(names ...string) string {
 func (c *fakeCluster) start(t *testing.T) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		c.requests = append(c.requests, r.URL.Path)
 		p := r.URL.Path
 		write := func(body string) { _, _ = io.WriteString(w, body) }
 		switch {

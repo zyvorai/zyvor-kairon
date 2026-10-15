@@ -35,6 +35,8 @@
 
 ## What's new
 
+**Experimental operations:** [Kairon Rehearsal](docs/guides/rehearsal.md) tests upgrades on isolated CSI copies. [Advanced operations](docs/guides/advanced-operations.md) adds health-gated configuration change plans, application recovery verification, traffic/RTT placement recommendations, and incident reproduction with fix verification. Includes runnable scenarios and failure-path tests. VM/CSI and host-isolation hardware qualification is still pending.
+
 New since v0.6.0 (latest tag: v0.10.0; the rows down to incident bundles are new in v0.10.0):
 
 | | |

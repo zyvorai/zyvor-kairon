@@ -125,11 +125,15 @@ func TestReconcileSnapshotRequestsFreezeOnFirstTickWhenGuestAgentEnabled(t *test
 	ctl, fake := newSnapshotTestController(t, nil)
 	snapshot := snapshotWithPhase("")
 	machine := quiesceMachine(nil)
+	machine.Metadata.UID = "recorded-source-uid"
 	if err := ctl.reconcileSnapshot(context.Background(), snapshot, machinesByKey(machine)); err != nil {
 		t.Fatalf("reconcileSnapshot: %v", err)
 	}
 	if _, _, ok := model.ParseQuiesceRef(fake.machineAnnos[model.AnnotationQuiesceRequest]); !ok {
 		t.Fatalf("expected a quiesce request annotation, got %+v", fake.machineAnnos)
+	}
+	if fake.snapshotStatus.SourceUID != machine.Metadata.UID || fake.snapshotStatus.SourceSpec == nil {
+		t.Fatal("snapshot did not retain its source identity and spec")
 	}
 	if fake.snapshotStatus.Phase != "Freezing" {
 		t.Fatalf("expected phase Freezing, got %q", fake.snapshotStatus.Phase)
