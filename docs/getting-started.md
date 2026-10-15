@@ -42,7 +42,7 @@ What the useful flags do:
 |---|---|
 | `--remote-build` | Compile on the host (Go, and Node for the dashboard, are cached and checksum-verified); this machine builds nothing |
 | `--self-test[=quick\|standard\|full]` | Run `kaironctl selftest` on the host afterwards; its result is the script's exit code |
-| `--image-cache-dir=PATH` | Where kairon-node caches downloaded images (the self-test needs one) |
+| `--image-cache-dir=PATH` | Where kairon-node caches downloaded images (the self-test needs one); with an AppArmor-confined FluxVM, it must be a path the profile allows (the lab's profile permits only `/var/lib/kairon-node/image-cache/**`), and a systemd unit needs it in `ReadWritePaths=` |
 | `--with-controller --with-ui --with-console` | Also install the controller, the HTTPS dashboard and the TLS-protected VNC relay |
 | `--console-insecure-http` | Opt out of TLS on the console relay hop (HTTPS is the default) |
 | `--dry-run` | Print the resolved plan; no SSH, no build, no writes |
