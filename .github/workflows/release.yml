@@ -1,6 +1,10 @@
 # Copyright 2026 Zyvor · https://zyvor.dev
 # SPDX-License-Identifier: Apache-2.0
 
+# Self-hosted routing: heavy trusted jobs run on the org `zyvor-build` runners
+# (shared Docker host, x86_64 only). The runs-on expression falls back to
+# ubuntu-latest for pull_request events, so fork PRs never reach self-hosted.
+
 # Publishes to ghcr.io/zyvorai/kairon-{controller,node,ui} on a version tag
 # push -- the piece ci.yml's own container job deliberately doesn't do (see
 # its comment). Before this workflow existed, nothing in this repository's
@@ -16,9 +20,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && '"ubuntu-latest"' || '["self-hosted","zyvor-build","docker"]') }}
     permissions:
       contents: read
       packages: write
@@ -105,10 +113,14 @@ jobs:
         with:
           name: sbom-${{ matrix.target }}-${{ github.ref_name }}
           path: sbom-${{ matrix.target }}.spdx.json
+      # Shared Docker daemon: drop only this job's tags, never a global prune.
+      - name: Remove ${{ matrix.target }} image tags
+        if: always()
+        run: docker image rm -f "ghcr.io/zyvorai/kairon-${{ matrix.target }}:${{ github.ref_name }}" "ghcr.io/zyvorai/kairon-${{ matrix.target }}:latest" || true
 
   # CLI binaries, checksums, Helm OCI chart, and GitHub Release assets.
   release-assets:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && '"ubuntu-latest"' || '["self-hosted","zyvor-build","docker"]') }}
     needs: publish
     permissions:
       contents: write
@@ -223,7 +235,7 @@ jobs:
   # clients pull. Tag pushes only (the workflow only triggers on tags).
   publish-mcp:
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && '"ubuntu-latest"' || '["self-hosted","zyvor-build","docker"]') }}
     needs: publish
     permissions:
       contents: read

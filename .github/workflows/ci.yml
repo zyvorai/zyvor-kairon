@@ -1,6 +1,10 @@
 # Copyright 2026 Zyvor · https://zyvor.dev
 # SPDX-License-Identifier: Apache-2.0
 
+# Self-hosted routing: heavy trusted jobs run on the org `zyvor-build` runners
+# (shared Docker host, x86_64 only). The runs-on expression falls back to
+# ubuntu-latest for pull_request events, so fork PRs never reach self-hosted.
+
 name: ci
 
 on:
@@ -311,7 +315,7 @@ jobs:
   # Dry-run of release.yml release-assets: CLI binaries + checksums +
   # Helm package. Does not push OCI or create a GitHub Release.
   release-assets:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && '"ubuntu-latest"' || '["self-hosted","zyvor-build","docker"]') }}
     needs: [test, lint]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -344,14 +348,14 @@ jobs:
         run: |
           set -euo pipefail
           version="0.0.0-ci.${GITHUB_SHA::12}"
-          cp charts/kairon/Chart.yaml /tmp/Chart.yaml.bak
+          cp charts/kairon/Chart.yaml "${RUNNER_TEMP}/Chart.yaml.bak"
           sed -i "s/^version:.*/version: ${version}/" charts/kairon/Chart.yaml
           sed -i "s/^appVersion:.*/appVersion: \"${version}\"/" charts/kairon/Chart.yaml
           helm package charts/kairon -d dist
           test -f "dist/kairon-${version}.tgz"
           # Production overlay must still lint against the packaged chart.
           helm lint "dist/kairon-${version}.tgz" -f charts/kairon/values-production.yaml
-          mv /tmp/Chart.yaml.bak charts/kairon/Chart.yaml
+          mv "${RUNNER_TEMP}/Chart.yaml.bak" charts/kairon/Chart.yaml
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
         with:
           name: release-assets-ci
@@ -387,7 +391,7 @@ jobs:
   # separate deliberately: this job is the fast, always-on correctness/
   # security gate; release.yml only needs to run once per release.
   container:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && '"ubuntu-latest"' || '["self-hosted","zyvor-build","docker"]') }}
     needs: [test, lint, web]
     strategy:
       matrix:
@@ -402,11 +406,15 @@ jobs:
           target: ${{ matrix.target }}
           push: false
           load: true
-          tags: kairon-${{ matrix.target }}:ci
+          tags: kairon-${{ matrix.target }}:ci-${{ github.run_id }}
       - name: Scan ${{ matrix.target }} image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
-          image-ref: kairon-${{ matrix.target }}:ci
+          image-ref: kairon-${{ matrix.target }}:ci-${{ github.run_id }}
           severity: HIGH,CRITICAL
           exit-code: '1'
           ignore-unfixed: true
+      # Shared Docker daemon: drop only this job's image, never a global prune.
+      - name: Remove ${{ matrix.target }} image
+        if: always()
+        run: docker image rm -f "kairon-${{ matrix.target }}:ci-${{ github.run_id }}" || true
