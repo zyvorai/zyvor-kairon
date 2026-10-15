@@ -211,8 +211,8 @@ using a short-lived token for the `kairon-lab` service account.
 |---|---|---|
 | Create / restart / delete smoke | pass (health only) | `KAIRON_HW_IMAGE` unset: checked `hw-live` Running/Ready, no create/delete |
 | Cold migration | pass | `nldw3-4-32-26` → `nldw4-4-04-32`, about 38 s |
-| Live migration, idle guest, `nldw4-4-04-32` → `nldw3-4-32-26` | pass | Four runs: 4.2–4.4 s transfer, 148–242 ms downtime, `dataPlaneEncrypted: true` |
-| Live migration, idle guest, `nldw3-4-32-26` → `nldw4-4-04-32` | pass | 4.2 s transfer, 262 ms downtime, `dataPlaneEncrypted: true` |
+| Live migration, idle guest, `nldw4-4-04-32` → `nldw3-4-32-26` | pass | Four runs (two plain, one during the source-failure case, one during the NeedsRecovery drill): 4.1–4.4 s transfer, 148–242 ms downtime, `dataPlaneEncrypted: true` |
+| Live migration, idle guest, `nldw3-4-32-26` → `nldw4-4-04-32` | pass | Two runs (one plain, one during the controller-failover case): 4.2–4.6 s transfer, 64–262 ms downtime, `dataPlaneEncrypted: true` |
 | Source failure during transfer | pass | `kairon-node-lab` stopped on the source for 20 s mid-transfer, then restarted; migration `Succeeded`, Machine healthy on the target |
 | Controller failover mid-migration | pass | `kairon-controller` restarted mid-migration; migration `Succeeded` |
 | Ambiguous commit → `NeedsRecovery` | pass | DROP on the destination's tcp/9445 until `NeedsRecovery`, then `ConfirmDestinationNotCommitted` completed the cutover; diagnosis showed destination session `Prepared`, runtime `creating`; no rule left behind |
