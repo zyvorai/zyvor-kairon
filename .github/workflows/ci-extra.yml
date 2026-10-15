@@ -1,6 +1,10 @@
 # Copyright 2026 Zyvor · https://zyvor.dev
 # SPDX-License-Identifier: Apache-2.0
 
+# Self-hosted routing: heavy trusted jobs run on the org `zyvor-build` runners
+# (shared Docker host, x86_64 only). The runs-on expression falls back to
+# ubuntu-latest for pull_request events, so fork PRs never reach self-hosted.
+
 # Extra correctness / hygiene gates kept out of the main ci.yml critical
 # path. Collapsed into two jobs so free-tier runner concurrency is not
 # exhausted by a dozen one-step matrices.
@@ -135,7 +139,7 @@ jobs:
           grep -q 'COMPATIBILITY.md' docs/STATUS.md
 
   build-artifacts:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && '"ubuntu-latest"' || '["self-hosted","zyvor-build","docker"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
