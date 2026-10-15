@@ -24,6 +24,14 @@ type sandboxCreateRequest struct {
 	Spec           *CreateRequest `json:"spec,omitempty"`
 	TTLSeconds     int64          `json:"ttl_seconds,omitempty"`
 	HTTPProxyPorts []uint16       `json:"http_proxy_ports,omitempty"`
+	// Container track (macOS vz): run an OCI image as the sandbox. FluxVM
+	// refuses template/spec with oci, so only one of them is ever set.
+	OCI        *ociSandboxRequest `json:"oci,omitempty"`
+	Profile    string             `json:"profile,omitempty"`
+	VCPUs      uint32             `json:"vcpus,omitempty"`
+	MemoryMiB  uint64             `json:"memory_mib,omitempty"`
+	Offline    bool               `json:"offline,omitempty"`
+	AllowHosts []string           `json:"allow_hosts,omitempty"`
 }
 
 // CreateSandboxForMachine creates m as a FluxVM sandbox (POST
@@ -47,9 +55,14 @@ func (c *Client) CreateSandboxForMachine(ctx context.Context, m model.Machine) (
 		TTLSeconds:     m.Spec.TTLSeconds,
 		HTTPProxyPorts: m.Spec.Sandbox.HTTPProxyPorts,
 	}
-	if m.Spec.Sandbox.TemplateName != "" {
+	switch {
+	case m.Spec.Sandbox.OCI != nil:
+		if err := fillOCIRequest(&req, m); err != nil {
+			return nil, err
+		}
+	case m.Spec.Sandbox.TemplateName != "":
 		req.Template = m.Spec.Sandbox.TemplateName
-	} else {
+	default:
 		payload, err := buildCreateRequest(m, "flux-vm", nil, nil)
 		if err != nil {
 			return nil, err

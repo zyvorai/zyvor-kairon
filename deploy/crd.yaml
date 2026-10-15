@@ -4665,6 +4665,81 @@ spec:
                       type: integer
                       minimum: 1
                       maximum: 65535
+                  oci:
+                    type: object
+                    description: Run a container image as the sandbox (FluxVM container
+                      track, macOS hosts). Immutable after creation.
+                    required:
+                    - image
+                    properties:
+                      image:
+                        type: string
+                        minLength: 1
+                      platform:
+                        type: string
+                        enum: ["linux/arm64", "linux/amd64"]
+                      command:
+                        type: array
+                        items:
+                          type: string
+                      entrypoint:
+                        type: array
+                        items:
+                          type: string
+                      env:
+                        type: array
+                        items:
+                          type: string
+                      workdir:
+                        type: string
+                      user:
+                        type: string
+                      writableRoot:
+                        type: boolean
+                      exitPolicy:
+                        type: string
+                        enum: ["keep", "poweroff"]
+                      ports:
+                        type: array
+                        items:
+                          type: string
+                      restart:
+                        type: string
+                        enum: ["no", "on-failure", "always"]
+                      maxRestarts:
+                        type: integer
+                        format: int32
+                        minimum: 0
+                      healthCheck:
+                        type: object
+                        required:
+                        - command
+                        properties:
+                          command:
+                            type: array
+                            minItems: 1
+                            items:
+                              type: string
+                          intervalSeconds:
+                            type: integer
+                            minimum: 0
+                          timeoutSeconds:
+                            type: integer
+                            minimum: 0
+                          retries:
+                            type: integer
+                            minimum: 0
+                          startPeriodSeconds:
+                            type: integer
+                            minimum: 0
+                      offline:
+                        type: boolean
+                      allowHosts:
+                        type: array
+                        items:
+                          type: string
+                      profile:
+                        type: string
               serviceFabric:
                 type: object
                 properties:
@@ -4702,6 +4777,20 @@ spec:
                 type: array
                 items:
                   type: string
+              container:
+                type: object
+                description: Container process state; set only for spec.sandbox.oci.
+                properties:
+                  exitCode:
+                    type: integer
+                    format: int32
+                  restarts:
+                    type: integer
+                    minimum: 0
+                  health:
+                    type: string
+                  initError:
+                    type: string
               observedGeneration:
                 type: integer
                 format: int64

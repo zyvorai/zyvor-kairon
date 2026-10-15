@@ -104,6 +104,7 @@ The root [README](https://github.com/zyvorai/zyvor-kairon/blob/main/README.md) i
 | [`guides/machine-text-console.md`](guides/machine-text-console.md) | Interactive in-browser text console over FluxVM's own proprietary vsock guest agent |
 | [`guides/machine-logs.md`](guides/machine-logs.md) | Streaming a Machine's real captured serial console output -- Kairon's `kubectl logs`/`-f` equivalent |
 | [`guides/machine-vm-state-snapshot.md`](guides/machine-vm-state-snapshot.md) | Full hypervisor-level VM-state checkpoint/restore (RAM, CPU, device state) -- distinct from `MachineSnapshot`'s disk-content-only CSI snapshot |
+| [`guides/container-sandboxes.md`](guides/container-sandboxes.md) | `spec.sandbox.oci` and `kaironctl container`: run OCI images as FluxVM container sandboxes (macOS hosts), no Docker daemon, Podman or Colima |
 | [`guides/machine-sandboxes.md`](guides/machine-sandboxes.md) | `spec.sandbox`: FluxVM's lightweight agent-sandbox track, templates, the HTTP proxy relay, warm pools, and the egress check |
 | [`guides/machine-image-catalog.md`](guides/machine-image-catalog.md) | `spec.image.catalogName`: FluxVM's node-local, checksummed image catalog and its admin API |
 | [`guides/machine-diagnostics.md`](guides/machine-diagnostics.md) | Runtime capabilities, PSI pressure, effective CPU set, and cgroup-level freeze/thaw |
