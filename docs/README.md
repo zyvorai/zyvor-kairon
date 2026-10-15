@@ -20,6 +20,7 @@ The root [README](https://github.com/zyvorai/zyvor-kairon/blob/main/README.md) i
 | Give an AI coding agent its own VM | [guides/agent-sessions.md](guides/agent-sessions.md) · [guides/agent-sandboxes.md](guides/agent-sandboxes.md) |
 | Ten-minute architecture tour | [../ARCHITECTURE.md](https://github.com/zyvorai/zyvor-kairon/blob/main/ARCHITECTURE.md) |
 | Deep architecture reference | [architecture.md](architecture.md) |
+| Rehearse upgrades, recover applications, test incident fixes and plan placement | [guides/advanced-operations.md](guides/advanced-operations.md) |
 | Full feature inventory | [WHAT_SHIPS.md](WHAT_SHIPS.md) |
 | CLI reference | [CLI.md](CLI.md) |
 | Dependency policy | [DEPENDENCIES.md](DEPENDENCIES.md) |

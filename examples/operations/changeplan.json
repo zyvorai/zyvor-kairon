@@ -1,0 +1,109 @@
+{
+  "apiVersion": "changeplan.kairon.zyvor.dev/v1alpha1",
+  "name": "reviewed-application-change",
+  "namespace": "default",
+  "timeoutSeconds": 120,
+  "stages": [
+    {
+      "name": "application-priority",
+      "kind": "Machine",
+      "target": "demo-db",
+      "changes": {
+        "/spec/priority": 20
+      },
+      "checks": [
+        {
+          "name": "application-health",
+          "machine": "demo-db",
+          "path": "/usr/bin/python3",
+          "args": [
+            "/opt/kairon-rehearsal/app.py",
+            "probe",
+            "--url",
+            "http://127.0.0.1:8080/health"
+          ],
+          "timeoutSeconds": 10
+        }
+      ],
+      "rollbackChecks": [
+        {
+          "name": "application-health-after-rollback",
+          "machine": "demo-db",
+          "path": "/usr/bin/python3",
+          "args": [
+            "/opt/kairon-rehearsal/app.py",
+            "probe",
+            "--url",
+            "http://127.0.0.1:8080/health"
+          ],
+          "timeoutSeconds": 10
+        }
+      ]
+    },
+    {
+      "name": "native-edge-policy",
+      "kind": "MachineNetworkPolicy",
+      "target": "demo-db-edge",
+      "changes": {
+        "/spec/policy": {
+          "defaultAllow": false,
+          "allowCidrs": [
+            "10.77.0.0/24"
+          ]
+        }
+      },
+      "checks": [
+        {
+          "name": "policy-target-health",
+          "machine": "demo-db",
+          "path": "/usr/bin/python3",
+          "args": [
+            "/opt/kairon-rehearsal/app.py",
+            "probe",
+            "--url",
+            "http://127.0.0.1:8080/health"
+          ],
+          "timeoutSeconds": 10
+        },
+        {
+          "name": "web-to-database-health",
+          "machine": "demo-web",
+          "path": "/usr/bin/python3",
+          "args": [
+            "/opt/kairon-rehearsal/app.py",
+            "probe",
+            "--url",
+            "http://10.77.0.2:8080/health"
+          ],
+          "timeoutSeconds": 10
+        }
+      ],
+      "rollbackChecks": [
+        {
+          "name": "policy-target-health-after-rollback",
+          "machine": "demo-db",
+          "path": "/usr/bin/python3",
+          "args": [
+            "/opt/kairon-rehearsal/app.py",
+            "probe",
+            "--url",
+            "http://127.0.0.1:8080/health"
+          ],
+          "timeoutSeconds": 10
+        },
+        {
+          "name": "web-to-database-after-rollback",
+          "machine": "demo-web",
+          "path": "/usr/bin/python3",
+          "args": [
+            "/opt/kairon-rehearsal/app.py",
+            "probe",
+            "--url",
+            "http://10.77.0.2:8080/health"
+          ],
+          "timeoutSeconds": 10
+        }
+      ]
+    }
+  ]
+}

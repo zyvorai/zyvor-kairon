@@ -14,6 +14,7 @@ type PersistentVolumeClaim struct {
 }
 
 type PersistentVolumeClaimSpec struct {
+	VolumeMode *string `json:"volumeMode,omitempty"`
 	// VolumeName is set by the Kubernetes binder once the claim is Bound --
 	// the name of the PersistentVolume backing it.
 	VolumeName string `json:"volumeName,omitempty"`

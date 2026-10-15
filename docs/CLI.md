@@ -478,3 +478,39 @@ Every command, including `get`, `status` and the Helm-backed `install`/`upgrade`
 **`kubectl kairon ...`** works identically once `kubectl-kairon` is on `$PATH` (Krew or `make build`).
 
 ---
+
+## Application rehearsals (experimental)
+
+`kaironctl rehearsal run --file PLAN.json --report NEW-REPORT.json` creates
+isolated CSI-backed VM copies, checks their baseline, runs upgrade and
+verification steps, then cleans up. A nonzero guest exit or cleanup failure
+makes the command fail. Needs the updated kairon-node, an isolated Linux bridge,
+Kubernetes privileges and authenticated guest exec through kairon-ui.
+
+`kaironctl rehearsal cleanup --report REPORT.json` retries cleanup after an
+interrupted run. Use the original cluster context. See the
+[rehearsal guide](guides/rehearsal.md) for prerequisites, reproducible scenarios,
+consistency limits and remaining hardware verification.
+
+## Advanced operations (experimental)
+
+```text
+kaironctl changeplan preview --file PLAN.json [--output PREPARED.json]
+kaironctl changeplan apply --file PREPARED.json --output NEW-JOURNAL.json
+kaironctl changeplan recover --file JOURNAL.json
+kaironctl recovery verify --file RECOVERY.json --report NEW-REPORT.json
+kaironctl incident rehearse --bundle REDACTED.tar.gz --file INCIDENT.json --report NEW-REPORT.json [--ai]
+kaironctl placement collect --rtts MEASURED-RTTS.json --window 10s --output NEW-TELEMETRY.json
+kaironctl placement recommend --telemetry TELEMETRY.json [--max-moves 1] [--min-improvement 10]
+                 [--max-pressure 25] [--max-age 120] [--cooldown 3600] [--migration-penalty 0]
+```
+
+Change plans apply live allowlisted configuration changes with health gates and
+compensation. Recovery and incident commands use independent CSI copies with the
+Rehearsal isolation/cleanup contract. Placement commands collect observed traffic
+and produce recommendations without applying migrations. Input namespaces come
+from the plan; placement reads the cluster graph. These commands use your selected
+Kubernetes context and normal UI authentication. Recovery/incident interruptions
+use `rehearsal cleanup --report REPORT.json` on the original cluster.
+See [advanced operations](guides/advanced-operations.md) for supported scope,
+examples, recovery semantics and measurement limitations.

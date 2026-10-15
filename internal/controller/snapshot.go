@@ -52,6 +52,7 @@ func (c *Controller) reconcileSnapshot(ctx context.Context, snapshot model.Machi
 		// Carried by every status write below, which copy snapshot.Status.
 		source := machine.Spec
 		snapshot.Status.SourceSpec = &source
+		snapshot.Status.SourceUID = machine.Metadata.UID
 	}
 	volumes, err := snapshotVolumes(snapshot, machine)
 	if err != nil {

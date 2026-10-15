@@ -1,0 +1,14 @@
+{
+  "apiVersion": "networkplacement.kairon.zyvor.dev/v1alpha1",
+  "capturedAt": "2000-01-01T00:00:00Z",
+  "windowSeconds": 10,
+  "sameNodeRTTMillis": 0.1,
+  "links": [
+    {
+      "from": "worker-a",
+      "to": "worker-b",
+      "rttMillis": 10,
+      "sampledAt": "2000-01-01T00:00:00Z"
+    }
+  ]
+}

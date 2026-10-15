@@ -1,0 +1,75 @@
+{
+  "apiVersion": "rehearsal.kairon.zyvor.dev/v1alpha1",
+  "name": "sqlite-http-recovery",
+  "namespace": "default",
+  "node": "rehearsal-worker",
+  "bridge": "krh-demo",
+  "ttlSeconds": 1800,
+  "timeoutSeconds": 900,
+  "consistency": "existing",
+  "members": [
+    {
+      "name": "demo-db",
+      "sourceSnapshot": "demo-db-healthy-point",
+      "restoreStorageClass": {
+        "root": "REPLACE_WITH_MATCHING_CSI_STORAGE_CLASS"
+      }
+    },
+    {
+      "name": "demo-web",
+      "sourceSnapshot": "demo-web-healthy-point",
+      "restoreStorageClass": {
+        "root": "REPLACE_WITH_MATCHING_CSI_STORAGE_CLASS"
+      }
+    }
+  ],
+  "setup": [
+    {
+      "name": "db-network",
+      "machine": "demo-db",
+      "path": "/bin/sh",
+      "args": [
+        "-ec",
+        "iface=$(ls /sys/class/net | sed '/^lo$/d' | head -n1); test -n \"$iface\"; ip link set dev \"$iface\" up; ip addr flush dev \"$iface\"; ip addr add 10.77.0.2/24 dev \"$iface\""
+      ],
+      "timeoutSeconds": 30
+    },
+    {
+      "name": "web-network",
+      "machine": "demo-web",
+      "path": "/bin/sh",
+      "args": [
+        "-ec",
+        "iface=$(ls /sys/class/net | sed '/^lo$/d' | head -n1); test -n \"$iface\"; ip link set dev \"$iface\" up; ip addr flush dev \"$iface\"; ip addr add 10.77.0.3/24 dev \"$iface\""
+      ],
+      "timeoutSeconds": 30
+    },
+    {
+      "name": "start-api",
+      "machine": "demo-db",
+      "path": "/bin/sh",
+      "args": [
+        "-ec",
+        "nohup /usr/bin/python3 /opt/kairon-rehearsal/app.py serve --bind 0.0.0.0 --port 8080 </dev/null >/var/log/kairon-rehearsal-http.log 2>&1 &"
+      ],
+      "timeoutSeconds": 30
+    }
+  ],
+  "verify": [
+    {
+      "name": "http-after",
+      "machine": "demo-web",
+      "path": "/bin/sh",
+      "args": [
+        "-ec",
+        "for attempt in 1 2 3 4 5; do /usr/bin/python3 /opt/kairon-rehearsal/app.py probe --url http://10.77.0.2:8080/health && exit 0; sleep 1; done; exit 1"
+      ],
+      "timeoutSeconds": 30
+    }
+  ],
+  "purpose": "recovery",
+  "objectives": {
+    "maxRTOSeconds": 900,
+    "maxRPOSeconds": 3600
+  }
+}
