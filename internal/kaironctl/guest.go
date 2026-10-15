@@ -139,7 +139,7 @@ command line through the guest's shell. Exits with the guest command's exit code
 			if err := json.Unmarshal(raw, &res); err != nil {
 				return err
 			}
-			fmt.Fprint(os.Stdout, res.Stdout)
+			_, _ = fmt.Fprint(os.Stdout, res.Stdout)
 			fmt.Fprint(os.Stderr, res.Stderr)
 			if res.ExitCode != 0 {
 				os.Exit(int(res.ExitCode))

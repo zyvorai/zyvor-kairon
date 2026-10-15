@@ -112,16 +112,16 @@ func writeExposed(w io.Writer, svc kube.Service, slice kube.EndpointSlice) {
 	if len(slice.Endpoints) > 0 && len(slice.Endpoints[0].Addresses) > 0 {
 		backend = fmt.Sprintf("%s:%d", slice.Endpoints[0].Addresses[0], *slice.Ports[0].Port)
 	}
-	fmt.Fprintf(w, "service/%s exposed (%s)\n", svc.Metadata.Name, svc.Spec.Type)
-	fmt.Fprintf(w, "  %s.%s.svc:%d/%s -> %s\n", svc.Metadata.Name, svc.Metadata.Namespace, p.Port, p.Protocol, backend)
+	_, _ = fmt.Fprintf(w, "service/%s exposed (%s)\n", svc.Metadata.Name, svc.Spec.Type)
+	_, _ = fmt.Fprintf(w, "  %s.%s.svc:%d/%s -> %s\n", svc.Metadata.Name, svc.Metadata.Namespace, p.Port, p.Protocol, backend)
 	if svc.Spec.ClusterIP != "" && svc.Spec.ClusterIP != "None" {
-		fmt.Fprintf(w, "  cluster IP  %s\n", svc.Spec.ClusterIP)
+		_, _ = fmt.Fprintf(w, "  cluster IP  %s\n", svc.Spec.ClusterIP)
 	}
 	if p.NodePort != 0 {
-		fmt.Fprintf(w, "  node port   %d\n", p.NodePort)
+		_, _ = fmt.Fprintf(w, "  node port   %d\n", p.NodePort)
 	}
 	for _, in := range svc.Status.LoadBalancer.Ingress {
-		fmt.Fprintf(w, "  external    %s\n", orDash(in.IP+in.Hostname))
+		_, _ = fmt.Fprintf(w, "  external    %s\n", orDash(in.IP+in.Hostname))
 	}
 }
 

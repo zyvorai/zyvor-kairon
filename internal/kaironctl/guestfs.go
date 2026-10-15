@@ -70,7 +70,7 @@ open. Admin-only; needs libguestfs-tools on the node. Ctrl+] detaches.`,
 			start := time.Now()
 			why := runConsoleSession(ctx, conn, os.Stdin, os.Stdout, consoleEscape)
 			restore()
-			fmt.Fprint(os.Stdout, consoleGoodbye(os.Stdout, why, ns, name, time.Since(start)))
+			_, _ = fmt.Fprint(os.Stdout, consoleGoodbye(os.Stdout, why, ns, name, time.Since(start)))
 			return nil
 		},
 	}

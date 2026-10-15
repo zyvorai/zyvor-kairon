@@ -30,7 +30,7 @@ func TestPermittedDevices(t *testing.T) {
 		},
 	}
 	got := permittedDevices([]model.NodeTopology{nt})
-	var rows []string
+	rows := make([]string, 0, len(got))
 	for _, d := range got {
 		rows = append(rows, d.Kind+" "+d.ID+" free="+strings.Repeat("x", d.Free))
 	}

@@ -371,7 +371,7 @@ prints the approval id; repeat with --approval-id once it is approved, or pass
 			if err != nil {
 				return err
 			}
-			fmt.Fprint(os.Stdout, res.Stdout)
+			_, _ = fmt.Fprint(os.Stdout, res.Stdout)
 			fmt.Fprint(os.Stderr, res.Stderr)
 			if res.ExitCode != nil && *res.ExitCode != 0 {
 				os.Exit(int(min(max(*res.ExitCode, 1), 255)))
@@ -649,7 +649,7 @@ func newSessionLogsCmd(opts *Options) *cobra.Command {
 				if err := json.Unmarshal(raw, &ch); err != nil {
 					return err
 				}
-				fmt.Fprint(os.Stdout, ch.Output)
+				_, _ = fmt.Fprint(os.Stdout, ch.Output)
 				fmt.Fprint(os.Stderr, ch.Stderr)
 				if ch.NextOffset > off {
 					off = ch.NextOffset

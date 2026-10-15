@@ -311,7 +311,7 @@ cluster, or from a manifest with -f (- for stdin). Changes nothing.`,
 				return err
 			}
 			for _, n := range notes {
-				fmt.Fprintln(cmd.ErrOrStderr(), "# "+n)
+				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "# "+n)
 			}
 			m.Status = model.MachineStatus{}
 			return printManifest(cmd.OutOrStdout(), m, output)

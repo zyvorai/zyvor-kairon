@@ -33,7 +33,7 @@ func lifecycleMachine(l model.LifecycleSpec, created, activity time.Time) model.
 func TestLifecycleDecision(t *testing.T) {
 	now := time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC)
 	created := now.Add(-time.Hour)
-	cases := []struct {
+	cases := []struct { //nolint:prealloc // table literal, not a loop-built slice
 		name   string
 		m      model.Machine
 		action string

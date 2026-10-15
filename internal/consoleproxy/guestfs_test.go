@@ -49,17 +49,17 @@ func TestHandleGuestfs(t *testing.T) {
 	}
 
 	guestfishBin = filepath.Join(dir, "missing")
-	if resp := get(""); resp.StatusCode != http.StatusNotImplemented {
+	if resp := get(""); resp.StatusCode != http.StatusNotImplemented { //nolint:bodyclose // helper closes the body
 		t.Fatalf("missing guestfish: %d", resp.StatusCode)
 	}
 	guestfishBin = fake
-	if resp := get("?rw=1"); resp.StatusCode != http.StatusConflict {
+	if resp := get("?rw=1"); resp.StatusCode != http.StatusConflict { //nolint:bodyclose // helper closes the body
 		t.Fatalf("rw on a running VM: %d", resp.StatusCode)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+"/guestfs/vm-1",
+	conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+"/guestfs/vm-1", //nolint:bodyclose // websocket upgrade response body is hijacked
 		&websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Bearer t"}}})
 	if err != nil {
 		t.Fatal(err)

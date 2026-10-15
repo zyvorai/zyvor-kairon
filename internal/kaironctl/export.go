@@ -158,12 +158,12 @@ func newExportListCmd(opts *Options) *cobra.Command {
 
 func writeExportTable(w io.Writer, items []model.MachineExport, now time.Time) {
 	if len(items) == 0 {
-		fmt.Fprintln(w, "No MachineExports found.")
+		_, _ = fmt.Fprintln(w, "No MachineExports found.")
 		return
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Metadata.Name < items[j].Metadata.Name })
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tMACHINE\tPHASE\tFORMAT\tSIZE\tEXPIRES\tNODE")
+	_, _ = fmt.Fprintln(tw, "NAME\tMACHINE\tPHASE\tFORMAT\tSIZE\tEXPIRES\tNODE")
 	for _, e := range items {
 		size := "-"
 		if e.Status.SizeBytes > 0 {
@@ -177,7 +177,7 @@ func writeExportTable(w io.Writer, items []model.MachineExport, now time.Time) {
 				expires = "expired"
 			}
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", e.Metadata.Name, e.Spec.MachineName, style.Phase(w, orDash(e.Status.Phase)),
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", e.Metadata.Name, e.Spec.MachineName, style.Phase(w, orDash(e.Status.Phase)),
 			orDash(e.Status.Format), size, expires, orDash(e.Status.NodeName))
 	}
 	_ = tw.Flush()
