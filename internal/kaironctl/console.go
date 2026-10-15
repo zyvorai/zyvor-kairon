@@ -170,7 +170,7 @@ func renderConsoleFrame(w io.Writer, info consoleInfo, width int) string {
 		return frameRow(w, inner, append(segs, b...)...)
 	}
 	resources := strings.TrimSpace(strings.Join([]string{cpuLabel(info.CPU), info.Memory}, " "))
-	lines := []string{
+	lines := []string{ //nolint:prealloc // literal with fixed rows
 		frameRule(w, inner, "╭", "╮"),
 		frameRow(w, inner,
 			frameSeg{" ", ""}, frameSeg{"●", style.BrightRed}, frameSeg{" ", ""},
@@ -320,7 +320,7 @@ machines/console.
 				out = io.MultiWriter(os.Stdout, f)
 			}
 			if !noFrame {
-				fmt.Fprint(os.Stdout, renderConsoleFrame(os.Stdout, info, width))
+				_, _ = fmt.Fprint(os.Stdout, renderConsoleFrame(os.Stdout, info, width))
 			}
 			restore := func() {}
 			if tty {
@@ -334,7 +334,7 @@ machines/console.
 			start := time.Now()
 			why := runConsoleSession(ctx, conn, os.Stdin, out, consoleEscape)
 			restore()
-			fmt.Fprint(os.Stdout, consoleGoodbye(os.Stdout, why, ns, name, time.Since(start)))
+			_, _ = fmt.Fprint(os.Stdout, consoleGoodbye(os.Stdout, why, ns, name, time.Since(start)))
 			return nil
 		},
 	}

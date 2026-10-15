@@ -52,7 +52,8 @@ func manifestService(s kube.Service) kube.Service {
 }
 
 func writeMachineManifest(w io.Writer, m model.Machine, services []kube.Service, format string) error {
-	objs := []any{m}
+	objs := make([]any, 0, 1+len(services))
+	objs = append(objs, m)
 	for _, s := range services {
 		objs = append(objs, s)
 	}

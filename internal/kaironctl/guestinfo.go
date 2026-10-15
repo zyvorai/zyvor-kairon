@@ -259,7 +259,7 @@ func formatUptime(sec int64) string {
 
 func writeOSInfo(w io.Writer, info GuestOSInfo) {
 	row := func(k, v, c string) {
-		fmt.Fprintf(w, "  %s %s\n", style.Paint(w, style.Grey, fmt.Sprintf("%-9s", k)), style.Paint(w, c, orDash(v)))
+		_, _ = fmt.Fprintf(w, "  %s %s\n", style.Paint(w, style.Grey, fmt.Sprintf("%-9s", k)), style.Paint(w, c, orDash(v)))
 	}
 	row("OS", info.Name, style.White)
 	row("Kernel", info.Kernel, style.SoftCyan)
@@ -283,13 +283,13 @@ func usageBar(w io.Writer, pct int) string {
 
 func writeFSList(w io.Writer, list []GuestFS) {
 	if len(list) == 0 {
-		fmt.Fprintln(w, "No filesystems reported.")
+		_, _ = fmt.Fprintln(w, "No filesystems reported.")
 		return
 	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "MOUNT\tTYPE\tSIZE\tUSED\tAVAIL\tUSE%\t\tDEVICE")
+	_, _ = fmt.Fprintln(tw, "MOUNT\tTYPE\tSIZE\tUSED\tAVAIL\tUSE%\t\tDEVICE")
 	for _, f := range list {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%d%%\t%s\t%s\n", f.MountPoint, f.Type, humanBytes(uint64(f.TotalBytes)), humanBytes(uint64(f.UsedBytes)),
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%d%%\t%s\t%s\n", f.MountPoint, f.Type, humanBytes(uint64(f.TotalBytes)), humanBytes(uint64(f.UsedBytes)),
 			humanBytes(uint64(f.AvailBytes)), f.UsedPercent, usageBar(w, f.UsedPercent), f.Device)
 	}
 	_ = tw.Flush()
@@ -297,13 +297,13 @@ func writeFSList(w io.Writer, list []GuestFS) {
 
 func writeUserList(w io.Writer, list []GuestUser) {
 	if len(list) == 0 {
-		fmt.Fprintln(w, "No users logged in.")
+		_, _ = fmt.Fprintln(w, "No users logged in.")
 		return
 	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "USER\tTERMINAL\tSINCE\tFROM")
+	_, _ = fmt.Fprintln(tw, "USER\tTERMINAL\tSINCE\tFROM")
 	for _, u := range list {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", u.User, orDash(u.Terminal), orDash(u.Since), orDash(u.From))
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", u.User, orDash(u.Terminal), orDash(u.Since), orDash(u.From))
 	}
 	_ = tw.Flush()
 }

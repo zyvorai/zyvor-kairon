@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -159,5 +158,4 @@ func TestDialConsoleTicketFlow(t *testing.T) {
 	if gotKind != "text" || gotTicket != "t-123" || gotCols != "120" || gotAuth != "Bearer secret" {
 		t.Fatalf("kind=%q ticket=%q cols=%q auth=%q", gotKind, gotTicket, gotCols, gotAuth)
 	}
-	var _ net.Conn = conn
 }

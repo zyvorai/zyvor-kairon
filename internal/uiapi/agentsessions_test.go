@@ -235,7 +235,7 @@ func TestAgentSessionPtyWebSocketThroughRelays(t *testing.T) {
 	ui := httptest.NewServer(w.handler)
 	t.Cleanup(ui.Close)
 	ctx := t.Context()
-	c, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(ui.URL, "http")+"/api/v1/agentsessions/default/work/pty?cols=80&rows=24",
+	c, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(ui.URL, "http")+"/api/v1/agentsessions/default/work/pty?cols=80&rows=24", //nolint:bodyclose // websocket upgrade response body is hijacked
 		&websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Bearer " + w.admin}}})
 	if err != nil {
 		t.Fatalf("dial pty: %v", err)

@@ -174,7 +174,7 @@ func (s *Server) handleAgentSessionProxy(w http.ResponseWriter, r *http.Request)
 			s.Log.Info("uiapi agent session approval", "username", username, "namespace", sess.Metadata.Namespace, "name", sess.Metadata.Name, "approval", approval, "decision", decision)
 		}
 	}
-	rewrite := s.agentSessionResponseRewrite(r, sess, rest)
+	rewrite := s.agentSessionResponseRewrite(r, sess, rest) //nolint:bodyclose // ReverseProxy closes the response body
 	rp := s.nodeReverseProxy(nodeAddr, "/agent-sessions/"+sess.Status.SessionID+"/"+rest, rewrite != nil)
 	rp.ModifyResponse = rewrite
 	if s.Log != nil {

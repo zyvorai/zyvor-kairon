@@ -44,7 +44,7 @@ func (a *Agent) reconcileExports(ctx context.Context, machines map[string]model.
 			if e.Status.NodeName == a.NodeName && !model.ExportTerminal(e.Status.Phase) {
 				seen[key] = true
 				a.dropExport(key)
-				a.patchExport(ctx, e, model.MachineExportStatus{Phase: "Failed", NodeName: a.NodeName, Message: "Machine " + e.Spec.MachineName + " is no longer on this node"})
+				_ = a.patchExport(ctx, e, model.MachineExportStatus{Phase: "Failed", NodeName: a.NodeName, Message: "Machine " + e.Spec.MachineName + " is no longer on this node"})
 			}
 			continue
 		}
@@ -162,7 +162,7 @@ func (a *Agent) exportSourceDisk(ctx context.Context, m model.Machine) (string, 
 	}
 	vol := m.Spec.Volumes[0]
 	if vol.Atlas.EffectiveMode() == model.AtlasModeRBD {
-		return "", fmt.Errorf("Atlas rbd boot volumes can't be exported yet")
+		return "", fmt.Errorf("atlas rbd boot volumes can't be exported yet")
 	}
 	pvc, err := a.Kube.GetPersistentVolumeClaim(ctx, m.Namespace(), vol.ClaimName)
 	if err != nil {

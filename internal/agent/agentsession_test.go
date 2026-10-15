@@ -113,7 +113,7 @@ func newSessionWorld(t *testing.T, sessions ...model.AgentSession) (*Agent, *ses
 		id := strings.TrimPrefix(r.URL.Path, "/v1/agents/sessions/")
 		switch {
 		case r.URL.Path == "/v1/agents/sessions" && r.Method == http.MethodGet:
-			items := []map[string]any{}
+			items := make([]map[string]any, 0, len(w.flux))
 			for _, s := range w.flux {
 				items = append(items, s)
 			}

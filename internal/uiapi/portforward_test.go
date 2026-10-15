@@ -128,7 +128,7 @@ func TestHandlePortForwardRejects(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			_, base := portForwardChain(t, tc.m)
-			_, resp, err := websocket.Dial(context.Background(), base+"/api/v1/machines/default/vm1/portforward?port="+tc.port, nil)
+			_, resp, err := websocket.Dial(context.Background(), base+"/api/v1/machines/default/vm1/portforward?port="+tc.port, nil) //nolint:bodyclose // failed upgrade; the body is not used
 			if err == nil {
 				t.Fatal("expected the upgrade to fail")
 			}

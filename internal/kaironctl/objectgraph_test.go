@@ -44,7 +44,7 @@ func TestBuildObjectGraph(t *testing.T) {
 		},
 	}
 	g := buildObjectGraph(m, rel)
-	var got []string
+	got := make([]string, 0, len(g.Children))
 	for _, c := range g.Children {
 		got = append(got, c.Kind+"/"+c.Namespace+"/"+c.Name+"/"+c.Status)
 	}

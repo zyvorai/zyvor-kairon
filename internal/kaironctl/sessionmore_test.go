@@ -172,7 +172,7 @@ func TestRunSessionPtyExitCode(t *testing.T) {
 		_ = c.Close(websocket.StatusNormalClosure, "exit=3")
 	}))
 	defer srv.Close()
-	conn, _, err := websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(srv.URL, "http"), nil)
+	conn, _, err := websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(srv.URL, "http"), nil) //nolint:bodyclose // websocket upgrade response body is hijacked
 	if err != nil {
 		t.Fatal(err)
 	}

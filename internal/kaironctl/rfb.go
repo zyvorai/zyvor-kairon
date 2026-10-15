@@ -97,7 +97,7 @@ func rfbScreenshot(conn io.ReadWriter) (*image.RGBA, error) {
 
 	// SetPixelFormat: 32 bpp, depth 24, little-endian, true colour,
 	// red/green/blue max 255 at shifts 16/8/0.
-	msg := []byte{0, 0, 0, 0, 32, 24, 0, 1, 0, 255, 0, 255, 0, 255, 16, 8, 0, 0, 0, 0}
+	msg := []byte{0, 0, 0, 0, 32, 24, 0, 1, 0, 255, 0, 255, 0, 255, 16, 8, 0, 0, 0, 0} //nolint:prealloc // fixed protocol message
 	// SetEncodings: Raw only.
 	msg = append(msg, 2, 0, 0, 1, 0, 0, 0, 0)
 	// FramebufferUpdateRequest, non-incremental, whole screen.

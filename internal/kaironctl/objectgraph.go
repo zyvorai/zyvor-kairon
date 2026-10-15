@@ -80,18 +80,20 @@ func buildObjectGraph(m model.Machine, rel machineRelated) graphNode {
 	}
 	if kind := m.Spec.InstanceTypeKind; m.Spec.InstanceTypeName != "" {
 		scope := ns
-		if kind == "" {
+		switch kind {
+		case "":
 			kind = "MachineInstanceType"
-		} else if kind == "MachineClusterInstanceType" {
+		case "MachineClusterInstanceType":
 			scope = ""
 		}
 		add(kind, m.Spec.InstanceTypeName, scope, "spec.instanceTypeName", "")
 	}
 	if kind := m.Spec.PreferenceKind; m.Spec.PreferenceName != "" {
 		scope := ns
-		if kind == "" {
+		switch kind {
+		case "":
 			kind = "MachinePreference"
-		} else if kind == "MachineClusterPreference" {
+		case "MachineClusterPreference":
 			scope = ""
 		}
 		add(kind, m.Spec.PreferenceName, scope, "spec.preferenceName", "")

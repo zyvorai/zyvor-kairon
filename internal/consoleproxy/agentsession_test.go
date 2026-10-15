@@ -47,7 +47,7 @@ func relayDo(t *testing.T, method, url string, headers map[string]string) *http.
 
 func TestAgentSessionRelayForwardsAllowedVerbs(t *testing.T) {
 	relay, seen := agentSessionRelay(t)
-	resp := relayDo(t, http.MethodGet, relay.URL+"/agent-sessions/"+testSessionID+"/jobs/j1?offset=10&wait_ms=500",
+	resp := relayDo(t, http.MethodGet, relay.URL+"/agent-sessions/"+testSessionID+"/jobs/j1?offset=10&wait_ms=500", //nolint:bodyclose // helper closes the body
 		map[string]string{"Cookie": "kairon=x"})
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d", resp.StatusCode)
@@ -63,7 +63,7 @@ func TestAgentSessionRelayForwardsAllowedVerbs(t *testing.T) {
 		t.Fatal("cookie leaked to FluxVM")
 	}
 
-	resp = relayDo(t, http.MethodGet, relay.URL+"/agent-sessions/"+testSessionID, nil)
+	resp = relayDo(t, http.MethodGet, relay.URL+"/agent-sessions/"+testSessionID, nil) //nolint:bodyclose // helper closes the body
 	if resp.StatusCode != http.StatusOK || (*seen)[1].URL.Path != "/v1/agents/sessions/"+testSessionID {
 		t.Fatalf("bare session GET: status %d", resp.StatusCode)
 	}
@@ -83,7 +83,7 @@ func TestAgentSessionRelayRefuses(t *testing.T) {
 		{http.MethodGet, "/agent-preview/short/", http.StatusNotFound},
 	}
 	for _, c := range cases {
-		if resp := relayDo(t, c.method, relay.URL+c.path, nil); resp.StatusCode != c.want {
+		if resp := relayDo(t, c.method, relay.URL+c.path, nil); resp.StatusCode != c.want { //nolint:bodyclose // helper closes the body
 			t.Errorf("%s %s = %d, want %d", c.method, c.path, resp.StatusCode, c.want)
 		}
 	}
@@ -104,7 +104,7 @@ func TestAgentSessionRelayRefuses(t *testing.T) {
 func TestAgentPreviewRelay(t *testing.T) {
 	relay, seen := agentSessionRelay(t)
 	token := strings.Repeat("ab", 32)
-	resp := relayDo(t, http.MethodGet, relay.URL+"/agent-preview/"+token+"/static/app.js?v=2", nil)
+	resp := relayDo(t, http.MethodGet, relay.URL+"/agent-preview/"+token+"/static/app.js?v=2", nil) //nolint:bodyclose // helper closes the body
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d", resp.StatusCode)
 	}

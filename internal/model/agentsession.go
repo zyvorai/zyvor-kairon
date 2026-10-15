@@ -284,7 +284,7 @@ func ValidateAgentSessionSpec(s AgentSessionSpec) error {
 	}
 	if w := s.Workspace; w != nil {
 		if w.Path != "" && !guestPath(w.Path) {
-			return fmt.Errorf("workspace.path must be an absolute guest path of [A-Za-z0-9/._-] without ..")
+			return fmt.Errorf("workspace.path must be an absolute guest path of [A-Za-z0-9/._-] without parent-directory components")
 		}
 		if w.Mode != "" && w.Mode != "clone" && w.Mode != "readonly" {
 			return fmt.Errorf("workspace.mode must be clone or readonly")

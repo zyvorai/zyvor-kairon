@@ -170,7 +170,7 @@ func (c *Controller) ensureRestoredMachine(ctx context.Context, restore *model.M
 	switch {
 	case err == nil:
 		if existing.Metadata.Labels[model.LabelRestoredBy] != restore.Metadata.Name {
-			return fmt.Errorf("Machine %s already exists and was not created by this restore", name)
+			return fmt.Errorf("machine %s already exists and was not created by this restore", name)
 		}
 	case kube.IsNotFound(err):
 		m := model.Machine{
