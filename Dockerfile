@@ -86,3 +86,24 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/kairon-csi-controller /kairon-csi-controller
 ENTRYPOINT ["/kairon-csi-controller"]
+
+# kairon-mcp: `kaironctl mcp serve` over stdio, packaged for the MCP Registry
+# (server.json). Its own build stage so the kairon-* images above are
+# untouched. The entrypoint deliberately does NOT carry --allow-write: the
+# server offers read tools only unless the operator appends --allow-write
+# to the container arguments themselves (and then also needs a writable
+# --audit-log, see docs/guides/hermes-mcp.md).
+FROM golang:1.27-bookworm@sha256:5cf287a799e6b94384bad13d16b14904c531f51ba65792237e122ce42b392f61 AS build-mcp
+WORKDIR /src
+COPY go.mod ./
+COPY . .
+ARG VERSION=dev
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/kaironctl ./cmd/kaironctl
+
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab AS mcp
+# The MCP Registry verifies ownership of an OCI package by this label; it
+# must equal "name" in server.json (scripts/validate.py gates that).
+LABEL io.modelcontextprotocol.server.name="io.github.zyvorai/kairon"
+LABEL org.opencontainers.image.source="https://github.com/zyvorai/zyvor-kairon"
+COPY --from=build-mcp /out/kaironctl /kaironctl
+ENTRYPOINT ["/kaironctl", "mcp", "serve"]

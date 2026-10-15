@@ -126,6 +126,38 @@ tools on the Hermes side as well:
       exclude: [set_power_state, create_snapshot, snapshot_volume, network_capture, claim_machine, release_claim, delete_machine, fork_machine, machine_disk, machine_nic, machine_backup, create_sealed_claim, apply_network_policy, apply_claim_step, audit_record]
 ```
 
+## Install from the MCP Registry (OCI)
+
+`kaironctl mcp serve` is listed in the MCP Registry as
+`io.github.zyvorai/kairon` and ships as the cosign-signed image
+`ghcr.io/zyvorai/kairon-mcp`. Registry entries are published from
+`server.json` by the `publish-mcp` job in `.github/workflows/release.yml` on
+every `v*` tag; the image carries the `io.modelcontextprotocol.server.name`
+label the registry uses to verify ownership. The image runs as nonroot and
+its entrypoint is `kaironctl mcp serve` with no flags.
+
+```json
+{
+  "mcpServers": {
+    "kairon": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm",
+               "-e", "KAIRON_KUBE_URL", "-e", "KAIRON_KUBE_TOKEN",
+               "ghcr.io/zyvorai/kairon-mcp:v0.10.0"],
+      "env": { "KAIRON_KUBE_URL": "https://k8s.example:6443", "KAIRON_KUBE_TOKEN": "..." }
+    }
+  }
+}
+```
+
+Writes are off by default: the image never bakes in `--allow-write`, so only
+the read tools are registered. To opt in, append `--allow-write` after the
+image name, and give the container a writable audit log (for example
+`-v kairon-audit:/home/nonroot/.kairon`) because a write call is refused
+when the audit log cannot be written. Destructive tools still need
+`kaironctl approve`. Files named by `KAIRON_KUBE_CA` and `KAIRON_UI_CA` are
+paths inside the container, so mount them.
+
 ## Credentials
 
 | Variable | Needed for |

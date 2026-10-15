@@ -15,6 +15,7 @@ on:
       - '.hermes/**'
       - 'go.mod'
       - 'go.sum'
+      - 'server.json'
       - '.github/workflows/mcp.yml'
   pull_request:
     paths:
@@ -26,6 +27,7 @@ on:
       - '.hermes/**'
       - 'go.mod'
       - 'go.sum'
+      - 'server.json'
       - '.github/workflows/mcp.yml'
   workflow_dispatch:
 
@@ -87,3 +89,17 @@ jobs:
               assert "mcp" in s.get("args", []) and "serve" in s.get("args", []), f"{name}: args must run 'mcp serve'"
           print("hermes example config:", ", ".join(servers))
           EOF
+
+  mcp-registry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - name: server.json validates against the registry schema
+        run: |
+          set -euo pipefail
+          curl -fsSL -o mcp-publisher.tar.gz \
+            https://github.com/modelcontextprotocol/registry/releases/download/v1.8.1/mcp-publisher_linux_amd64.tar.gz
+          echo "a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc  mcp-publisher.tar.gz" | sha256sum -c -
+          tar xzf mcp-publisher.tar.gz mcp-publisher
+          ./mcp-publisher validate server.json
