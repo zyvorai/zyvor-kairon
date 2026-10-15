@@ -124,6 +124,33 @@ except Exception as e:
 if (root / "VERSION").read_text().strip() != "v0.10.0":
     fail("VERSION must be v0.10.0")
 
+# MCP Registry metadata: server.json must track the release version and the
+# image that carries the ownership label (Dockerfile `mcp` target).
+try:
+    import json
+    server = json.loads((root / "server.json").read_text())
+    ver = (root / "VERSION").read_text().strip()
+    if server.get("version") != ver.lstrip("v"):
+        fail(f"server.json version {server.get('version')!r} must equal VERSION without the leading v")
+    ident = server["packages"][0]["identifier"]
+    if ident != f"ghcr.io/zyvorai/kairon-mcp:{ver}":
+        fail(f"server.json package identifier {ident!r} must be ghcr.io/zyvorai/kairon-mcp:{ver}")
+    if len(server.get("description", "")) > 100:
+        fail("server.json description exceeds the registry limit of 100 characters")
+    label = None
+    for line in (root / "Dockerfile").read_text().splitlines():
+        if line.startswith("LABEL io.modelcontextprotocol.server.name="):
+            label = line.split("=", 1)[1].strip('"')
+    if label != server.get("name"):
+        fail(f"Dockerfile mcp label {label!r} != server.json name {server.get('name')!r}")
+    names = {e["name"] for e in server["packages"][0].get("environmentVariables", [])}
+    if "KAIRON_MCP_ALLOW_WRITE" in names or any("allow-write" in a for a in server["packages"][0].get("runtimeArguments", []) + server["packages"][0].get("packageArguments", [])):
+        fail("server.json must not enable writes by default")
+    if "--allow-write" in next((l for l in (root / "Dockerfile").read_text().splitlines() if l.startswith("ENTRYPOINT") and "kaironctl" in l), ""):
+        fail("the mcp image ENTRYPOINT must not carry --allow-write")
+except Exception as e:
+    fail(f"server.json check failed: {e}")
+
 # README is a landing page; detail lives in the docs it links to.
 readme_docs = ["README.md", "ARCHITECTURE.md", "docs/README.md", "docs/WHAT_SHIPS.md", "docs/STATUS.md"]
 readme = "\n".join((root / p).read_text() for p in readme_docs)

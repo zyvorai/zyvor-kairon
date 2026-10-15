@@ -1,0 +1,76 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.zyvorai/kairon",
+  "title": "Kairon",
+  "description": "Inspect Kairon VMs, network policy and VM-edge flows from an agent. Read-only by default.",
+  "version": "0.10.0",
+  "repository": {
+    "url": "https://github.com/zyvorai/zyvor-kairon",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/zyvorai/zyvor-kairon",
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/zyvorai/kairon-mcp:v0.10.0",
+      "transport": { "type": "stdio" },
+      "environmentVariables": [
+        {
+          "name": "KAIRON_KUBE_URL",
+          "description": "Kubernetes API server URL, e.g. https://k8s.example:6443. The server only offers read tools unless --allow-write is appended to the container arguments; the image never sets it.",
+          "isRequired": true
+        },
+        {
+          "name": "KAIRON_KUBE_TOKEN",
+          "description": "Bearer token for the Kubernetes API. Bind it to a Role with only the verbs the agent needs (get/list on machines for read-only use).",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "KAIRON_KUBE_CA",
+          "description": "Path, inside the container, of the CA bundle for the Kubernetes API (mount it). Leave unset to use system roots."
+        },
+        {
+          "name": "KAIRON_KUBE_INSECURE",
+          "description": "Set to \"true\" to skip TLS verification of the Kubernetes API. Lab use only.",
+          "default": "false"
+        },
+        {
+          "name": "KAIRON_UI_URL",
+          "description": "Base URL of kairon-ui; needed by the machine_network tool (network flows, drops, capture sessions)."
+        },
+        {
+          "name": "KAIRON_UI_TOKEN",
+          "description": "Bearer token for kairon-ui.",
+          "isSecret": true
+        },
+        {
+          "name": "KAIRON_UI_CA",
+          "description": "Path, inside the container, of the CA certificate for a self-signed kairon-ui (mount it)."
+        },
+        {
+          "name": "KAIRON_UI_INSECURE",
+          "description": "Set to \"true\" to skip TLS verification of kairon-ui. Lab use only.",
+          "default": "false"
+        },
+        {
+          "name": "KAIRON_LLM_URL",
+          "description": "OpenAI-compatible endpoint for the optional ask tool and the summary in diagnose."
+        },
+        {
+          "name": "KAIRON_LLM_MODEL",
+          "description": "Model name sent to KAIRON_LLM_URL."
+        },
+        {
+          "name": "KAIRON_LLM_API_KEY",
+          "description": "API key for KAIRON_LLM_URL.",
+          "isSecret": true
+        },
+        {
+          "name": "KAIRON_MCP_TENANT",
+          "description": "Scope the claim tools, diagnose and ask to this tenant."
+        }
+      ]
+    }
+  ]
+}
