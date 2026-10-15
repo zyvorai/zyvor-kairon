@@ -42,11 +42,19 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4
+      # Per-job docker config dir: the self-hosted runners share one box, so
+      # a default ~/.docker/config.json would be shared (and overwritten or
+      # logged out) by concurrent jobs. The same value is set on the push step.
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4
+        env:
+          DOCKER_CONFIG: ${{ runner.temp }}/docker-config-${{ matrix.target }}
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: imjasonh/setup-crane@feee3b6bb0d4c68370f256a4502498c9227e5c6b  # v0.7
+        with:
+          version: v0.22.1
       # cosign-installer@v3's own verification logic unconditionally
       # expects a legacy detached .sig file, which cosign itself has fully
       # stopped publishing (confirmed against v3.1.3 -- this workflow's
@@ -85,25 +93,44 @@ jobs:
       # Only reached if the scan above passed -- a vulnerable image is
       # never pushed, matching the failurePolicy: Fail posture used
       # elsewhere in this GA pass (fail the guarantee closed, not open).
+      #
+      # Pushed with crane from a `docker save` tarball, not `docker push`: the
+      # shared daemon also holds layers other repos pushed, and `docker push`
+      # tries cross-repository blob mounts from them, which GHCR can reject
+      # as `unauthenticated` for a token that cannot read the source repo.
+      # crane uploads the tarball's blobs straight to this repository and
+      # never consults the daemon's distribution metadata.
       - name: Push ${{ matrix.target }} image
         id: push
+        env:
+          DOCKER_CONFIG: ${{ runner.temp }}/docker-config-${{ matrix.target }}
         run: |
-          docker push "ghcr.io/zyvorai/kairon-${{ matrix.target }}:${{ github.ref_name }}"
-          docker push "ghcr.io/zyvorai/kairon-${{ matrix.target }}:latest"
+          set -euo pipefail
+          repo="ghcr.io/zyvorai/kairon-${{ matrix.target }}"
+          tarball="${RUNNER_TEMP}/kairon-${{ matrix.target }}-image.tar"
+          # Same image the scan just checked, exported from the local daemon.
+          docker save -o "$tarball" "${repo}:${{ github.ref_name }}"
+          crane push "$tarball" "${repo}:${{ github.ref_name }}"
+          rm -f "$tarball"
           # Sign/attest by digest, not tag -- a tag is mutable, a digest
-          # isn't. `docker inspect` reads back the digest docker push just
-          # recorded locally for this tag, rather than re-parsing push's
-          # own stdout.
-          digest="$(docker inspect --format='{{index .RepoDigests 0}}' "ghcr.io/zyvorai/kairon-${{ matrix.target }}:${{ github.ref_name }}" | cut -d'@' -f2)"
+          # isn't. Read back what the registry holds for the pushed tag.
+          digest="$(crane digest "${repo}:${{ github.ref_name }}")"
+          case "$digest" in sha256:*) ;; *) echo "unexpected digest: $digest" >&2; exit 1 ;; esac
+          crane tag "${repo}@${digest}" latest
+          test "$(crane digest "${repo}:latest")" = "$digest"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
       - name: Generate SBOM for ${{ matrix.target }}
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c  # v0.24.3
+        env:
+          DOCKER_CONFIG: ${{ runner.temp }}/docker-config-${{ matrix.target }}
         with:
           image: ghcr.io/zyvorai/kairon-${{ matrix.target }}@${{ steps.push.outputs.digest }}
           format: spdx-json
           output-file: sbom-${{ matrix.target }}.spdx.json
           upload-artifact: false
       - name: Sign image and attest SBOM for ${{ matrix.target }}
+        env:
+          DOCKER_CONFIG: ${{ runner.temp }}/docker-config-${{ matrix.target }}
         run: |
           image="ghcr.io/zyvorai/kairon-${{ matrix.target }}@${{ steps.push.outputs.digest }}"
           cosign sign --yes "$image"
@@ -116,7 +143,9 @@ jobs:
       # Shared Docker daemon: drop only this job's tags, never a global prune.
       - name: Remove ${{ matrix.target }} image tags
         if: always()
-        run: docker image rm -f "ghcr.io/zyvorai/kairon-${{ matrix.target }}:${{ github.ref_name }}" "ghcr.io/zyvorai/kairon-${{ matrix.target }}:latest" || true
+        run: |
+          docker image rm -f "ghcr.io/zyvorai/kairon-${{ matrix.target }}:${{ github.ref_name }}" "ghcr.io/zyvorai/kairon-${{ matrix.target }}:latest" || true
+          rm -rf "${RUNNER_TEMP}/docker-config-${{ matrix.target }}" "${RUNNER_TEMP}/kairon-${{ matrix.target }}-image.tar"
 
   # CLI binaries, checksums, Helm OCI chart, and GitHub Release assets.
   release-assets:
