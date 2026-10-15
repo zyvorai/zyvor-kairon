@@ -191,6 +191,20 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 		})
 		err := c.reconcileMigration(ctx, migration, machineIndex, machines, nodes, nodeLoad, migLoad, policyStates)
 		span.End(err)
+		if err != nil && kube.IsTransient(err) {
+			// An API server that stalls past the client timeout, or a
+			// throttled/5xx answer, says nothing about the migration. Failing
+			// it here is terminal and often wrong: in Cutover or Adopting the
+			// VM has already moved, and Failed also strands the adopt-only
+			// annotations whose cleanup only runs in Adopting. Every phase
+			// is safe to evaluate again on the next tick.
+			c.Log.Warn("migration reconcile hit a transient API error; retrying next tick",
+				"namespace", migration.Namespace(), "migration", migration.Metadata.Name, "phase", migration.Status.Phase, "error", err)
+			if c.Metrics != nil {
+				c.Metrics.ObserveReconcileItemError("migration")
+			}
+			continue
+		}
 		if err != nil {
 			status := migration.Status
 			status.Phase = "Failed"

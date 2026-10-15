@@ -1236,3 +1236,63 @@ func TestMigrationAdmittedWhenUnderConcurrencyLimit(t *testing.T) {
 		t.Fatalf("phase=%q, want Starting", phase)
 	}
 }
+
+// A migration in Cutover whose Machine patch hits a throttled/failed API
+// server must not be failed: the VM may already have moved.
+func TestTransientAPIErrorDoesNotFailAMigration(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		patchCode  int
+		wantFailed bool
+	}{
+		{"503 from the API server", http.StatusServiceUnavailable, false},
+		{"429 throttled", http.StatusTooManyRequests, false},
+		{"403 forbidden is not transient", http.StatusForbidden, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			machine := model.Machine{Metadata: model.ObjectMeta{Name: "db", Namespace: "prod"}, Spec: model.MachineSpec{NodeName: "worker-1", PowerState: "Running"}, Status: model.MachineStatus{NodeName: "worker-1", Phase: "Running"}}
+			mig := model.MachineMigration{
+				Metadata: model.ObjectMeta{Name: "move-db", Namespace: "prod"},
+				Spec:     model.MachineMigrationSpec{MachineName: "db", Strategy: "live"},
+				Status:   model.MachineMigrationStatus{Phase: "Cutover", EffectiveStrategy: "live", SourceNode: "worker-1", TargetNode: "worker-2"},
+			}
+			var phase string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.Method == http.MethodGet && r.URL.Path == "/apis/kairon.zyvor.dev/v1/machines":
+					_ = json.NewEncoder(w).Encode(model.MachineList{Items: []model.Machine{machine}})
+				case r.Method == http.MethodGet && r.URL.Path == "/api/v1/nodes":
+					_ = json.NewEncoder(w).Encode(model.NodeList{Items: []model.Node{readyCapableNode("worker-1"), readyCapableNode("worker-2")}})
+				case r.Method == http.MethodGet && r.URL.Path == "/apis/kairon.zyvor.dev/v1/machinemigrations":
+					_ = json.NewEncoder(w).Encode(model.MachineMigrationList{Items: []model.MachineMigration{mig}})
+				case r.Method == http.MethodGet && r.URL.Path == "/apis/kairon.zyvor.dev/v1/machinesnapshots":
+					http.NotFound(w, r)
+				case r.Method == http.MethodPatch && r.URL.Path == "/apis/kairon.zyvor.dev/v1/namespaces/prod/machines/db":
+					http.Error(w, "stalled", tc.patchCode)
+				case r.Method == http.MethodPatch && r.URL.Path == "/apis/kairon.zyvor.dev/v1/namespaces/prod/machinemigrations/move-db/status":
+					var p struct {
+						Status model.MachineMigrationStatus `json:"status"`
+					}
+					_ = json.NewDecoder(r.Body).Decode(&p)
+					phase = p.Status.Phase
+					w.WriteHeader(http.StatusOK)
+				default:
+					http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusNotFound)
+				}
+			}))
+			defer srv.Close()
+			kc, _ := kube.New(srv.URL, "", "", false)
+			kc.HTTP = srv.Client()
+			ctl := &Controller{Kube: kc, Scheduler: scheduler.Scheduler{RequireCapableLabel: true}, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+			if err := ctl.Reconcile(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if tc.wantFailed && phase != "Failed" {
+				t.Fatalf("a non-transient error must still fail the migration, phase=%q", phase)
+			}
+			if !tc.wantFailed && phase != "" {
+				t.Fatalf("a transient error must leave the migration alone, but it was patched to %q", phase)
+			}
+		})
+	}
+}
