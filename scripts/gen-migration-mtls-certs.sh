@@ -61,7 +61,13 @@ fi
 
 OUT_DIR="$1"; shift
 CONTROL_PLANE_SERVER_NAME="${KAIRON_MIGRATION_SERVER_NAME:-kairon-node}"
-DAYS="${CERT_DAYS:-30}"
+# Leaves are short-lived and rotated (scripts/rotate-migration-certs.sh); the CA is
+# long-lived so a rotation never changes what the hosts trust. CERT_DAYS /
+# CA_DAYS override. EXISTING_CA_DIR=<dir with ca.pem + ca-key.pem> reuses a CA
+# and issues new leaf certificates only.
+DAYS="${CERT_DAYS:-90}"
+CA_DAYS="${CA_DAYS:-3650}"
+EXISTING_CA_DIR="${EXISTING_CA_DIR:-}"
 
 mkdir -p "$OUT_DIR/ca" "$OUT_DIR/control-plane" "$OUT_DIR/data-plane"
 
@@ -74,11 +80,21 @@ SECRET_NAMESPACE="${KAIRON_DATAPLANE_SECRET_NAMESPACE:-kairon-system}"
 SECRET_DATA_FILE="$(mktemp)"
 trap 'rm -f "$SECRET_DATA_FILE"' EXIT
 
-echo "[*] generating root CA (valid ${DAYS}d -- this is a throwaway test CA, not for production use)"
-openssl req -x509 -sha256 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -pkeyopt ec_param_enc:named_curve -nodes \
-  -keyout "$OUT_DIR/ca/ca-key.pem" -out "$OUT_DIR/ca/ca.pem" \
-  -days "$DAYS" -subj "/CN=kairon-migration-test-ca" \
-  -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign" -addext "subjectKeyIdentifier=hash" 2>/dev/null
+if [[ -n "$EXISTING_CA_DIR" ]]; then
+  [[ -f "$EXISTING_CA_DIR/ca.pem" && -f "$EXISTING_CA_DIR/ca-key.pem" ]] || {
+    echo "EXISTING_CA_DIR=$EXISTING_CA_DIR must contain ca.pem and ca-key.pem" >&2; exit 1; }
+  echo "[*] reusing the CA in $EXISTING_CA_DIR (issuing leaf certificates only, valid ${DAYS}d)"
+  cp "$EXISTING_CA_DIR/ca.pem" "$OUT_DIR/ca/ca.pem"
+  cp "$EXISTING_CA_DIR/ca-key.pem" "$OUT_DIR/ca/ca-key.pem"
+  chmod 0600 "$OUT_DIR/ca/ca-key.pem"
+else
+  echo "[*] generating root CA (valid ${CA_DAYS}d; keep ca/ca-key.pem offline -- it is only needed to issue or rotate leaves)"
+  openssl req -x509 -sha256 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -pkeyopt ec_param_enc:named_curve -nodes \
+    -keyout "$OUT_DIR/ca/ca-key.pem" -out "$OUT_DIR/ca/ca.pem" \
+    -days "$CA_DAYS" -subj "/CN=kairon-migration-ca" \
+    -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign" -addext "subjectKeyIdentifier=hash" 2>/dev/null
+  chmod 0600 "$OUT_DIR/ca/ca-key.pem"
+fi
 
 echo "[*] generating control-plane cert (SAN: DNS:$CONTROL_PLANE_SERVER_NAME, clientAuth+serverAuth)"
 openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -pkeyopt ec_param_enc:named_curve -nodes \
