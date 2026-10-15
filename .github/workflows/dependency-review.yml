@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   dependency-review:
-    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '"ubuntu-latest"' || '["self-hosted","Linux","X64","zyvor-build"]') }}
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '"ubuntu-latest"' || '["self-hosted","Linux","X64","zyvor-build","docker"]') }}
     # Soft until Dependency graph is enabled under
     # Settings → Code security and analysis. Flip continue-on-error to
     # false once that toggle is on.
