@@ -1,3 +1,13 @@
+# Kairon v0.10.1
+
+A patch on v0.10.0 that adds the MCP server image and the MCP Registry listing.
+
+- **MCP server image.** `ghcr.io/zyvorai/kairon-mcp` is built and pushed with
+  the other release images.
+- **MCP Registry listing.** Kairon is listed as `io.github.zyvorai/kairon`. The
+  server is read-only by default; write tools need `--allow-write`, which the
+  image never sets.
+
 # Kairon v0.10.0
 
 Released 2026-10-14.

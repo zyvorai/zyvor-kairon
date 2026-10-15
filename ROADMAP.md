@@ -2,7 +2,7 @@
 
 ## v0.10 — Agents, DR and the data center
 
-v0.10.0 (2026-10-14) is the current release. It ships HTTPS by default for the dashboard and the console relay, `kaironctl selftest`, virtctl parity in `kaironctl`, and, as experimental features, agent sessions and agent sandboxes, Mac Fabric, cross-cluster DR, DRS, node maintenance, per-disk I/O QoS, accelerator and vGPU profiles, NVMe-oF, incremental S3 backups, topology-aware placement, elastic memory, virtual networks, hibernate, adaptive live migration and incident bundles. Each experimental feature's lab status is in [COMPATIBILITY.md](docs/COMPATIBILITY.md). See [RELEASE_NOTES.md](RELEASE_NOTES.md).
+v0.10.1 is the current release, a patch on v0.10.0 that adds the MCP server image `ghcr.io/zyvorai/kairon-mcp` and the MCP Registry listing `io.github.zyvorai/kairon`. v0.10.0 (2026-10-14) shipped HTTPS by default for the dashboard and the console relay, `kaironctl selftest`, virtctl parity in `kaironctl`, and, as experimental features, agent sessions and agent sandboxes, Mac Fabric, cross-cluster DR, DRS, node maintenance, per-disk I/O QoS, accelerator and vGPU profiles, NVMe-oF, incremental S3 backups, topology-aware placement, elastic memory, virtual networks, hibernate, adaptive live migration and incident bundles. Each experimental feature's lab status is in [COMPATIBILITY.md](docs/COMPATIBILITY.md). See [RELEASE_NOTES.md](RELEASE_NOTES.md).
 
 ## v0.9 — Operate it from the CLI, namespace-aware dashboard
 

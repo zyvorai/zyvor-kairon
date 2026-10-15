@@ -3,7 +3,7 @@
   "name": "io.github.zyvorai/kairon",
   "title": "Kairon",
   "description": "Inspect Kairon VMs, network policy and VM-edge flows from an agent. Read-only by default.",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "repository": {
     "url": "https://github.com/zyvorai/zyvor-kairon",
     "source": "github"
@@ -12,7 +12,7 @@
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/zyvorai/kairon-mcp:v0.10.0",
+      "identifier": "ghcr.io/zyvorai/kairon-mcp:v0.10.1",
       "transport": { "type": "stdio" },
       "environmentVariables": [
         {
