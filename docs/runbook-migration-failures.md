@@ -103,6 +103,47 @@ A source `kairon-node` crashing or being fenced *between* a successful `Prepare`
 
 `kairon-node`'s `--migration-heartbeat-ttl` flag (zero by default, off) closes this: the source heartbeats a live transfer's destination session once per reconcile tick (piggybacked on the same tick that already polls transfer status), and a destination whose `HeartbeatTTL` is configured self-aborts any `Prepared` session that's gone quiet for longer than that -- logged as `session.Reason: "heartbeat timeout: no renewal for over <TTL>, presumed source failure"`, visible via `GET /internal/v1/migrations/{id}` or `.../diagnosis` against the *destination* node directly (not through the Kubernetes API -- there's no CRD-level surface for this yet). Set `--migration-heartbeat-ttl` comfortably larger than several multiples of `--interval` (the safety resync interval; flag default 5m, `deploy-remote.sh` bakes in 3s) to tolerate a transient network blip without reaping a migration that's still actually healthy.
 
+## A Machine is `Blocked`: "incoming FluxVM runtime was not found"
+
+Seen in a repeat test after a live migration reported its transfer complete
+and then sat in `Adopting`:
+
+```
+phase: Blocked
+message: adopt-only cutover guard: incoming FluxVM runtime was not found; refusing to create a duplicate VM
+```
+
+The controller had already pointed the Machine at the target and set the
+annotations `kairon.zyvor.dev/adopt-only` and `kairon.zyvor.dev/migration`;
+the target's node agent looked for the migrated runtime, did not find it, and
+(correctly) refused to create a second VM from the same disk.
+
+First establish that the VM really is gone, on **both** nodes, because
+removing the guard while a runtime still exists risks two writers:
+
+```bash
+# on source and target: is any QEMU / FluxVM runtime for this Machine alive?
+ssh NODE 'curl -s localhost:7788/v1/vms | grep -i MACHINE; ps -eo args | grep [q]emu-system | grep MACHINE'
+# is the disk open anywhere?
+ssh NODE 'sudo lsof /path/to/the/disk.img'
+```
+
+If nothing is running and nothing holds the disk, the data on the shared
+disk is intact (FluxVM refuses to start a second VM on a disk another host
+has open, which is what protects it). Clear the guard so the node agent
+recreates the VM from that disk:
+
+```bash
+kubectl annotate machine NAME -n NS kairon.zyvor.dev/adopt-only- kairon.zyvor.dev/migration-
+```
+
+The VM boots cold from its disk: the guest sees a crash-consistent start.
+Then delete or leave the stuck MachineMigration; it is already terminal in
+practice.
+
+If you find a runtime on either node, do not clear the annotations. Stop the
+duplicate on the node that should not own it first.
+
 ## Escalation
 
 - A single `NeedsRecovery` migration, diagnosable and resolvable via the decision tree above: handle it yourself, no escalation needed.

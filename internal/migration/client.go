@@ -23,6 +23,20 @@ func NewClient(httpClient *http.Client) *Client {
 	return &Client{HTTP: httpClient}
 }
 
+// CloseIdleConnections drops pooled connections to every peer, so the next
+// request dials and handshakes afresh. Used before repeating a request that
+// failed in transit, which may have been caused by a stale or damaged
+// pooled connection.
+func (c *Client) CloseIdleConnections() { c.HTTP.CloseIdleConnections() }
+
+// IsTransportError reports whether err means the request got no HTTP
+// response at all (timeout, reset, TLS failure), as opposed to the peer
+// answering with an error status. Only the former leaves it unknown whether
+// the peer saw the request.
+func IsTransportError(err error) bool {
+	return err != nil && !strings.Contains(err.Error(), ": HTTP ")
+}
+
 func (c *Client) Prepare(ctx context.Context, baseURL string, session Session) (PrepareResponse, error) {
 	var out PrepareResponse
 	err := c.do(ctx, http.MethodPost, strings.TrimRight(baseURL, "/")+"/internal/v1/migrations/prepare", PrepareRequest{Session: session}, &out)
