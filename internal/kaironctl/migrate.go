@@ -40,6 +40,7 @@ func cmdMigrate(ctx context.Context, kc *kube.Client, args []string) {
 	fs.UintVar(&f.compressionLevel, "compression-level", 0, "adaptive: compression level (zstd 1-20, zlib 1-9)")
 	fs.Uint64Var(&f.maxBandwidth, "max-bandwidth-mbps", 0, "adaptive: bandwidth ceiling")
 	fs.BoolVar(&f.adaptiveBandwidth, "adaptive-bandwidth", false, "adaptive: raise bandwidth towards --max-bandwidth-mbps while throughput keeps up")
+	fs.BoolVar(&f.fallbackToCold, "fallback-to-cold", false, "continue as a cold migration (Machine is stopped for the move) if a live migration is blocked before the source was touched")
 	dryRun := fs.Bool("dry-run", false, "create the MachineMigration with dryRun=All: admission (budgets, policies) runs, nothing is stored")
 	_ = fs.Parse(args[1:])
 	f.set = map[string]bool{}
@@ -82,7 +83,8 @@ type migrateFlags struct {
 
 	// set holds the flags given on the command line, so adaptive overrides
 	// only replace policy values the user actually chose.
-	set map[string]bool
+	set            map[string]bool
+	fallbackToCold bool
 }
 
 var adaptiveFlagNames = []string{"progress-timeout", "completion-timeout-per-gib", "auto-converge", "dirty-rate-threshold-mbps", "post-copy", "post-copy-after", "compression", "compression-level", "max-bandwidth-mbps", "adaptive-bandwidth"}
@@ -91,7 +93,7 @@ func (f migrateFlags) spec(machine string) (model.MachineMigrationSpec, error) {
 	if f.multifd > 255 {
 		return model.MachineMigrationSpec{}, fmt.Errorf("--multifd-channels must be <= 255")
 	}
-	spec := model.MachineMigrationSpec{MachineName: machine, Strategy: f.strategy, TargetNode: f.target, Mode: f.mode, BandwidthMbps: f.bandwidth, MaxDowntimeMs: f.downtime, MultifdChannels: uint8(f.multifd), MigrationNetwork: f.migrationNetwork}
+	spec := model.MachineMigrationSpec{MachineName: machine, Strategy: f.strategy, TargetNode: f.target, Mode: f.mode, BandwidthMbps: f.bandwidth, MaxDowntimeMs: f.downtime, MultifdChannels: uint8(f.multifd), MigrationNetwork: f.migrationNetwork, FallbackToCold: f.fallbackToCold}
 	if f.strategy != model.MigrationTuningAdaptive {
 		for _, n := range adaptiveFlagNames {
 			if f.set[n] {

@@ -96,6 +96,7 @@ func run() int {
 	migrationStateDir := flag.String("migration-state-dir", env("KAIRON_MIGRATION_STATE_DIR", osDefault("/var/run/kairon/migrations", macSupport("Kairon/migrations"))), "destination migration session journal")
 	migrationAdapterSocket := flag.String("migration-adapter-socket", env("KAIRON_MIGRATION_ADAPTER_SOCKET", ""), "optional Kairon migration adapter Unix socket")
 	migrationPort := flag.Int("migration-port", int(envUint("KAIRON_MIGRATION_PORT", 9443)), "peer migration TCP port this node dials on a target's InternalIP; every node in the cluster must listen on it (--migration-addr)")
+	migrationRequireEncrypted := flag.Bool("migration-require-encrypted", false, "block a live migration whose destination reports an unencrypted data plane, instead of only warning. Off by default because the chart ships migration.dataplaneTls=false; turn on once every node reports dataPlaneEncrypted")
 	migrationHeartbeatTTL := flag.Duration("migration-heartbeat-ttl", 0, "how long a destination-side Prepared migration session may go without a heartbeat from its source before this node self-aborts it, releasing whatever it reserved -- closes the gap where a source kairon-node crashes or is fenced between a successful Prepare and ever calling Commit/Abort. Zero (the default) disables this entirely: no reaper goroutine, no behavior change from before this existed. A non-zero value should be set comfortably larger than several multiples of --interval (the source heartbeats once per reconcile tick) to tolerate transient blips; the reaper itself checks every TTL/4 (floored at 10s).")
 	consoleAddr := flag.String("console-addr", env("KAIRON_NODE_CONSOLE_ADDR", ":8090"), "VNC console relay listen address")
 	consoleToken := flag.String("console-token", os.Getenv("KAIRON_NODE_CONSOLE_TOKEN"), "shared bearer token kairon-ui must present for VNC console relay (default: $KAIRON_NODE_CONSOLE_TOKEN); empty disables the console listener")
@@ -257,6 +258,7 @@ func run() int {
 		VFIOAllowlist:                vfioAllowlist,
 		MdevParents:                  agent.ParseMdevParents(*mdevParentsRaw),
 		MigrationPeer:                peer,
+		RequireEncryptedDataPlane:    *migrationRequireEncrypted,
 		Restores:                     restores,
 		SourceMigrator:               source,
 		MigrationPort:                *migrationPort,
