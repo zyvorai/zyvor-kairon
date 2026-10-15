@@ -1652,3 +1652,56 @@ func TestForceAbortReportsWhenTheSourceCannotBeResumed(t *testing.T) {
 		t.Fatalf("message = %q", status.Message)
 	}
 }
+
+func TestFailedDestinationBeforeCommitIsAbortedAndTheSourceKept(t *testing.T) {
+	old := commitRetryDelay
+	commitRetryDelay = time.Millisecond
+	defer func() { commitRetryDelay = old }()
+
+	destination := &fakePeerDestination{
+		result:    migration.PrepareResult{TransferSupported: true, Endpoint: "opaque://incoming/session"},
+		commitErr: fmt.Errorf("receiver failed"),
+		diagnosis: &migration.DiagnosisResult{SessionPhase: "Prepared", DestinationRuntimeFound: true, DestinationRuntimeStatus: "failed"},
+	}
+	peerServer := httptest.NewServer((&migration.Server{NodeName: "worker-2", Store: migration.NewFileStore(t.TempDir()), Driver: destination}).Handler())
+	defer peerServer.Close()
+	source := &fakeSourceMigrator{startStatus: migration.TransferStatus{TransferID: "xfer-1", Phase: "completed"}}
+
+	status := runLiveAgentReconcile(t, peerServer, destination, source)
+	if status.Phase != "Failed" {
+		t.Fatalf("a destination that failed before commit must end Failed, not park: %+v", status)
+	}
+	if destination.aborts != 1 {
+		t.Fatalf("destination aborts=%d, want 1", destination.aborts)
+	}
+	if !strings.Contains(status.Message, "destination runtime failed before commit") {
+		t.Fatalf("message = %q", status.Message)
+	}
+}
+
+func TestUncertainDestinationStillParksInNeedsRecovery(t *testing.T) {
+	for name, diag := range map[string]*migration.DiagnosisResult{
+		"runtime still creating": {SessionPhase: "Prepared", DestinationRuntimeFound: true, DestinationRuntimeStatus: "creating"},
+		"runtime missing":        {SessionPhase: "Prepared", DestinationRuntimeFound: false},
+		"session committed":      {SessionPhase: "Committed", DestinationRuntimeFound: true, DestinationRuntimeStatus: "failed"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			destination := &fakePeerDestination{
+				result:    migration.PrepareResult{TransferSupported: true, Endpoint: "opaque://incoming/session"},
+				commitErr: fmt.Errorf("commit failed"),
+				diagnosis: diag,
+			}
+			peerServer := httptest.NewServer((&migration.Server{NodeName: "worker-2", Store: migration.NewFileStore(t.TempDir()), Driver: destination}).Handler())
+			defer peerServer.Close()
+			source := &fakeSourceMigrator{startStatus: migration.TransferStatus{TransferID: "xfer-1", Phase: "completed"}}
+
+			status := runLiveAgentReconcile(t, peerServer, destination, source)
+			if status.Phase != "NeedsRecovery" {
+				t.Fatalf("%s: phase=%q, want NeedsRecovery", name, status.Phase)
+			}
+			if destination.aborts != 0 {
+				t.Fatalf("%s: the destination must not be aborted when its state is uncertain, aborts=%d", name, destination.aborts)
+			}
+		})
+	}
+}
