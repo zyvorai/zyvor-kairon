@@ -116,13 +116,13 @@ if chart_crds != bundle_crds:
 
 try:
     chart = yaml.safe_load((root / "charts/kairon/Chart.yaml").read_text())
-    if chart.get("version") != "0.10.0" or chart.get("appVersion") != "0.10.0":
-        fail("Helm chart version/appVersion must be 0.10.0")
+    if chart.get("version") != "0.10.1" or chart.get("appVersion") != "0.10.1":
+        fail("Helm chart version/appVersion must be 0.10.1")
 except Exception as e:
     fail(f"Chart semantic check failed: {e}")
 
-if (root / "VERSION").read_text().strip() != "v0.10.0":
-    fail("VERSION must be v0.10.0")
+if (root / "VERSION").read_text().strip() != "v0.10.1":
+    fail("VERSION must be v0.10.1")
 
 # MCP Registry metadata: server.json must track the release version and the
 # image that carries the ownership label (Dockerfile `mcp` target).

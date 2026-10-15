@@ -143,7 +143,7 @@ its entrypoint is `kaironctl mcp serve` with no flags.
       "command": "docker",
       "args": ["run", "-i", "--rm",
                "-e", "KAIRON_KUBE_URL", "-e", "KAIRON_KUBE_TOKEN",
-               "ghcr.io/zyvorai/kairon-mcp:v0.10.0"],
+               "ghcr.io/zyvorai/kairon-mcp:v0.10.1"],
       "env": { "KAIRON_KUBE_URL": "https://k8s.example:6443", "KAIRON_KUBE_TOKEN": "..." }
     }
   }
