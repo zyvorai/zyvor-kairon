@@ -41,3 +41,15 @@ jobs:
             echo "==> go test -fuzz=${target} -fuzztime=${fuzz_secs}s"
             go test ./internal/model/ -fuzz="${target}" -fuzztime="${fuzz_secs}s"
           done
+      - name: Fuzz migration and edge parsers
+        run: |
+          set -euo pipefail
+          fuzz_secs=20
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            fuzz_secs=60
+          fi
+          for spec in "./internal/migration/ FuzzSessionValidate" "./internal/migration/ FuzzSessionJSON" "./internal/ebpfedge/ FuzzUnmarshalSnapshot" "./internal/ebpfedge/ FuzzCompileAndDecide"; do
+            read -r pkg target <<<"$spec"
+            echo "==> go test ${pkg} -fuzz=${target} -fuzztime=${fuzz_secs}s"
+            go test "${pkg}" -fuzz="${target}" -fuzztime="${fuzz_secs}s"
+          done
