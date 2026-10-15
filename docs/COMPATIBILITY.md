@@ -194,24 +194,34 @@ real hosts sharing the hibernation directory and an RBD root disk.
 | Hibernate: discard | pass | 2026-10-12 | Same node: `discard-hibernation` annotation gave a new boot id; annotation removed, `status.hibernation` cleared |
 | Hibernate: resume on another node | not run | 2026-10-12 | Needs two nodes sharing the hibernation directory and a shared root disk |
 
-### Manual live migration on the re-keyed lab pair (2026-10-15)
+### Lab pair re-run (2026-10-15)
 
-One hand-run live migration, not a matrix run: the lab's own `hw-live`
-Machine (2 vCPU, 2 GiB, idle guest) moved from `nldw4-4-04-32` to
-`nldw3-4-32-26` with `kaironctl migrate hw-live --strategy live` on a
-cluster whose migration CA and per-host certificates had just been
-regenerated and whose two nodes each run their own
-`kairon-migration-adapter-fluxvm` over the shared `/srv/kairon-shared` NFS
-export. The migration went `Starting` → `Adopting` → `Succeeded` in about
-27 s: 4.4 s of QEMU transfer (508 MB of 2.1 GB sent), **148 ms downtime**,
-`dataPlaneEncrypted: true`, Machine Running on the target afterwards.
+Run after regenerating the migration CA and per-host certificates and
+giving each node its own `kairon-migration-adapter-fluxvm` over the shared
+`/srv/kairon-shared` NFS export. Cluster: k3s on `nldw3-4-32-26`
+(controller, UI, node) plus `nldw4-4-04-32` (a second `kairon-node-lab`
+unit and its own adapter). Machine: the lab's `hw-live` (2 vCPU, 2 GiB,
+idle guest). QEMU 10.2.1 is installed on both hosts (a source build at
+`/opt/qemu-10.2.1` on `nldw4-4-04-32`, the Ubuntu package on
+`nldw3-4-32-26`); which binary FluxVM launched on `nldw4-4-04-32` was not
+recorded. Driven from a workstation with `hardware-migration-matrix.sh`
+using a short-lived token for the `kairon-lab` service account.
 
-Not covered by that run: guest load, either failure-injection case, the
-adaptive strategies, live + eBPF, or the reverse direction. QEMU 10.2.1 is
-installed on both hosts (a source build at `/opt/qemu-10.2.1` on
-`nldw4-4-04-32`, the Ubuntu package on `nldw3-4-32-26`); the distro
-`qemu-system-x86_64` on `nldw4-4-04-32`'s PATH is 8.2.2, and which binary
-FluxVM launched the source VM with was not recorded.
+| Case | Result | Notes |
+|---|---|---|
+| Create / restart / delete smoke | pass (health only) | `KAIRON_HW_IMAGE` unset: checked `hw-live` Running/Ready, no create/delete |
+| Cold migration | pass | `nldw3-4-32-26` → `nldw4-4-04-32`, about 38 s |
+| Live migration, idle guest, `nldw4-4-04-32` → `nldw3-4-32-26` | pass | Four runs: 4.2–4.4 s transfer, 148–242 ms downtime, `dataPlaneEncrypted: true` |
+| Live migration, idle guest, `nldw3-4-32-26` → `nldw4-4-04-32` | pass | 4.2 s transfer, 262 ms downtime, `dataPlaneEncrypted: true` |
+| Source failure during transfer | pass | `kairon-node-lab` stopped on the source for 20 s mid-transfer, then restarted; migration `Succeeded`, Machine healthy on the target |
+| Controller failover mid-migration | pass | `kairon-controller` restarted mid-migration; migration `Succeeded` |
+| Ambiguous commit → `NeedsRecovery` | pass | DROP on the destination's tcp/9445 until `NeedsRecovery`, then `ConfirmDestinationNotCommitted` completed the cutover; diagnosis showed destination session `Prepared`, runtime `creating`; no rule left behind |
+| Live pre-copy under load, guest agent exec, adaptive (converge, post-copy, zstd), post-copy source failure | not run | Need a dashboard URL and token for guest load, a disposable Machine, and FluxVM adaptive support on both hosts |
+| Live + eBPF dataplane | not run | No eBPF Machine in the lab |
+
+One run per case, a single Machine and an idle guest, so this shows the
+control plane, certificates and failure handling work on this pair; it says
+nothing about convergence under load.
 
 ## Container sandboxes
 
