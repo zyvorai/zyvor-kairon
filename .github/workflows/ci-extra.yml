@@ -34,15 +34,23 @@ jobs:
       - name: Install shellcheck + kubeconform + actionlint
         run: |
           set -euo pipefail
-          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck python3-yaml
+          # No sudo on the self-hosted runners: install everything user-local.
+          bin="$HOME/.local/bin"; mkdir -p "$bin"; echo "$bin" >> "$GITHUB_PATH"; export PATH="$bin:$PATH"
+          python3 -c 'import yaml' 2>/dev/null || python3 -m pip install --user -q pyyaml
+          command -v shellcheck >/dev/null || {
+            sc=v0.10.0
+            curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/${sc}/shellcheck-${sc}.linux.x86_64.tar.xz" \
+              | tar -xJ -C /tmp "shellcheck-${sc}/shellcheck"
+            mv "/tmp/shellcheck-${sc}/shellcheck" "$bin/shellcheck"
+          }
           ver=v0.6.7
           curl -fsSL "https://github.com/yannh/kubeconform/releases/download/${ver}/kubeconform-linux-amd64.tar.gz" \
             | tar -xz -C /tmp kubeconform
-          sudo mv /tmp/kubeconform /usr/local/bin/kubeconform
+          mv /tmp/kubeconform "$bin/kubeconform"
           al=1.7.7
           curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${al}/actionlint_${al}_linux_amd64.tar.gz" \
             | tar -xz -C /tmp actionlint
-          sudo mv /tmp/actionlint /usr/local/bin/actionlint
+          mv /tmp/actionlint "$bin/actionlint"
       - name: Stdlib / forbidden-deps boundary
         run: python3 scripts/check_stdlib_boundary.py
       - name: License headers

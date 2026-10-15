@@ -29,6 +29,9 @@ WRITE_TOOLS = {
     "apply_claim_step", "apply_network_policy", "audit_record", "claim_machine", "create_sealed_claim",
     "create_snapshot", "delete_machine", "fork_machine", "machine_backup", "machine_disk", "machine_nic",
     "network_capture", "release_claim", "set_power_state", "snapshot_volume",
+    "session_checkpoint", "session_create", "session_delete", "session_exec", "session_fork",
+    "session_git_commit", "session_input", "session_job_start", "session_preview", "session_restore",
+    "session_write_file",
 }
 
 

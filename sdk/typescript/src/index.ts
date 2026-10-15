@@ -59,6 +59,9 @@ const KINDS: Record<string, string> = {
   machinedisruptionbudgets: 'MachineDisruptionBudget', machineinstancetypes: 'MachineInstanceType',
   machinesnapshotschedules: 'MachineSnapshotSchedule', migrationpolicies: 'MigrationPolicy',
   networksecuritygroups: 'NetworkSecurityGroup', machinebackuppolicies: 'MachineBackupPolicy',
+  machineexports: 'MachineExport', machinepreferences: 'MachinePreference',
+  machineprotectionplans: 'MachineProtectionPlan', macnetworks: 'MacNetwork',
+  virtualnetworks: 'VirtualNetwork',
 };
 const FLEET_KINDS: Record<string, string> = {
   machinehaprofiles: 'MachineHAProfile', nodefencerequests: 'NodeFenceRequest',

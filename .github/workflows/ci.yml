@@ -62,8 +62,7 @@ jobs:
         run: make build smoke
       - name: Validate manifests and repository
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq python3-yaml
+          python3 -c 'import yaml' 2>/dev/null || python3 -m pip install --user -q pyyaml
           python3 scripts/validate.py
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310  # v5.0.1
       - name: Helm lint and render
