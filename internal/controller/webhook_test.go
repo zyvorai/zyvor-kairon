@@ -927,3 +927,27 @@ func TestWebhookHandlerMachineQuotaRouteEndToEnd(t *testing.T) {
 		t.Fatalf("expected /validate-machinequota to allow a well-formed maxTotalCpu, got denied: %+v", out.Response.Status)
 	}
 }
+
+func TestValidateMachineUpdateRejectsUnsatisfiableSpreadOnlyWhenPlacementChanges(t *testing.T) {
+	ctl := newWebhookTestController(t, "prod", nil, nil, nil, nil)
+	bad := []model.TopologySpreadConstraint{{TopologyKey: "zone", MaxSkew: 0, WhenUnsatisfiable: model.WhenUnsatisfiableDoNotSchedule}}
+
+	// A legacy object that already carries the bad constraint still accepts
+	// unrelated updates.
+	legacy := model.Machine{Metadata: model.ObjectMeta{Namespace: "prod", Name: "vm-1"}, Spec: model.MachineSpec{NodeName: "worker-1", PowerState: "Running", Placement: model.PlacementSpec{TopologySpreadConstraints: bad}}}
+	touched := legacy
+	touched.Spec.PowerState = "Stopped"
+	r, req := admissionReqWithOld(t, "machines", "prod", admission.OperationUpdate, touched, legacy)
+	if d := ctl.validateMachine(r, req); !d.Allowed {
+		t.Fatalf("unrelated update of a legacy object was denied: %s", d.Reason)
+	}
+
+	// Introducing the constraint is rejected.
+	clean := model.Machine{Metadata: model.ObjectMeta{Namespace: "prod", Name: "vm-1"}, Spec: model.MachineSpec{NodeName: "worker-1", PowerState: "Running"}}
+	introduced := clean
+	introduced.Spec.Placement.TopologySpreadConstraints = bad
+	r, req = admissionReqWithOld(t, "machines", "prod", admission.OperationUpdate, introduced, clean)
+	if d := ctl.validateMachine(r, req); d.Allowed {
+		t.Fatal("update introducing maxSkew 0 with DoNotSchedule was allowed")
+	}
+}
