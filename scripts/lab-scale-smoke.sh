@@ -2,14 +2,18 @@
 # Copyright 2026 Zyvor · https://zyvor.dev
 # SPDX-License-Identifier: Apache-2.0
 
-# Scale smoke: create N small CirrOS Machines, wait for all of them to run,
-# optionally migrate a few, then delete them all and confirm they are gone.
-# It is a smoke test, not a benchmark: the numbers say whether the control
-# plane copes with N Machines, not how fast it could.
+# Scale smoke: ramp up small CirrOS Machines in batches, wait for each batch to
+# run, stop at the first limit (Machines stuck Pending, a batch that does not
+# come up in time, or a host below its free-memory floor), optionally migrate a
+# few, then delete everything and confirm it is gone. The result is the number
+# of Machines the lab held, not a benchmark.
 #
 #   KAIRON_HW_LAB=1                       safety gate (a real lab, not a laptop)
 #   KAIRON_KUBE_URL / TOKEN / CA          cluster API (same as the other lab scripts)
-#   KAIRON_SCALE_COUNT                    Machines to create (default 20)
+#   KAIRON_SCALE_MAX                      upper bound to ramp to (default 20)
+#   KAIRON_SCALE_BATCH                    Machines per batch (default 4)
+#   KAIRON_SCALE_HOSTS                    comma list of user@host to watch free memory on
+#   KAIRON_SCALE_MIN_FREE_MIB             stop when a watched host has less available (default 3072)
 #   KAIRON_SCALE_MIGRATE                  how many to move to another node (default 0)
 #   KAIRON_SCALE_TOLERATE_TAINTS          comma list of taint keys to tolerate, e.g.
 #                                         kairon.zyvor.dev/vm-only (tainted nodes are
@@ -27,7 +31,10 @@ fi
 # shellcheck source-path=SCRIPTDIR source=lib/lab.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/lab.sh"
 
-COUNT="${KAIRON_SCALE_COUNT:-20}"
+MAX="${KAIRON_SCALE_MAX:-20}"
+BATCH="${KAIRON_SCALE_BATCH:-4}"
+HOSTS="${KAIRON_SCALE_HOSTS:-}"
+MIN_FREE="${KAIRON_SCALE_MIN_FREE_MIB:-3072}"
 MIGRATE="${KAIRON_SCALE_MIGRATE:-0}"
 NS="${KAIRON_HW_NAMESPACE:-default}"
 TIMEOUT="${KAIRON_SCALE_TIMEOUT:-900}"
@@ -77,34 +84,59 @@ cleanup() {
 }
 trap cleanup EXIT
 
-lab_log "creating $COUNT Machines (run $RUN)"
-start=$(date +%s)
-for i in $(seq -w 1 "$COUNT"); do
-  kube_curl POST "$LAB_API/namespaces/$NS/machines" "$(machine_json "scale-$RUN-$i")" >/dev/null
-done
-created=$(( $(date +%s) - start ))
-lab_log "created in ${created}s; waiting for Running"
+min_free_mib() { # smallest MemAvailable (MiB) across the watched hosts; empty when none
+  local h v min=""
+  [[ -n "$HOSTS" ]] || return 0
+  IFS=, read -ra hs <<<"$HOSTS"
+  for h in "${hs[@]}"; do
+    v="$(lab_ssh "$h" "awk '/MemAvailable/{print int(\$2/1024)}' /proc/meminfo" 2>/dev/null || true)"
+    [[ -n "$v" ]] && { [[ -z "$min" || "$v" -lt "$min" ]] && min="$v"; }
+  done
+  echo "$min"
+}
 
+lab_log "ramping to at most $MAX Machines in batches of $BATCH (run $RUN, memory floor ${MIN_FREE} MiB)"
+start=$(date +%s)
+COUNT=0
+STOP_REASON=""
 deadline=$(( start + TIMEOUT ))
-while :; do
-  read -r running total nodes < <(summary)
-  lab_log "running $running/$total ($nodes)"
-  [[ "$running" == "$COUNT" ]] && break
-  if (( $(date +%s) >= deadline )); then
-    lab_log "FAIL: only $running of $COUNT Machines Running after ${TIMEOUT}s"
-    exit 1
+while (( COUNT < MAX )); do
+  want=$(( COUNT + BATCH )); (( want > MAX )) && want=$MAX
+  for i in $(seq "$((COUNT + 1))" "$want"); do
+    kube_curl POST "$LAB_API/namespaces/$NS/machines" "$(machine_json "scale-$RUN-$(printf '%03d' "$i")")" >/dev/null
+  done
+  batch_deadline=$(( $(date +%s) + 300 ))
+  while :; do
+    read -r running total nodes < <(summary)
+    lab_log "running $running/$want ($nodes)"
+    [[ "$running" == "$want" ]] && break
+    if (( $(date +%s) >= batch_deadline )); then
+      STOP_REASON="batch to $want did not reach Running in 300s (running $running)"
+      break 2
+    fi
+    sleep 8
+  done
+  COUNT=$want
+  free="$(min_free_mib)"
+  if [[ -n "$free" ]]; then
+    lab_log "lowest free memory across watched hosts: ${free} MiB"
+    if (( free < MIN_FREE )); then
+      STOP_REASON="a host is below the ${MIN_FREE} MiB free-memory floor (${free} MiB)"
+      break
+    fi
   fi
-  sleep 10
 done
+read -r running total nodes < <(summary)
 all_running=$(( $(date +%s) - start ))
-lab_log "all $COUNT Running after ${all_running}s ($nodes)"
+lab_log "held $running Machines Running ($nodes) after ${all_running}s${STOP_REASON:+; stopped: $STOP_REASON}"
+COUNT=$running
 
 if (( MIGRATE > 0 )); then
   lab_log "migrating $MIGRATE Machines"
   mig_start=$(date +%s)
   names=()
-  for i in $(seq -w 1 "$MIGRATE"); do
-    n="scale-$RUN-$i"
+  for i in $(seq 1 "$MIGRATE"); do
+    n="scale-$RUN-$(printf '%03d' "$i")"
     names+=("$n")
     "$KAIRONCTL" -n "$NS" migrate "$n" --strategy cold >/dev/null
   done
@@ -121,7 +153,7 @@ cleanup
 trap - EXIT
 for _ in $(seq 1 60); do
   read -r _ total _ < <(summary)
-  [[ "$total" == "0" ]] && { lab_log "PASS: $COUNT Machines created, Running in ${all_running}s, deleted"; echo "scale-smoke,$COUNT,created=${created}s,allRunning=${all_running}s,deleted=ok"; exit 0; }
+  [[ "$total" == "0" ]] && { lab_log "DONE: $COUNT Machines held Running, then deleted${STOP_REASON:+ (stopped at: $STOP_REASON)}"; echo "scale-smoke,held=$COUNT,max=$MAX,elapsed=${all_running}s,stopped=${STOP_REASON:-reached max},deleted=ok"; exit 0; }
   sleep 5
 done
 lab_log "FAIL: Machines still present after delete"
