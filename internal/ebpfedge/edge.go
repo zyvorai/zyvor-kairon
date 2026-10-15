@@ -38,6 +38,7 @@ const (
 	ReasonRateLimit   = "rate_limit"
 	ReasonDNSDeny     = "dns_deny"
 	ReasonSNIDeny     = "sni_deny"
+	ReasonL7Deny      = "l7_deny"
 	ReasonDefaultDeny = "default_deny"
 	ReasonAllow       = "allow"
 
@@ -65,6 +66,15 @@ type EdgeSpec struct {
 	AllowSNI     []string `json:"allowSNI,omitempty"`
 	AllowDNS     []string `json:"allowDNS,omitempty"`
 	AllowICMP    bool     `json:"allowIcmp,omitempty"`
+	AllowL7      []L7Rule `json:"allowL7,omitempty"`
+}
+
+// L7Rule allows an HTTP request by method and path prefix. An empty Method
+// matches any method and an empty Path any path. Rules are only consulted
+// for packets whose method or path the proxy or edge has parsed.
+type L7Rule struct {
+	Method string `json:"method,omitempty"`
+	Path   string `json:"path,omitempty"`
 }
 
 // QoS is a token bucket. Zero means "not set", not "drop everything".
@@ -84,8 +94,12 @@ type PacketMeta struct {
 	DstPort  uint16
 	SNI      string
 	DNSQName string
-	Bytes    uint32
-	Ingress  bool
+	// HTTPMethod and HTTPPath are set when the edge or a proxy parsed the
+	// request line; both empty means "not an HTTP request".
+	HTTPMethod string
+	HTTPPath   string
+	Bytes      uint32
+	Ingress    bool
 }
 
 // Decision is what the edge would do with PacketMeta.
@@ -94,6 +108,10 @@ type Decision struct {
 	Reason     string `json:"reason"`
 	PolicyName string `json:"policyName,omitempty"`
 	Identity   uint32 `json:"identity"`
+	// XDP is true when the drop depends only on L2/L3 header fields
+	// (anti-spoof, explicit deny CIDR), so the dataplane can enforce it
+	// before the TC program.
+	XDP bool `json:"xdp,omitempty"`
 }
 
 // DropEvent is an attributed drop, ready for status and Prometheus.
@@ -214,6 +232,14 @@ func Compile(spec EdgeSpec) (EdgeSpec, error) {
 			return EdgeSpec{}, fmt.Errorf("invalid CIDR %q: %w", cidr, err)
 		}
 	}
+	for i, rule := range spec.AllowL7 {
+		if rule.Method == "" && rule.Path == "" {
+			return EdgeSpec{}, fmt.Errorf("allowL7[%d]: method or path is required", i)
+		}
+		if rule.Path != "" && !strings.HasPrefix(rule.Path, "/") {
+			return EdgeSpec{}, fmt.Errorf("allowL7[%d]: path %q must start with /", i, rule.Path)
+		}
+	}
 	spec.Identity = StableIdentity(spec.Namespace, spec.Machine)
 	spec.AssignedMAC = normalizeMAC(spec.AssignedMAC)
 	return spec, nil
@@ -225,10 +251,10 @@ func Decide(spec EdgeSpec, pkt PacketMeta) Decision {
 	d := Decision{Action: "allow", Reason: ReasonAllow, Identity: spec.Identity, PolicyName: spec.PolicyName}
 	if spec.AntiSpoof {
 		if spec.AssignedMAC != "" && pkt.SrcMAC != "" && normalizeMAC(pkt.SrcMAC) != normalizeMAC(spec.AssignedMAC) {
-			return drop(d, ReasonSpoofMAC)
+			return dropXDP(d, ReasonSpoofMAC)
 		}
 		if spec.AssignedIP != "" && pkt.SrcIP != "" && pkt.SrcIP != spec.AssignedIP {
-			return drop(d, ReasonSpoofIP)
+			return dropXDP(d, ReasonSpoofIP)
 		}
 	}
 	if overRate(spec.QoS, pkt) {
@@ -240,15 +266,18 @@ func Decide(spec EdgeSpec, pkt PacketMeta) Decision {
 	if pkt.SNI != "" && len(spec.AllowSNI) > 0 && !nameAllowed(spec.AllowSNI, pkt.SNI) {
 		return drop(d, ReasonSNIDeny)
 	}
+	if len(spec.AllowL7) > 0 && (pkt.HTTPMethod != "" || pkt.HTTPPath != "") && !l7Allowed(spec.AllowL7, pkt.HTTPMethod, pkt.HTTPPath) {
+		return drop(d, ReasonL7Deny)
+	}
 	if pkt.DstIP != "" {
 		if cidrMatch(spec.DenyCIDRs, pkt.DstIP) {
-			return drop(d, ReasonPolicyDeny)
+			return dropXDP(d, ReasonPolicyDeny)
 		}
 		if len(spec.AllowCIDRs) > 0 && !cidrMatch(spec.AllowCIDRs, pkt.DstIP) && !spec.DefaultAllow {
 			return drop(d, ReasonPolicyDeny)
 		}
 	}
-	if !spec.DefaultAllow && pkt.DstIP != "" && len(spec.AllowCIDRs) == 0 && len(spec.AllowPorts) == 0 && len(spec.AllowSNI) == 0 && len(spec.AllowDNS) == 0 {
+	if !spec.DefaultAllow && pkt.DstIP != "" && len(spec.AllowCIDRs) == 0 && len(spec.AllowPorts) == 0 && len(spec.AllowSNI) == 0 && len(spec.AllowDNS) == 0 && len(spec.AllowL7) == 0 {
 		return drop(d, ReasonDefaultDeny)
 	}
 	return d
@@ -276,6 +305,25 @@ func drop(d Decision, reason string) Decision {
 	d.Action = "drop"
 	d.Reason = reason
 	return d
+}
+
+func dropXDP(d Decision, reason string) Decision {
+	d = drop(d, reason)
+	d.XDP = true
+	return d
+}
+
+func l7Allowed(rules []L7Rule, method, path string) bool {
+	for _, r := range rules {
+		if r.Method != "" && !strings.EqualFold(r.Method, method) {
+			continue
+		}
+		if r.Path != "" && !strings.HasPrefix(path, r.Path) {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func overRate(q QoS, pkt PacketMeta) bool {
