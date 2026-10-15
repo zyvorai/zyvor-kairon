@@ -5,6 +5,7 @@ package kaironctl
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -38,6 +39,12 @@ func RunAs(name string, args []string, version string) int {
 	root := NewRootCmd(opts)
 	root.SetArgs(args)
 	if err := root.Execute(); err != nil {
+		var ec *ExitCodeError
+		if errors.As(err, &ec) {
+			// A wrapped program's own status (container run --wait):
+			// propagate it without an "Error:" banner.
+			return ec.Code
+		}
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		return 1
 	}
@@ -100,6 +107,7 @@ migrations, snapshots, and more. Same command tree as kubectl-kairon.`,
 		newHistoryCmd(),
 		newRollbackCmd(),
 		newNetworkCmd(opts),
+		newContainerCmd(opts),
 		newImageCmd(opts),
 		newMCPCmd(opts),
 		newApproveCmd(opts),

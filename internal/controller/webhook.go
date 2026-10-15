@@ -291,6 +291,9 @@ func (c *Controller) validateMachineCreate(r *http.Request, req *admission.Reque
 	if err := model.ValidatePlacement(m.Spec); err != nil {
 		return admission.Deny(err.Error())
 	}
+	if err := model.ValidateSandboxOCI(m.Spec); err != nil {
+		return admission.Deny(err.Error())
+	}
 	if err := model.ValidateAccelerators(m.Spec, m.Metadata.Annotations); err != nil {
 		return admission.Deny(err.Error())
 	}
@@ -377,6 +380,9 @@ func (c *Controller) validateMachineResize(r *http.Request, req *admission.Reque
 		return admission.Deny(err.Error())
 	}
 	if err := model.ValidateTopologyUpdate(oldM.Spec, newM.Spec); err != nil {
+		return admission.Deny(err.Error())
+	}
+	if err := model.ValidateSandboxOCIUpdate(oldM.Spec, newM.Spec); err != nil {
 		return admission.Deny(err.Error())
 	}
 	// Only when placement changed: an object that predates the check must

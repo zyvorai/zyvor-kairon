@@ -350,3 +350,38 @@ func TestObserveEdgeDropsBoundsReportedSeries(t *testing.T) {
 		t.Fatalf("counted %v series, want %d", got, edgeDropLimit)
 	}
 }
+
+func TestContainerStatusProjectsExitCodeAndKeepsPreviousOnError(t *testing.T) {
+	var fail bool
+	fs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if fail {
+			http.Error(w, "boom", http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write([]byte(`{"id":"ctr-1","status":"Stopped","oci":true,"exit_code":7,"restarts":1,"health":"healthy","log":""}`))
+	}))
+	defer fs.Close()
+	a := &Agent{Flux: fluxvm.New(fs.URL, ""), Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	m := model.Machine{
+		Metadata: model.ObjectMeta{Namespace: "default", Name: "job"},
+		Spec:     model.MachineSpec{Sandbox: &model.SandboxSpec{OCI: &model.OCISpec{Image: "alpine:3.22"}}},
+	}
+	rec := &fluxvm.Record{UUID: "ctr-1"}
+
+	cs := a.containerStatus(context.Background(), m, rec)
+	if cs == nil || cs.ExitCode == nil || *cs.ExitCode != 7 || cs.Restarts != 1 || cs.Health != "healthy" {
+		t.Fatalf("status = %+v", cs)
+	}
+
+	prev := int32(9)
+	m.Status.Container = &model.ContainerStatus{ExitCode: &prev}
+	fail = true
+	if got := a.containerStatus(context.Background(), m, rec); got == nil || *got.ExitCode != 9 {
+		t.Fatalf("a failed read must keep the previous status, got %+v", got)
+	}
+
+	plain := model.Machine{Metadata: model.ObjectMeta{Name: "vm"}}
+	if a.containerStatus(context.Background(), plain, rec) != nil {
+		t.Fatal("a non-container Machine must have no container status")
+	}
+}

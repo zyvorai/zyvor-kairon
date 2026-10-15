@@ -339,6 +339,9 @@ type SandboxSpec struct {
 	// (tap/bridge networking, not user/SLIRP -- FluxVM's own proxy needs
 	// to dial the guest directly).
 	HTTPProxyPorts []uint16 `json:"httpProxyPorts,omitempty"`
+	// OCI runs a container image as the sandbox instead of booting a disk
+	// image or template -- see OCISpec.
+	OCI *OCISpec `json:"oci,omitempty"`
 }
 
 // GuestAgentSpec opts a Machine into FluxVM's real qemu-guest-agent
@@ -1116,10 +1119,13 @@ type MachineStatus struct {
 	// `kubectl get machine` IP printer column). GuestIPs is the full
 	// address list (multi-NIC, IPv4 and IPv6); when non-empty,
 	// GuestIPs[0] == GuestIP.
-	GuestIP            string                `json:"guestIP,omitempty"`
-	GuestIPs           []string              `json:"guestIPs,omitempty"`
-	Network            *MachineNetworkStatus `json:"network,omitempty"`
-	ObservedGeneration int64                 `json:"observedGeneration,omitempty"`
+	GuestIP  string                `json:"guestIP,omitempty"`
+	GuestIPs []string              `json:"guestIPs,omitempty"`
+	Network  *MachineNetworkStatus `json:"network,omitempty"`
+	// Container is the container track's process state; set only for a
+	// Machine with spec.sandbox.oci.
+	Container          *ContainerStatus `json:"container,omitempty"`
+	ObservedGeneration int64            `json:"observedGeneration,omitempty"`
 	// Message deliberately has no omitempty: this whole status object is
 	// sent as one JSON merge patch (internal/kube.Client.PatchMachineStatus),
 	// and RFC 7386 merge-patch semantics treat an *absent* key as "leave

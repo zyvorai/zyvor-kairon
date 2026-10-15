@@ -343,7 +343,9 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 	// Machine. Likewise, spec.image.catalogName is a FluxVM catalog alias,
 	// never a filesystem path kairon-node itself needs to resolve or fence
 	// against --image-root.
-	usingSandboxTemplate := m.Spec.Sandbox != nil && m.Spec.Sandbox.TemplateName != ""
+	// A container sandbox (spec.sandbox.oci) has no boot disk either: its
+	// root is the OCI image, mounted by FluxVM's own init.
+	usingSandboxTemplate := m.Spec.Sandbox != nil && (m.Spec.Sandbox.TemplateName != "" || m.Spec.Sandbox.OCI != nil)
 	usingCatalogImage := m.Spec.Image.CatalogName != ""
 	cloned := false
 	if m.Metadata.Annotations[model.AnnotationCloneFrom] != "" && !usingSandboxTemplate {
@@ -624,6 +626,10 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 	status.GuestIP = rec.GuestIP
 	status.Message = ""
 	status.ShutdownDeadline = ""
+	status.Container = a.containerStatus(ctx, m, rec)
+	if c := status.Container; c != nil && c.InitError != "" {
+		status.Message = "container init failed: " + c.InitError
+	}
 	if pendingRestart != "" && (freshlyCreated || restarted) {
 		status.LastRestartRequest = pendingRestart
 	}
@@ -1883,4 +1889,19 @@ func withBootResources(m model.Machine) model.Machine {
 	m.Spec.Resources.CPU = size.CPU
 	m.Spec.Resources.Memory = size.Memory
 	return m
+}
+
+// containerStatus reads the container process state (exit code, restarts,
+// health) for a spec.sandbox.oci Machine. Best effort: a failed read keeps
+// the previous status rather than failing the reconcile.
+func (a *Agent) containerStatus(ctx context.Context, m model.Machine, rec *fluxvm.Record) *model.ContainerStatus {
+	if m.Spec.Sandbox == nil || m.Spec.Sandbox.OCI == nil || rec == nil {
+		return nil
+	}
+	logs, err := a.Flux.SandboxLogs(ctx, rec.ID(), 1)
+	if err != nil {
+		a.Log.Warn("container status read failed", "namespace", m.Namespace(), "machine", m.Metadata.Name, "error", err)
+		return m.Status.Container
+	}
+	return logs.ContainerStatus()
 }

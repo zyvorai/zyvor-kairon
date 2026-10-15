@@ -254,6 +254,8 @@ Notes:
 ## Migrate / recover / fence / snapshot
 
 ```text
+kaironctl container run [--wait] [--rm] [-p H:C] [-e K=V] IMAGE [CMD...]   # experimental; see guides/container-sandboxes.md
+kaironctl container ps|inspect|rm
 kaironctl migrate MACHINE --strategy auto|cold|live --target-node NODE [--fallback-to-cold]
 kaironctl evacuate NODE [--strategy cold|auto] [--wait] [--timeout 15m] [--poll-interval 10s]
 kaironctl recover MIGRATION --action ACTION --diagnosis DIAGNOSIS --reason REASON
