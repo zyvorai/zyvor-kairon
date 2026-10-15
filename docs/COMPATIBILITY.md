@@ -223,6 +223,27 @@ One run per case, a single Machine and an idle guest, so this shows the
 control plane, certificates and failure handling work on this pair; it says
 nothing about convergence under load.
 
+### Repeatability, dead node, rotation and scale (2026-10-15/16)
+
+Same pair, same idle `hw-live` guest. These runs are what the single-run table
+above does not show, including the failures.
+
+| Check | Result | Notes |
+|---|---|---|
+| Repeated live migration | partial | 13 of 15 live migrations in the early repeat and soak runs succeeded. Soaks stopped after 8 and 10 clean hops. Failures were (1) a FluxVM race that reaped the receiver's `Creating` placeholder before QEMU launch (about 1 in 10; fixed in FluxVM #417, **not yet deployed to the lab**), (2) a transient API timeout the controller treated as terminal (fixed, #152), (3) a commit timeout on a host with load 22/54/57 on 12 CPUs |
+| Dead node (power-off simulation) | pass | `NodeUnreachable` after 51 s; Machine restarted on the other node 13 s after `kaironctl node fence` attestation. Machines not opted in to evacuation were left alone. Simulates a dead agent and killed VM, not a shared-disk split brain |
+| Migration CA rotation | pass | New 10-year CA, 90-day leaf certificates, mTLS verified both ways, two live migrations afterwards (`runbook-migration-cert-rotation.md`) |
+| Scale smoke | pass at cap | 8 small Machines ramped in batches of 2, all Running in 97 s (7 on one node, 1 on the other; lowest free memory 8.7 GiB), then deleted. The cap was 8 because the lab has no memory for more; no limit was found |
+
+Defects found by these runs and fixed: a lost VM when a stale same-name
+FluxVM record hid an adopted VM and a cold migration ran during `Adopting`
+(one migration per Machine is now enforced, #149); a source left paused after
+`ForceAbort` (#148); a destination whose runtime failed before commit
+(#150).
+
+Not shown: more than 8 Machines, migration under load or with many Machines,
+guest IPs (user-mode networking), and the FluxVM #417 fix in the soak.
+
 ## Container sandboxes
 
 `spec.sandbox.oci` and `kaironctl container` (see

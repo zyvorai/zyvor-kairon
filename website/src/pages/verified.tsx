@@ -74,6 +74,30 @@ const ROWS: Row[] = [
     link: '/docs/runbook-recovery-drill',
   },
   {
+    name: 'Dead node: restart on the other node',
+    how: 'Agent stopped and VM killed: NodeUnreachable after 51 s, restarted 13 s after fencing attestation. Machines not opted in were left alone. Not a shared-disk split-brain test.',
+    result: 'pass',
+    link: '/docs/COMPATIBILITY#repeatability-dead-node-rotation-and-scale-2026-10-1516',
+  },
+  {
+    name: 'Migration CA rotation',
+    how: 'New 10-year CA, mTLS verified both ways, two live migrations afterwards.',
+    result: 'pass',
+    link: '/docs/runbook-migration-cert-rotation',
+  },
+  {
+    name: 'Scale smoke: 8 small Machines',
+    how: 'Ramped in batches of 2, all Running in 97 s, lowest free memory 8.7 GiB, then deleted. 8 was the cap; no limit was found.',
+    result: 'pass',
+    link: '/docs/COMPATIBILITY#repeatability-dead-node-rotation-and-scale-2026-10-1516',
+  },
+  {
+    name: 'Repeated live migration',
+    how: '13 of 15 succeeded in early repeat runs; soaks stopped after 8 and 10 clean hops. Causes found and fixed or fixed upstream; the FluxVM fix is not yet deployed to the lab.',
+    result: 'partial',
+    link: '/docs/COMPATIBILITY#repeatability-dead-node-rotation-and-scale-2026-10-1516',
+  },
+  {
     name: 'Container sandbox on a Mac',
     how: 'alpine:3.22 run through FluxVM, then created through Kairon’s client: exit code 3 and console output read back in about 4 s.',
     result: 'pass',
@@ -134,7 +158,7 @@ function Results() {
                 </td>
                 <td>{r.how}</td>
                 <td>
-                  <Pill ok>{r.result}</Pill>
+                  <Pill ok={r.result === 'pass'}>{r.result}</Pill>
                 </td>
                 <td>
                   <TextLink to={r.link}>Guide ›</TextLink>
@@ -226,7 +250,8 @@ function NotRun() {
           'Live migration with the eBPF dataplane: no eBPF Machine in this lab.',
           'The create, stop, start, delete smoke with an image: only health was checked.',
           'Container sandboxes through kairon-node and the controller on a Mac, Rosetta images, published ports, restart policy and health checks. Only the FluxVM call path was run.',
-          'Anything at scale, on a failed host, or with a GPU.',
+          'More than 8 Machines, migration under many-Machine load, a shared-disk split-brain, and anything with a GPU.',
+          'Reliable repeated live migration: the receiver race fix (FluxVM #417) is merged but not yet running in the lab.',
         ]}
       />
       <p>
