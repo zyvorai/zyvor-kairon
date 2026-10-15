@@ -3,6 +3,7 @@
 self-hosted-runner:
   labels:
     - kairon-lab
+    - zyvor-build
 paths:
   .github/workflows/**/*.{yml,yaml}:
     ignore:
