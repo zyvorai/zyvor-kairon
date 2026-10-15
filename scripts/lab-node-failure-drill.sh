@@ -90,7 +90,10 @@ lab_log "creating $NAME pinned to $VICTIM"
 python3 - "$NAME" "$NS" "$VICTIM" "$IMG_URL" "$IMG_DIGEST" "${KAIRON_SCALE_TOLERATE_TAINTS:-}" <<'PY' | kube_curl POST "$LAB_API/namespaces/$NS/machines" "$(cat)" >/dev/null
 import json, sys
 name, ns, victim, url, digest, taints = sys.argv[1:7]
-placement = {"architecture": "amd64", "nodeSelector": {"kubernetes.io/hostname": victim}}
+# Pinned with spec.nodeName, not a nodeSelector: after the node is fenced the
+# scheduler must be free to place the Machine on another node, and a selector
+# on the victim's hostname would leave it Pending forever.
+placement = {"architecture": "amd64"}
 tol = [{"key": k, "operator": "Exists", "effect": "NoSchedule"} for k in taints.split(",") if k]
 if tol:
     placement["tolerations"] = tol
@@ -101,7 +104,7 @@ print(json.dumps({
         "image": {"source": {"httpURL": url, "format": "qcow2"}, "digest": digest},
         "resources": {"cpu": "1", "memory": "256Mi"},
         "runtime": {"backend": "qemu"}, "network": {"mode": "user"},
-        "placement": placement, "powerState": "Running", "ttlSeconds": 3600,
+        "nodeName": victim, "placement": placement, "powerState": "Running", "ttlSeconds": 3600,
     },
 }))
 PY
