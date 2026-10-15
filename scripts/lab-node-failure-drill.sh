@@ -112,8 +112,10 @@ lab_log "Running on $VICTIM (runtime $RUNTIME_ID)"
 # --- 3. lose the node -------------------------------------------------------
 lab_log "stopping $VICTIM_UNIT and killing this Machine's QEMU on $VICTIM_SSH"
 lab_ssh "$VICTIM_SSH" "sudo systemctl stop $VICTIM_UNIT" ; victim_stopped=1
-lab_ssh "$VICTIM_SSH" "sudo pkill -9 -f 'qemu-system.*$NAME' || true"
-alive="$(lab_ssh "$VICTIM_SSH" "pgrep -fc 'qemu-system.*$NAME' || true" | tr -d '[:space:]')"
+# [q] keeps the pattern from matching the remote shell whose own command line
+# contains it (a plain pkill -f would kill the session running it).
+lab_ssh "$VICTIM_SSH" "sudo pkill -9 -f '[q]emu-system.*$NAME' || true"
+alive="$(lab_ssh "$VICTIM_SSH" "pgrep -fc '[q]emu-system.*$NAME' || true" | tr -d '[:space:]')"
 [[ "${alive:-0}" == "0" ]] || { lab_log "FAIL: the Machine's QEMU is still alive on the victim"; exit 1; }
 
 # --- 4. wait until Kairon sees the node as gone -----------------------------
