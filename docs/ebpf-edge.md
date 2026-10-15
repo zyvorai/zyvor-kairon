@@ -210,6 +210,8 @@ status:
 | `edge.guestIPSource` | Where the guest IP came from: `agent` (Kairon already knew it, from FluxVM's VM record or the guest agent), `arp` or `nd` (learned by the datapath), `dhcp` (FluxVM's DHCP lease). |
 | `edge.conntrackRestored` | Conntrack entries restored on this host by the last live migration. |
 | `edge.blackholeWindowMs` | Milliseconds between conntrack export on the source and restore here. |
+| `edge.specHash` | Short hash of the compiled edge document last sent to FluxVM. |
+| `edge.applied` | `true` only when FluxVM accepted that document. A failed apply that is tolerated (`spec.network.dataplaneRequired` is off) reads `false` with `edge.applyError` set, so a missing policy no longer looks healthy. `kaironctl network status` prints it. |
 | `dataplane.attached`, `schemaVersion` | From FluxVM `network/status`. Schema 12 is needed for the edge. |
 
 `dataplane.attached` can read `false` for one tick right after the
@@ -364,6 +366,18 @@ FluxVM's `docs/vm-edge-contract.md`.
 
 ## Limits
 
+- `allowPorts` and `allowICMP` are validated (`allowPorts` entries are a
+  port or an inclusive `lo-hi` range within 1-65535) and carried to
+  FluxVM, which enforces them; Kairon's userspace `Decide` does not match
+  them. QoS values above 1,000,000 Mbps or 2^31-1 pps are rejected.
+- `internal/ebpfedge/testdata/vectors.json` pins the userspace decision
+  engine's action, reason and XDP-eligibility for 17 cases. It is the
+  contract FluxVM's program is expected to agree with; nothing in this
+  repository runs those vectors against FluxVM's BPF yet.
+- Kairon's engine also models HTTP method/path allow rules (`l7_deny`),
+  an XDP-eligible flag on spoof and explicit-deny drops, and a bounded
+  flow table. None of these is reachable from a Machine or policy field
+  yet.
 - Drop metrics are sampled from FluxVM's top 256 flows on each tick,
   so a very wide spread of dropped flows is under-counted.
 - Verified on a single host. The conntrack move across two hosts is

@@ -144,14 +144,15 @@ or setting it to `ScheduleAnyway` (the default, and every
 rejects a node over skew -- `maxSkew` stays purely informational for
 scoring, exactly as before.
 
-`maxSkew`'s zero value (unset, same as writing `0` explicitly -- there's
-no way to tell those apart through this field alone) is treated as a real
-"domains must stay perfectly balanced," not as disabling enforcement --
-the stricter of the two readings, deliberately, matching this project's
-general fail-closed posture elsewhere. A real Kubernetes cluster's API
-server would reject `maxSkew: 0` outright as invalid; Kairon has no
-equivalent admission-time field validation to hook a rejection into, so
-if you meant to write a positive number, write one.
+`maxSkew` must be at least 1 with `whenUnsatisfiable: DoNotSchedule`. With
+`maxSkew: 0` (or the field omitted, which is the same on the wire) a
+constraint can only be met when every Machine sits in a single domain, so
+with two or more domains the Machine would stay Pending forever. The
+admission webhook therefore rejects it on create, and on update when
+`spec.placement` changed; an unknown `whenUnsatisfiable` and a negative
+`maxSkew` are rejected the same way (the CRD also sets `minimum: 0`). A
+Machine stored before this check keeps accepting unrelated updates, and the
+scheduler still treats its `0` as "perfectly balanced".
 
 ## Taints and tolerations
 

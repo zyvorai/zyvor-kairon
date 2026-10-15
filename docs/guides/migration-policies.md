@@ -175,6 +175,23 @@ spec.selector against these Machines' own labels)` hint
 policy's fields, or `status.activeMigrations` itself can all change between
 running `describe` and whenever a migration is actually created.
 
+## Falling back to a cold migration (`spec.fallbackToCold`)
+
+A live migration that cannot start parks in `Blocked` by default: the
+destination reports no live backend, the source adapter returns
+`unsupported`, or the stream it negotiated cannot be used. Set
+`spec.fallbackToCold: true` (`kaironctl migrate --fallback-to-cold`) to
+continue as a cold migration instead. The agent aborts the prepared target,
+resumes the source's network, stops the Machine and hands the migration to
+the same cold path the controller uses (`Stopping` -> `Restarting`), with
+`status.effectiveStrategy: cold` and a message naming the reason.
+
+Cold stops the Machine, so it is down for the move; leave this off when
+that is not acceptable. The fallback applies only before the source
+transfer starts (the source is untouched at that point). It is never used
+after a transfer began, and not when `--migration-require-encrypted` blocks
+an unencrypted data plane, which stays `Blocked`.
+
 ## Real limits today (first cut)
 
 - **Namespace-scoped only** -- a `MigrationPolicy` only ever matches
