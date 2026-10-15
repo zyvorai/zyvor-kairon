@@ -1483,3 +1483,94 @@ func TestFallbackToColdWhenTargetHasNoLiveBackend(t *testing.T) {
 		t.Fatalf("machine patch = %q, want powerState Stopped", machinePatchForTest)
 	}
 }
+
+// flakyCommit wraps a migration peer handler so the first `drop` commit
+// requests are cut off at the connection. With processFirst the real handler
+// has already handled the request (the destination committed; only the
+// response is lost).
+func flakyCommit(next http.Handler, drop int, processFirst bool, seen *int) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/commit") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		*seen++
+		if *seen > drop {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if processFirst {
+			next.ServeHTTP(httptest.NewRecorder(), r)
+		}
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			http.Error(w, "no hijack", http.StatusInternalServerError)
+			return
+		}
+		conn, _, err := hj.Hijack()
+		if err == nil {
+			_ = conn.Close()
+		}
+	})
+}
+
+func TestCommitDroppedInTransitIsRepeatedAndSucceeds(t *testing.T) {
+	old := commitRetryDelay
+	commitRetryDelay = time.Millisecond
+	defer func() { commitRetryDelay = old }()
+
+	destination := &fakePeerDestination{result: migration.PrepareResult{TransferSupported: true, Endpoint: "opaque://incoming/session"}}
+	var seen int
+	handler := (&migration.Server{NodeName: "worker-2", Store: migration.NewFileStore(t.TempDir()), Driver: destination}).Handler()
+	peerServer := httptest.NewServer(flakyCommit(handler, 1, false, &seen))
+	defer peerServer.Close()
+	source := &fakeSourceMigrator{startStatus: migration.TransferStatus{TransferID: "xfer-1", Phase: "completed"}}
+
+	status := runLiveAgentReconcile(t, peerServer, destination, source)
+	if status.Phase == "NeedsRecovery" {
+		t.Fatalf("a commit dropped once in transit must be repeated, not parked: %+v", status)
+	}
+	if seen != 2 || destination.commits != 1 {
+		t.Fatalf("commit requests seen=%d driver commits=%d, want 2 requests and 1 driver commit", seen, destination.commits)
+	}
+}
+
+func TestCommitResponseLostIsDetectedFromTheDestinationRecord(t *testing.T) {
+	old := commitRetryDelay
+	commitRetryDelay = time.Millisecond
+	defer func() { commitRetryDelay = old }()
+
+	destination := &fakePeerDestination{result: migration.PrepareResult{TransferSupported: true, Endpoint: "opaque://incoming/session"}}
+	var seen int
+	handler := (&migration.Server{NodeName: "worker-2", Store: migration.NewFileStore(t.TempDir()), Driver: destination}).Handler()
+	peerServer := httptest.NewServer(flakyCommit(handler, 5, true, &seen)) // every response is lost
+	defer peerServer.Close()
+	source := &fakeSourceMigrator{startStatus: migration.TransferStatus{TransferID: "xfer-1", Phase: "completed"}}
+
+	status := runLiveAgentReconcile(t, peerServer, destination, source)
+	if status.Phase == "NeedsRecovery" {
+		t.Fatalf("the destination committed; losing the response must not park the migration: %+v", status)
+	}
+	if destination.commits != 1 {
+		t.Fatalf("driver commits=%d, want exactly 1 (the repeat must not commit twice)", destination.commits)
+	}
+}
+
+func TestCommitHTTPErrorIsNotRepeated(t *testing.T) {
+	old := commitRetryDelay
+	commitRetryDelay = time.Millisecond
+	defer func() { commitRetryDelay = old }()
+
+	destination := &fakePeerDestination{result: migration.PrepareResult{TransferSupported: true, Endpoint: "opaque://incoming/session"}, commitErr: fmt.Errorf("receiver failed")}
+	peerServer := httptest.NewServer((&migration.Server{NodeName: "worker-2", Store: migration.NewFileStore(t.TempDir()), Driver: destination}).Handler())
+	defer peerServer.Close()
+	source := &fakeSourceMigrator{startStatus: migration.TransferStatus{TransferID: "xfer-1", Phase: "completed"}}
+
+	status := runLiveAgentReconcile(t, peerServer, destination, source)
+	if status.Phase != "NeedsRecovery" {
+		t.Fatalf("a destination that answers with an error must still park the migration: %+v", status)
+	}
+	if destination.commits != 1 {
+		t.Fatalf("driver commits=%d, want 1: an HTTP error answer is final", destination.commits)
+	}
+}
