@@ -865,3 +865,55 @@ func TestSetDiskThrottle(t *testing.T) {
 		t.Fatalf("lift body %s", body)
 	}
 }
+
+func TestLookupByNamePrefersTheLiveRecordOverStaleOnes(t *testing.T) {
+	// The lab: a failed leftover named like the Machine was listed first and
+	// hid the freshly adopted running VM.
+	body := `[
+	  {"id":"0218c5bd","name":"kairon-default-hw-live","status":"failed"},
+	  {"id":"c03d1852","name":"kairon-default-hw-live","status":"stopped"},
+	  {"id":"2330054f","name":"kairon-default-hw-live","status":"running","pid":4242}
+	]`
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/vms" || r.URL.Query().Get("name") != "kairon-default-hw-live" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(body))
+	}))
+	defer s.Close()
+	c := New(s.URL, "")
+	c.HTTP = s.Client()
+
+	rec, err := c.LookupByName(context.Background(), "kairon-default-hw-live")
+	if err != nil || rec == nil {
+		t.Fatalf("rec=%v err=%v", rec, err)
+	}
+	if rec.ID() != "2330054f" {
+		t.Fatalf("resolved to %s, want the running record 2330054f", rec.ID())
+	}
+}
+
+func TestPreferredRecordOrdering(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in   []Record
+		want string
+	}{
+		{"empty", nil, ""},
+		{"single failed is still returned", []Record{{IDValue: "a", Status: "failed"}}, "a"},
+		{"running beats stopped and failed", []Record{{IDValue: "a", Status: "failed"}, {IDValue: "b", Status: "stopped"}, {IDValue: "c", Status: "running"}}, "c"},
+		{"in transition beats stopped", []Record{{IDValue: "a", Status: "stopped"}, {IDValue: "b", Status: "creating"}}, "b"},
+		{"stopped beats failed", []Record{{IDValue: "a", Status: "failed"}, {IDValue: "b", Status: "stopped"}}, "b"},
+		{"first of equals is kept", []Record{{IDValue: "a", Status: "running"}, {IDValue: "b", Status: "running"}}, "a"},
+		{"case is ignored", []Record{{IDValue: "a", Status: "Stopped"}, {IDValue: "b", Status: "Running"}}, "b"},
+	} {
+		got := preferredRecord(tc.in)
+		switch {
+		case tc.want == "" && got != nil:
+			t.Errorf("%s: want nil, got %s", tc.name, got.ID())
+		case tc.want != "" && (got == nil || got.ID() != tc.want):
+			t.Errorf("%s: want %s, got %+v", tc.name, tc.want, got)
+		}
+	}
+}
