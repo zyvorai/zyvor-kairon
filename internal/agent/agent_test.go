@@ -498,6 +498,7 @@ func (f *fakeSourceMigrator) Abort(_ context.Context, _ migration.Session, trans
 type fakePeerDestination struct {
 	result      migration.PrepareResult
 	commitErr   error
+	abortErr    error
 	prepares    int
 	commits     int
 	aborts      int
@@ -521,7 +522,7 @@ func (f *fakePeerDestination) Commit(context.Context, migration.Session) error {
 }
 func (f *fakePeerDestination) Abort(context.Context, migration.Session) error {
 	f.aborts++
-	return nil
+	return f.abortErr
 }
 func (f *fakePeerDestination) Diagnose(_ context.Context, session migration.Session) (migration.DiagnosisResult, error) {
 	if f.diagnosisAfterCommit != nil && f.commits > 0 {
@@ -1572,5 +1573,82 @@ func TestCommitHTTPErrorIsNotRepeated(t *testing.T) {
 	}
 	if destination.commits != 1 {
 		t.Fatalf("driver commits=%d, want 1: an HTTP error answer is final", destination.commits)
+	}
+}
+
+func forceAbortFlux(t *testing.T, resumes *int, resumeStatus int) func(http.ResponseWriter, *http.Request) {
+	t.Helper()
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/vms/vm-1":
+			_ = json.NewEncoder(w).Encode(fluxvm.Record{UUID: "vm-1", Name: "kairon-prod-db", Status: "Running"})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/vms/vm-1/resume":
+			*resumes++
+			if resumeStatus != http.StatusOK {
+				http.Error(w, "boom", resumeStatus)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(fluxvm.Record{UUID: "vm-1", Name: "kairon-prod-db", Status: "Running"})
+		case r.Method == http.MethodDelete && r.URL.Path == "/v1/vms/vm-1":
+			t.Error("the source runtime must never be deleted by a recovery abort")
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusNotFound)
+		}
+	}
+}
+
+func forceAbortRecovery() *model.MachineMigrationRecoverySpec {
+	return &model.MachineMigrationRecoverySpec{
+		Action:                model.RecoveryActionForceAbort,
+		AcknowledgedDiagnosis: model.RecoveryDiagnosisDestinationNotCommitted,
+		Reason:                "commit failed in transit; destination runtime failed; source still present",
+	}
+}
+
+// A source whose transfer completed is paused (QEMU postmigrate) while every
+// status still says Running, so an abort that left it alone froze the guest
+// silently. After the destination abort succeeds the source must be resumed.
+func TestForceAbortResumesTheSourceOnceTheDestinationIsAborted(t *testing.T) {
+	var resumes int
+	destination := &fakePeerDestination{}
+	status := runNeedsRecoveryReconcile(t, forceAbortRecovery(), destination, "Prepared", forceAbortFlux(t, &resumes, http.StatusOK))
+	if status.Phase != "Failed" || destination.aborts != 1 {
+		t.Fatalf("phase=%q aborts=%d", status.Phase, destination.aborts)
+	}
+	if resumes != 1 {
+		t.Fatalf("source resumes=%d, want 1", resumes)
+	}
+	if !strings.Contains(status.Message, "source runtime was resumed") {
+		t.Fatalf("message = %q", status.Message)
+	}
+}
+
+// If the destination may have committed (its abort is refused), the source is
+// not the only copy and must stay as it is.
+func TestForceAbortDoesNotResumeTheSourceWhenTheDestinationAbortFails(t *testing.T) {
+	var resumes int
+	destination := &fakePeerDestination{abortErr: fmt.Errorf("cannot abort a committed session")}
+	status := runNeedsRecoveryReconcile(t, forceAbortRecovery(), destination, "Prepared", forceAbortFlux(t, &resumes, http.StatusOK))
+	if status.Phase != "Failed" {
+		t.Fatalf("phase=%q", status.Phase)
+	}
+	if resumes != 0 {
+		t.Fatalf("source resumes=%d, want 0 when the destination abort failed", resumes)
+	}
+	if !strings.Contains(status.Message, "destination abort failed") {
+		t.Fatalf("message = %q", status.Message)
+	}
+}
+
+func TestForceAbortReportsWhenTheSourceCannotBeResumed(t *testing.T) {
+	var resumes int
+	destination := &fakePeerDestination{}
+	status := runNeedsRecoveryReconcile(t, forceAbortRecovery(), destination, "Prepared", forceAbortFlux(t, &resumes, http.StatusInternalServerError))
+	if status.Phase != "Failed" || resumes != 1 {
+		t.Fatalf("phase=%q resumes=%d", status.Phase, resumes)
+	}
+	if !strings.Contains(status.Message, "could not be resumed") {
+		t.Fatalf("message = %q", status.Message)
 	}
 }

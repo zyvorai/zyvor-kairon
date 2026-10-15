@@ -1499,9 +1499,14 @@ func (a *Agent) reconcileNeedsRecovery(ctx context.Context, item model.MachineMi
 		status.Message = "recovery: operator confirmed destination committed; source runtime removed, handing off to normal cutover"
 	case model.RecoveryActionConfirmDestinationNotCommitted:
 		if err := a.MigrationPeer.Commit(ctx, targetURL, status.SessionID); err != nil {
-			_ = a.MigrationPeer.Abort(ctx, targetURL, status.SessionID)
 			status.Phase = "Failed"
 			status.Message = "recovery: retried commit failed, confirming destination never committed: " + err.Error() + "; host-level inspection is required before reusing this Machine"
+			if abortErr := a.MigrationPeer.Abort(ctx, targetURL, status.SessionID); abortErr == nil {
+				// The destination is gone, so the source is the only copy; see ForceAbort.
+				if a.resumeSourceRuntime(ctx, status.RuntimeID) {
+					status.Message += " (destination aborted, source runtime resumed)"
+				}
+			}
 			break
 		}
 		// A successful commit RPC does not prove the adopted runtime is
@@ -1531,15 +1536,23 @@ func (a *Agent) reconcileNeedsRecovery(ctx context.Context, item model.MachineMi
 		status.Phase = "Cutover"
 		status.Message = "recovery: retried commit succeeded; source runtime removed, handing off to normal cutover"
 	case model.RecoveryActionForceAbort:
-		// Deliberately never touches the source runtime here: ground truth
-		// is unknown by definition, so destroying the only possibly-live
-		// copy of the guest is out of bounds. A 409 from Abort is expected
-		// and fine if the destination secretly did commit.
+		// Never destroys the source runtime here: ground truth is unknown by
+		// definition, so deleting the only possibly-live copy of the guest is
+		// out of bounds. A 409 from Abort is expected and fine if the
+		// destination secretly did commit. When the destination abort did
+		// succeed the source is the only copy, and a source whose transfer
+		// completed is left paused by QEMU (postmigrate) while FluxVM and the
+		// Machine still report it running: resume it, or the guest stays
+		// frozen until someone notices.
+		status.Phase = "Failed"
 		if err := a.MigrationPeer.Abort(ctx, targetURL, status.SessionID); err != nil {
 			a.Log.Warn("NeedsRecovery: ForceAbort peer abort failed", "sessionID", status.SessionID, "error", err)
+			status.Message = "recovery: operator forced abort, but the destination abort failed; source runtime was left untouched -- verify its state before reuse"
+		} else if a.resumeSourceRuntime(ctx, status.RuntimeID) {
+			status.Message = "recovery: operator forced abort; destination aborted and the source runtime was resumed"
+		} else {
+			status.Message = "recovery: operator forced abort; destination aborted but the source runtime could not be resumed -- verify its state before reuse"
 		}
-		status.Phase = "Failed"
-		status.Message = "recovery: operator forced abort; source runtime was left untouched -- verify its state before reuse"
 	}
 	return a.Kube.PatchMachineMigrationStatus(ctx, item.Namespace(), item.Metadata.Name, status)
 }
@@ -1966,4 +1979,19 @@ func (a *Agent) commitTarget(ctx context.Context, item model.MachineMigration, t
 		}
 	}
 	return err
+}
+
+// resumeSourceRuntime resumes the source runtime after the destination has
+// been definitively aborted. QEMU leaves a source whose transfer completed in
+// the postmigrate state, paused, and neither FluxVM nor the Machine status
+// shows it; resuming a runtime that is already running is harmless.
+func (a *Agent) resumeSourceRuntime(ctx context.Context, runtimeID string) bool {
+	if runtimeID == "" {
+		return false
+	}
+	if _, err := a.Flux.Resume(ctx, runtimeID); err != nil {
+		a.Log.Warn("NeedsRecovery: resuming the source runtime after abort failed", "runtimeID", runtimeID, "error", err)
+		return false
+	}
+	return true
 }
