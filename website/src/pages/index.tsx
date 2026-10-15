@@ -30,6 +30,7 @@ const SUB_LINKS = [
   {to: '#new', label: 'New in v0.10'},
   {to: '#see-it-move', label: 'See it move'},
   {to: '#numbers', label: 'Numbers'},
+  {to: '#verified', label: 'Verified'},
   {to: '#capabilities', label: 'Capabilities'},
   {to: '#deploy', label: 'One command'},
   {to: '#dashboard', label: 'Dashboard'},
@@ -215,6 +216,35 @@ function Numbers() {
   );
 }
 
+function VerifiedBand() {
+  return (
+    <Band tone="soft" id="verified" center>
+      <Headline
+        eyebrow="Verified on real hardware · 15 October 2026"
+        title={
+          <>
+            Live migration, <Grad>run and recorded.</Grad>
+          </>
+        }
+        lede="Two real hosts, both directions, encrypted, with source-failure, controller-failover and NeedsRecovery drills, plus a container sandbox on a Mac. One run per case on an idle guest; the page lists what was not run."
+      />
+      <StatBar
+        stats={[
+          {value: 8, label: 'cases run', note: 'Eight passed, none failed.'},
+          {value: 262, suffix: ' ms', label: 'worst live downtime', note: 'Six live migrations, 64 ms at best.'},
+          {value: 6, label: 'of 6 encrypted', note: 'Data plane TLS on a fresh CA.'},
+        ]}
+      />
+      <Actions>
+        <Btn to="/verified">See every result</Btn>
+        <Btn to="/docs/COMPATIBILITY" variant="ghost">
+          Compatibility record
+        </Btn>
+      </Actions>
+    </Band>
+  );
+}
+
 function HowItWorks() {
   const how = useBaseUrl('/anim/how-it-works.svg');
   return (
@@ -358,7 +388,8 @@ function Honest() {
           <List
             items={[
               'Boot, power, network, vCPU hotplug and snapshot-restore on a real FluxVM host (kaironctl selftest).',
-              'Cold and live migration between two real hosts over mTLS, including adaptive auto-converge, post-copy switch and zstd, and the source-failure, NeedsRecovery and controller-failover drills (both directions on matched QEMU, lab run of 2026-10-14).',
+              'Cold and live migration between two real hosts over mTLS, including adaptive auto-converge, post-copy switch and zstd, and the source-failure, NeedsRecovery and controller-failover drills (lab run of 2026-10-14). Re-run on 2026-10-15 on a re-keyed pair: cold, live in both directions, and the three failure drills all passed (idle guest, one run each).',
+              'A container image run as a FluxVM sandbox on a real Mac, created and read back through Kairon’s client.',
               'Node maintenance draining Machines to another node by live migration.',
               'Snapshots and DRA bridging.',
               'Native macOS node on an Apple M4 with a real k3s cluster.',
@@ -373,7 +404,8 @@ function Honest() {
           <List
             limits
             items={[
-              'The NeedsRecovery drill passed 5 of 6 lab runs and failed once unexplained, live migration with the eBPF dataplane has not run, and none of it runs in this repo’s CI yet.',
+              'The NeedsRecovery drill passed 5 of 6 runs on 2026-10-14 and failed once unexplained, then passed on the 2026-10-15 re-run; live migration with the eBPF dataplane has not run, and none of it runs in this repo’s CI yet.',
+              'Container sandboxes through kairon-node and the controller on a Mac have not run; only the FluxVM call path has.',
               'Plain pre-copy under a heavy write load did not converge on a 1 Gbps link; adaptive migration is the answer.',
               'Incremental S3 backups, hibernate resume on another node and cross-host virtual networks are not verified.',
               'Agent sessions have not run on a real Mac yet.',
@@ -386,6 +418,8 @@ function Honest() {
       </div>
       <p>
         <TextLink to="/docs/STATUS">Read status and production gaps</TextLink>
+        {' · '}
+        <TextLink to="/verified">Verified on real hardware</TextLink>
       </p>
     </Band>
   );
@@ -402,6 +436,7 @@ export default function Home(): ReactNode {
         <WhatsNew />
         <SeeItMove />
         <Numbers />
+        <VerifiedBand />
         <HowItWorks />
         <Capabilities />
         <Deploy />

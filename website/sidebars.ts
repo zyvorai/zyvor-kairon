@@ -17,6 +17,7 @@ const GUIDE_GROUPS: Group[] = [
       'agent-sessions',
       'agent-sandboxes',
       'machine-sandboxes',
+      'container-sandboxes',
       'machine-pools',
       'machine-fork',
       'agent-plane',
