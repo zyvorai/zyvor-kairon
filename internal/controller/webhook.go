@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"reflect"
 	"time"
 
 	"github.com/zyvorai/kairon/internal/admission"
@@ -377,6 +378,13 @@ func (c *Controller) validateMachineResize(r *http.Request, req *admission.Reque
 	}
 	if err := model.ValidateTopologyUpdate(oldM.Spec, newM.Spec); err != nil {
 		return admission.Deny(err.Error())
+	}
+	// Only when placement changed: an object that predates the check must
+	// still accept unrelated updates (status, power state, labels).
+	if !reflect.DeepEqual(oldM.Spec.Placement, newM.Spec.Placement) {
+		if err := model.ValidatePlacement(newM.Spec); err != nil {
+			return admission.Deny(err.Error())
+		}
 	}
 	if err := model.ValidateElasticMemoryUpdate(oldM.Spec, newM.Spec); err != nil {
 		return admission.Deny(err.Error())
