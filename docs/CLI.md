@@ -254,7 +254,7 @@ Notes:
 ## Migrate / recover / fence / snapshot
 
 ```text
-kaironctl migrate MACHINE --strategy auto|cold|live --target-node NODE
+kaironctl migrate MACHINE --strategy auto|cold|live --target-node NODE [--fallback-to-cold]
 kaironctl evacuate NODE [--strategy cold|auto] [--wait] [--timeout 15m] [--poll-interval 10s]
 kaironctl recover MIGRATION --action ACTION --diagnosis DIAGNOSIS --reason REASON
 kaironctl cancel-migration MIGRATION
