@@ -1283,6 +1283,13 @@ type MachineMigrationSpec struct {
 	// select which address the RAM/state transfer binds/advertises.
 	// Empty uses the adapter's default advertise address.
 	MigrationNetwork string `json:"migrationNetwork,omitempty"`
+	// FallbackToCold makes a live migration that is blocked before the
+	// source runtime was touched (the destination has no live backend, or
+	// the source adapter reports the transfer unsupported) continue as a
+	// cold migration instead of parking in Blocked. Cold stops the Machine,
+	// so the Machine is down for the move; leave this off when that
+	// downtime is not acceptable. Never applied after a transfer started.
+	FallbackToCold bool `json:"fallbackToCold,omitempty"`
 	// Recovery is the operator's explicit, attested instruction for
 	// resolving a migration parked in NeedsRecovery -- never set by Kairon
 	// itself, and never acted on unless AcknowledgedDiagnosis matches

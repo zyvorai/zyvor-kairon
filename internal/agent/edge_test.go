@@ -52,6 +52,28 @@ func TestApplyEdgeProjectsStableIdentity(t *testing.T) {
 	if !posted || st == nil || st.Identity != ebpfedge.StableIdentity("demo", "web") || !st.AntiSpoof {
 		t.Fatalf("status=%+v posted=%v", st, posted)
 	}
+	if !st.Applied || st.ApplyError != "" || len(st.SpecHash) != 16 {
+		t.Fatalf("accepted apply must report applied with a hash: %+v", st)
+	}
+}
+
+func TestApplyEdgeFailureIsVisibleWhenNotRequired(t *testing.T) {
+	fs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "no edge", http.StatusNotImplemented)
+	}))
+	defer fs.Close()
+	m := model.Machine{
+		Metadata: model.ObjectMeta{Namespace: "demo", Name: "web"},
+		Spec:     model.MachineSpec{Network: model.NetworkSpec{DataplaneMode: "ebpf"}},
+	}
+	a := &Agent{Flux: fluxvm.New(fs.URL, ""), Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	st, err := a.applyEdge(context.Background(), m, "vm-1", "", "")
+	if err != nil || st == nil {
+		t.Fatalf("st=%+v err=%v", st, err)
+	}
+	if st.Applied || st.ApplyError == "" || st.SpecHash == "" {
+		t.Fatalf("a failed apply must not look applied: %+v", st)
+	}
 }
 
 func TestApplyEdgeFailClosedWhenRequired(t *testing.T) {

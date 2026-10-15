@@ -95,6 +95,8 @@ To actually turn encryption on, two things must both be true simultaneously acro
 
 Before flipping either, query whether every currently-active live migration already reports `dataPlaneEncrypted: true` (or watch the `kairon_migration_dataplane_encrypted` metric go to 1 across the board) -- that's the actual signal that every node's adapter is upgraded and configured, not just a guess based on when you think the rollout finished.
 
+Once every node reports encrypted, start `kairon-node` with `--migration-require-encrypted`: a live migration whose destination reports an unencrypted data plane is then aborted before any guest memory moves and parks in `Blocked` (the source is left untouched), instead of only raising the alert.
+
 ## Abandoned pre-commit sessions (destination-side, opt-in)
 
 A source `kairon-node` crashing or being fenced *between* a successful `Prepare` and ever calling `Commit`/`Abort` is a different, narrower failure than everything above: `NeedsRecovery` only ever covers an *ambiguous commit result* on a transfer that got far enough to try committing. This case never gets that far -- the destination's reserved incoming-QEMU process just sits there with no source left to release it, and no `MachineMigration` object is stuck in any visible phase to alert on (the source-side object is usually gone or unreachable along with its node).

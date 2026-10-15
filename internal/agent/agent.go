@@ -46,6 +46,9 @@ type Agent struct {
 	// allocatable; nil allows all.
 	MdevParents   map[string]struct{}
 	MigrationPeer *migration.Client
+	// RequireEncryptedDataPlane blocks a live migration whose prepared
+	// destination reports an unencrypted data plane, instead of only logging.
+	RequireEncryptedDataPlane bool
 	// Restores is shared with the destination migration server. Nil skips
 	// conntrack result projection.
 	Restores         *migration.RestoreStore
@@ -1213,6 +1216,11 @@ func (a *Agent) reconcileMigration(ctx context.Context, item model.MachineMigrat
 		status.TransferPhase = prepared.Phase
 		status.DataPlaneEncrypted = prepared.DataPlaneEncrypted
 		if !prepared.DataPlaneEncrypted {
+			if a.RequireEncryptedDataPlane {
+				_ = a.MigrationPeer.Abort(ctx, targetURL, session.ID)
+				a.resumeSourceNetworkQuiesce(ctx, rec.ID())
+				return a.blockLiveMigrationWithStatus(ctx, item, status, "destination data plane is not encrypted and --migration-require-encrypted is set; prepared target was aborted and source runtime was left untouched")
+			}
 			a.Log.Warn("live migration data-plane is not encrypted", "migration", item.Metadata.Name, "namespace", item.Namespace())
 		}
 		if !prepared.TransferSupported {
@@ -1221,13 +1229,13 @@ func (a *Agent) reconcileMigration(ctx context.Context, item model.MachineMigrat
 				message = "target node has no live migration backend"
 			}
 			a.resumeSourceNetworkQuiesce(ctx, rec.ID())
-			return a.blockLiveMigrationWithStatus(ctx, item, status, message+"; source runtime was left untouched")
+			return a.blockOrFallbackCold(ctx, item, status, message+"; source runtime was left untouched")
 		}
 		opts, notes, err := sourceStartOptions(item, mode, plan, prepared.Stream, caps)
 		if err != nil {
 			_ = a.MigrationPeer.Abort(ctx, targetURL, session.ID)
 			a.resumeSourceNetworkQuiesce(ctx, rec.ID())
-			return a.blockLiveMigrationWithStatus(ctx, item, status, err.Error()+"; prepared target was aborted and source runtime was left untouched")
+			return a.blockOrFallbackCold(ctx, item, status, err.Error()+"; prepared target was aborted and source runtime was left untouched")
 		}
 		transfer, err := a.SourceMigrator.Start(ctx, migration.SourceRequest{
 			Session:   session,
@@ -1239,7 +1247,7 @@ func (a *Agent) reconcileMigration(ctx context.Context, item model.MachineMigrat
 			_ = a.MigrationPeer.Abort(ctx, targetURL, session.ID)
 			a.resumeSourceNetworkQuiesce(ctx, rec.ID())
 			if errors.Is(err, migration.ErrUnsupported) {
-				return a.blockLiveMigrationWithStatus(ctx, item, status, err.Error()+"; prepared target was aborted and source runtime was left untouched")
+				return a.blockOrFallbackCold(ctx, item, status, err.Error()+"; prepared target was aborted and source runtime was left untouched")
 			}
 			status.Phase = "Failed"
 			status.TransferPhase = "start-failed"
@@ -1608,6 +1616,25 @@ func (a *Agent) cancelLiveMigration(ctx context.Context, item model.MachineMigra
 
 func (a *Agent) blockLiveMigration(ctx context.Context, item model.MachineMigration, message string) error {
 	return a.blockLiveMigrationWithStatus(ctx, item, item.Status, message)
+}
+
+// blockOrFallbackCold parks a live migration in Blocked, or, when the
+// operator opted in with spec.fallbackToCold, continues it as a cold
+// migration. Callers invoke it only while the source runtime is untouched
+// (target aborted, source network quiesce resumed), so stopping the Machine
+// here is exactly what the controller's own cold path does.
+func (a *Agent) blockOrFallbackCold(ctx context.Context, item model.MachineMigration, status model.MachineMigrationStatus, message string) error {
+	if !item.Spec.FallbackToCold {
+		return a.blockLiveMigrationWithStatus(ctx, item, status, message)
+	}
+	if err := a.Kube.PatchMachine(ctx, item.Namespace(), item.Spec.MachineName, map[string]any{"spec": map[string]any{"powerState": "Stopped"}}); err != nil {
+		return fmt.Errorf("fall back to cold: stop machine: %w", err)
+	}
+	status.Phase = "Stopping"
+	status.EffectiveStrategy = "cold"
+	status.SessionID, status.TransferID, status.TransferPhase = "", "", ""
+	status.Message = "live migration unavailable (" + message + "); falling back to cold migration, stopping the source runtime"
+	return a.Kube.PatchMachineMigrationStatus(ctx, item.Namespace(), item.Metadata.Name, status)
 }
 
 func (a *Agent) blockLiveMigrationWithStatus(ctx context.Context, item model.MachineMigration, status model.MachineMigrationStatus, message string) error {

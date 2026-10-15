@@ -176,6 +176,7 @@ func runNetworkStatus(ctx context.Context, kc *kube.Client, ns, name string, flo
 	} else {
 		printDataplane(net)
 		printCilium(m, net)
+		printEdgeApply(net)
 	}
 
 	printPolicyHints(ctx, kc, m)
@@ -193,6 +194,18 @@ func runNetworkStatus(ctx context.Context, kc *kube.Client, ns, name string, flo
 
 	style.Log(style.EmojiOK, "Network status complete")
 	return nil
+}
+
+func printEdgeApply(net *model.MachineNetworkStatus) {
+	e := net.Edge
+	if e == nil || e.SpecHash == "" {
+		return
+	}
+	if e.Applied {
+		style.Log(style.EmojiOK, "Edge policy %s applied", e.SpecHash)
+		return
+	}
+	style.Log(style.EmojiWarn, "Edge policy %s NOT applied: %s", e.SpecHash, e.ApplyError)
 }
 
 func printDataplane(net *model.MachineNetworkStatus) {

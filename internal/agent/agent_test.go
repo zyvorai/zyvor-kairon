@@ -1115,6 +1115,13 @@ func TestRunningMigrationSurvivesATransientAPIError(t *testing.T) {
 	}
 }
 
+// requireEncryptedForTest sets Agent.RequireEncryptedDataPlane for the live
+// reconcile helpers below; tests that need it set it and restore via Cleanup.
+var requireEncryptedForTest, fallbackToColdForTest bool
+
+// machinePatchForTest records the last PATCH body sent to Machine db.
+var machinePatchForTest string
+
 func runLiveAgentReconcile(t *testing.T, peerServer *httptest.Server, _ *fakePeerDestination, source *fakeSourceMigrator) model.MachineMigrationStatus {
 	t.Helper()
 	return runLiveAgentReconcileWithNetwork(t, peerServer, source, "")
@@ -1129,7 +1136,7 @@ func runLiveAgentReconcileWithNetwork(t *testing.T, peerServer *httptest.Server,
 	}
 	item := model.MachineMigration{
 		Metadata: model.ObjectMeta{Name: "move-db", Namespace: "prod", UID: "migration-uid-1"},
-		Spec:     model.MachineMigrationSpec{MachineName: "db", Strategy: "live", Mode: "pre-copy", BandwidthMbps: 800, MigrationNetwork: migrationNetwork},
+		Spec:     model.MachineMigrationSpec{MachineName: "db", Strategy: "live", Mode: "pre-copy", BandwidthMbps: 800, MigrationNetwork: migrationNetwork, FallbackToCold: fallbackToColdForTest},
 		Status:   model.MachineMigrationStatus{Phase: "Starting", SourceNode: "worker-1", TargetNode: "worker-2", EffectiveStrategy: "live"},
 	}
 	var migrationStatus model.MachineMigrationStatus
@@ -1143,6 +1150,10 @@ func runLiveAgentReconcileWithNetwork(t *testing.T, peerServer *httptest.Server,
 			_ = json.NewEncoder(w).Encode(model.MachineMigrationList{Items: []model.MachineMigration{item}})
 		case r.Method == http.MethodGet && r.URL.Path == "/apis/kairon.zyvor.dev/v1/namespaces/prod/machines/db":
 			_ = json.NewEncoder(w).Encode(machine)
+		case r.Method == http.MethodPatch && r.URL.Path == "/apis/kairon.zyvor.dev/v1/namespaces/prod/machines/db":
+			body, _ := io.ReadAll(r.Body)
+			machinePatchForTest = string(body)
+			w.WriteHeader(http.StatusOK)
 		case r.Method == http.MethodPatch && r.URL.Path == "/apis/kairon.zyvor.dev/v1/namespaces/prod/machinemigrations/move-db/status":
 			var p struct {
 				Status model.MachineMigrationStatus `json:"status"`
@@ -1168,7 +1179,8 @@ func runLiveAgentReconcileWithNetwork(t *testing.T, peerServer *httptest.Server,
 	fc := fluxvm.New(fs.URL, "")
 	fc.HTTP = fs.Client()
 	a := &Agent{
-		NodeName: "worker-1", Kube: kc, Flux: fc, DefaultBackend: "qemu",
+		RequireEncryptedDataPlane: requireEncryptedForTest,
+		NodeName:                  "worker-1", Kube: kc, Flux: fc, DefaultBackend: "qemu",
 		MigrationPeer: migration.NewClient(peerServer.Client()), SourceMigrator: source,
 		MigrationPeerURL: func(context.Context, string) (string, error) { return peerServer.URL, nil },
 		Log:              slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -1430,5 +1442,44 @@ func TestNeedsRecoveryForceAbortLeavesSourceRuntimeAlone(t *testing.T) {
 	}
 	if fluxCalls["DELETE /v1/vms/vm-1"] != 0 {
 		t.Errorf("expected the source runtime to never be deleted, got %d DELETE calls", fluxCalls["DELETE /v1/vms/vm-1"])
+	}
+}
+
+func TestUnencryptedDataPlaneBlocksWhenRequired(t *testing.T) {
+	requireEncryptedForTest = true
+	t.Cleanup(func() { requireEncryptedForTest = false })
+	destination := &fakePeerDestination{result: migration.PrepareResult{TransferSupported: true, Endpoint: "127.0.0.1:49152", DataPlaneEncrypted: false}}
+	peerServer := httptest.NewServer((&migration.Server{NodeName: "worker-2", Store: migration.NewFileStore(t.TempDir()), Driver: destination}).Handler())
+	defer peerServer.Close()
+	source := &fakeSourceMigrator{startStatus: migration.TransferStatus{TransferID: "must-not-run", Phase: "completed"}}
+	status := runLiveAgentReconcile(t, peerServer, destination, source)
+	if source.starts != 0 {
+		t.Fatalf("source transfer started %d times over an unencrypted data plane", source.starts)
+	}
+	if status.Phase != "Blocked" || !strings.Contains(status.Message, "not encrypted") {
+		t.Fatalf("status=%+v", status)
+	}
+	if destination.aborts != 1 {
+		t.Fatalf("prepared target aborted %d times, want 1", destination.aborts)
+	}
+}
+
+func TestFallbackToColdWhenTargetHasNoLiveBackend(t *testing.T) {
+	fallbackToColdForTest = true
+	machinePatchForTest = ""
+	t.Cleanup(func() { fallbackToColdForTest = false; machinePatchForTest = "" })
+	destination := &fakePeerDestination{result: migration.PrepareResult{TransferSupported: false, Reason: "adapter unavailable"}}
+	peerServer := httptest.NewServer((&migration.Server{NodeName: "worker-2", Store: migration.NewFileStore(t.TempDir()), Driver: destination}).Handler())
+	defer peerServer.Close()
+	source := &fakeSourceMigrator{startStatus: migration.TransferStatus{TransferID: "must-not-run", Phase: "completed"}}
+	status := runLiveAgentReconcile(t, peerServer, destination, source)
+	if source.starts != 0 {
+		t.Fatalf("source transfer started %d times", source.starts)
+	}
+	if status.Phase != "Stopping" || status.EffectiveStrategy != "cold" || !strings.Contains(status.Message, "falling back to cold") {
+		t.Fatalf("status=%+v", status)
+	}
+	if !strings.Contains(machinePatchForTest, `"powerState":"Stopped"`) {
+		t.Fatalf("machine patch = %q, want powerState Stopped", machinePatchForTest)
 	}
 }

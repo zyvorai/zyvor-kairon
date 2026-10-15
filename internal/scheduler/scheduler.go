@@ -189,13 +189,11 @@ func topologySpreadPenalty(m model.Machine, n model.Node, nodes []model.Node, ma
 // distinguish "unset" from "explicitly 0" through this field alone) is
 // treated as a real, meaningful 0 -- "domains must stay perfectly
 // balanced" -- rather than silently disabling enforcement or defaulting
-// to some other value. Real Kubernetes requires maxSkew to be a positive
-// integer and rejects 0 at admission; Kairon has no such API-level
-// validation layer to hook a rejection into, and defaulting to "no
-// opinion" for a field an operator set WhenUnsatisfiable specifically to
-// make meaningful would be the more surprising choice of the two --
-// erring toward the stricter interpretation matches this project's
-// general fail-closed posture elsewhere (RBAC, migration TLS, etc.).
+// to some other value. The admission webhook (model.ValidatePlacement)
+// rejects a DoNotSchedule constraint with maxSkew below 1, so this path
+// only sees 0 from objects written before that check or around the webhook;
+// it stays strict (such a Machine is unschedulable across two or more
+// domains) matching this project's fail-closed posture.
 func (s Scheduler) filterMaxSkew(m model.Machine, candidates []model.Node, nodes []model.Node, machines []model.Machine) []model.Node {
 	var hard []model.TopologySpreadConstraint
 	for _, c := range m.Spec.Placement.TopologySpreadConstraints {

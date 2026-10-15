@@ -2722,6 +2722,11 @@ spec:
                 type: integer
                 minimum: 0
                 maximum: 255
+              fallbackToCold:
+                type: boolean
+                description: Continue as a cold migration (the Machine is stopped
+                  for the move) when a live migration is blocked before the source
+                  runtime was touched. Never applied after a transfer started.
               migrationNetwork:
                 type: string
                 description: Migration network name configured on the target node's
@@ -4271,6 +4276,7 @@ spec:
                         maxSkew:
                           type: integer
                           format: int32
+                          minimum: 0
                         whenUnsatisfiable:
                           type: string
                           enum: ["DoNotSchedule", "ScheduleAnyway"]
@@ -5036,6 +5042,14 @@ spec:
                         type: integer
                       blackholeWindowMs:
                         type: integer
+                      specHash:
+                        type: string
+                        description: Short hash of the compiled edge document last sent to FluxVM.
+                      applied:
+                        type: boolean
+                        description: True when FluxVM accepted the document identified by specHash.
+                      applyError:
+                        type: string
                   virtualNetwork:
                     type: object
                     description: The virtual network attachment the runtime was created with.

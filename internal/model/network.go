@@ -222,6 +222,13 @@ type MachineEdgeStatus struct {
 	PolicyName        string `json:"policyName,omitempty"`
 	ConntrackRestored int    `json:"conntrackRestored,omitempty"`
 	BlackholeWindowMs int64  `json:"blackholeWindowMs,omitempty"`
+	// SpecHash identifies the compiled edge document last sent to FluxVM.
+	// Applied is true only when FluxVM accepted that document; a failed
+	// apply (tolerated unless spec.network.dataplaneRequired) leaves it
+	// false with ApplyError set, so the status no longer looks healthy.
+	SpecHash   string `json:"specHash,omitempty"`
+	Applied    bool   `json:"applied"`
+	ApplyError string `json:"applyError,omitempty"`
 }
 
 // MachineCiliumStatus is projected when ciliumAttach (or CNP sync) is in use.

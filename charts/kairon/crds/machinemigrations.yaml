@@ -83,6 +83,11 @@ spec:
                 type: integer
                 minimum: 0
                 maximum: 255
+              fallbackToCold:
+                type: boolean
+                description: Continue as a cold migration (the Machine is stopped
+                  for the move) when a live migration is blocked before the source
+                  runtime was touched. Never applied after a transfer started.
               migrationNetwork:
                 type: string
                 description: Migration network name configured on the target node's

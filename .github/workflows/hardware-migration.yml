@@ -50,6 +50,27 @@ jobs:
           fi
           grep -qi 'KAIRON_HW_LAB' /tmp/hw-refuse.txt
           echo "hardware-migration validate: OK"
+      - name: Report what the lab matrix has and has not proven
+        run: |
+          set -euo pipefail
+          # The matrix itself needs the self-hosted lab and never runs on
+          # PRs. Surface the recorded state so a green check here is not
+          # mistaken for a green migration.
+          pass=$(grep -cE '^\| .*\| pass \|' docs/COMPATIBILITY.md || true)
+          fail=$(grep -cE '^\| .*\| fail \|' docs/COMPATIBILITY.md || true)
+          notrun=$(grep -cE '^\| .*\| not run \|' docs/COMPATIBILITY.md || true)
+          {
+            echo "### Hardware migration matrix (recorded, not run by this check)"
+            echo ""
+            echo "| pass | fail | not run |"
+            echo "|---|---|---|"
+            echo "| ${pass} | ${fail} | ${notrun} |"
+            echo ""
+            echo "Counted from \`docs/COMPATIBILITY.md\`. The matrix runs only on the self-hosted \`kairon-lab\` runner (nightly or manual)."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$fail" -gt 0 ]; then
+            echo "::warning title=Lab matrix has recorded failures::${fail} row(s) in docs/COMPATIBILITY.md are marked fail"
+          fi
 
   matrix:
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
@@ -83,7 +104,8 @@ jobs:
           KAIRON_UI_TOKEN: ${{ secrets.KAIRON_UI_TOKEN }}
         run: |
           if [[ "${KAIRON_HW_LAB:-}" != "1" ]]; then
-            echo "KAIRON_HW_LAB not set — skipping (configure lab vars/secrets to enable)."
+            echo "::warning title=Hardware migration matrix did not run::KAIRON_HW_LAB is not set on this runner, so no migration was exercised. Configure the lab vars/secrets to enable it."
+            echo "### Hardware migration matrix: NOT RUN (KAIRON_HW_LAB unset)" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           if [[ -n "${KAIRON_KUBE_CA_PEM:-}" ]]; then

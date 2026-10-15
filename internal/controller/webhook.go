@@ -287,6 +287,9 @@ func (c *Controller) validateMachineCreate(r *http.Request, req *admission.Reque
 	if err := model.ValidateTopology(m.Spec); err != nil {
 		return admission.Deny(err.Error())
 	}
+	if err := model.ValidatePlacement(m.Spec); err != nil {
+		return admission.Deny(err.Error())
+	}
 	if err := model.ValidateAccelerators(m.Spec, m.Metadata.Annotations); err != nil {
 		return admission.Deny(err.Error())
 	}
