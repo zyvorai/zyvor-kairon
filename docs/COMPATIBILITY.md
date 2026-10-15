@@ -194,6 +194,45 @@ real hosts sharing the hibernation directory and an RBD root disk.
 | Hibernate: discard | pass | 2026-10-12 | Same node: `discard-hibernation` annotation gave a new boot id; annotation removed, `status.hibernation` cleared |
 | Hibernate: resume on another node | not run | 2026-10-12 | Needs two nodes sharing the hibernation directory and a shared root disk |
 
+### Manual live migration on the re-keyed lab pair (2026-10-15)
+
+One hand-run live migration, not a matrix run: the lab's own `hw-live`
+Machine (2 vCPU, 2 GiB, idle guest) moved from `nldw4-4-04-32` to
+`nldw3-4-32-26` with `kaironctl migrate hw-live --strategy live` on a
+cluster whose migration CA and per-host certificates had just been
+regenerated and whose two nodes each run their own
+`kairon-migration-adapter-fluxvm` over the shared `/srv/kairon-shared` NFS
+export. The migration went `Starting` → `Adopting` → `Succeeded` in about
+27 s: 4.4 s of QEMU transfer (508 MB of 2.1 GB sent), **148 ms downtime**,
+`dataPlaneEncrypted: true`, Machine Running on the target afterwards.
+
+Not covered by that run: guest load, either failure-injection case, the
+adaptive strategies, live + eBPF, or the reverse direction. QEMU 10.2.1 is
+installed on both hosts (a source build at `/opt/qemu-10.2.1` on
+`nldw4-4-04-32`, the Ubuntu package on `nldw3-4-32-26`); the distro
+`qemu-system-x86_64` on `nldw4-4-04-32`'s PATH is 8.2.2, and which binary
+FluxVM launched the source VM with was not recorded.
+
+## Container sandboxes
+
+`spec.sandbox.oci` and `kaironctl container` (see
+[container-sandboxes.md](guides/container-sandboxes.md)) run an OCI image
+on FluxVM's container track, which exists on macOS hosts only
+(Virtualization.framework).
+
+Run on 2026-10-15 on one Apple-silicon Mac (FluxVM 0.4.7, local daemon on
+127.0.0.1:7788) with the OCI boot artifacts from FluxVM's `oci-boot` CI run
+of 2026-10-11 (older than the host's FluxVM; they worked).
+
+| Case | Last result | Date | Notes |
+|---|---|---|---|
+| Run an image to completion (`fluxctl sandbox run alpine:3.22 --rm`) | pass | 2026-10-15 | Printed the container's output, exit 0, powered off; about 7 s including the image pull |
+| Create through Kairon's client and read the result | pass | 2026-10-15 | `CreateSandboxForMachine` with `spec.sandbox.oci` → container ran `sh -c 'echo …; exit 3'`; `SandboxLogs` returned exit code 3 and the console output in about 4 s (`TestContainerSandboxAgainstLiveFluxVM`, opt-in with `KAIRON_FLUXVM_OCI_URL`) |
+| Through kairon-node and the controller on a Mac | not run | — | The node reconcile path (status projection, admission webhook) is unit-tested with fakes only |
+| `linux/amd64` image under Rosetta | not run | — | |
+| Published ports, restart policy, health check | not run | — | Request mapping is unit-tested; FluxVM behaviour was not exercised |
+| Linux host | not supported | — | FluxVM's container track does not run on the Linux hypervisors |
+
 ## Agent sandboxes
 
 Driven by [`scripts/bench-sandbox.sh`](../scripts/bench-sandbox.sh) on one
