@@ -33,6 +33,9 @@ KINDS = {
     "machinedisruptionbudgets": "MachineDisruptionBudget", "machineinstancetypes": "MachineInstanceType",
     "machinesnapshotschedules": "MachineSnapshotSchedule", "migrationpolicies": "MigrationPolicy",
     "networksecuritygroups": "NetworkSecurityGroup", "machinebackuppolicies": "MachineBackupPolicy",
+    "machineexports": "MachineExport", "machinepreferences": "MachinePreference",
+    "machineprotectionplans": "MachineProtectionPlan", "macnetworks": "MacNetwork",
+    "virtualnetworks": "VirtualNetwork",
 }
 FLEET_KINDS = {
     "machinehaprofiles": "MachineHAProfile", "nodefencerequests": "NodeFenceRequest",
