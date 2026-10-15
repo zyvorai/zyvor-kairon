@@ -5042,6 +5042,14 @@ spec:
                         type: integer
                       blackholeWindowMs:
                         type: integer
+                      specHash:
+                        type: string
+                        description: Short hash of the compiled edge document last sent to FluxVM.
+                      applied:
+                        type: boolean
+                        description: True when FluxVM accepted the document identified by specHash.
+                      applyError:
+                        type: string
                   virtualNetwork:
                     type: object
                     description: The virtual network attachment the runtime was created with.

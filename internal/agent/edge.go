@@ -5,6 +5,8 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -209,13 +211,19 @@ func (a *Agent) applyEdge(ctx context.Context, m model.Machine, runtimeID, guest
 		status.ConntrackRestored = res.Restored
 		status.BlackholeWindowMs = res.BlackholeWindowMs
 	}
+	if raw, err := json.Marshal(compiled); err == nil {
+		sum := sha256.Sum256(raw)
+		status.SpecHash = hex.EncodeToString(sum[:8])
+	}
 	if err := a.Flux.ApplyEdge(ctx, runtimeID, compiled); err != nil {
 		if m.Spec.Network.DataplaneRequired {
 			return nil, fmt.Errorf("dataplane required but edge apply failed: %w", err)
 		}
 		a.log().Warn("edge apply failed; continuing", "machine", m.Metadata.Name, "error", err)
+		status.ApplyError = err.Error()
 		return status, nil
 	}
+	status.Applied = true
 	a.observeEdgeDrops(ctx, m, runtimeID)
 	return status, nil
 }

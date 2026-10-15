@@ -1,0 +1,22 @@
+{
+  "comment": "Decision vectors for the VM edge. The Go decision engine (Decide) must produce exactly these actions and reasons; FluxVM's BPF programs are expected to agree. Each case is a compiled-spec input, a packet, and the expected action, reason and xdp flag.",
+  "cases": [
+    {"name": "default allow, no rules", "spec": {"namespace": "d", "machine": "m", "defaultAllow": true}, "packet": {"dstIP": "10.0.0.5"}, "action": "allow", "reason": "allow"},
+    {"name": "default deny with nothing allowed", "spec": {"namespace": "d", "machine": "m"}, "packet": {"dstIP": "10.0.0.5"}, "action": "drop", "reason": "default_deny"},
+    {"name": "mac spoof", "spec": {"namespace": "d", "machine": "m", "antiSpoof": true, "assignedMAC": "52:54:00:aa:bb:cc", "defaultAllow": true}, "packet": {"srcMAC": "52:54:00:11:22:33"}, "action": "drop", "reason": "spoof_mac", "xdp": true},
+    {"name": "mac match is case and separator insensitive", "spec": {"namespace": "d", "machine": "m", "antiSpoof": true, "assignedMAC": "52-54-00-AA-BB-CC", "defaultAllow": true}, "packet": {"srcMAC": "52:54:00:aa:bb:cc"}, "action": "allow", "reason": "allow"},
+    {"name": "ip spoof", "spec": {"namespace": "d", "machine": "m", "antiSpoof": true, "assignedIP": "10.0.0.8", "defaultAllow": true}, "packet": {"srcIP": "10.0.0.9"}, "action": "drop", "reason": "spoof_ip", "xdp": true},
+    {"name": "anti-spoof off ignores a wrong source", "spec": {"namespace": "d", "machine": "m", "assignedIP": "10.0.0.8", "defaultAllow": true}, "packet": {"srcIP": "10.0.0.9"}, "action": "allow", "reason": "allow"},
+    {"name": "deny cidr wins over allow", "spec": {"namespace": "d", "machine": "m", "defaultAllow": true, "allowCidrs": ["10.0.0.0/8"], "denyCidrs": ["10.0.0.0/24"]}, "packet": {"dstIP": "10.0.0.5"}, "action": "drop", "reason": "policy_deny", "xdp": true},
+    {"name": "allow cidr miss without default allow", "spec": {"namespace": "d", "machine": "m", "allowCidrs": ["10.0.0.0/8"]}, "packet": {"dstIP": "192.168.1.1"}, "action": "drop", "reason": "policy_deny"},
+    {"name": "allow cidr hit", "spec": {"namespace": "d", "machine": "m", "allowCidrs": ["10.0.0.0/8"]}, "packet": {"dstIP": "10.2.3.4"}, "action": "allow", "reason": "allow"},
+    {"name": "dns wildcard excludes the apex", "spec": {"namespace": "d", "machine": "m", "defaultAllow": true, "allowDNS": ["*.example.com"]}, "packet": {"dnsQName": "example.com"}, "action": "drop", "reason": "dns_deny"},
+    {"name": "dns wildcard matches a subdomain, trailing dot and case", "spec": {"namespace": "d", "machine": "m", "defaultAllow": true, "allowDNS": ["*.example.com"]}, "packet": {"dnsQName": "API.Example.com."}, "action": "allow", "reason": "allow"},
+    {"name": "sni exact miss", "spec": {"namespace": "d", "machine": "m", "defaultAllow": true, "allowSNI": ["api.vendor.com"]}, "packet": {"sni": "evil.com"}, "action": "drop", "reason": "sni_deny"},
+    {"name": "l7 method and prefix hit", "spec": {"namespace": "d", "machine": "m", "defaultAllow": true, "allowL7": [{"method": "GET", "path": "/api/"}]}, "packet": {"httpMethod": "get", "httpPath": "/api/users"}, "action": "allow", "reason": "allow"},
+    {"name": "l7 wrong method", "spec": {"namespace": "d", "machine": "m", "defaultAllow": true, "allowL7": [{"method": "GET", "path": "/api/"}]}, "packet": {"httpMethod": "DELETE", "httpPath": "/api/users"}, "action": "drop", "reason": "l7_deny"},
+    {"name": "non-http packet skips l7 rules", "spec": {"namespace": "d", "machine": "m", "defaultAllow": true, "allowL7": [{"method": "GET", "path": "/api/"}]}, "packet": {"dstIP": "10.0.0.5"}, "action": "allow", "reason": "allow"},
+    {"name": "oversized packet over the egress budget", "spec": {"namespace": "d", "machine": "m", "defaultAllow": true, "qos": {"egressMbps": 1}}, "packet": {"bytes": 125001}, "action": "drop", "reason": "rate_limit"},
+    {"name": "ingress budget applies to ingress packets", "spec": {"namespace": "d", "machine": "m", "defaultAllow": true, "qos": {"egressMbps": 1, "ingressMbps": 100}}, "packet": {"bytes": 125001, "ingress": true}, "action": "allow", "reason": "allow"}
+  ]
+}
