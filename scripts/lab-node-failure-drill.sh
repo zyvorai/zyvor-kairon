@@ -90,7 +90,10 @@ lab_log "creating $NAME pinned to $VICTIM"
 python3 - "$NAME" "$NS" "$VICTIM" "$IMG_URL" "$IMG_DIGEST" "${KAIRON_SCALE_TOLERATE_TAINTS:-}" <<'PY' | kube_curl POST "$LAB_API/namespaces/$NS/machines" "$(cat)" >/dev/null
 import json, sys
 name, ns, victim, url, digest, taints = sys.argv[1:7]
-placement = {"architecture": "amd64", "nodeSelector": {"kubernetes.io/hostname": victim}}
+# Pinned with spec.nodeName, not a nodeSelector: after the node is fenced the
+# scheduler must be free to place the Machine on another node, and a selector
+# on the victim's hostname would leave it Pending forever.
+placement = {"architecture": "amd64"}
 tol = [{"key": k, "operator": "Exists", "effect": "NoSchedule"} for k in taints.split(",") if k]
 if tol:
     placement["tolerations"] = tol
@@ -101,7 +104,7 @@ print(json.dumps({
         "image": {"source": {"httpURL": url, "format": "qcow2"}, "digest": digest},
         "resources": {"cpu": "1", "memory": "256Mi"},
         "runtime": {"backend": "qemu"}, "network": {"mode": "user"},
-        "placement": placement, "powerState": "Running", "ttlSeconds": 3600,
+        "nodeName": victim, "placement": placement, "powerState": "Running", "ttlSeconds": 3600,
     },
 }))
 PY
@@ -112,8 +115,10 @@ lab_log "Running on $VICTIM (runtime $RUNTIME_ID)"
 # --- 3. lose the node -------------------------------------------------------
 lab_log "stopping $VICTIM_UNIT and killing this Machine's QEMU on $VICTIM_SSH"
 lab_ssh "$VICTIM_SSH" "sudo systemctl stop $VICTIM_UNIT" ; victim_stopped=1
-lab_ssh "$VICTIM_SSH" "sudo pkill -9 -f 'qemu-system.*$NAME' || true"
-alive="$(lab_ssh "$VICTIM_SSH" "pgrep -fc 'qemu-system.*$NAME' || true" | tr -d '[:space:]')"
+# [q] keeps the pattern from matching the remote shell whose own command line
+# contains it (a plain pkill -f would kill the session running it).
+lab_ssh "$VICTIM_SSH" "sudo pkill -9 -f '[q]emu-system.*$NAME' || true"
+alive="$(lab_ssh "$VICTIM_SSH" "pgrep -fc '[q]emu-system.*$NAME' || true" | tr -d '[:space:]')"
 [[ "${alive:-0}" == "0" ]] || { lab_log "FAIL: the Machine's QEMU is still alive on the victim"; exit 1; }
 
 # --- 4. wait until Kairon sees the node as gone -----------------------------
