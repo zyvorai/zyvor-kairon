@@ -17,7 +17,10 @@ permissions:
   contents: read
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Self-hosted: GitHub-hosted runners were not being assigned. Safe to run here
+    # because this workflow only triggers on pushes to main and manual dispatch,
+    # never on pull requests from forks.
+    runs-on: [self-hosted, Linux, X64, zyvor-build]
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
     - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7
@@ -28,7 +31,7 @@ jobs:
       with: {path: website/build}
   deploy:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, zyvor-build]
     environment: {name: github-pages, url: "${{ steps.deployment.outputs.page_url }}"}
     permissions: {pages: write, id-token: write}
     steps:
