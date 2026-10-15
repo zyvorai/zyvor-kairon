@@ -238,3 +238,35 @@ func TestFlowTableAggregatesAndEvicts(t *testing.T) {
 		t.Fatalf("eviction must drop the least recently seen flow: %+v", got)
 	}
 }
+
+func TestCompileValidatesQoSAndPorts(t *testing.T) {
+	base := EdgeSpec{Namespace: "demo", Machine: "web"}
+	ok := base
+	ok.QoS = QoS{IngressMbps: 1000, EgressPps: 50000}
+	ok.AllowPorts = []string{"443", "8000-8100"}
+	if _, err := Compile(ok); err != nil {
+		t.Fatalf("valid spec rejected: %v", err)
+	}
+	for name, mut := range map[string]func(*EdgeSpec){
+		"mbps too large": func(s *EdgeSpec) { s.QoS.EgressMbps = MaxQoSMbps + 1 },
+		"pps too large":  func(s *EdgeSpec) { s.QoS.IngressPps = MaxQoSPps + 1 },
+		"port zero":      func(s *EdgeSpec) { s.AllowPorts = []string{"0"} },
+		"port too big":   func(s *EdgeSpec) { s.AllowPorts = []string{"65536"} },
+		"reversed range": func(s *EdgeSpec) { s.AllowPorts = []string{"90-80"} },
+		"not a number":   func(s *EdgeSpec) { s.AllowPorts = []string{"https"} },
+	} {
+		s := base
+		mut(&s)
+		if _, err := Compile(s); err == nil {
+			t.Errorf("%s: want error", name)
+		}
+	}
+}
+
+func TestOverRateDoesNotWrapOnLargeCaps(t *testing.T) {
+	// 40000 Mbps * 125000 overflows uint32; a small packet must not exceed it.
+	spec := EdgeSpec{DefaultAllow: true, QoS: QoS{EgressMbps: 40000}}
+	if d := Decide(spec, PacketMeta{Bytes: 1500}); d.Action != "allow" {
+		t.Fatalf("1500-byte packet dropped under a 40 Gbps cap: %+v", d)
+	}
+}

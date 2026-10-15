@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"net/netip"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -62,11 +63,13 @@ type EdgeSpec struct {
 	DefaultAllow bool     `json:"defaultAllow"`
 	AllowCIDRs   []string `json:"allowCidrs,omitempty"`
 	DenyCIDRs    []string `json:"denyCidrs,omitempty"`
-	AllowPorts   []string `json:"allowPorts,omitempty"`
-	AllowSNI     []string `json:"allowSNI,omitempty"`
-	AllowDNS     []string `json:"allowDNS,omitempty"`
-	AllowICMP    bool     `json:"allowIcmp,omitempty"`
-	AllowL7      []L7Rule `json:"allowL7,omitempty"`
+	// AllowPorts and AllowICMP are validated here and carried to the
+	// dataplane; Decide does not match them, FluxVM enforces them.
+	AllowPorts []string `json:"allowPorts,omitempty"`
+	AllowSNI   []string `json:"allowSNI,omitempty"`
+	AllowDNS   []string `json:"allowDNS,omitempty"`
+	AllowICMP  bool     `json:"allowIcmp,omitempty"`
+	AllowL7    []L7Rule `json:"allowL7,omitempty"`
 }
 
 // L7Rule allows an HTTP request by method and path prefix. An empty Method
@@ -178,20 +181,48 @@ func StableIdentity(namespace, name string) uint32 {
 	return id
 }
 
-// ValidateQoS rejects an explicit zero. Unset (0 on the Go side after
-// omitempty) is "no bucket".
+// MaxQoSMbps and MaxQoSPps bound a token bucket to values the dataplane can
+// represent (1 Tbps; 2^31-1 pps). Zero is "not set" because the Go side
+// cannot tell an explicit zero from an omitted field after omitempty.
+const (
+	MaxQoSMbps uint32 = 1_000_000
+	MaxQoSPps  uint32 = 1<<31 - 1
+)
+
+// ValidateQoS rejects token-bucket values beyond what the dataplane can
+// represent.
 func ValidateQoS(q QoS) error {
-	checks := []struct {
+	for _, c := range []struct {
 		name string
 		v    uint32
-		set  bool
+		max  uint32
 	}{
-		{"ingressMbps", q.IngressMbps, q.IngressMbps != 0},
-		{"egressMbps", q.EgressMbps, q.EgressMbps != 0},
-		{"ingressPps", q.IngressPps, q.IngressPps != 0},
-		{"egressPps", q.EgressPps, q.EgressPps != 0},
+		{"ingressMbps", q.IngressMbps, MaxQoSMbps},
+		{"egressMbps", q.EgressMbps, MaxQoSMbps},
+		{"ingressPps", q.IngressPps, MaxQoSPps},
+		{"egressPps", q.EgressPps, MaxQoSPps},
+	} {
+		if c.v > c.max {
+			return fmt.Errorf("qos.%s %d exceeds the maximum %d", c.name, c.v, c.max)
+		}
 	}
-	_ = checks
+	return nil
+}
+
+// ValidatePorts checks AllowPorts entries: a port ("443") or an inclusive
+// range ("8000-8100"), each within 1-65535.
+func ValidatePorts(ports []string) error {
+	for _, raw := range ports {
+		lo, hi, isRange := strings.Cut(strings.TrimSpace(raw), "-")
+		if !isRange {
+			hi = lo
+		}
+		l, errL := strconv.ParseUint(lo, 10, 16)
+		h, errH := strconv.ParseUint(hi, 10, 16)
+		if errL != nil || errH != nil || l == 0 || h == 0 || l > h {
+			return fmt.Errorf("allowPorts: invalid port or range %q", raw)
+		}
+	}
 	return nil
 }
 
@@ -239,6 +270,12 @@ func Compile(spec EdgeSpec) (EdgeSpec, error) {
 		if rule.Path != "" && !strings.HasPrefix(rule.Path, "/") {
 			return EdgeSpec{}, fmt.Errorf("allowL7[%d]: path %q must start with /", i, rule.Path)
 		}
+	}
+	if err := ValidateQoS(spec.QoS); err != nil {
+		return EdgeSpec{}, err
+	}
+	if err := ValidatePorts(spec.AllowPorts); err != nil {
+		return EdgeSpec{}, err
 	}
 	spec.Identity = StableIdentity(spec.Namespace, spec.Machine)
 	spec.AssignedMAC = normalizeMAC(spec.AssignedMAC)
@@ -338,8 +375,8 @@ func overRate(q QoS, pkt PacketMeta) bool {
 	if mbps == 0 || pkt.Bytes == 0 {
 		return false
 	}
-	budget := mbps * 125000 // Mbps → bytes/sec
-	return pkt.Bytes > budget
+	budget := uint64(mbps) * 125000 // Mbps → bytes/sec; widened so large caps cannot wrap
+	return uint64(pkt.Bytes) > budget
 }
 
 func cidrMatch(cidrs []string, ip string) bool {

@@ -621,6 +621,7 @@ spec:
                         maxSkew:
                           type: integer
                           format: int32
+                          minimum: 0
                         whenUnsatisfiable:
                           type: string
                           enum: ["DoNotSchedule", "ScheduleAnyway"]
