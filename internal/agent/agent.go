@@ -1328,6 +1328,9 @@ func (a *Agent) projectTransfer(ctx context.Context, item model.MachineMigration
 	switch phase {
 	case "completed", "transferred":
 		if err := a.commitTarget(ctx, item, targetURL, session.ID); err != nil {
+			if a.recoverFailedDestination(ctx, item, targetURL, session, &status, err) {
+				return a.Kube.PatchMachineMigrationStatus(ctx, item.Namespace(), item.Metadata.Name, status)
+			}
 			status.Phase = "NeedsRecovery"
 			status.Message = "source transfer completed but target commit failed; automatic cutover is stopped to avoid split brain: " + err.Error()
 			return a.Kube.PatchMachineMigrationStatus(ctx, item.Namespace(), item.Metadata.Name, status)
@@ -1992,6 +1995,38 @@ func (a *Agent) resumeSourceRuntime(ctx context.Context, runtimeID string) bool 
 	if _, err := a.Flux.Resume(ctx, runtimeID); err != nil {
 		a.Log.Warn("NeedsRecovery: resuming the source runtime after abort failed", "runtimeID", runtimeID, "error", err)
 		return false
+	}
+	return true
+}
+
+// recoverFailedDestination settles the one commit failure whose outcome is not
+// ambiguous: the destination's runtime has failed and its session is still
+// Prepared. A runtime that failed cannot be running the guest, and a session
+// that never committed never will with that runtime, so the source -- paused
+// by QEMU after the completed transfer -- is the only copy. The destination is
+// aborted and the source resumed, and the migration ends Failed with the
+// Machine still running where it was, instead of parking in NeedsRecovery for
+// an operator to run ForceAbort. Anything less certain (the session
+// Committed, the runtime missing, still starting, or the abort refused) is
+// left to NeedsRecovery as before.
+func (a *Agent) recoverFailedDestination(ctx context.Context, item model.MachineMigration, targetURL string, session migration.Session, status *model.MachineMigrationStatus, commitErr error) bool {
+	d, err := a.MigrationPeer.Diagnose(ctx, targetURL, session.ID)
+	if err != nil || d.SessionPhase != "Prepared" || !d.DestinationRuntimeFound || !strings.EqualFold(d.DestinationRuntimeStatus, "failed") {
+		return false
+	}
+	if err := a.MigrationPeer.Abort(ctx, targetURL, session.ID); err != nil {
+		a.Log.Warn("destination runtime failed but its abort was refused; leaving the migration in NeedsRecovery",
+			"migration", item.Metadata.Name, "namespace", item.Namespace(), "error", err)
+		return false
+	}
+	resumed := a.resumeSourceRuntime(ctx, status.RuntimeID)
+	a.resumeSourceNetworkQuiesce(ctx, status.RuntimeID)
+	status.Phase = "Failed"
+	status.Message = "destination runtime failed before commit (" + commitErr.Error() + "); the destination was aborted"
+	if resumed {
+		status.Message += " and the source runtime was resumed: the Machine is still running on the source node, retry the migration"
+	} else {
+		status.Message += ", but the source runtime could not be resumed: check it on the source node before reuse"
 	}
 	return true
 }
