@@ -76,6 +76,7 @@ smoke: build
 
 validate:
 	python3 scripts/validate.py
+	python3 scripts/stability-check.py
 
 crds:
 	python3 scripts/gen-crd-bundle.py
