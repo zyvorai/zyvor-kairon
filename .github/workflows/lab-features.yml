@@ -1,0 +1,91 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: Apache-2.0
+
+# Nightly per-feature lab drills (scripts/lab-*.sh via scripts/lab-run.sh) on
+# the self-hosted kairon-lab runner. Results are written into
+# docs/COMPATIBILITY.md and uploaded as an artifact; scripts/stability-check.py
+# then fails the run if a feature labelled ga has a failing or stale row
+# (docs/STABILITY.md). Drills missing their inputs are reported "skipped".
+name: lab-features
+
+on:
+  workflow_dispatch:
+    inputs:
+      features:
+        description: 'Space-separated drills (default: all with inputs set)'
+        required: false
+        default: ''
+  schedule:
+    - cron: '0 4 * * *' # after the 03:00 migration matrix
+  pull_request:
+    paths: ['scripts/lab-run.sh', 'scripts/lab-*.sh', '.github/workflows/lab-features.yml']
+
+concurrency:
+  group: lab-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '"ubuntu-latest"' || '["self-hosted","Linux","X64","zyvor-build","docker"]') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - name: Drill scripts parse and the runner lists them
+        run: |
+          set -euo pipefail
+          for f in scripts/lab-run.sh scripts/lab-*.sh scripts/lib/lab.sh; do bash -n "$f"; done
+          scripts/lab-run.sh --list
+      - name: Stability registry is consistent
+        run: python3 scripts/stability-check.py
+
+  drills:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: [self-hosted, kairon-lab]
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version: '1.27.x'
+      - name: Build CLI
+        run: make build
+      - name: Run lab drills
+        env:
+          KAIRON_KUBE_URL: ${{ secrets.KAIRON_KUBE_URL }}
+          KAIRON_KUBE_TOKEN: ${{ secrets.KAIRON_KUBE_TOKEN }}
+          KAIRON_KUBE_CA_PEM: ${{ secrets.KAIRON_KUBE_CA }}
+          KAIRON_LAB_NODE: ${{ vars.KAIRON_LAB_NODE }}
+          KAIRON_LAB_NODE_B: ${{ vars.KAIRON_LAB_NODE_B }}
+          KAIRON_LAB_IMAGE: ${{ vars.KAIRON_LAB_IMAGE }}
+          KAIRON_LAB_PRESSURE_CMD: ${{ vars.KAIRON_LAB_PRESSURE_CMD }}
+          KAIRON_LAB_RELIEF_CMD: ${{ vars.KAIRON_LAB_RELIEF_CMD }}
+          KAIRON_LAB_CBT_MACHINE: ${{ vars.KAIRON_LAB_CBT_MACHINE }}
+          KAIRON_LAB_MINIO_SSH: ${{ vars.KAIRON_LAB_MINIO_SSH }}
+          FEATURES: ${{ inputs.features }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${KAIRON_KUBE_URL:-}" ]]; then
+            echo "::error title=Lab drills did not run::KAIRON_KUBE_URL is not set on this kairon-lab runner."
+            exit 1
+          fi
+          if [[ -n "${KAIRON_KUBE_CA_PEM:-}" ]]; then
+            printf '%s\n' "$KAIRON_KUBE_CA_PEM" > "$RUNNER_TEMP/kube-ca.pem"
+            export KAIRON_KUBE_CA="$RUNNER_TEMP/kube-ca.pem"
+          fi
+          export PATH="$PWD/bin:$PATH"
+          # shellcheck disable=SC2086
+          scripts/lab-run.sh --write-compat $FEATURES
+      - name: GA features must have fresh, passing rows
+        if: always()
+        run: python3 scripts/stability-check.py --max-age-days 14
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: lab-features
+          path: |
+            docs/COMPATIBILITY.md
+            lab-logs/
+          if-no-files-found: ignore
