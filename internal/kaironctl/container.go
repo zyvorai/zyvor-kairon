@@ -68,7 +68,7 @@ func newContainerRunCmd(opts *Options) *cobra.Command {
 		Long:  "Flags come before IMAGE, as with docker run; everything after IMAGE is the container's command.",
 		Short: "Create a container Machine from an OCI image",
 		Example: `  $ kaironctl container run --wait --rm alpine:3.22 sh -c 'echo hi; exit 3'
-  $ kaironctl container run -p 8080:80 --restart always --name web nginx:alpine
+  $ kaironctl container run -p 8080:10000 --restart always --name web envoyproxy/envoy:v1.40.0
   $ kaironctl container run --platform linux/amd64 --wait alpine:3.22 uname -m`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

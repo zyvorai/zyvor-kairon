@@ -66,16 +66,16 @@ func (f *fakeContainerAPI) ListMachinesNamespace(context.Context, string) ([]mod
 
 func TestContainerFlagsBuildMachine(t *testing.T) {
 	f := &containerFlags{
-		name: "web", env: []string{"A=1"}, publish: []string{"8080:80"}, restart: "always", entrypoint: "nginx -g",
+		name: "web", env: []string{"A=1"}, publish: []string{"8080:80"}, restart: "always", entrypoint: "envoy -c",
 		healthCmd: "wget -q http://127.0.0.1", healthInterval: 5, cpu: "2", memory: "1Gi", ttl: 600,
 		nodeSelector: []string{"kubernetes.io/os=darwin"}, maxRestarts: 4, rm: true,
 	}
-	m, err := f.machine("nginx:alpine", []string{"-c", "x"}, true)
+	m, err := f.machine("envoyproxy/envoy:v1.40.0", []string{"-c", "x"}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	o := m.Spec.Sandbox.OCI
-	if m.Metadata.Name != "web" || o.Image != "nginx:alpine" || len(o.Command) != 2 || o.Restart != "always" ||
+	if m.Metadata.Name != "web" || o.Image != "envoyproxy/envoy:v1.40.0" || len(o.Command) != 2 || o.Restart != "always" ||
 		len(o.Entrypoint) != 2 || o.MaxRestarts == nil || *o.MaxRestarts != 4 || o.ExitPolicy != "poweroff" {
 		t.Fatalf("oci = %+v", o)
 	}
@@ -124,7 +124,7 @@ func TestRunContainerDetachedDoesNotWait(t *testing.T) {
 	api := &fakeContainerAPI{}
 	var out bytes.Buffer
 	f := &containerFlags{name: "bg", detach: true}
-	m, _ := f.machine("nginx:alpine", nil, false)
+	m, _ := f.machine("envoyproxy/envoy:v1.40.0", nil, false)
 	if err := runContainer(context.Background(), &out, api, "default", m, f); err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestWaitContainerExitReportsInitErrorAndTimeout(t *testing.T) {
 func TestContainerPsAndRmOnlyTouchContainers(t *testing.T) {
 	code := int32(0)
 	api := &fakeContainerAPI{machines: map[string]model.Machine{
-		"web": {Metadata: model.ObjectMeta{Name: "web"}, Spec: model.MachineSpec{Sandbox: &model.SandboxSpec{OCI: &model.OCISpec{Image: "nginx:alpine", Ports: []string{"8080:80"}}}},
+		"web": {Metadata: model.ObjectMeta{Name: "web"}, Spec: model.MachineSpec{Sandbox: &model.SandboxSpec{OCI: &model.OCISpec{Image: "envoyproxy/envoy:v1.40.0", Ports: []string{"8080:80"}}}},
 			Status: model.MachineStatus{Phase: "Running", NodeName: "mac-1"}},
 		"done": {Metadata: model.ObjectMeta{Name: "done"}, Spec: model.MachineSpec{Sandbox: &model.SandboxSpec{OCI: &model.OCISpec{Image: "alpine:3.22"}}},
 			Status: model.MachineStatus{Phase: "Stopped", Container: &model.ContainerStatus{ExitCode: &code}}},

@@ -180,10 +180,25 @@ jobs:
           bad = render("--set", "ui.insecureHttp=true", "--set", "ui.tls.secretName=dash-tls")
           assert bad.returncode != 0 and "mutually exclusive" in bad.stderr, bad.stderr
 
-          # Ingress: HTTPS backend annotation by default, absent with the opt-out.
+          # Ingress is controller-agnostic: no controller-specific annotation is injected.
           ing = [d for d in yaml.safe_load_all(render("--set", "ui.ingress.enabled=true", "--set", "ui.ingress.host=d.example.com").stdout) if d]
           ingress = next(d for d in ing if d.get("kind") == "Ingress")
-          assert ingress["metadata"]["annotations"]["nginx.ingress.kubernetes.io/backend-protocol"] == "HTTPS"
+          assert "nginx" not in str(ingress["metadata"].get("annotations", {}))
+
+          # Gateway API (Envoy Gateway): an HTTPRoute to the dashboard and a BackendTLSPolicy for the HTTPS pod.
+          gw = ["--set", "ui.gateway.enabled=true", "--set", "ui.gateway.parentRef.name=eg",
+                "--set", "ui.gateway.backendTLS.hostname=kairon-ui", "--set", "ui.gateway.backendTLS.wellKnownCACertificates=System"]
+          docs = [d for d in yaml.safe_load_all(render(*gw).stdout) if d]
+          route = next(d for d in docs if d.get("kind") == "HTTPRoute")
+          assert route["spec"]["parentRefs"][0]["name"] == "eg"
+          assert route["spec"]["rules"][0]["backendRefs"][0]["name"] == "kairon-ui"
+          pol = next(d for d in docs if d.get("kind") == "BackendTLSPolicy")
+          assert pol["spec"]["targetRefs"][0]["name"] == "kairon-ui"
+          assert pol["spec"]["validation"]["hostname"] == "kairon-ui"
+          # Required inputs are enforced, and the HTTP opt-out renders neither object.
+          assert render("--set", "ui.gateway.enabled=true").returncode != 0
+          off = [d.get("kind") for d in yaml.safe_load_all(render(*gw, "--set", "ui.insecureHttp=true").stdout) if d]
+          assert "HTTPRoute" not in off and "BackendTLSPolicy" not in off
           print("helm render YAML: OK (kairon-ui HTTPS by default)")
           PY
 

@@ -889,15 +889,33 @@ ui:
     className: ""
     host: ""
     annotations: {}
-    # The pod speaks HTTPS, so the Ingress controller must too. This sets
-    # nginx.ingress.kubernetes.io/backend-protocol (ignored by other
-    # controllers: set their equivalent in annotations, for example
-    # traefik.ingress.kubernetes.io/service.serversscheme: https). Empty skips
-    # it. Not applied when ui.insecureHttp is true.
-    backendProtocol: HTTPS
+    # The pod speaks HTTPS, so the controller must too. Envoy-based controllers
+    # do not read Ingress: use ui.gateway below. For an Ingress controller set
+    # its backend-protocol annotation in annotations (for example
+    # projectcontour.io/upstream-protocol.tls on the Service for Contour, or
+    # traefik.ingress.kubernetes.io/service.serversscheme: https).
     # Terminate TLS at the Ingress for browsers, in the standard Ingress
     # shape: [{hosts: [dash.example.com], secretName: dash-tls}]
     tls: []
+  # Gateway API route for Envoy Gateway (or any Gateway API implementation):
+  # an HTTPRoute to the dashboard plus a BackendTLSPolicy so the proxy speaks
+  # HTTPS to the pod. Needs the Gateway API CRDs (v1.4+ for BackendTLSPolicy v1)
+  # and an existing Gateway. Not rendered when insecureHttp is true.
+  gateway:
+    enabled: false
+    # The Gateway the route attaches to.
+    parentRef:
+      name: ""
+      namespace: ""
+      sectionName: ""
+    hostnames: []
+    # How the proxy verifies the pod's certificate. hostname must be a name or
+    # IP SAN of that certificate (ui.tls.sans). Give either caCertificateRefs
+    # (ConfigMaps holding ca.crt) or wellKnownCACertificates: System.
+    backendTLS:
+      hostname: ""
+      caCertificateRefs: []
+      wellKnownCACertificates: ""
   # A single REST backend serving a small SPA -- lighter than controller/node.
   resources:
     requests: {cpu: 25m, memory: 32Mi}
