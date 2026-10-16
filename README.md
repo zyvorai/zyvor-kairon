@@ -93,7 +93,7 @@ New since v0.6.0 (latest tag: v0.10.1; the rows down to incident bundles are new
 | You need microVMs for CI and agents, but full VMs for databases | **One `Machine` CRD, four hypervisors**: QEMU, Cloud Hypervisor, Firecracker, FluxVM. Pick per Machine with `spec.backend`. |
 | VM networking means Pod CNI tricks, masquerade and Multus | **An eBPF edge on every VM tap**: anti-spoofing, DNS and TLS-SNI policy, rate limits, flows, attributed drops and packet capture. |
 | Debugging the control plane means reading a client-go codebase | **Stdlib-only controller and node** ([dependency policy](docs/DEPENDENCIES.md)). Small enough to read in an afternoon. |
-| Your AI agent needs to see and drive your fleet | **`kaironctl mcp serve`**: Machines, policies and live network data for Hermes Agent and any MCP client, writes gated behind `--allow-write`. Also published as the `ghcr.io/zyvorai/kairon-mcp` image and listed in the MCP Registry as `io.github.zyvorai/kairon` once published from the v0.10.1 release ([install from the registry](docs/guides/hermes-mcp.md#install-from-the-mcp-registry-oci)). |
+| Your AI agent needs to see and drive your fleet | **`kaironctl mcp serve`**: Machines, policies and live network data for Hermes Agent and any MCP client, writes gated behind `--allow-write`. Also published as the `ghcr.io/zyvorai/kairon-mcp` image and listed in the MCP Registry as `io.github.zyvorai/kairon` (v0.10.1) ([install from the registry](docs/guides/hermes-mcp.md#install-from-the-mcp-registry-oci)). |
 
 ![Capabilities at a glance: Run, Move, Protect, Automate](docs/ux/readme-capabilities.jpg)
 
