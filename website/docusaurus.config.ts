@@ -80,6 +80,7 @@ const config: Config = {
         },
         {to: '/deploy', label: 'Deploy', position: 'right'},
         {to: '/gallery', label: 'Gallery', position: 'right'},
+        {to: '/support', label: 'Support', position: 'right'},
         {
           href: 'https://github.com/zyvorai/zyvor-kairon',
           label: 'GitHub',
@@ -117,6 +118,7 @@ const config: Config = {
           title: 'Project',
           items: [
             {label: 'GitHub', href: 'https://github.com/zyvorai/zyvor-kairon'},
+            {label: 'Support', to: '/support'},
             {label: 'Release notes', href: 'https://github.com/zyvorai/zyvor-kairon/blob/main/RELEASE_NOTES.md'},
             {label: 'Roadmap', href: 'https://github.com/zyvorai/zyvor-kairon/blob/main/ROADMAP.md'},
             {label: 'License (Apache-2.0)', href: 'https://github.com/zyvorai/zyvor-kairon/blob/main/LICENSE'},
