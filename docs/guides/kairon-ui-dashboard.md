@@ -200,10 +200,27 @@ helm upgrade --install kairon ./charts/kairon -n kairon-system \
 
 - A certificate without its key (or the reverse) is a startup error, never a
   quiet fall back to HTTP.
-- Behind an Ingress the chart annotates the backend as HTTPS
-  (`ui.ingress.backendProtocol`, nginx's annotation by default; set your
-  controller's equivalent in `ui.ingress.annotations` otherwise) and
-  `ui.ingress.tls` terminates TLS for browsers.
+- Behind an Ingress, set your controller's backend-protocol annotation in
+  `ui.ingress.annotations` (the chart adds none) and terminate TLS for
+  browsers with `ui.ingress.tls`.
+- With [Envoy Gateway](https://gateway.envoyproxy.io/) (or any Gateway API
+  implementation) use `ui.gateway` instead: the chart renders an `HTTPRoute` to
+  the dashboard and a `BackendTLSPolicy` so the proxy speaks HTTPS to the pod.
+  It needs the Gateway API CRDs (v1.4 or later for `BackendTLSPolicy` v1) and
+  an existing `Gateway`; `backendTLS.hostname` must be a name or IP in
+  `ui.tls.sans`, and the proxy needs the CA (`caCertificateRefs`, a ConfigMap
+  holding `ca.crt`) unless the certificate chains to a public CA
+  (`wellKnownCACertificates: System`).
+
+  ```bash
+  helm upgrade --install kairon charts/kairon --set ui.enabled=true \
+    --set ui.tls.secretName=dashboard-tls --set ui.tls.sans[0]=kairon-ui \
+    --set ui.gateway.enabled=true --set ui.gateway.parentRef.name=eg \
+    --set ui.gateway.backendTLS.hostname=kairon-ui \
+    --set ui.gateway.backendTLS.caCertificateRefs[0].name=dashboard-ca \
+    --set ui.gateway.backendTLS.caCertificateRefs[0].kind=ConfigMap \
+    --set ui.gateway.backendTLS.caCertificateRefs[0].group=""
+  ```
 - `kaironctl` reaches the dashboard with `KAIRON_UI_URL=https://...`. For a
   self-signed certificate set `KAIRON_UI_CA=/path/to/cert.pem` to trust it
   without disabling verification. `KAIRON_UI_INSECURE=true` skips verification

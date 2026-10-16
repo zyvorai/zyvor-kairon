@@ -25,7 +25,7 @@ kaironctl container run --wait --rm alpine:3.22 sh -c 'echo hi; exit 3'
 echo $?          # 3
 
 # A long-running service with a published port and a restart policy
-kaironctl container run --name web -p 8080:80 --restart always nginx:alpine
+kaironctl container run --name web -p 8080:10000 --restart always envoyproxy/envoy:v1.40.0
 
 # x86-64 image under Rosetta, pinned to Mac nodes
 kaironctl container run --platform linux/amd64 --node-selector kubernetes.io/os=darwin \
@@ -51,10 +51,10 @@ spec:
   resources: {cpu: "1", memory: 512Mi}      # optional; memory is at least 512Mi
   sandbox:
     oci:
-      image: nginx:alpine
-      ports: ["8080:80"]                     # host ports 1024+, TCP only
+      image: envoyproxy/envoy:v1.40.0
+      ports: ["8080:10000"]                     # host ports 1024+, TCP only
       restart: always
-      healthCheck: {command: [wget, -q, -O, /dev/null, "http://127.0.0.1"], intervalSeconds: 5}
+      healthCheck: {command: [bash, -c, "echo > /dev/tcp/127.0.0.1/10000"], intervalSeconds: 5}
 ```
 
 Fields: `image` (required), `platform`, `command`, `entrypoint`, `env`

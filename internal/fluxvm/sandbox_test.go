@@ -213,7 +213,7 @@ func TestCreateSandboxForMachineOCI(t *testing.T) {
 		Spec: model.MachineSpec{
 			Resources: model.ResourceSpec{CPU: "2", Memory: "1Gi"},
 			Sandbox: &model.SandboxSpec{OCI: &model.OCISpec{
-				Image: "nginx:alpine", Platform: "linux/amd64", Command: []string{"nginx", "-g", "daemon off;"},
+				Image: "envoyproxy/envoy:v1.40.0", Platform: "linux/amd64", Command: []string{"envoy", "-c", "/etc/envoy/envoy.yaml"},
 				Env: []string{"A=1"}, Ports: []string{"8080:80"}, Restart: "on-failure", MaxRestarts: &retries,
 				HealthCheck: &model.ContainerHealthCheck{Command: []string{"true"}, IntervalSeconds: 5},
 			}},
@@ -232,7 +232,7 @@ func TestCreateSandboxForMachineOCI(t *testing.T) {
 		t.Fatalf("a container sandbox must not send template: %v", gotBody)
 	}
 	oci, ok := gotBody["oci"].(map[string]any)
-	if !ok || oci["image"] != "nginx:alpine" || oci["platform"] != "linux/amd64" || oci["restart"] != "on-failure" {
+	if !ok || oci["image"] != "envoyproxy/envoy:v1.40.0" || oci["platform"] != "linux/amd64" || oci["restart"] != "on-failure" {
 		t.Fatalf("oci = %v", gotBody["oci"])
 	}
 	if oci["read_only_root"] != true {

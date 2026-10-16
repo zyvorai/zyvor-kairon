@@ -154,13 +154,50 @@ spec:
     sshAuthorizedKeys:
       - "ssh-ed25519 AAAA... ops@laptop"
     packages:
-      - nginx
+      - curl
     runCmd:
-      - systemctl enable --now nginx
+      - curl -fsSL -o /usr/local/bin/envoy https://github.com/envoyproxy/envoy/releases/download/v1.40.0/envoy-1.40.0-linux-x86_64
+      - chmod 0755 /usr/local/bin/envoy
+      - systemctl enable --now envoy
     writeFiles:
-      - path: /etc/nginx/conf.d/app.conf
+      - path: /etc/systemd/system/envoy.service
         content: |
-          server { listen 8080; location / { proxy_pass http://127.0.0.1:3000; } }
+          [Service]
+          ExecStart=/usr/local/bin/envoy -c /etc/envoy/envoy.yaml
+          Restart=on-failure
+          [Install]
+          WantedBy=multi-user.target
+        permissions: "0644"
+      - path: /etc/envoy/envoy.yaml
+        content: |
+          static_resources:
+            listeners:
+            - name: app
+              address: {socket_address: {address: 0.0.0.0, port_value: 8080}}
+              filter_chains:
+              - filters:
+                - name: envoy.filters.network.http_connection_manager
+                  typed_config:
+                    "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                    stat_prefix: app
+                    route_config:
+                      virtual_hosts:
+                      - name: app
+                        domains: ["*"]
+                        routes:
+                        - match: {prefix: "/"}
+                          route: {cluster: app}
+                    http_filters:
+                    - name: envoy.filters.http.router
+                      typed_config: {"@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router}
+            clusters:
+            - name: app
+              type: STATIC
+              load_assignment:
+                cluster_name: app
+                endpoints:
+                - lb_endpoints:
+                  - endpoint: {address: {socket_address: {address: 127.0.0.1, port_value: 3000}}}
         permissions: "0644"
 ```
 
@@ -169,7 +206,7 @@ cloud-init's own `write_files` module -- e.g. a systemd unit or an app
 config -- without needing a custom-baked image. `permissions` is an octal
 mode string (defaults to cloud-init's own `0644` when unset).
 
-Equivalent flags: `kaironctl create ... --hostname web-01 --user ops --ssh-key "ssh-ed25519 AAAA..." --package nginx --runcmd "systemctl enable --now nginx"`
+Equivalent flags: `kaironctl create ... --hostname web-01 --user ops --ssh-key "ssh-ed25519 AAAA..." --package curl --runcmd "systemctl enable --now envoy"`
 (`--ssh-key`/`--package`/`--runcmd` are repeatable) -- `writeFiles` has no
 `kaironctl create` flag yet, only the YAML/kubectl path. The dashboard's
 create form exposes a hostname field and a single SSH key field.

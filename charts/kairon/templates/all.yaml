@@ -1687,9 +1687,6 @@ metadata:
   name: kairon-ui
   namespace: {{ .Release.Namespace }}
 {{- $ingAnn := .Values.ui.ingress.annotations | default dict }}
-{{- if and (not .Values.ui.insecureHttp) .Values.ui.ingress.backendProtocol }}
-{{- $ingAnn = merge (dict) $ingAnn (dict "nginx.ingress.kubernetes.io/backend-protocol" .Values.ui.ingress.backendProtocol) }}
-{{- end }}
 {{ if $ingAnn }}
   annotations:
 {{ toYaml $ingAnn | indent 4 }}
@@ -1710,5 +1707,49 @@ spec:
             pathType: Prefix
             backend:
               service: {name: kairon-ui, port: {name: {{ $uiPortName }}}}
+{{ end }}
+{{ if and .Values.ui.gateway.enabled (not .Values.ui.insecureHttp) }}
+{{- if not .Values.ui.gateway.parentRef.name }}{{ fail "ui.gateway.parentRef.name is required when ui.gateway.enabled" }}{{ end }}
+{{- if not .Values.ui.gateway.backendTLS.hostname }}{{ fail "ui.gateway.backendTLS.hostname is required (a SAN of the dashboard certificate)" }}{{ end }}
+{{- if not (or .Values.ui.gateway.backendTLS.caCertificateRefs .Values.ui.gateway.backendTLS.wellKnownCACertificates) }}{{ fail "ui.gateway.backendTLS needs caCertificateRefs or wellKnownCACertificates" }}{{ end }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: kairon-ui
+  namespace: {{ .Release.Namespace }}
+spec:
+  parentRefs:
+    - name: {{ .Values.ui.gateway.parentRef.name | quote }}
+{{- if .Values.ui.gateway.parentRef.namespace }}
+      namespace: {{ .Values.ui.gateway.parentRef.namespace | quote }}
+{{- end }}
+{{- if .Values.ui.gateway.parentRef.sectionName }}
+      sectionName: {{ .Values.ui.gateway.parentRef.sectionName | quote }}
+{{- end }}
+{{- if .Values.ui.gateway.hostnames }}
+  hostnames:
+{{ toYaml .Values.ui.gateway.hostnames | indent 4 }}
+{{- end }}
+  rules:
+    - backendRefs:
+        - {name: kairon-ui, port: {{ .Values.ui.service.port }}}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: kairon-ui
+  namespace: {{ .Release.Namespace }}
+spec:
+  targetRefs:
+    - {group: "", kind: Service, name: kairon-ui}
+  validation:
+    hostname: {{ .Values.ui.gateway.backendTLS.hostname | quote }}
+{{- if .Values.ui.gateway.backendTLS.caCertificateRefs }}
+    caCertificateRefs:
+{{ toYaml .Values.ui.gateway.backendTLS.caCertificateRefs | indent 6 }}
+{{- else }}
+    wellKnownCACertificates: {{ .Values.ui.gateway.backendTLS.wellKnownCACertificates | quote }}
+{{- end }}
 {{ end }}
 {{ end }}

@@ -23,7 +23,7 @@ import (
 // read Machines, so a plaintext secret has no safe home here yet.
 type OCISpec struct {
 	// Image is the registry reference, e.g. "alpine:3.22",
-	// "ghcr.io/org/app:1.2" or "nginx@sha256:...". Required.
+	// "ghcr.io/org/app:1.2" or "envoyproxy/envoy@sha256:...". Required.
 	Image string `json:"image"`
 	// Platform is "linux/arm64" (default) or "linux/amd64" (Rosetta).
 	Platform string `json:"platform,omitempty"`
