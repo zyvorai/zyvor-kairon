@@ -32,10 +32,12 @@ Automation entry points:
   [`scripts/lab-inject-postcopy-source-failure.sh`](../scripts/lab-inject-postcopy-source-failure.sh)
   (kills the source QEMU after the post-copy switch; destroys the guest)
 
-**Lab enablement (current blocker for the multi-host matrix):** the
-`matrix` job runs only on `runs-on: [self-hosted, kairon-lab]`. Bring that
-runner online and set repository secrets/vars `KAIRON_HW_LAB=1`,
-`KAIRON_KUBE_URL`, `KAIRON_KUBE_TOKEN`, `KAIRON_KUBE_CA` (PEM content;
+**Lab enablement:** the `matrix` job runs only on
+`runs-on: [self-hosted, kairon-lab]`. A `kairon-lab` runner is online (setup
+and the variable list for the per-feature drills: [`runbook-lab-setup.md`](runbook-lab-setup.md)).
+The workflow reads these repository secrets/vars (`KAIRON_HW_LAB`,
+`KAIRON_KUBE_URL`, `KAIRON_KUBE_TOKEN` and `KAIRON_KUBE_CA` are set, the rest are not):
+`KAIRON_HW_LAB=1`, `KAIRON_KUBE_URL`, `KAIRON_KUBE_TOKEN`, `KAIRON_KUBE_CA` (PEM content;
 the workflow writes it to a file), `KAIRON_HW_MACHINE`,
 `KAIRON_HW_TARGET_NODE`, plus optional `KAIRON_HW_EBPF_MACHINE` (live-eBPF
 case), `KAIRON_HW_IMAGE` (real create/stop/start/delete smoke),
@@ -49,7 +51,7 @@ over the guest agent (`KAIRON_HW_LOAD_MIB`, default 256) and records
 (default 1024) and `KAIRON_HW_ADAPTIVE_BANDWIDTH_MBPS` (default 200), and the
 post-copy source-failure drill needs `KAIRON_HW_POSTCOPY_MACHINE`, a
 disposable Machine the lab recreates before each run (sudo `pkill` on the
-source host). Until then,
+source host). Until those are set,
 push-triggered runs succeed on the `validate` job only and leave every
 **migration** row below as `not run`.
 
