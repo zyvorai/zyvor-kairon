@@ -64,6 +64,7 @@ jobs:
         run: |
           python3 -c 'import yaml' 2>/dev/null || python3 -m pip install --user -q pyyaml
           python3 scripts/validate.py
+          python3 scripts/stability-check.py
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310  # v5.0.1
       - name: Helm lint and render
         run: |
