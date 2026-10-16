@@ -28,6 +28,7 @@ The root [README](https://github.com/zyvorai/zyvor-kairon/blob/main/README.md) i
 | Hardware / lab matrix | [COMPATIBILITY.md](COMPATIBILITY.md) |
 | Roadmap | [../ROADMAP.md](https://github.com/zyvorai/zyvor-kairon/blob/main/ROADMAP.md) |
 | Migration failures / NeedsRecovery | [runbook-migration-failures.md](runbook-migration-failures.md) |
+| Lab runner, cluster access, adding a node | [runbook-lab-setup.md](runbook-lab-setup.md) |
 | Security / threat model | [../SECURITY.md](https://github.com/zyvorai/zyvor-kairon/blob/main/SECURITY.md) |
 | Contributing | [../CONTRIBUTING.md](https://github.com/zyvorai/zyvor-kairon/blob/main/CONTRIBUTING.md) |
 
