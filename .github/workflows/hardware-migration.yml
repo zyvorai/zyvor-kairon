@@ -3,7 +3,8 @@
 
 # Real multi-host migration matrix. Requires a self-hosted runner with
 # access to the Zyvor KVM lab and repository secrets (see docs/COMPATIBILITY.md).
-# Skips cleanly when KAIRON_HW_LAB is not configured on the runner.
+# The matrix job fails when KAIRON_HW_LAB is not configured on the lab runner:
+# a green nightly must mean migrations ran.
 #
 # validate: always runs on GitHub-hosted runners (PR/push) — script syntax,
 # safety gate, and docs/COMPATIBILITY.md presence. Does not touch a cluster.
@@ -104,9 +105,9 @@ jobs:
           KAIRON_UI_TOKEN: ${{ secrets.KAIRON_UI_TOKEN }}
         run: |
           if [[ "${KAIRON_HW_LAB:-}" != "1" ]]; then
-            echo "::warning title=Hardware migration matrix did not run::KAIRON_HW_LAB is not set on this runner, so no migration was exercised. Configure the lab vars/secrets to enable it."
+            echo "::error title=Hardware migration matrix did not run::KAIRON_HW_LAB is not set on this kairon-lab runner, so no migration was exercised. Configure the lab vars/secrets."
             echo "### Hardware migration matrix: NOT RUN (KAIRON_HW_LAB unset)" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
+            exit 1
           fi
           if [[ -n "${KAIRON_KUBE_CA_PEM:-}" ]]; then
             printf '%s\n' "$KAIRON_KUBE_CA_PEM" > "$RUNNER_TEMP/kube-ca.pem"
