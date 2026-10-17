@@ -15,12 +15,12 @@ Nutanix (Prism v4)  ->  hyperexport  ->  h2kvm  ->  Veyron  ->  Kairon Machine
 
 ## What was measured elsewhere in the path
 
-Export, convert and a KVM boot passed in an unattended run: 7 of 7 stages, 145 s ([case study](https://github.com/zyvorai/zyvor-transiva/blob/main/docs/case-study-nutanix-exit-linux.md)).
+Export, convert and boots on KVM and KubeVirt passed in an unattended run on an Ubuntu 24.04 cloud image: 7 of 7 stages, 747 s ([case study](https://github.com/zyvorai/zyvor-transiva/blob/main/docs/case-study-nutanix-exit-linux.md)).
 
 ## Not covered
 
 - A Kairon landing from a Nutanix export.
 - A real Nutanix cluster, Windows, UEFI, multi-disk or large VMs.
-- Guest repair (skipped on the test image).
+- Boot repair on a guest that needs it (the Ubuntu test image needed only h2kvm's DHCP network fallback).
 
 Related: [runbook-vm-export.md](../runbook-vm-export.md), [WHAT_SHIPS.md](../WHAT_SHIPS.md).
