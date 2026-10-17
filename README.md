@@ -37,7 +37,7 @@
 
 **Experimental operations:** [Kairon Rehearsal](docs/guides/rehearsal.md) tests upgrades on isolated CSI copies. [Advanced operations](docs/guides/advanced-operations.md) adds health-gated configuration change plans, application recovery verification, traffic/RTT placement recommendations, and incident reproduction with fix verification. Includes runnable scenarios and failure-path tests. VM/CSI and host-isolation hardware qualification is still pending.
 
-New since v0.6.0 (latest tag: v0.10.1; the rows down to incident bundles are new in v0.10.0):
+New since v0.6.0 (latest tag: v0.10.2; the rows down to incident bundles are new in v0.10.0):
 
 | | |
 |---|---|
@@ -93,7 +93,7 @@ New since v0.6.0 (latest tag: v0.10.1; the rows down to incident bundles are new
 | You need microVMs for CI and agents, but full VMs for databases | **One `Machine` CRD, four hypervisors**: QEMU, Cloud Hypervisor, Firecracker, FluxVM. Pick per Machine with `spec.backend`. |
 | VM networking means Pod CNI tricks, masquerade and Multus | **An eBPF edge on every VM tap**: anti-spoofing, DNS and TLS-SNI policy, rate limits, flows, attributed drops and packet capture. |
 | Debugging the control plane means reading a client-go codebase | **Stdlib-only controller and node** ([dependency policy](docs/DEPENDENCIES.md)). Small enough to read in an afternoon. |
-| Your AI agent needs to see and drive your fleet | **`kaironctl mcp serve`**: Machines, policies and live network data for Hermes Agent and any MCP client, writes gated behind `--allow-write`. Also published as the `ghcr.io/zyvorai/kairon-mcp` image and listed in the MCP Registry as `io.github.zyvorai/kairon` (v0.10.1) ([install from the registry](docs/guides/hermes-mcp.md#install-from-the-mcp-registry-oci)). |
+| Your AI agent needs to see and drive your fleet | **`kaironctl mcp serve`**: Machines, policies and live network data for Hermes Agent and any MCP client, writes gated behind `--allow-write`. Also published as the `ghcr.io/zyvorai/kairon-mcp` image and listed in the MCP Registry as `io.github.zyvorai/kairon` (v0.10.2) ([install from the registry](docs/guides/hermes-mcp.md#install-from-the-mcp-registry-oci)). |
 
 ![Capabilities at a glance: Run, Move, Protect, Automate](docs/ux/readme-capabilities.jpg)
 
@@ -280,10 +280,10 @@ On a Kubernetes cluster whose VM hosts run [FluxVM](https://github.com/zyvorai/z
 kubectl label node worker-1 kairon.zyvor.dev/capable=true
 
 helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \
-  --version 0.10.1 -n kairon-system --create-namespace \
-  -f https://raw.githubusercontent.com/zyvorai/kairon/v0.10.1/charts/kairon/values-production.yaml
+  --version 0.10.2 -n kairon-system --create-namespace \
+  -f https://raw.githubusercontent.com/zyvorai/kairon/v0.10.2/charts/kairon/values-production.yaml
 
-curl -fsSL -o kaironctl https://github.com/zyvorai/kairon/releases/download/v0.10.1/kaironctl-linux-amd64
+curl -fsSL -o kaironctl https://github.com/zyvorai/kairon/releases/download/v0.10.2/kaironctl-linux-amd64
 chmod +x kaironctl && sudo mv kaironctl /usr/local/bin/      # or: kubectl krew install kairon
 
 kaironctl create demo --image /var/lib/fluxvm/images/ubuntu.qcow2 --cpu 2 --memory 2Gi
@@ -369,7 +369,7 @@ kaironctl ui                         # or through the API server, no port-forwar
 | MCP server for AI agents | Preview, CI end-to-end with the official SDK |
 | CPU/memory hotplug | Grow-only (QEMU) |
 
-**v0.10.1** is the latest release (a patch on v0.10.0 that adds the MCP server image and the MCP Registry listing). Two-host live migration ran on a real lab on 2026-10-14 (cold, source failure, controller failover, all three adaptive cases and post-copy source failure pass in both directions on matched QEMU 10.2.1; plain pre-copy under a heavy write load did not converge, and the `NeedsRecovery` drill passed 5 of 6 runs with one unexplained failure that left a migration in `Adopting`). There is no live + eBPF run and no nightly CI yet, so it stays Preview. Adaptive live migration stays Experimental until its matrix cases pass on the nightly lab workflow. Honest gaps live in [docs/STATUS.md](docs/STATUS.md); what comes next is in [ROADMAP.md](ROADMAP.md).
+**v0.10.2** is the latest release (a patch on v0.10.1 that fixes the release pipeline; v0.10.1 added the MCP server image and the MCP Registry listing). Two-host live migration ran on a real lab on 2026-10-14 (cold, source failure, controller failover, all three adaptive cases and post-copy source failure pass in both directions on matched QEMU 10.2.1; plain pre-copy under a heavy write load did not converge, and the `NeedsRecovery` drill passed 5 of 6 runs with one unexplained failure that left a migration in `Adopting`). There is no live + eBPF run and no nightly CI yet, so it stays Preview. Adaptive live migration stays Experimental until its matrix cases pass on the nightly lab workflow. Honest gaps live in [docs/STATUS.md](docs/STATUS.md); what comes next is in [ROADMAP.md](ROADMAP.md).
 
 ---
 
