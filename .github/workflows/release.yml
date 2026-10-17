@@ -212,9 +212,18 @@ jobs:
       - name: Package and push Helm chart to OCI
         env:
           DOCKER_CONFIG: ${{ runner.temp }}/docker-config-assets
+          # helm keeps its own registry credentials file; do not rely on it
+          # discovering the docker-config login on a shared self-hosted runner
+          # (hosted runners worked, self-hosted got 403 denied from ghcr.io).
+          HELM_REGISTRY_CONFIG: ${{ runner.temp }}/helm-registry-assets/config.json
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
+          mkdir -p "$(dirname "$HELM_REGISTRY_CONFIG")"
+          printf '%s' "$GHCR_TOKEN" | helm registry login ghcr.io --username "$GHCR_USER" --password-stdin
+          trap 'rm -rf "$(dirname "$HELM_REGISTRY_CONFIG")"' EXIT
           # Keep chart version aligned with the git tag.
           sed -i "s/^version:.*/version: ${version}/" charts/kairon/Chart.yaml
           sed -i "s/^appVersion:.*/appVersion: \"${version}\"/" charts/kairon/Chart.yaml
@@ -304,4 +313,18 @@ jobs:
           tar xzf mcp-publisher.tar.gz mcp-publisher
       - run: ./mcp-publisher validate server.json
       - run: ./mcp-publisher login github-oidc
-      - run: ./mcp-publisher publish server.json
+      - name: Publish to the MCP Registry (re-run safe)
+        run: |
+          set -uo pipefail
+          # The registry rejects a version it already holds. A re-run of the
+          # release after the registry step succeeded once must not fail on
+          # that; any other error still fails the job.
+          if out="$(./mcp-publisher publish server.json 2>&1)"; then
+            echo "$out"
+          elif echo "$out" | grep -q "cannot publish duplicate version"; then
+            echo "$out"
+            echo "::notice::server.json version already in the MCP Registry; nothing to publish"
+          else
+            echo "$out"
+            exit 1
+          fi
