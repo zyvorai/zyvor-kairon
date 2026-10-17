@@ -1,3 +1,16 @@
+# Kairon v0.10.2
+
+A patch on v0.10.1 that fixes the release pipeline. No runtime changes.
+
+- **Release workflow.** `helm push` logs in to ghcr.io explicitly with
+  `helm registry login` (it returned 403 on the shared self-hosted runners),
+  and the MCP Registry step no longer fails a re-run when the version is
+  already listed.
+- **CI.** Jobs run on the `zyvor-build` self-hosted runners, with per-job
+  docker config and cosign install directories.
+- **Docs.** MCP Registry install, lab runner runbook, feature stability
+  policy, and leaving Nutanix.
+
 # Kairon v0.10.1
 
 A patch on v0.10.0 that adds the MCP server image and the MCP Registry listing.
