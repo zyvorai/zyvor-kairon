@@ -4,6 +4,7 @@
 package agentplane
 
 import (
+	"encoding/hex"
 	"fmt"
 	"strings"
 )
@@ -16,12 +17,17 @@ func AdmitImage(agentPool bool, digest, signature string) error {
 	if !agentPool {
 		return nil
 	}
-	if !strings.HasPrefix(digest, "sha256:") || len(strings.TrimPrefix(digest, "sha256:")) != 64 {
+	if !strings.HasPrefix(digest, "sha256:") || !isHex64(strings.TrimPrefix(digest, "sha256:")) {
 		return fmt.Errorf("agent pool image digest must be sha256:<64 hex>")
 	}
 	const prefix = "cosign:sha256:"
-	if !strings.HasPrefix(signature, prefix) || len(strings.TrimPrefix(signature, prefix)) != 64 {
+	if !strings.HasPrefix(signature, prefix) || !isHex64(strings.TrimPrefix(signature, prefix)) {
 		return fmt.Errorf("agent pool image signature must be %s<64 hex>", prefix)
 	}
 	return nil
+}
+
+func isHex64(s string) bool {
+	_, err := hex.DecodeString(s)
+	return len(s) == 64 && err == nil
 }

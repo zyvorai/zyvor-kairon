@@ -12,11 +12,20 @@ export interface Route {
   target?: string;
 }
 
+// A malformed escape (a bare '%') must not throw during render.
+function safeDecode(s: string): string {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
+
 export function parseHash(hash: string): Route {
   const raw = hash.replace(/^#\/?/, '');
   const [head, ...rest] = raw.split('/').filter(Boolean);
   if (head && isPage(head)) {
-    return { page: head, target: rest.length ? rest.map(decodeURIComponent).join('/') : undefined };
+    return { page: head, target: rest.length ? rest.map(safeDecode).join('/') : undefined };
   }
   return { page: 'overview' };
 }
