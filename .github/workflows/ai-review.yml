@@ -1,0 +1,56 @@
+name: AI PR review
+# keep the trigger as pull_request: pull_request_target would expose the secret to untrusted diffs
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    # forks never receive secrets; drafts and bot PRs are skipped to keep spend low
+    if: github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft && github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Review the diff
+        # advisory only: an API error must not fail the PR check
+        continue-on-error: true
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          PR: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          [ -n "$ANTHROPIC_API_KEY" ] || { echo "no key; skipping"; exit 0; }
+          git diff "$BASE...$HEAD" -- . ':(exclude)*.lock' ':(exclude)*-lock.json' ':(exclude)go.sum' > full.diff
+          [ -s full.diff ] || exit 0
+          head -c 120000 full.diff | iconv -c -f UTF-8 -t UTF-8 > diff.txt
+          NOTE=""
+          if [ "$(wc -c < full.diff)" -gt 120000 ]; then
+            NOTE="_Note: the diff was truncated to 120 KB; later files were not reviewed._"
+          fi
+          jq -n --rawfile d diff.txt '{
+            model: "claude-sonnet-5-5",
+            max_tokens: 1500,
+            thinking: {type: "between_tools"},
+            messages: [{role: "user", content: ("Review this pull request diff. List only concrete bugs, security issues, and missing tests, citing file and line. Be brief; say \"No issues found\" if clean.\n\n" + $d)}]
+          }' > req.json
+          curl -sS --fail-with-body https://api.anthropic.com/v1/messages \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d @req.json > resp.json
+          TEXT=$(jq -r '[.content[]? | select(.type == "text") | .text] | join("")' resp.json)
+          if [ -z "$TEXT" ]; then
+            TEXT="No review text returned (stop_reason: $(jq -r '.stop_reason' resp.json))."
+          fi
+          printf '### AI review (advisory)\n\n%s\n\n%s\n' "$TEXT" "$NOTE" > comment.md
+          gh pr comment "$PR" --body-file comment.md
