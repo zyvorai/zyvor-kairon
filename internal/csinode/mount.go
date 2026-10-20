@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -36,9 +37,29 @@ func isMountPointFromReader(r io.Reader, path string) bool {
 		// mountinfo(5): field 5 (1-indexed) is the mount point, i.e.
 		// index 4 after whitespace-splitting.
 		fields := strings.Fields(scanner.Text())
-		if len(fields) > 4 && fields[4] == path {
+		if len(fields) > 4 && unescapeMountinfo(fields[4]) == path {
 			return true
 		}
 	}
 	return false
+}
+
+// unescapeMountinfo decodes the octal escapes (\040 for space, \011 tab,
+// \012 newline, \134 backslash) the kernel applies to mountinfo paths.
+func unescapeMountinfo(s string) string {
+	if !strings.Contains(s, `\`) {
+		return s
+	}
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+4 <= len(s) {
+			if v, err := strconv.ParseUint(s[i+1:i+4], 8, 8); err == nil {
+				b.WriteByte(byte(v))
+				i += 3
+				continue
+			}
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
 }

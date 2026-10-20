@@ -43,3 +43,14 @@ func TestIsMountPointFromReaderHandlesEmptyInput(t *testing.T) {
 		t.Fatal("expected no match against empty mountinfo")
 	}
 }
+
+func TestIsMountPointFromReaderDecodesOctalEscapes(t *testing.T) {
+	fixture := `40 36 0:31 / /var/lib/kubelet/my\040vol rw,relatime shared:2 - ext4 /dev/sda rw
+`
+	if !isMountPointFromReader(strings.NewReader(fixture), "/var/lib/kubelet/my vol") {
+		t.Fatal("expected an escaped space in mountinfo to match the real path")
+	}
+	if isMountPointFromReader(strings.NewReader(fixture), `/var/lib/kubelet/my\040vol`) {
+		t.Fatal("literal escape text must not match")
+	}
+}
