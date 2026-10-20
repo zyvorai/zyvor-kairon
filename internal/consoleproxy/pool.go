@@ -17,7 +17,7 @@ func (s *Server) handleCreatePool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var spec fluxvm.PoolSpec
-	if err := json.NewDecoder(r.Body).Decode(&spec); err != nil {
+	if err := decodeJSONBody(w, r, &spec); err != nil {
 		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
 		return
 	}
@@ -74,7 +74,7 @@ func (s *Server) handleClaimPool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var overrides fluxvm.ClaimOverrides
-	if err := json.NewDecoder(r.Body).Decode(&overrides); err != nil {
+	if err := decodeJSONBody(w, r, &overrides); err != nil {
 		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
 		return
 	}

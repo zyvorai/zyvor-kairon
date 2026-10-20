@@ -26,7 +26,7 @@ func (s *Server) handleEgressCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req egressCheckRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
 		return
 	}
@@ -36,4 +36,13 @@ func (s *Server) handleEgressCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = json.NewEncoder(w).Encode(decision)
+}
+
+// maxJSONBody caps small control-plane JSON request bodies so a caller
+// holding the shared token cannot make the node buffer unbounded input.
+const maxJSONBody = 1 << 20
+
+// decodeJSONBody decodes a size-limited JSON request body into v.
+func decodeJSONBody(w http.ResponseWriter, r *http.Request, v any) error {
+	return json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(v)
 }

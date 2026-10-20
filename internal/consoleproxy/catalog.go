@@ -37,7 +37,7 @@ func (s *Server) handleAddCatalogEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req addCatalogEntryRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
 		return
 	}
@@ -79,7 +79,7 @@ func (s *Server) handleRenameCatalogEntry(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var req renameCatalogEntryRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
 		return
 	}
@@ -102,7 +102,7 @@ func (s *Server) handleCloneCatalogEntry(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var req cloneCatalogEntryRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
 		return
 	}
@@ -125,7 +125,7 @@ func (s *Server) handleExportCatalogEntry(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var req exportCatalogEntryRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
 		return
 	}
@@ -150,7 +150,7 @@ func (s *Server) handleSetCatalogReadOnly(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var req setCatalogReadOnlyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
 		return
 	}

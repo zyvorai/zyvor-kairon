@@ -63,7 +63,7 @@ func (s *Server) handleBuildTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req buildTemplateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
 		return
 	}
