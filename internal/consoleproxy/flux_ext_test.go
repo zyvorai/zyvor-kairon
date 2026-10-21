@@ -33,6 +33,10 @@ func TestFluxExtRoutesRelayToFixedUpstreamPaths(t *testing.T) {
 		{"GET", "/events?limit=5&vm=vm-1", "", "GET", "/v1/events?limit=5&vm=vm-1", ""},
 		{"GET", "/branches", "", "GET", "/v1/branches", ""},
 		{"GET", "/branches/a/diff/b", "", "GET", "/v1/branches/a/diff/b", ""},
+		{"GET", "/host-topology", "", "GET", "/v1/host/topology", ""},
+		{"GET", "/host-pressure", "", "GET", "/v1/host/pressure", ""},
+		{"POST", "/branches/b1/start", `{"count":2}`, "POST", "/v1/branches/b1/start", `{"count":2}`},
+		{"DELETE", "/branches/b1", "", "DELETE", "/v1/branches/b1", ""},
 		{"POST", "/branches/b1/start-plan", `{"count":1}`, "POST", "/v1/branches/b1/start/plan", `{"count":1}`},
 	}
 	for _, c := range cases {
@@ -88,5 +92,68 @@ func TestRelayFluxSurfacesUpstreamErrorsAsBadGateway(t *testing.T) {
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusBadGateway {
 		t.Fatalf("expected 502, got %d", resp.StatusCode)
+	}
+}
+
+func TestEgressNftablesIsWrappedInJSON(t *testing.T) {
+	fluxSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/egress/nftables" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("table inet x {}\n"))
+	}))
+	defer fluxSrv.Close()
+	s := &Server{Flux: fluxvm.New(fluxSrv.URL, ""), Token: "secret"}
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+	req, _ := http.NewRequest("GET", srv.URL+"/egress-nftables", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	b, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(b), `"snippet":"table inet x {}\n"`) {
+		t.Fatalf("unexpected reply %d %s", resp.StatusCode, b)
+	}
+}
+
+func TestEventsStreamRequiresTokenAndProxiesUpstream(t *testing.T) {
+	var gotAuth string
+	fluxSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		if r.URL.Path != "/v1/events/stream" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"event\":\"vm.start\"}\n\n"))
+	}))
+	defer fluxSrv.Close()
+	s := &Server{Flux: fluxvm.New(fluxSrv.URL, "fluxtok"), Token: "secret"}
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/events/stream")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without a token, got %d", resp.StatusCode)
+	}
+	req, _ := http.NewRequest("GET", srv.URL+"/events/stream", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	b, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(b), "vm.start") || gotAuth != "Bearer fluxtok" {
+		t.Fatalf("stream %q, upstream auth %q", b, gotAuth)
 	}
 }
