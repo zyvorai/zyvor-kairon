@@ -102,6 +102,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /fork-plan/{runtimeID}", s.handleForkPlan)
 	mux.HandleFunc("GET /host-memory", s.handleHostMemory)
 	mux.HandleFunc("GET /events", s.handleEvents)
+	mux.HandleFunc("GET /vm-screenshot/{runtimeID}", s.handleVMScreenshot)
+	mux.HandleFunc("POST /vm-input/{runtimeID}", s.handleVMInput)
 	mux.HandleFunc("GET /events/stream", s.handleEventsStream)
 	mux.HandleFunc("GET /host-topology", s.handleHostTopology)
 	mux.HandleFunc("GET /host-pressure", s.handleHostPressure)
