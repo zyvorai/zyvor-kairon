@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 // maxRelayBody bounds request bodies forwarded to FluxVM.
@@ -121,4 +122,26 @@ func (s *Server) handleEventsStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.fluxReverseProxy("/v1/events/stream").ServeHTTP(w, r)
+}
+
+// handleVMScreenshot relays FluxVM's GET /v1/vms/{id}/screenshot (a PNG of a running vz
+// VM's display; width, height and blank state come back as x-fluxvm-screen-* headers).
+// The bytes stream straight through; the reverse proxy swaps the relay bearer for FluxVM's.
+func (s *Server) handleVMScreenshot(w http.ResponseWriter, r *http.Request) {
+	if !s.checkToken(w, r) {
+		return
+	}
+	id := r.PathValue("runtimeID")
+	if id == "" || strings.ContainsAny(id, "/?#") {
+		http.Error(w, "invalid runtime id", http.StatusBadRequest)
+		return
+	}
+	s.fluxReverseProxy("/v1/vms/"+url.PathEscape(id)+"/screenshot").ServeHTTP(w, r)
+}
+
+// handleVMInput forwards keyboard and mouse input to FluxVM's POST /v1/vms/{id}/input.
+// FluxVM rejects unknown fields itself; the relay only bounds the body size.
+func (s *Server) handleVMInput(w http.ResponseWriter, r *http.Request) {
+	s.relayFlux(w, r, "vm input", http.MethodPost,
+		"/v1/vms/"+url.PathEscape(r.PathValue("runtimeID"))+"/input", false, true)
 }

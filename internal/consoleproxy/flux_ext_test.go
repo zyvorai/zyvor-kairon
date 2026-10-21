@@ -33,6 +33,7 @@ func TestFluxExtRoutesRelayToFixedUpstreamPaths(t *testing.T) {
 		{"GET", "/events?limit=5&vm=vm-1", "", "GET", "/v1/events?limit=5&vm=vm-1", ""},
 		{"GET", "/branches", "", "GET", "/v1/branches", ""},
 		{"GET", "/branches/a/diff/b", "", "GET", "/v1/branches/a/diff/b", ""},
+		{"POST", "/vm-input/vm-1", `{"action":"click","x":10,"y":20}`, "POST", "/v1/vms/vm-1/input", `{"action":"click","x":10,"y":20}`},
 		{"GET", "/host-topology", "", "GET", "/v1/host/topology", ""},
 		{"GET", "/host-pressure", "", "GET", "/v1/host/pressure", ""},
 		{"POST", "/branches/b1/start", `{"count":2}`, "POST", "/v1/branches/b1/start", `{"count":2}`},
@@ -155,5 +156,47 @@ func TestEventsStreamRequiresTokenAndProxiesUpstream(t *testing.T) {
 	b, _ := io.ReadAll(resp.Body)
 	if !strings.Contains(string(b), "vm.start") || gotAuth != "Bearer fluxtok" {
 		t.Fatalf("stream %q, upstream auth %q", b, gotAuth)
+	}
+}
+
+func TestVMScreenshotStreamsPNGAndKeepsScreenHeaders(t *testing.T) {
+	var gotURI, gotAuth string
+	png := []byte("\x89PNG\r\n\x1a\nfake")
+	fluxSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotURI, gotAuth = r.URL.RequestURI(), r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("x-fluxvm-screen-width", "1280")
+		w.Header().Set("x-fluxvm-screen-blank", "false")
+		_, _ = w.Write(png)
+	}))
+	defer fluxSrv.Close()
+	s := &Server{Flux: fluxvm.New(fluxSrv.URL, "fluxtok"), Token: "secret"}
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/vm-screenshot/vm-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without a token, got %d", resp.StatusCode)
+	}
+	req, _ := http.NewRequest("GET", srv.URL+"/vm-screenshot/vm-1?max_width=640", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	b, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || string(b) != string(png) {
+		t.Fatalf("status %d body %q", resp.StatusCode, b)
+	}
+	if resp.Header.Get("Content-Type") != "image/png" || resp.Header.Get("x-fluxvm-screen-width") != "1280" {
+		t.Fatalf("headers lost: %v", resp.Header)
+	}
+	if gotURI != "/v1/vms/vm-1/screenshot?max_width=640" || gotAuth != "Bearer fluxtok" {
+		t.Fatalf("upstream %q auth %q", gotURI, gotAuth)
 	}
 }
