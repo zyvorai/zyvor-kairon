@@ -190,6 +190,10 @@ type CreateRequest struct {
 	Balloon *BalloonSpec `json:"balloon,omitempty"`
 	// Apple carries spec.apple (vz only).
 	Apple *AppleRequest `json:"apple,omitempty"`
+	// Egress is spec.network.egress: the outbound policy of the QEMU process. Needs a FluxVM that
+	// knows the field; an older one rejects the create (deny_unknown_fields is not set on the
+	// request, so it ignores it, and the guest keeps the loopback-only default).
+	Egress *EgressPolicy `json:"egress,omitempty"`
 }
 
 // Cdrom is one FluxVM CreateVmRequest.cdroms entry.
@@ -615,6 +619,7 @@ func buildCreateRequest(m model.Machine, defaultBackend string, vfioDevices []st
 		MaxVCPUs:      maxVCPUs,
 		MaxMemoryMiB:  maxMemoryMiB,
 		Network:       network,
+		Egress:        WireEgress(m.Spec.Network.Egress),
 		TTLSeconds:    m.Spec.TTLSeconds,
 		VFIODevices:   vfioDevices,
 		PodUID:        m.Spec.Network.PodUID,

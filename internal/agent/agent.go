@@ -680,6 +680,9 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 		status.Message = hotplugErr.Error()
 	}
 	attachedDisks, diskVolumes, attachedIfaces, devErr := a.reconcileDevices(ctx, m, rec)
+	if egressErr := a.reconcileEgress(ctx, m, rec); egressErr != nil {
+		devErr = errors.Join(devErr, egressErr)
+	}
 	status.AttachedDisks = attachedDisks
 	status.DiskVolumes = diskVolumes
 	if cond, ok := a.storagePathsCondition(status); ok {

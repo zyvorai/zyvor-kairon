@@ -295,3 +295,102 @@ func TestExtraInterfaceValidationAndMAC(t *testing.T) {
 		t.Error("disk using the reserved import-disk prefix accepted")
 	}
 }
+
+type fakeEgressFlux struct {
+	mu      sync.Mutex
+	calls   []string
+	policy  string // JSON of the VM policy, "" = none (node default)
+	putBody string
+}
+
+func (f *fakeEgressFlux) handler(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	b, _ := io.ReadAll(r.Body)
+	f.calls = append(f.calls, r.Method)
+	switch r.Method {
+	case http.MethodGet:
+		if f.policy == "" {
+			_, _ = w.Write([]byte(`{"policy":{"mode":"loopback","rules":[]},"source":"builtin"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"policy":` + f.policy + `,"source":"vm"}`))
+	case http.MethodPut:
+		f.putBody, f.policy = string(b), string(b)
+		_, _ = w.Write([]byte(`{}`))
+	case http.MethodDelete:
+		f.policy = ""
+		_, _ = w.Write([]byte(`{}`))
+	}
+}
+
+func TestReconcileEgressIsIdempotentAndOnlyClearsWhatItOwns(t *testing.T) {
+	f := &fakeEgressFlux{}
+	fs := httptest.NewServer(http.HandlerFunc(f.handler))
+	defer fs.Close()
+	var patches []string
+	ks := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		patches = append(patches, string(b))
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer ks.Close()
+	kc, _ := kube.New(ks.URL, "", "", false)
+	kc.HTTP = ks.Client()
+	a := &Agent{Kube: kc, Flux: fluxvm.New(fs.URL, ""), Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	rec := &fluxvm.Record{IDValue: "vm-1", Status: "running"}
+	m := model.Machine{
+		Metadata: model.ObjectMeta{Name: "db", Namespace: "prod", UID: "uid-1"},
+		Spec: model.MachineSpec{Network: model.NetworkSpec{Egress: &model.EgressSpec{
+			Rules: []model.EgressRule{{CIDR: "10.0.0.0/8", Proto: "tcp", Port: 5151}},
+		}}},
+	}
+
+	// 1. FluxVM has no VM policy: write it, and mark the Machine as owning it.
+	if err := a.reconcileEgress(context.Background(), m, rec); err != nil {
+		t.Fatal(err)
+	}
+	if f.putBody != `{"mode":"allowlist","rules":[{"cidr":"10.0.0.0/8","proto":"tcp","port":5151}]}` {
+		t.Fatalf("put body %s", f.putBody)
+	}
+	if len(patches) != 1 || !strings.Contains(patches[0], model.AnnotationEgressManaged) {
+		t.Fatalf("expected one annotation patch, got %v", patches)
+	}
+
+	// 2. Same policy again: no write (the reconcile loop runs every tick).
+	m.Metadata.Annotations = map[string]string{model.AnnotationEgressManaged: "true"}
+	f.calls = nil
+	if err := a.reconcileEgress(context.Background(), m, rec); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.calls) != 1 || f.calls[0] != http.MethodGet {
+		t.Fatalf("expected a single read, got %v", f.calls)
+	}
+
+	// 3. Field removed from a Machine that owns the policy: cleared.
+	m.Spec.Network.Egress = nil
+	f.calls = nil
+	if err := a.reconcileEgress(context.Background(), m, rec); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.calls) != 1 || f.calls[0] != http.MethodDelete || f.policy != "" {
+		t.Fatalf("expected a delete, got %v policy=%q", f.calls, f.policy)
+	}
+
+	// 4. A Machine that never set one leaves an operator's FluxVM policy alone.
+	f.policy = `{"mode":"open","rules":[]}`
+	m.Metadata.Annotations = nil
+	f.calls = nil
+	if err := a.reconcileEgress(context.Background(), m, rec); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.calls) != 0 || f.policy == "" {
+		t.Fatalf("touched a policy it does not own: calls=%v policy=%q", f.calls, f.policy)
+	}
+
+	// 5. A stopped VM is skipped.
+	m.Spec.Network.Egress = &model.EgressSpec{Mode: "open"}
+	if err := a.reconcileEgress(context.Background(), m, &fluxvm.Record{IDValue: "vm-1", Status: "stopped"}); err != nil || len(f.calls) != 0 {
+		t.Fatalf("stopped VM: err=%v calls=%v", err, f.calls)
+	}
+}

@@ -99,6 +99,10 @@ type NetworkSpec struct {
 	LearnIP bool `json:"learnIP,omitempty"`
 	// QoS is the per-Machine token bucket projected into the edge map.
 	QoS *NetworkQoS `json:"qos,omitempty"`
+	// Egress is the outbound policy of the VM's QEMU process, the policy that governs a user-mode
+	// (slirp) guest. Unset keeps the node default (FluxVM [sandbox.dataplane] qemu_egress_*, else
+	// nothing leaves). See ValidateEgress.
+	Egress *EgressSpec `json:"egress,omitempty"`
 	// ExtraInterfaces are bridged NICs hot-added to the running guest
 	// (mode tap only) and hot-removed when dropped from this list.
 	ExtraInterfaces []ExtraInterface `json:"extraInterfaces,omitempty"`
