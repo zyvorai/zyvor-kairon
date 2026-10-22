@@ -123,6 +123,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/agent-sessions/{id}", s.handleAgentSession)
 	mux.HandleFunc("/agent-sessions/{id}/{rest...}", s.handleAgentSession)
 	mux.HandleFunc("/agent-preview/{token}/{rest...}", s.handleAgentPreview)
+	s.registerStudio(mux)
 	return mux
 }
 
