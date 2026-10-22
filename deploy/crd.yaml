@@ -4049,6 +4049,44 @@ spec:
                     type: boolean
                     default: false
                     description: Learn guestIP from ARP, DHCP, or ND so agent-less guests still project an address.
+                  egress:
+                    type: object
+                    description: Outbound policy of the VM's QEMU process, the only policy that governs a user-mode (slirp) guest. Unset keeps the node default (FluxVM qemu_egress_*, else nothing leaves). Needs a FluxVM that knows the field; QEMU backend. Cilium rewrites service addresses to the backend before this filter runs, so name the backend or its CIDR.
+                    properties:
+                      mode:
+                        type: string
+                        description: loopback (nothing leaves), allowlist (rules), audit (allow all, record what an allowlist would drop), open. Empty means allowlist when rules are given, loopback otherwise.
+                        enum:
+                        - loopback
+                        - allowlist
+                        - audit
+                        - open
+                      rules:
+                        type: array
+                        maxItems: 256
+                        items:
+                          type: object
+                          required:
+                          - cidr
+                          properties:
+                            cidr:
+                              type: string
+                              description: IPv4 network or address, e.g. 10.0.0.0/8.
+                            proto:
+                              type: string
+                              enum:
+                              - any
+                              - tcp
+                              - udp
+                              default: any
+                            port:
+                              type: integer
+                              minimum: 1
+                              maximum: 65535
+                              description: Needs proto tcp or udp. Omit to allow every port.
+                            note:
+                              type: string
+                              maxLength: 200
                   qos:
                     type: object
                     description: Per-Machine token bucket projected into the FluxVM eBPF edge.

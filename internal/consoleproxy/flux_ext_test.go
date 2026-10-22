@@ -39,6 +39,13 @@ func TestFluxExtRoutesRelayToFixedUpstreamPaths(t *testing.T) {
 		{"POST", "/branches/b1/start", `{"count":2}`, "POST", "/v1/branches/b1/start", `{"count":2}`},
 		{"DELETE", "/branches/b1", "", "DELETE", "/v1/branches/b1", ""},
 		{"POST", "/branches/b1/start-plan", `{"count":1}`, "POST", "/v1/branches/b1/start/plan", `{"count":1}`},
+		{"GET", "/vm-egress/0fb95613-591e-44df-9f2d-759879c2b26c", "", "GET", "/v1/vms/0fb95613-591e-44df-9f2d-759879c2b26c/network/egress", ""},
+		{"PUT", "/vm-egress/vm-1", `{"mode":"allowlist","rules":[{"cidr":"10.0.0.0/8","proto":"tcp","port":5151}]}`, "PUT", "/v1/vms/vm-1/network/egress", `{"mode":"allowlist","rules":[{"cidr":"10.0.0.0/8","proto":"tcp","port":5151}]}`},
+		{"DELETE", "/vm-egress/vm-1", "", "DELETE", "/v1/vms/vm-1/network/egress", ""},
+		{"GET", "/vm-egress-observed/vm-1", "", "GET", "/v1/vms/vm-1/network/egress/observed", ""},
+		{"POST", "/vm-egress-suggest/vm-1?apply=true", "", "POST", "/v1/vms/vm-1/network/egress/suggest?apply=true", ""},
+		{"GET", "/egress-defaults", "", "GET", "/v1/network/egress/defaults", ""},
+		{"PUT", "/egress-defaults?apply_running=true", `{"mode":"open"}`, "PUT", "/v1/network/egress/defaults?apply_running=true", `{"mode":"open"}`},
 	}
 	for _, c := range cases {
 		req, _ := http.NewRequest(c.method, srv.URL+c.path, strings.NewReader(c.body))
@@ -198,5 +205,41 @@ func TestVMScreenshotStreamsPNGAndKeepsScreenHeaders(t *testing.T) {
 	}
 	if gotURI != "/v1/vms/vm-1/screenshot?max_width=640" || gotAuth != "Bearer fluxtok" {
 		t.Fatalf("upstream %q auth %q", gotURI, gotAuth)
+	}
+}
+
+func TestVMEgressRejectsPathTricks(t *testing.T) {
+	fluxSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("upstream must not be reached, got %s", r.URL.RequestURI())
+	}))
+	defer fluxSrv.Close()
+	s := &Server{Flux: fluxvm.New(fluxSrv.URL, ""), Token: "secret"}
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+	for _, id := range []string{"a%2Fb", "a%3Fb", "a%20b", "..%2F..", strings.Repeat("a", 65)} {
+		req, _ := http.NewRequest("GET", srv.URL+"/vm-egress/"+id, nil)
+		req.Header.Set("Authorization", "Bearer secret")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("id %q: expected 400, got %d", id, resp.StatusCode)
+		}
+	}
+}
+
+func TestVMEgressRequiresBearer(t *testing.T) {
+	s := &Server{Flux: fluxvm.New("http://127.0.0.1:1", ""), Token: "secret"}
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+	resp, err := http.Get(srv.URL + "/vm-egress/vm-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", resp.StatusCode)
 	}
 }

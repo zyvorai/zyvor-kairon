@@ -145,3 +145,57 @@ func (s *Server) handleVMInput(w http.ResponseWriter, r *http.Request) {
 	s.relayFlux(w, r, "vm input", http.MethodPost,
 		"/v1/vms/"+url.PathEscape(r.PathValue("runtimeID"))+"/input", false, true)
 }
+
+// vmEgressPath builds /v1/vms/{id}/network/egress[suffix] for a runtime id taken from the
+// URL. Ids are UUID-like tokens; anything that could change the upstream path is refused.
+func vmEgressPath(r *http.Request, suffix string) (string, bool) {
+	id := r.PathValue("runtimeID")
+	if id == "" || len(id) > 64 {
+		return "", false
+	}
+	for _, c := range id {
+		ok := c == '-' || c == '_' || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+		if !ok {
+			return "", false
+		}
+	}
+	return "/v1/vms/" + id + "/network/egress" + suffix, true
+}
+
+// handleVMEgress relays GET/PUT/DELETE /v1/vms/{id}/network/egress: the outbound policy of the
+// VM's QEMU process, which is the only policy that governs a user-mode (slirp) guest.
+func (s *Server) handleVMEgress(w http.ResponseWriter, r *http.Request) {
+	path, ok := vmEgressPath(r, "")
+	if !ok {
+		http.Error(w, "invalid runtime id", http.StatusBadRequest)
+		return
+	}
+	s.relayFlux(w, r, "vm egress", r.Method, path, false, r.Method == http.MethodPut)
+}
+
+// handleVMEgressObserved relays GET .../network/egress/observed: destinations refused (or, in
+// audit mode, that would have been).
+func (s *Server) handleVMEgressObserved(w http.ResponseWriter, r *http.Request) {
+	path, ok := vmEgressPath(r, "/observed")
+	if !ok {
+		http.Error(w, "invalid runtime id", http.StatusBadRequest)
+		return
+	}
+	s.relayFlux(w, r, "vm egress observed", http.MethodGet, path, false, false)
+}
+
+// handleVMEgressSuggest relays POST .../network/egress/suggest; the `apply` query passes through.
+func (s *Server) handleVMEgressSuggest(w http.ResponseWriter, r *http.Request) {
+	path, ok := vmEgressPath(r, "/suggest")
+	if !ok {
+		http.Error(w, "invalid runtime id", http.StatusBadRequest)
+		return
+	}
+	s.relayFlux(w, r, "vm egress suggest", http.MethodPost, path, true, false)
+}
+
+// handleEgressDefaults relays GET/PUT /v1/network/egress/defaults (node-scoped); the
+// `apply_running` query passes through.
+func (s *Server) handleEgressDefaults(w http.ResponseWriter, r *http.Request) {
+	s.relayFlux(w, r, "egress defaults", r.Method, "/v1/network/egress/defaults", true, r.Method == http.MethodPut)
+}
