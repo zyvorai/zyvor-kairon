@@ -1133,7 +1133,17 @@ kube_apply() {
   done
 }
 if [[ "$APPLY_CRDS" == "1" ]]; then kube_apply ./crd.yaml ./fleet-crds.yaml; fi
-if [[ "$APPLY_RBAC" == "1" ]]; then kube_apply ./rbac.yaml; fi
+if [[ "$APPLY_RBAC" == "1" ]]; then
+  # rbac.yaml creates ServiceAccounts/RoleBindings in kairon-system but not the Namespace itself;
+  # on a cluster that never had a Helm install every namespaced object failed with NotFound.
+  if command -v kubectl >/dev/null 2>&1; then _kc="kubectl"; elif command -v k3s >/dev/null 2>&1; then _kc="k3s kubectl"; else _kc=""; fi
+  if [[ -n "$_kc" ]]; then
+    $_kc create namespace kairon-system --dry-run=client -o yaml | $_kc apply -f - >/dev/null \
+      && ok "ensured namespace kairon-system" \
+      || warn "could not ensure namespace kairon-system; rbac.yaml may fail with NotFound"
+  fi
+  kube_apply ./rbac.yaml
+fi
 
 if [[ "$WITH_CONTROLLER" == "1" ]]; then
   install -m 0755 -o root -g root ./kairon-controller /usr/bin/kairon-controller
