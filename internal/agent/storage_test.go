@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -274,5 +275,35 @@ func TestHostDirForPVPrefersHostPathThenLocal(t *testing.T) {
 	}
 	if got != "/mnt/local/root-pvc" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestValidateImagePathRejectsSymlinkEscape(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	secret := filepath.Join(outside, "other-tenant.qcow2")
+	if err := os.WriteFile(secret, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "innocent.qcow2")
+	if err := os.Symlink(secret, link); err != nil {
+		t.Skip("symlinks unavailable:", err)
+	}
+	ok := filepath.Join(root, "real.qcow2")
+	if err := os.WriteFile(ok, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a := &Agent{ImageRoot: root}
+	mk := func(path string) model.Machine {
+		return model.Machine{Spec: model.MachineSpec{Image: model.ImageSpec{Path: path}}}
+	}
+	if err := a.validateImagePath(mk(link)); err == nil {
+		t.Fatal("a symlink inside the root pointing outside it must be rejected")
+	}
+	if err := a.validateImagePath(mk(ok)); err != nil {
+		t.Fatalf("a real file under the root must be allowed: %v", err)
+	}
+	if err := a.validateImagePath(mk(filepath.Join(root, "not-yet-created.qcow2"))); err != nil {
+		t.Fatalf("a not-yet-existing path under the root must stay allowed: %v", err)
 	}
 }
