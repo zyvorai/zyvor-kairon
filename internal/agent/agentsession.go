@@ -182,7 +182,12 @@ func (a *Agent) createAgentSession(ctx context.Context, s model.AgentSession, st
 	spec := s.Spec
 	go func() {
 		defer close(job.done)
-		job.session, job.err = a.Flux.CreateFluxSession(context.Background(), spec)
+		// Detached from the reconcile context on purpose (the create must finish
+		// and be recorded even if the reconcile that started it returns), but
+		// bounded so a hung FluxVM cannot pin the job forever.
+		createCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+		defer cancel()
+		job.session, job.err = a.Flux.CreateFluxSession(createCtx, spec)
 	}()
 	a.log().Info("agent session create started", "namespace", s.Namespace(), "session", s.Metadata.Name)
 	return nil
