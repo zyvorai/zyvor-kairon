@@ -83,6 +83,14 @@ then call delete_machine again with exactly the same arguments.
 `kaironctl approve` writes the `kairon.zyvor.dev/mcp-approval` annotation
 on the target Machine (or MachineBackup), valid for `--ttl` (default 10m);
 the approver needs `patch` on that resource.
+**Approval modes.** The default `annotation` mode above is weak: anyone who can
+`patch` the Machine can approve (the same authority the MCP process holds) and
+the approver name is self-reported. `kaironctl mcp serve --allow-write` prints
+a warning on stderr when it runs in this mode. For approvals by a separate
+Kubernetes identity (an immutable, short-lived approval object), set
+`KAIRON_MCP_APPROVAL_MODE=resource`; see
+[enterprise fleet](enterprise-fleet.md).
+
 The agent's next identical call consumes it with an atomic test-and-remove
 patch, so one approval allows exactly one call. The id is a hash of the
 tool, its arguments and `KAIRON_MCP_PRINCIPAL`: different arguments need a

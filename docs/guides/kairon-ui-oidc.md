@@ -94,17 +94,29 @@ credential in this chart already has (`ui.existingSecret`,
    an access log or a `Referer` header. The SPA reads it client-side and
    stores it exactly like a password login's token (`sessionStorage`).
 
+## Login is bound to the browser that started it
+
+`GET /api/v1/auth/oidc/login` also sets a short-lived `HttpOnly`,
+`SameSite=Lax` cookie (`Secure` over HTTPS) holding the login nonce, and the
+callback only completes when that cookie matches the signed `state`. A
+callback URL started in one browser and opened in another (login CSRF) is
+rejected with "invalid or expired login attempt". Lax still sends the cookie on
+the provider's top-level redirect back to kairon-ui, so normal sign-in is
+unaffected.
+
 ## Identity and authorization model
 
-**Username collisions are intentional, not a bug to work around.**
-`ui.oidc.usernameClaim` puts OIDC-authenticated sessions in the *same*
-username namespace `ui.auth.users` occupies. If your identity provider
-returns `alice@example.com` for the same person who also has a
-`ui.auth.users` entry named `alice@example.com`, both login methods
-attribute audit log entries to the identical username -- generally
-desirable (one person, one identity, regardless of how they signed in).
-Choose a username claim whose values won't accidentally collide across
-different real people if that's a concern in your environment.
+**OIDC identities never map onto local accounts.** An OIDC session's subject
+is `oidc:` plus the `ui.oidc.usernameClaim` value (for example
+`oidc:alice@example.com`), so it can never equal a `ui.auth.users` entry, and
+an identity provider user cannot inherit a local account's admin role or
+namespaces by choosing a matching name. Audit-log entries for OIDC sessions
+therefore show the `oidc:` prefix, and a person who signs in both ways appears
+as two identities. When `usernameClaim` is `email`, a token whose
+`email_verified` claim is explicitly `false` is rejected. (Before v0.10.3 the
+raw claim was used as the session subject, and a matching local username gave
+the OIDC session that account's rights. OIDC sessions issued by an older
+version stop working once after upgrading; users sign in again.)
 
 **OIDC admin capability is opt-in, via group mapping.** By default,
 `ui.oidc.adminGroups` is empty and an OIDC-authenticated session can do
