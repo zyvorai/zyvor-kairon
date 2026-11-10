@@ -181,6 +181,10 @@ func (a *Agent) exportSourceDisk(ctx context.Context, m model.Machine) (string, 
 	return path, err
 }
 
+// convertDiskTimeout caps one qemu-img conversion so a hung NFS/Ceph source
+// cannot pin the job (and its exportJobs/cloneJobs key) forever.
+const convertDiskTimeout = 6 * time.Hour
+
 // exportJob returns the conversion job for key, starting it if needed.
 func (a *Agent) exportJob(key, src, format string) (*exportJob, bool) {
 	dst := filepath.Join(a.exportDir(), strings.ReplaceAll(key, "/", "_")+"."+format)
@@ -190,7 +194,9 @@ func (a *Agent) exportJob(key, src, format string) (*exportJob, bool) {
 	}
 	go func() {
 		defer close(job.done)
-		job.err = convertDisk(src, dst, format)
+		ctx, cancel := context.WithTimeout(context.Background(), convertDiskTimeout)
+		defer cancel()
+		job.err = convertDisk(ctx, src, dst, format)
 	}()
 	return job, true
 }
@@ -262,7 +268,7 @@ func diskSize(path string) (int64, error) {
 	return f.Seek(0, io.SeekEnd)
 }
 
-func convertDisk(src, dst, format string) error {
+func convertDisk(ctx context.Context, src, dst, format string) error {
 	if _, err := exec.LookPath(qemuImg); err != nil {
 		return fmt.Errorf("converting to %s needs qemu-img on kairon-node's PATH", format)
 	}
@@ -276,7 +282,7 @@ func convertDisk(src, dst, format string) error {
 		args = append(args, "-c")
 	}
 	args = append(args, src, tmp)
-	if out, err := exec.Command(qemuImg, args...).CombinedOutput(); err != nil {
+	if out, err := exec.CommandContext(ctx, qemuImg, args...).CombinedOutput(); err != nil {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("qemu-img convert to %s: %w: %s", format, err, strings.TrimSpace(string(out)))
 	}

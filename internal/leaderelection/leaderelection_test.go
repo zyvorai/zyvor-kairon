@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -250,5 +251,41 @@ func TestRunLosesLeadershipWhenAnotherIdentityTakesOverExpiredLease(t *testing.T
 	case <-lost:
 	case <-time.After(2 * time.Second):
 		t.Fatal("a never noticed it lost leadership to b")
+	}
+}
+
+// TestHoldLeaseStepsDownWhenRenewHangs: an apiserver that accepts the renew
+// request but never answers must end leadership within the renew deadline,
+// not after the kube client's much longer HTTP timeout.
+func TestHoldLeaseStepsDownWhenRenewHangs(t *testing.T) {
+	store := &fakeLeaseStore{}
+	var hang atomic.Bool
+	inner := store.handler()
+	kc := mustKubeClientWithHandler(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if hang.Load() {
+			select {
+			case <-r.Context().Done():
+			case <-time.After(10 * time.Second):
+			}
+			return
+		}
+		inner.ServeHTTP(w, r)
+	}))
+	a := testElector(kc, "a")
+	if !a.tryAcquireOrRenew(context.Background()) {
+		t.Fatal("acquire failed")
+	}
+	hang.Store(true)
+
+	lost := make(chan struct{})
+	start := time.Now()
+	go a.holdLease(context.Background(), func() { close(lost) })
+	select {
+	case <-lost:
+	case <-time.After(3 * time.Second):
+		t.Fatal("leadership was not given up while the renew call hung")
+	}
+	if d := time.Since(start); d > testLeaseDuration {
+		t.Fatalf("stepped down after %v, want less than the %v lease duration", d, testLeaseDuration)
 	}
 }

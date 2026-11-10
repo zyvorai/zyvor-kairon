@@ -22,7 +22,7 @@ func (s *Server) relayRawGET(w http.ResponseWriter, ctx context.Context, nodeAdd
 	transport := http.DefaultTransport
 	if s.ConsoleTLS != nil {
 		scheme = "https"
-		transport = &http.Transport{TLSClientConfig: s.ConsoleTLS}
+		transport = s.nodeTransport()
 	}
 	upstreamURL := fmt.Sprintf("%s://%s:%s/%s", scheme, nodeAddr, s.ConsolePort, nodePath)
 	upstreamReq, err := http.NewRequestWithContext(ctx, http.MethodGet, upstreamURL, nil)
@@ -175,7 +175,7 @@ func (s *Server) handleNetworkCaptureFile(w http.ResponseWriter, r *http.Request
 	transport := http.DefaultTransport
 	if s.ConsoleTLS != nil {
 		scheme = "https"
-		transport = &http.Transport{TLSClientConfig: s.ConsoleTLS}
+		transport = s.nodeTransport()
 	}
 	upstreamURL := fmt.Sprintf("%s://%s:%s/network-capture/%s/%s", scheme, nodeAddr, s.ConsolePort, url.PathEscape(runtimeID), url.PathEscape(token))
 	upstreamReq, err := http.NewRequestWithContext(ctx, http.MethodGet, upstreamURL, nil)
@@ -209,7 +209,7 @@ func (s *Server) relayRawPOST(w http.ResponseWriter, ctx context.Context, nodeAd
 	transport := http.DefaultTransport
 	if s.ConsoleTLS != nil {
 		scheme = "https"
-		transport = &http.Transport{TLSClientConfig: s.ConsoleTLS}
+		transport = s.nodeTransport()
 	}
 	upstreamURL := fmt.Sprintf("%s://%s:%s/%s", scheme, nodeAddr, s.ConsolePort, nodePath)
 	upstreamReq, err := http.NewRequestWithContext(ctx, http.MethodPost, upstreamURL, bytes.NewReader(body))

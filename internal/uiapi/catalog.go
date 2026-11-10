@@ -129,7 +129,7 @@ func (s *Server) relayToNodeDelete(ctx context.Context, nodeAddr, nodePath strin
 	transport := http.DefaultTransport
 	if s.ConsoleTLS != nil {
 		scheme = "https"
-		transport = &http.Transport{TLSClientConfig: s.ConsoleTLS}
+		transport = s.nodeTransport()
 	}
 	upstreamURL := fmt.Sprintf("%s://%s:%s/%s", scheme, nodeAddr, s.ConsolePort, nodePath)
 	upstreamReq, err := http.NewRequestWithContext(ctx, http.MethodDelete, upstreamURL, nil)

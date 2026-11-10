@@ -126,7 +126,7 @@ func (s *Server) relayDiagnostics(w http.ResponseWriter, ctx context.Context, me
 	transport := http.DefaultTransport
 	if s.ConsoleTLS != nil {
 		scheme = "https"
-		transport = &http.Transport{TLSClientConfig: s.ConsoleTLS}
+		transport = s.nodeTransport()
 	}
 	var rd io.Reader
 	if body != nil {

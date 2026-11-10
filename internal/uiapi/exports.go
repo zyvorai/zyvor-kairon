@@ -139,7 +139,7 @@ func (s *Server) streamExport(w http.ResponseWriter, r *http.Request, namespace,
 	scheme, hc := "http", &http.Client{}
 	if s.ConsoleTLS != nil {
 		scheme = "https"
-		hc.Transport = &http.Transport{TLSClientConfig: s.ConsoleTLS}
+		hc.Transport = s.nodeTransport()
 	}
 	upstreamURL := fmt.Sprintf("%s://%s:%s/export/%s/%s", scheme, nodeAddr, s.ConsolePort, url.PathEscape(namespace), url.PathEscape(name))
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, upstreamURL, nil)
