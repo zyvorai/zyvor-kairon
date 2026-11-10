@@ -217,6 +217,18 @@ jobs:
           # dist/krew/kairon.yaml (deploy/krew/kairon.yaml stays the template).
           test "$(tr -d '[:space:]' < VERSION)" = "${GITHUB_REF_NAME}"
           ./scripts/krew-package.sh
+      - name: Package version-pinned raw manifests
+        run: |
+          set -euo pipefail
+          # deploy/*.yaml reference :latest. A release ships copies pinned to this
+          # tag so the controller, node and UI cannot end up on different versions.
+          rm -rf dist/manifests && mkdir -p dist/manifests
+          for f in crd rbac controller node ui; do
+            sed "s#\(ghcr.io/zyvorai/kairon-[a-z-]*\):latest#\1:${GITHUB_REF_NAME}#g" "deploy/${f}.yaml" > "dist/manifests/${f}.yaml"
+          done
+          if grep -rn ':latest' dist/manifests; then echo "unpinned :latest image left in packaged manifests" >&2; exit 1; fi
+          grep -q "kairon-controller:${GITHUB_REF_NAME}" dist/manifests/controller.yaml
+          tar -C dist -czf "dist/kairon-manifests-${GITHUB_REF_NAME}.tgz" manifests
       - name: Package and push Helm chart to OCI
         env:
           DOCKER_CONFIG: ${{ runner.temp }}/docker-config-assets
@@ -247,9 +259,9 @@ jobs:
           # works from a directory holding any subset of the downloads.
           (
             cd dist
-            sha256sum kaironctl-* kubectl-kairon-* "kairon-${version}.tgz" > SHA256SUMS
+            sha256sum kaironctl-* kubectl-kairon-* "kairon-${version}.tgz" "kairon-manifests-${GITHUB_REF_NAME}.tgz" > SHA256SUMS
             (cd krew && sha256sum kairon_*.tar.gz kairon.yaml) >> SHA256SUMS
-            test "$(wc -l < SHA256SUMS | tr -d ' ')" = "10"
+            test "$(wc -l < SHA256SUMS | tr -d ' ')" = "11"
           )
       - name: Create GitHub Release
         env:
@@ -266,6 +278,7 @@ jobs:
           - Krew: \`kairon_{darwin,linux}_{amd64,arm64}.tar.gz\` + a checksummed \`kairon.yaml\` manifest
           - Container images: \`ghcr.io/zyvorai/kairon-{controller,node,ui,csi-node,csi-controller,mcp}:${version}\` (cosign-signed, SBOM attested; \`kairon-mcp\` is the MCP Registry package)
           - Helm chart (OCI): \`oci://ghcr.io/zyvorai/charts/kairon:${chart_version}\`
+          - Raw manifests pinned to this version: \`kairon-manifests-${version}.tgz\` (the \`deploy/*.yaml\` in the repo use \`:latest\`)
 
           ### Upgrade / rollback
           \`\`\`bash
@@ -299,6 +312,7 @@ jobs:
             dist/krew/kairon_linux_arm64.tar.gz \
             dist/krew/kairon.yaml \
             "dist/kairon-${chart_version}.tgz" \
+            "dist/kairon-manifests-${version}.tgz" \
             --title "$version" \
             --notes "$notes"
 

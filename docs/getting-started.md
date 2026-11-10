@@ -111,7 +111,7 @@ helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \
 
 Later, `kaironctl upgrade` keeps the values you installed with (`--reset-values` returns to chart defaults), `kaironctl upgrade --check` compares your release with the latest one without changing anything, `kaironctl config set KEY=VALUE` changes a single value, and `kaironctl history` / `kaironctl rollback` list and restore revisions. Add `--context NAME` or `--kubeconfig PATH` to target a specific cluster. See [CLI](CLI.md).
 
-Raw manifests still work:
+Raw manifests still work. The files under `deploy/` reference `:latest`; for a real install use the version-pinned `kairon-manifests-vX.Y.Z.tgz` attached to each release (or replace `:latest` with the release tag yourself), so the controller, node and dashboard run the same version:
 
 ```bash
 kubectl apply -f deploy/crd.yaml
