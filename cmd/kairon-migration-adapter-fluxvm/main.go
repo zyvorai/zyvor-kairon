@@ -762,7 +762,7 @@ func run() int {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 
-	srv := &http.Server{Handler: a.handler()}
+	srv := &http.Server{Handler: a.handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
 		c, done := context.WithTimeout(context.Background(), 3*time.Second)

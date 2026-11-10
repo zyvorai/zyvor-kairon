@@ -756,6 +756,14 @@ func (a *Agent) validateImagePath(m model.Machine) error {
 	if err != nil {
 		return fmt.Errorf("resolve image path: %w", err)
 	}
+	// Follow symlinks so a link inside the root that points elsewhere cannot
+	// escape it. A path that does not exist yet keeps its lexical form.
+	if r, err := filepath.EvalSymlinks(root); err == nil {
+		root = r
+	}
+	if r, err := filepath.EvalSymlinks(img); err == nil {
+		img = r
+	}
 	rel, err := filepath.Rel(root, img)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return fmt.Errorf("image path %q is outside allowed root %q", m.Spec.Image.Path, a.ImageRoot)

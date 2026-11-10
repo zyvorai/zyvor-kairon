@@ -399,6 +399,7 @@ type loginAttemptState struct {
 	mu          sync.Mutex
 	count       int
 	lockedUntil time.Time
+	lastTouch   time.Time // for eviction of idle entries
 }
 
 const (
@@ -407,8 +408,33 @@ const (
 )
 
 func (s *Server) loginState(username string) *loginAttemptState {
+	// Usernames are attacker-chosen, so the map would otherwise grow without
+	// bound. Every loginSweepEvery lookups, drop entries idle for longer than a
+	// lockout period that are not currently locked.
+	if s.loginLookups.Add(1)%loginSweepEvery == 0 {
+		s.sweepLoginAttempts(time.Now())
+	}
 	v, _ := s.loginAttempts.LoadOrStore(username, &loginAttemptState{})
-	return v.(*loginAttemptState)
+	st := v.(*loginAttemptState)
+	st.mu.Lock()
+	st.lastTouch = time.Now()
+	st.mu.Unlock()
+	return st
+}
+
+const loginSweepEvery = 256
+
+func (s *Server) sweepLoginAttempts(now time.Time) {
+	s.loginAttempts.Range(func(k, v any) bool {
+		st := v.(*loginAttemptState)
+		st.mu.Lock()
+		stale := now.After(st.lockedUntil) && now.Sub(st.lastTouch) > 2*loginLockoutFor
+		st.mu.Unlock()
+		if stale {
+			s.loginAttempts.Delete(k)
+		}
+		return true
+	})
 }
 
 // loginLockedFor returns how much longer username is locked out, or 0 if

@@ -28,6 +28,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/zyvorai/kairon/internal/kube"
@@ -122,6 +123,7 @@ type Server struct {
 	// loginAttempts backs handleLogin's per-username rate limiting; zero
 	// value is ready to use.
 	loginAttempts sync.Map
+	loginLookups  atomic.Uint64
 	// passwordChangedAt backs resetPassword's forced logout of a reset
 	// account's outstanding sessions (see passwordChangedAfter in
 	// auth.go); zero value is ready to use.
