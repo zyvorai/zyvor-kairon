@@ -283,7 +283,11 @@ jobs:
           )"
           # Strip leading indentation from heredoc for GitHub.
           notes="$(printf '%s\n' "$notes" | sed 's/^          //')"
+          # Tags with a hyphen (v1.2.3-rc1) are published as GitHub pre-releases.
+          extra=()
+          case "$version" in *-*) extra=(--prerelease) ;; esac
           gh release create "$version" \
+            "${extra[@]}" \
             dist/kaironctl-linux-amd64 \
             dist/kaironctl-linux-arm64 \
             dist/kubectl-kairon-linux-amd64 \
@@ -301,7 +305,9 @@ jobs:
   # MCP Registry metadata only: the kairon-mcp image built above is what
   # clients pull. Tag pushes only (the workflow only triggers on tags).
   publish-mcp:
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Final releases only: a pre-release tag (v1.2.3-rc1) must not publish to the MCP
+    # Registry or become `latest`.
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
     runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '"ubuntu-latest"' || '["self-hosted","Linux","X64","zyvor-build","docker"]') }}
     needs: publish
     permissions:
@@ -345,7 +351,9 @@ jobs:
   # registry entry have all been published. Tags the exact digest the version tag
   # holds; a failure anywhere above leaves `latest` on the previous release.
   promote-latest:
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Final releases only: a pre-release tag (v1.2.3-rc1) must not publish to the MCP
+    # Registry or become `latest`.
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
     runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '"ubuntu-latest"' || '["self-hosted","Linux","X64","zyvor-build","docker"]') }}
     needs: [publish, release-assets, publish-mcp]
     permissions:
