@@ -744,3 +744,30 @@ func TestDeviceUnsupportedOnlyMatchesMissingEndpoints(t *testing.T) {
 		}
 	}
 }
+
+// With the dashboard configured but serial logs switched off (501), boot must be
+// proven by phase alone instead of waiting out the boot timeout, and the
+// console-log scenario must be skipped with the reason.
+func TestBootFallsBackToPhaseWhenSerialLogsDisabled(t *testing.T) {
+	f := newFakeKube()
+	env := baseEnv(f)
+	calls := 0
+	env.SerialLog = func(context.Context, string, string) (string, error) {
+		calls++
+		return "", errors.Join(ErrSerialUnavailable, errors.New("HTTP 501"))
+	}
+	rec := &recorder{}
+	Run(context.Background(), env, rec, Options{Profile: ProfileQuick, Only: []string{"boot", "console-log"}})
+	if rec.status("boot") != Pass {
+		t.Fatalf("boot = %q, want pass\n%s", rec.status("boot"), strings.Join(rec.logs, "\n"))
+	}
+	if rec.status("console-log") != Skip {
+		t.Errorf("console-log = %q, want skip", rec.status("console-log"))
+	}
+	if calls != 1 {
+		t.Errorf("serial logs fetched %d times, want exactly 1 (no polling once disabled)", calls)
+	}
+	if !strings.Contains(strings.Join(rec.logs, "\n"), "serial logs disabled") {
+		t.Errorf("log should explain the fallback:\n%s", strings.Join(rec.logs, "\n"))
+	}
+}

@@ -334,6 +334,9 @@ func uiGet(ctx context.Context, path string) ([]byte, error) {
 func uiSerialLog(ctx context.Context, ns, name string) (string, error) {
 	p := fmt.Sprintf("/api/v1/machines/%s/%s/logs?lines=400&follow=false", url.PathEscape(ns), url.PathEscape(name))
 	b, err := uiGet(ctx, p)
+	if err != nil && strings.HasPrefix(err.Error(), "HTTP 501") {
+		return "", fmt.Errorf("%w: %v", selftest.ErrSerialUnavailable, err)
+	}
 	return string(b), err
 }
 
