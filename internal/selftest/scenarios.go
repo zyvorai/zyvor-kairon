@@ -35,6 +35,9 @@ var scenarios = []Scenario{
 			if s.env.SerialLog == nil {
 				return "needs the dashboard API (--ui-url and --ui-token) to read the serial console"
 			}
+			if s.serialOff {
+				return "the dashboard has serial logs disabled (the node console relay is off)"
+			}
 			return ""
 		}},
 	{ID: "power", Title: "Stop and start", Profile: ProfileQuick, DependsOn: "boot", Run: runPower},
@@ -173,6 +176,9 @@ func runBoot(ctx context.Context, s *session) error {
 	var marker string
 	err = s.waitFor(ctx, "the guest to finish booting", s.env.BootTimeout, func() (bool, error) {
 		out := s.serial(ctx, s.vm)
+		if s.serialOff {
+			return true, nil // nothing to read, stop waiting
+		}
 		if bad := panicMarker(out); bad != "" {
 			return false, fmt.Errorf("guest crashed during boot: %q", bad)
 		}
@@ -183,6 +189,10 @@ func runBoot(ctx context.Context, s *session) error {
 		s.hint = "the VM is Running but the guest never finished booting; check the image and: kaironctl logs node"
 		s.dumpEvidence(ctx)
 		return err
+	}
+	if s.serialOff {
+		s.logf(LevelWarn, "the dashboard has serial logs disabled (node console relay off); boot is proven by phase only")
+		return nil
 	}
 	s.logf(LevelOK, "%s", marker)
 	return nil

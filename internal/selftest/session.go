@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -36,6 +37,10 @@ var cirros = map[string]pinnedImage{
 type session struct {
 	env *Env
 	rep Reporter
+
+	// serialOff is set once SerialLog reports ErrSerialUnavailable: boot then
+	// falls back to the phase alone and console-log is skipped.
+	serialOff bool
 
 	runID string
 	arch  string
@@ -236,6 +241,9 @@ func (s *session) serial(ctx context.Context, name string) string {
 	}
 	out, err := s.env.SerialLog(ctx, s.env.Namespace, name)
 	if err != nil {
+		if errors.Is(err, ErrSerialUnavailable) {
+			s.serialOff = true
+		}
 		return ""
 	}
 	return out

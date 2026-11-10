@@ -10,6 +10,7 @@ package selftest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -141,7 +142,9 @@ type Env struct {
 	// ControlPlane runs the doctor-style checks. Nil skips that scenario.
 	ControlPlane func(ctx context.Context) []Check
 	// SerialLog returns the guest's serial console text. Nil disables the
-	// log-based checks (boot is then proven by phase alone).
+	// log-based checks (boot is then proven by phase alone). It returns
+	// ErrSerialUnavailable (wrapped is fine) when the dashboard has serial
+	// logs switched off, which has the same effect as nil.
 	SerialLog func(ctx context.Context, ns, name string) (string, error)
 	// Metrics returns how many usage samples the dashboard has for a
 	// Machine. Nil skips that part of the observability check.
@@ -326,3 +329,8 @@ func UnknownIDs(ids []string) []string {
 	}
 	return bad
 }
+
+// ErrSerialUnavailable is returned by Env.SerialLog when the dashboard answers
+// that serial logs are not enabled on this deployment (the node console relay is
+// off), so no amount of waiting will produce a login prompt to look for.
+var ErrSerialUnavailable = errors.New("serial console logs are not enabled on the dashboard")
