@@ -146,6 +146,8 @@ node:
   # default (empty): a Machine setting spec.image.source is refused with
   # a clear error rather than silently failing; spec.image.path and
   # spec.volumes are entirely unaffected either way.
+  # The directory must be writable by UID 65532 (kairon-node runs non-root and
+  # fsGroup does not apply to hostPath): `install -d -o 65532 -g 65532 DIR`.
   imageCacheDir: ""
   # Comma-separated PCI BDFs, e.g. 0000:65:00.0. Empty is fail-closed for DeviceClaims.
   vfioAllowlist: ""

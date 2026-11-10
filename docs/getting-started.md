@@ -20,7 +20,7 @@ CirrOS VM boots and the result is a PASS / FAIL / SKIP table.
 
 | You have | Run | Time |
 |---|---|---|
-| A Kubernetes cluster and `kubectl` | `kaironctl install` then `kubectl label node NODE kairon.zyvor.dev/capable=true` then `kaironctl selftest --profile quick` | minutes |
+| A Kubernetes cluster and `kubectl` | on each node: `sudo install -d -o 65532 -g 65532 /var/lib/kairon-node/image-cache`; then `kaironctl install --set node.imageCacheDir=/var/lib/kairon-node/image-cache`, `kubectl label node NODE kairon.zyvor.dev/capable=true`, `kaironctl selftest --profile quick` (the self-test downloads its CirrOS image into the node image cache; `kairon-node` runs as UID 65532 and Kubernetes `fsGroup` does not apply to hostPath, so the directory must be owned by it) | minutes |
 | One Linux host with k3s and SSH access | `./scripts/deploy-remote.sh user@host --remote-build --with-controller --with-ui --with-console --self-test=quick` | the first compile is the long part |
 | A laptop with little disk | the same command: `--remote-build` copies a small source tarball and compiles on the host, so nothing is built locally | |
 
@@ -89,7 +89,7 @@ helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \
   -f https://raw.githubusercontent.com/zyvorai/kairon/v0.10.2/charts/kairon/values-production.yaml
 ```
 
-- Images are `ghcr.io/zyvorai/kairon-{controller,node,ui,csi-node,csi-controller}:<version>`; the chart's image tags default to its `appVersion`, so the chart version selects the images.
+- Images are `ghcr.io/zyvorai/kairon-{controller,node,ui,csi-node,csi-controller}:<version>`; the chart's image tags default to `v` plus its `appVersion` (release images are tagged `v0.10.2`, not `0.10.2`), so the chart version selects the images.
 - Drop the `-f` overlay for the evaluation profile.
 - `kaironctl` installs the same published chart without Helm: `kaironctl install --chart oci://ghcr.io/zyvorai/charts/kairon --version 0.10.2 --profile production`.
 - Helm applies `crds/` only on first install. When upgrading, apply the CRDs from the same tag first (`kubectl apply --server-side -f https://raw.githubusercontent.com/zyvorai/kairon/v0.10.2/deploy/crd.yaml`); see [CRD versioning](guides/crd-versioning.md#upgrading-an-existing-cluster).
