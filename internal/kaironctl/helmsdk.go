@@ -4,18 +4,21 @@
 package kaironctl
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"helm.sh/helm/v3/pkg/action"
+	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/chartutil"
 	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/cli/values"
 	"helm.sh/helm/v3/pkg/engine"
 	"helm.sh/helm/v3/pkg/getter"
+	"helm.sh/helm/v3/pkg/kube"
 	"helm.sh/helm/v3/pkg/registry"
 	"helm.sh/helm/v3/pkg/release"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -227,6 +230,9 @@ func sdkInstall(h *helmInstallOpts, upgradeOnly bool) (*release.Release, error) 
 			u.Version = h.Version
 		}
 		applyValueReuse(u, h, true)
+		if err := applyChartCRDs(actionConfig, ch); err != nil {
+			return nil, err
+		}
 		return u.Run(h.ReleaseName, ch, vals)
 	}
 
@@ -243,6 +249,9 @@ func sdkInstall(h *helmInstallOpts, upgradeOnly bool) (*release.Release, error) 
 			u.Version = h.Version
 		}
 		applyValueReuse(u, h, false)
+		if err := applyChartCRDs(actionConfig, ch); err != nil {
+			return nil, err
+		}
 		return u.Run(h.ReleaseName, ch, vals)
 	}
 
@@ -350,4 +359,33 @@ func sdkUninstall(h *helmInstallOpts) error {
 	un.DryRun = h.DryRun
 	_, err = un.Run(h.ReleaseName)
 	return err
+}
+
+// applyChartCRDs creates or updates the chart's crds/ directory before an
+// upgrade. Helm only installs crds/ on first install and never touches them
+// on upgrade, so without this a newer kaironctl rolls out new binaries
+// against the old CRDs (docs/guides/crd-versioning.md). Existing CRDs are
+// patched with a three-way merge, new ones are created.
+func applyChartCRDs(cfg *action.Configuration, ch *chart.Chart) error {
+	crds := ch.CRDObjects()
+	if len(crds) == 0 {
+		return nil
+	}
+	var data bytes.Buffer
+	for _, c := range crds {
+		data.Write(c.File.Data)
+		data.WriteString("\n---\n")
+	}
+	original, err := cfg.KubeClient.Build(bytes.NewReader(data.Bytes()), false)
+	if err != nil {
+		return fmt.Errorf("build chart CRDs: %w", err)
+	}
+	target, err := cfg.KubeClient.Build(bytes.NewReader(data.Bytes()), false)
+	if err != nil {
+		return fmt.Errorf("build chart CRDs: %w", err)
+	}
+	if _, err := cfg.KubeClient.Update(kube.ResourceList(original), kube.ResourceList(target), false); err != nil {
+		return fmt.Errorf("apply chart CRDs before upgrade: %w", err)
+	}
+	return nil
 }
