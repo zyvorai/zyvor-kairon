@@ -123,8 +123,9 @@ jobs:
           # isn't. Read back what the registry holds for the pushed tag.
           digest="$(crane digest "${repo}:${{ github.ref_name }}")"
           case "$digest" in sha256:*) ;; *) echo "unexpected digest: $digest" >&2; exit 1 ;; esac
-          crane tag "${repo}@${digest}" latest
-          test "$(crane digest "${repo}:latest")" = "$digest"
+          # `latest` is NOT moved here: it moves only in the promote-latest job,
+          # after signing, the chart and every other image have succeeded, so a
+          # half-finished release is never what `latest` points at.
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
       - name: Generate SBOM for ${{ matrix.target }}
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c  # v0.24.3
@@ -182,6 +183,13 @@ jobs:
       - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532  # v4.1.3
         with:
           install-dir: ${{ runner.temp }}/cosign-assets
+      - name: Tag matches VERSION and the chart (before anything is built)
+        run: |
+          set -euo pipefail
+          v="${GITHUB_REF_NAME#v}"
+          test "$(tr -d '[:space:]' < VERSION)" = "${GITHUB_REF_NAME}" || { echo "VERSION does not match tag ${GITHUB_REF_NAME}" >&2; exit 1; }
+          grep -q "^version: ${v}\$" charts/kairon/Chart.yaml || { echo "charts/kairon/Chart.yaml version is not ${v}: the CLI embeds this chart" >&2; exit 1; }
+          grep -q "^appVersion: \"${v}\"\$" charts/kairon/Chart.yaml || { echo "charts/kairon/Chart.yaml appVersion is not ${v}" >&2; exit 1; }
       - name: Build CLI binaries
         run: |
           set -euo pipefail
@@ -332,3 +340,38 @@ jobs:
             echo "$out"
             exit 1
           fi
+
+  # Moves `latest` only once every image is signed and the chart, CLI and MCP
+  # registry entry have all been published. Tags the exact digest the version tag
+  # holds; a failure anywhere above leaves `latest` on the previous release.
+  promote-latest:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '"ubuntu-latest"' || '["self-hosted","Linux","X64","zyvor-build","docker"]') }}
+    needs: [publish, release-assets, publish-mcp]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550  # v4
+        env:
+          DOCKER_CONFIG: ${{ runner.temp }}/docker-config-promote
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: imjasonh/setup-crane@feee3b6bb0d4c68370f256a4502498c9227e5c6b  # v0.7
+        with:
+          version: v0.22.1
+      - name: Move latest to this release
+        env:
+          DOCKER_CONFIG: ${{ runner.temp }}/docker-config-promote
+        run: |
+          set -euo pipefail
+          for target in controller node ui csi-node csi-controller mcp; do
+            repo="ghcr.io/zyvorai/kairon-${target}"
+            digest="$(crane digest "${repo}:${GITHUB_REF_NAME}")"
+            case "$digest" in sha256:*) ;; *) echo "unexpected digest for ${target}: $digest" >&2; exit 1 ;; esac
+            crane tag "${repo}@${digest}" latest
+            test "$(crane digest "${repo}:latest")" = "$digest"
+          done
+          rm -rf "${RUNNER_TEMP}/docker-config-promote"
