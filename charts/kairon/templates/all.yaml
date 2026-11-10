@@ -525,7 +525,7 @@ spec:
 {{ end }}
           readinessProbe: {httpGet: {path: /readyz, port: health}}
           livenessProbe: {httpGet: {path: /healthz, port: health}}
-          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, capabilities: {drop: ["ALL"]}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}, capabilities: {drop: ["ALL"]}}
           resources:
 {{ toYaml .Values.controller.resources | indent 12 }}
 {{ if .Values.webhook.enabled }}
@@ -678,7 +678,7 @@ spec:
           volumeMounts:
             - {name: migration-dataplane-tls, mountPath: /etc/kairon/migration-dataplane-tls, readOnly: true}
             - {name: migration-adapter, mountPath: /adapter}
-          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, capabilities: {drop: ["ALL"]}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}, capabilities: {drop: ["ALL"]}}
 {{ else }}
         # dataplaneTlsSecretName not set: fall back to staging the shared
         # control-plane cert (tlsSecretName) onto the data plane too --
@@ -692,7 +692,7 @@ spec:
           volumeMounts:
             - {name: migration-tls, mountPath: /etc/kairon/migration-tls, readOnly: true}
             - {name: migration-adapter, mountPath: /adapter}
-          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, capabilities: {drop: ["ALL"]}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}, capabilities: {drop: ["ALL"]}}
 {{ end }}
 {{ end }}
       containers:
@@ -794,7 +794,7 @@ spec:
 {{ end }}
           readinessProbe: {httpGet: {path: /readyz, port: health}}
           livenessProbe: {httpGet: {path: /healthz, port: health}}
-          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, capabilities: {drop: ["ALL"]}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}, capabilities: {drop: ["ALL"]}}
           resources:
 {{ toYaml .Values.node.resources | indent 12 }}
 {{ if or .Values.migration.enabled (and .Values.console.enabled .Values.console.tls.enabled) .Values.csiNode.enabled .Values.node.imageCacheDir .Values.node.thirdPartyCSIDrivers .Values.node.cpuPinning.enabled }}
@@ -1622,7 +1622,7 @@ spec:
           ports: [{name: {{ $uiPortName }}, containerPort: {{ .Values.ui.service.port }}}]
           readinessProbe: {httpGet: {path: /readyz, port: {{ $uiPortName }}, scheme: {{ $uiScheme }}}}
           livenessProbe: {httpGet: {path: /healthz, port: {{ $uiPortName }}, scheme: {{ $uiScheme }}}}
-          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, capabilities: {drop: ["ALL"]}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}, capabilities: {drop: ["ALL"]}}
           resources:
 {{ toYaml .Values.ui.resources | indent 12 }}
 {{- $consoleTLS := and .Values.console.enabled .Values.console.tls.enabled }}

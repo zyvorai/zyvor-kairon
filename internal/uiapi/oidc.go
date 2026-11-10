@@ -237,6 +237,14 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		s.redirectOIDCError(w, r, fmt.Sprintf("identity provider did not return a %q claim", s.OIDC.UsernameClaim))
 		return
 	}
+	// An unverified email must not become an identity: anyone can set an
+	// unverified address at many IdPs.
+	if s.OIDC.UsernameClaim == "email" {
+		if verified, present := claims["email_verified"].(bool); present && !verified {
+			s.redirectOIDCError(w, r, "the identity provider reports this email address as unverified")
+			return
+		}
+	}
 	var groups []string
 	// Only bother decoding the groups claim at all when something would
 	// actually consult it -- AdminGroups (isAdminIdentity) or
@@ -246,7 +254,9 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	if s.OIDC.GroupsClaim != "" && (len(s.OIDC.AdminGroups) > 0 || len(s.OIDC.NamespaceGroups) > 0) {
 		groups = stringClaimSlice(claims[s.OIDC.GroupsClaim])
 	}
-	sessionToken, expires, err := signSession(s.SessionSecret, username, groups, sessionTTL)
+	// The session subject is namespaced so an IdP-supplied name can never equal a
+	// local Users entry (and inherit its admin role or namespaces).
+	sessionToken, expires, err := signSession(s.SessionSecret, oidcSubjectPrefix+username, groups, sessionTTL)
 	if err != nil {
 		s.redirectOIDCError(w, r, "sign-in failed")
 		return
@@ -266,6 +276,9 @@ func (s *Server) redirectOIDCError(w http.ResponseWriter, r *http.Request, messa
 	values := url.Values{"error": {message}}
 	http.Redirect(w, r, oidcCallbackPath+"#"+values.Encode(), http.StatusFound)
 }
+
+// oidcSubjectPrefix namespaces OIDC session subjects away from local users.
+const oidcSubjectPrefix = "oidc:"
 
 // stringClaimSlice extracts a []string from an ID token claim's own
 // decoded any value -- encoding/json always decodes a JSON array into

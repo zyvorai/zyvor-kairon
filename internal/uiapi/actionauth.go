@@ -24,7 +24,7 @@ func (s *Server) withActionAuthorization(next http.Handler) http.Handler {
 		}
 		account, found := s.findUser(user)
 		if found && account.Role != "" && account.Role != "operator" && !admin {
-			if account.Role != "viewer" || (r.Method != http.MethodGet && r.Method != http.MethodHead && !strings.HasPrefix(r.URL.Path, "/api/v1/auth/")) {
+			if account.Role != "viewer" || (r.Method != http.MethodGet && r.Method != http.MethodHead && !strings.HasPrefix(r.URL.Path, "/api/v1/auth/")) || viewerForbiddenRead(r) {
 				writeError(w, http.StatusForbidden, "role does not allow this action")
 				return
 			}
@@ -66,4 +66,14 @@ func (s *Server) handleNamespaces(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Strings(names)
 	writeJSON(w, http.StatusOK, names)
+}
+
+// viewerForbiddenRead reports GET routes a read-only "viewer" must not use even
+// though they do not change cluster state: a raw TCP tunnel into a guest (it
+// also wakes hibernated VMs) and a full disk-image download expose far more than
+// status and listings.
+func viewerForbiddenRead(r *http.Request) bool {
+	p := r.URL.Path
+	return strings.HasSuffix(p, "/portforward") ||
+		(strings.HasPrefix(p, "/api/v1/exports/") && strings.HasSuffix(p, "/download"))
 }
