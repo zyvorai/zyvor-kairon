@@ -171,7 +171,10 @@ func TestStudioConsoleRelaysAWebSocketTicketWithoutABearer(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	c, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+"/studio/console/ws/ticket-1", nil)
+	c, dialResp, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+"/studio/console/ws/ticket-1", nil)
+	if dialResp != nil && dialResp.Body != nil {
+		defer func() { _ = dialResp.Body.Close() }()
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,6 +196,9 @@ func TestStudioConsoleReportsAnUnknownTicketAsFluxVMDoes(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_, resp, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+"/studio/console/ws/nope", nil)
+	if resp != nil && resp.Body != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
 	if err == nil {
 		t.Fatal("expected the dial to fail")
 	}
