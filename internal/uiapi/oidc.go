@@ -7,6 +7,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -161,6 +162,15 @@ func (s *Server) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to start OIDC login")
 		return
 	}
+	// Bind this flow to the browser that started it. Without this the callback
+	// accepts any validly signed state, so an attacker could start a flow with
+	// their own IdP account and hand the victim the callback URL ("login CSRF":
+	// the victim ends up signed in as the attacker). SameSite=Lax still sends the
+	// cookie on the IdP's top-level redirect back to us.
+	http.SetCookie(w, &http.Cookie{
+		Name: oidcBindCookie, Value: nonce, Path: "/api/v1/auth/oidc/",
+		MaxAge: int(oidcStateTTL.Seconds()), HttpOnly: true, Secure: r.TLS != nil, SameSite: http.SameSiteLaxMode,
+	})
 	authURL := s.OIDC.OAuth2.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier), oidc.Nonce(nonce))
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
@@ -199,6 +209,12 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		s.redirectOIDCError(w, r, "invalid or expired login attempt, please try again")
 		return
 	}
+	// The state must belong to the browser presenting it (see handleOIDCLogin).
+	if c, err := r.Cookie(oidcBindCookie); err != nil || subtle.ConstantTimeCompare([]byte(c.Value), []byte(state.Nonce)) != 1 {
+		s.redirectOIDCError(w, r, "invalid or expired login attempt, please try again")
+		return
+	}
+	http.SetCookie(w, &http.Cookie{Name: oidcBindCookie, Value: "", Path: "/api/v1/auth/oidc/", MaxAge: -1, HttpOnly: true, Secure: r.TLS != nil, SameSite: http.SameSiteLaxMode})
 	token, err := s.OIDC.OAuth2.Exchange(r.Context(), r.URL.Query().Get("code"), oauth2.VerifierOption(state.CodeVerifier))
 	if err != nil {
 		if s.Log != nil {
@@ -287,3 +303,7 @@ func stringClaimSlice(v any) []string {
 	}
 	return out
 }
+
+// oidcBindCookie holds the login nonce so the callback can only complete in the
+// browser that started the flow.
+const oidcBindCookie = "kairon_oidc_login"
