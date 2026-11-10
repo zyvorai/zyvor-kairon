@@ -1,3 +1,33 @@
+# Kairon v0.10.3 (release candidate `v0.10.3-rc1`; final release pending)
+
+A hardening and install-fix release, prepared from a review of the install, upgrade, reliability and security paths and tested on a real KVM host (see [`TEST_REPORT.md`](TEST_REPORT.md) for exactly what was and was not verified).
+
+**Install and upgrade (fixes for v0.10.2)**
+
+- **The default image tag was wrong.** Release images are tagged `v0.10.2`; the chart asked for `0.10.2`, so a default `helm install` ended in `ImagePullBackOff`. Image tags now default to `v` plus the chart's `appVersion`. v0.10.2 installs need `--set controller.image.tag=v0.10.2 --set node.image.tag=v0.10.2 --set ui.image.tag=v0.10.2` (and the same for `csiNode`/`csiController` if enabled).
+- **The production profile fails fast.** `-f values-production.yaml` enables the admission webhook, which needs `webhook.tlsSecretName` and `webhook.caBundle`; without them the controller got an invalid volume. The chart now stops with a message, and the README and getting-started list the prerequisite Secrets.
+- **`kaironctl upgrade` applies the chart's CRDs first** (Helm never upgrades `crds/`). The release notes' upgrade command also applies CRDs and uses `--reuse-values`, so a production install is not reset to evaluation defaults.
+- **Node image cache.** The `node.imageCacheDir` host directory must be owned by UID 65532; documented in the quick-start and `values.yaml`.
+- **Raw manifests.** Releases attach `kairon-manifests-<tag>.tgz` with images pinned to the tag (the `deploy/*.yaml` files in the repo use `:latest`).
+- **`kaironctl selftest`** no longer fails `boot` when the dashboard has serial logs disabled (HTTP 501).
+
+**Security**
+
+- OIDC: session subjects are `oidc:`-prefixed so an identity provider user cannot inherit a local account's rights; unverified emails are rejected; login is bound to the originating browser (login CSRF). **OIDC sessions issued by an older version stop working once; users sign in again.**
+- A removed local user's session is rejected. The `viewer` role can no longer use port-forward tunnels or export downloads.
+- Dashboard security headers; image downloads refuse link-local addresses (cloud metadata); `--image-root` is checked after resolving symlinks; privileged host-port forwards in dashboard creates need an admin; `seccompProfile: RuntimeDefault` on the non-root containers.
+- `kaironctl mcp serve --allow-write` warns when the weak default approval mode is in use. The admission webhook warns when `spec.cloudInit`/`spec.network.forwards` of an existing Machine is edited (they are read only at create).
+
+**Reliability**
+
+- Leader-election renewals are bounded below the lease duration (a hung apiserver call could leave two active controllers); the dashboard reuses one connection pool to the nodes instead of leaking a TLS connection per proxied request; the webhook server has timeouts and graceful shutdown; a backup or restore that exceeds its deadline is now recorded as Failed; `qemu-img` conversions have a timeout; image-cache and login-attempt state no longer grow without bound.
+
+**Release process**
+
+- `latest` moves only after signing, the chart, the CLI and the MCP Registry entry all succeed. A tag with a hyphen (for example `v0.10.3-rc1`) is a GitHub pre-release and skips the MCP Registry and `latest`. The tag, `VERSION`, `Chart.yaml` and `server.json` must agree before anything is built ([`docs/RELEASING.md`](docs/RELEASING.md)).
+
+**Known gaps** (unchanged or not addressed here): own-password changes do not revoke other sessions; machines created directly with `kubectl` bypass the dashboard's port-forward check; live migration, multi-node, GPU, NVMe-oF, DR and the macOS node have no new verification.
+
 # Kairon v0.10.2
 
 A patch on v0.10.1 that fixes the release pipeline. No runtime changes.

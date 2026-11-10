@@ -35,6 +35,8 @@
 
 ## What's new
 
+**v0.10.3 (release candidate `v0.10.3-rc1`):** install and upgrade fixes (default image tags, production-profile prerequisites, CRDs applied on `kaironctl upgrade`) plus security and reliability hardening. v0.10.2's default `helm install` cannot pull its images; use the explicit image tags in the [release notes](RELEASE_NOTES.md) until v0.10.3 is out.
+
 **Experimental operations:** [Kairon Rehearsal](docs/guides/rehearsal.md) tests upgrades on isolated CSI copies. [Advanced operations](docs/guides/advanced-operations.md) adds health-gated configuration change plans, application recovery verification, traffic/RTT placement recommendations, and incident reproduction with fix verification. Includes runnable scenarios and failure-path tests. VM/CSI and host-isolation hardware qualification is still pending.
 
 New since v0.6.0 (latest tag: v0.10.2; the rows down to incident bundles are new in v0.10.0):

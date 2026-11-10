@@ -129,6 +129,19 @@ Known limitations of the username/password mode: with `ui.replicaCount > 1`, ses
 
 `GET /api/v1/auth/oidc/login` redirects to the provider with a random PKCE code verifier and nonce, both signed into the OAuth2 `state` parameter (HMAC-derived from `sessionSecret`, domain-separated from real session tokens -- see `internal/uiapi/oidc.go`) rather than kept in any server-side store. The callback verifies the ID token's signature, issuer, audience, expiry, and nonce before issuing a normal kairon-ui session token -- from there on, an OIDC-authenticated session is indistinguishable from a password one to every other route. Admin capability defaults to the same as before OIDC existed -- exclusively a `ui.auth.users[].admin: true` local account -- but `ui.oidc.adminGroups` (opt-in, empty by default) can now also grant it: an OIDC session whose ID token carries one of the configured groups (`ui.oidc.groupsClaim`, recorded on the session at login time) is treated as admin, re-checked against the *current* `ui.oidc.adminGroups` config on every request via `Server.isAdminIdentity` -- so a config change takes effect on that session's very next request, without a re-login, the same freshness the static `ui.auth.users[].admin` path already had. This does let an OIDC-admin session call `POST /api/v1/users/{username}/password` to reset another operator's password, same as any other admin identity -- an OIDC identity still has no password of its own in Kairon to reset. See `docs/guides/kairon-ui-oidc.md`.
 
+### Hardening added in v0.10.3
+
+- **OIDC.** Session subjects are `oidc:`-prefixed (no collision with local users); `email_verified=false` is rejected when the email claim is the username; the login is bound to the originating browser by a `SameSite=Lax` cookie.
+- **Sessions.** A password-login session is rejected once its user is removed from the configured accounts (previously valid up to the 12h session TTL).
+- **Viewer role.** Cannot use `/portforward` tunnels or export `/download` (both are GETs that expose a guest or its disk).
+- **Response headers.** `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: no-referrer`, and `Strict-Transport-Security` over HTTPS.
+- **Image downloads.** `spec.image.source.httpURL` downloads refuse link-local addresses (cloud metadata at 169.254.169.254, `fe80::/10`) at dial time, including redirect hops. Private and loopback ranges stay allowed because image stores normally live there.
+- **Image paths.** `--image-root` is enforced after resolving symlinks.
+- **Port forwards.** The dashboard rejects user-mode forwards with a privileged host port (1-1023) for non-admins. Machines created directly with `kubectl` are not covered by this check.
+- **Admission warning.** Editing `spec.cloudInit` or `spec.network.forwards` on a Machine whose VM exists returns a warning (they are read only at create); needs `webhook.enabled`.
+- **Chart.** `seccompProfile: RuntimeDefault` on the non-root Kairon containers.
+- **Reliability.** Leader-election renewals are bounded below the lease duration; the webhook server has timeouts and shuts down gracefully.
+
 ## VNC console (`console.enabled`)
 
 Graphical VNC access to a Machine's QEMU display is a relay, not a new capability FluxVM itself exposes remotely: `browser (noVNC) -> kairon-ui -> kairon-node -> <workspace>/vnc.sock`. Understand the trust chain before enabling this on a shared cluster:
