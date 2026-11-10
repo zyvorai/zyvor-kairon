@@ -53,7 +53,7 @@ func writeDenied(w http.ResponseWriter, uid, reason string) {
 }
 
 func writeReview(w http.ResponseWriter, uid string, decision Decision) {
-	resp := &Response{UID: uid, Allowed: decision.Allowed}
+	resp := &Response{UID: uid, Allowed: decision.Allowed, Warnings: decision.Warnings}
 	if !decision.Allowed {
 		resp.Status = &Status{Message: decision.Reason}
 	}

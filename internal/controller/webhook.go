@@ -156,10 +156,38 @@ func (c *Controller) validateMachine(r *http.Request, req *admission.Request) ad
 	case admission.OperationCreate:
 		return c.validateMachineCreate(r, req)
 	case admission.OperationUpdate:
-		return c.validateMachineResize(r, req)
+		d := c.validateMachineResize(r, req)
+		if d.Allowed {
+			d.Warnings = append(d.Warnings, createOnlyFieldWarnings(req)...)
+		}
+		return d
 	default:
 		return admission.Allow()
 	}
+}
+
+// createOnlyFieldWarnings returns a warning for each create-only field an
+// UPDATE changes on a Machine whose VM already exists. spec.cloudInit and
+// spec.network.forwards are read once, in the FluxVM create call, so editing
+// them afterwards is accepted but has no effect (docs/architecture.md, "Day-2
+// operations on a running Machine"). Before the VM exists (no
+// status.runtimeID) the edit still takes effect, so nothing is reported.
+func createOnlyFieldWarnings(req *admission.Request) []string {
+	var oldM, newM model.Machine
+	if json.Unmarshal(req.OldObject, &oldM) != nil || json.Unmarshal(req.Object, &newM) != nil {
+		return nil
+	}
+	if oldM.Status.RuntimeID == "" {
+		return nil
+	}
+	var w []string
+	if !reflect.DeepEqual(oldM.Spec.CloudInit, newM.Spec.CloudInit) {
+		w = append(w, "spec.cloudInit is only applied when the VM is created; this change to an existing Machine has no effect. Delete and recreate the Machine to apply it.")
+	}
+	if !reflect.DeepEqual(oldM.Spec.Network.Forwards, newM.Spec.Network.Forwards) {
+		w = append(w, "spec.network.forwards is only applied when the VM is created; this change to an existing Machine has no effect. Delete and recreate the Machine to apply it.")
+	}
+	return w
 }
 
 // validateResourceQuantities checks the free-form CPU/memory quantity

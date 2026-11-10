@@ -60,6 +60,9 @@ type Response struct {
 	UID     string  `json:"uid"`
 	Allowed bool    `json:"allowed"`
 	Status  *Status `json:"status,omitempty"`
+	// Warnings are shown to the caller by kubectl and client-go without
+	// rejecting the write.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 type Status struct {
@@ -82,6 +85,9 @@ type Review struct {
 type Decision struct {
 	Allowed bool
 	Reason  string
+	// Warnings are surfaced to the caller on an allowed request (the
+	// AdmissionResponse "warnings" field); they never change the outcome.
+	Warnings []string
 }
 
 func Allow() Decision { return Decision{Allowed: true} }
