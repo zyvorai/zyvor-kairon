@@ -60,6 +60,9 @@ capture. Logs go to stderr; stdout carries only protocol messages.`,
 					if os.Getenv("KAIRON_MCP_APPROVAL_MODE") == "resource" {
 						s.Approve = mcpResourceApproveHook(opts.Namespace)
 					}
+					if w := mcpApprovalModeWarning(os.Getenv("KAIRON_MCP_APPROVAL_MODE")); w != "" {
+						fmt.Fprintln(cmd.ErrOrStderr(), w) // stderr only: stdout carries protocol messages
+					}
 				}
 			}
 			s.Add(kaironTools(opts, newKubeClient)...)
@@ -899,4 +902,17 @@ func contains(list []string, v string) bool {
 
 func stringList(desc string) map[string]any {
 	return map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": desc}
+}
+
+// mcpApprovalModeWarning explains the weaker default approval mode. In the
+// default "annotation" mode an approval is an annotation write by anyone who can
+// patch the Machine (the same authority the MCP process itself holds), and the
+// approver name is self-reported; "resource" mode uses a separate Kubernetes
+// identity and an immutable, short-lived approval object.
+func mcpApprovalModeWarning(mode string) string {
+	if mode == "resource" {
+		return ""
+	}
+	return "kaironctl mcp: approval mode is 'annotation' (default): anyone who can patch a Machine can approve a destructive tool call, and the approver name is self-reported. " +
+		"Set KAIRON_MCP_APPROVAL_MODE=resource for approvals by a separate Kubernetes identity (docs/guides/hermes-mcp.md)."
 }
