@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -181,6 +182,7 @@ func oidcLoginState(t *testing.T, h http.Handler) (state, nonce string) {
 	if err != nil {
 		t.Fatalf("parse Location: %v", err)
 	}
+	oidcBindNonces.Store(loc.Query().Get("state"), loc.Query().Get("nonce"))
 	return loc.Query().Get("state"), loc.Query().Get("nonce")
 }
 
@@ -193,7 +195,7 @@ func TestOIDCLoginCallbackRoundTripIssuesASession(t *testing.T) {
 	state, nonce := oidcLoginState(t, h)
 	p.withIDTokenClaims(map[string]any{"nonce": nonce, "email": "alice@example.com"})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/oidc/callback?code=test-code&state="+url.QueryEscape(state), nil)
+	req := oidcCallbackRequest("/api/v1/auth/oidc/callback?code=test-code&state="+url.QueryEscape(state), nonceFor(state))
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 
@@ -263,7 +265,7 @@ func TestOIDCCallbackRejectsNonceMismatch(t *testing.T) {
 	// an ID token from an unrelated login attempt.
 	p.withIDTokenClaims(map[string]any{"nonce": "some-other-nonce", "email": "alice@example.com"})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/oidc/callback?code=test-code&state="+url.QueryEscape(state), nil)
+	req := oidcCallbackRequest("/api/v1/auth/oidc/callback?code=test-code&state="+url.QueryEscape(state), nonceFor(state))
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 
@@ -284,7 +286,7 @@ func TestOIDCCallbackRejectsMissingUsernameClaim(t *testing.T) {
 	state, nonce := oidcLoginState(t, h)
 	p.withIDTokenClaims(map[string]any{"nonce": nonce}) // no "email" claim
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/oidc/callback?code=test-code&state="+url.QueryEscape(state), nil)
+	req := oidcCallbackRequest("/api/v1/auth/oidc/callback?code=test-code&state="+url.QueryEscape(state), nonceFor(state))
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 
@@ -339,7 +341,7 @@ func TestWithAuthAcceptsOIDCSessionWithNoUsersConfigured(t *testing.T) {
 	state, nonce := oidcLoginState(t, h)
 	p.withIDTokenClaims(map[string]any{"nonce": nonce, "email": "bob@example.com"})
 	callbackRR := httptest.NewRecorder()
-	h.ServeHTTP(callbackRR, httptest.NewRequest(http.MethodGet, "/api/v1/auth/oidc/callback?code=c&state="+url.QueryEscape(state), nil))
+	h.ServeHTTP(callbackRR, oidcCallbackRequest("/api/v1/auth/oidc/callback?code=c&state="+url.QueryEscape(state), nonceFor(state)))
 	frag, _ := url.ParseQuery(strings.TrimPrefix(callbackRR.Header().Get("Location"), oidcCallbackPath+"#"))
 	token := frag.Get("token")
 	if token == "" {
@@ -370,7 +372,7 @@ func oidcLogin(t *testing.T, h http.Handler, p *fakeOIDCProvider, claims map[str
 	claims["nonce"] = nonce
 	p.withIDTokenClaims(claims)
 	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/v1/auth/oidc/callback?code=c&state="+url.QueryEscape(state), nil))
+	h.ServeHTTP(rr, oidcCallbackRequest("/api/v1/auth/oidc/callback?code=c&state="+url.QueryEscape(state), nonceFor(state)))
 	if rr.Code != http.StatusFound {
 		t.Fatalf("expected 302, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -602,6 +604,44 @@ func TestStringClaimSlice(t *testing.T) {
 				t.Errorf("%s: got %v, want %v", c.name, got, c.want)
 				break
 			}
+		}
+	}
+}
+
+// oidcBindNonces remembers the nonce handleOIDCLogin generated for each state
+// the tests drove, so callbacks can present the browser-binding cookie a real
+// browser would.
+var oidcBindNonces sync.Map
+
+func nonceFor(state string) string {
+	v, _ := oidcBindNonces.Load(state)
+	n, _ := v.(string)
+	return n
+}
+
+func oidcCallbackRequest(target, nonce string) *http.Request {
+	req := httptest.NewRequest(http.MethodGet, target, nil)
+	req.AddCookie(&http.Cookie{Name: oidcBindCookie, Value: nonce})
+	return req
+}
+
+func TestOIDCCallbackRequiresTheBrowserThatStartedLogin(t *testing.T) {
+	p := newFakeOIDCProvider(t)
+	s := &Server{OIDC: newTestOIDCAuth(t, p, "email"), SessionSecret: []byte("test-session-secret"), Log: slog.New(slog.DiscardHandler)}
+	h := s.Handler()
+	state, nonce := oidcLoginState(t, h)
+	p.withIDTokenClaims(map[string]any{"nonce": nonce, "email": "alice@example.com"})
+
+	// A different browser (no cookie, or someone else's) must not complete it.
+	for name, req := range map[string]*http.Request{
+		"no cookie":    httptest.NewRequest(http.MethodGet, "/api/v1/auth/oidc/callback?code=c&state="+url.QueryEscape(state), nil),
+		"wrong cookie": oidcCallbackRequest("/api/v1/auth/oidc/callback?code=c&state="+url.QueryEscape(state), "someone-elses-nonce"),
+	} {
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		frag, _ := url.ParseQuery(strings.TrimPrefix(rr.Header().Get("Location"), oidcCallbackPath+"#"))
+		if frag.Get("token") != "" || frag.Get("error") == "" {
+			t.Fatalf("%s: callback must be rejected, got %q", name, rr.Header().Get("Location"))
 		}
 	}
 }
