@@ -12,11 +12,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/zyvorai/kairon/internal/fluxvm"
 	"github.com/zyvorai/kairon/internal/model"
@@ -306,12 +309,16 @@ func downloadToTemp(ctx context.Context, source, destPath, wantHexDigest string,
 	if err != nil {
 		return fmt.Errorf("build request for %s: %w", source, err)
 	}
-	client := http.DefaultClient
+	// A dedicated transport whose dialer refuses link-local addresses (cloud
+	// metadata at 169.254.169.254, fe80::/10) -- also on every redirect hop.
+	// Private and loopback ranges stay allowed: image stores (including
+	// kairon-ui's own) normally live there.
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.DialContext = (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second, Control: refuseLinkLocal}).DialContext
 	if insecure {
-		tr := http.DefaultTransport.(*http.Transport).Clone()
 		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // bytes are verified against the pinned sha256 below
-		client = &http.Client{Transport: tr}
 	}
+	client := &http.Client{Transport: tr}
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("download %s: %w", source, err)
@@ -419,4 +426,17 @@ func dash(s string) string {
 		return "-"
 	}
 	return s
+}
+
+// refuseLinkLocal is a net.Dialer.Control hook: it sees the resolved address
+// (after DNS), so a hostname that resolves to a metadata endpoint is refused too.
+func refuseLinkLocal(network, address string, _ syscall.RawConn) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return err
+	}
+	if ip := net.ParseIP(host); ip != nil && (ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()) {
+		return fmt.Errorf("refusing to connect to link-local address %s", host)
+	}
+	return nil
 }

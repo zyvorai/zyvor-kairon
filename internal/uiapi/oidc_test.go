@@ -222,8 +222,8 @@ func TestOIDCLoginCallbackRoundTripIssuesASession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected the issued token to be a valid kairon-ui session: %v", err)
 	}
-	if username != "alice@example.com" {
-		t.Fatalf("expected session subject alice@example.com, got %q", username)
+	if username != oidcSubjectPrefix+"alice@example.com" {
+		t.Fatalf("expected namespaced session subject %q, got %q", oidcSubjectPrefix+"alice@example.com", username)
 	}
 
 	// The issued session works exactly like a password-login session on

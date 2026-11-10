@@ -452,7 +452,7 @@ func (s *Server) Handler() http.Handler {
 	// every actual data fetch the page makes goes through the auth-gated
 	// /api/v1/... routes above.
 	top.HandleFunc("/", s.serveWeb)
-	return s.withMetrics(top, api, s.withRateLimit(top))
+	return s.withSecurityHeaders(s.withMetrics(top, api, s.withRateLimit(top)))
 }
 
 // routePattern reports the registered mux pattern a request matches --
@@ -753,7 +753,7 @@ func (s *Server) withAuth(next http.Handler) http.Handler {
 			// own sessions here, not fall through to the "wide open"
 			// branch above.
 			if len(s.SessionSecret) > 0 {
-				if username, groups, _, issuedAt, err := verifySession(s.SessionSecret, tok); err == nil && !s.isSessionRevoked(tok) && !s.passwordChangedAfter(username, issuedAt) {
+				if username, groups, _, issuedAt, err := verifySession(s.SessionSecret, tok); err == nil && !s.isSessionRevoked(tok) && !s.passwordChangedAfter(username, issuedAt) && s.sessionSubjectStillValid(username) {
 					setContextUsername(r.Context(), username)
 					setContextGroups(r.Context(), groups)
 					next.ServeHTTP(w, r)
@@ -949,4 +949,36 @@ func (s *Server) nodeTransport() http.RoundTripper {
 		}
 	})
 	return s.nodeTransportCached
+}
+
+// sessionSubjectStillValid reports whether a verified session's subject may
+// still act: OIDC subjects are always valid (their rights come from groups),
+// and a password-login subject must still exist in Users. Without this a user
+// removed from the configuration (or whose viewer role was dropped by removal)
+// kept full operator rights until the 12h session expired.
+func (s *Server) sessionSubjectStillValid(username string) bool {
+	if strings.HasPrefix(username, oidcSubjectPrefix) {
+		return true
+	}
+	if s.userCount() == 0 {
+		return true // OIDC-only or shared-token deployment: nothing to look up
+	}
+	_, found := s.findUser(username)
+	return found
+}
+
+// withSecurityHeaders sets conservative response headers on everything the
+// dashboard serves. Framing stays allowed for the same origin only (the
+// agent-session preview is embedded by the dashboard itself).
+func (s *Server) withSecurityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "SAMEORIGIN")
+		h.Set("Referrer-Policy", "no-referrer")
+		if r.TLS != nil {
+			h.Set("Strict-Transport-Security", "max-age=31536000")
+		}
+		next.ServeHTTP(w, r)
+	})
 }
