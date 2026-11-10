@@ -23,9 +23,22 @@ jobs:
     runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '"ubuntu-latest"' || '["self-hosted","Linux","X64","zyvor-build","docker"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      # The self-hosted runners share one Docker daemon. A run that was cancelled
+      # or failed before kind-action's cleanup leaves its kind node container
+      # behind, and the next run then fails with "node(s) already exist for a
+      # cluster with the name ...". Remove leftovers older than an hour (this
+      # run's own cluster is unique, below), and never touch a concurrent run's.
+      - name: Remove stale kind clusters from earlier runs
+        run: |
+          set -uo pipefail
+          docker ps -a --filter "name=kairon-ci" --format '{{.ID}} {{.CreatedAt}}' | while read -r id created; do
+            age=$(( $(date +%s) - $(date -d "${created% *}" +%s 2>/dev/null || echo "$(date +%s)") ))
+            if [ "$age" -gt 3600 ]; then docker rm -f "$id" >/dev/null 2>&1 || true; fi
+          done
+          true
       - uses: helm/kind-action@ea822c7bf1874f08e5a491df991c228edffc3376  # v1.15.2
         with:
-          cluster_name: kairon-ci
+          cluster_name: kairon-ci-${{ github.run_id }}-${{ github.run_attempt }}
           wait: 120s
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310  # v5.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
