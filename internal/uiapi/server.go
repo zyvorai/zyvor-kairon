@@ -949,6 +949,7 @@ func (s *Server) nodeTransport() http.RoundTripper {
 		}
 	})
 	return s.nodeTransportCached
+}
 
 // sessionSubjectStillValid reports whether a verified session's subject may
 // still act: OIDC subjects are always valid (their rights come from groups),
