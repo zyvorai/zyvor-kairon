@@ -2,6 +2,31 @@
 
 This file's own convention is specifically **real, live-cluster/live-host verification beyond source-level gates** -- every entry below documents an actual deployment, a real API call against a running FluxVM/Kubernetes, or a bug a real environment surfaced that unit tests alone didn't. Being honest about that bar: the batch of 24 fixes/features described in RELEASE_NOTES.md's newest `## Added`/`## Changed` entries (MachineQuota hotplug self-check through the migration heartbeat/reaper) was verified via `go build`/`go vet`/the full `go test ./...` suite (including `-race` for the migration heartbeat/reaper's concurrency-critical path, run repeatedly), `gofmt`, `helm lint`, `helm template`, and `python3 scripts/validate.py` -- real, and in several cases (the reaper's per-session locking) deliberately adversarial test design proving a specific race can't happen -- but none of it was exercised against an actual running Kubernetes cluster or a live FluxVM host. No live cluster/host was available in this working session. Recorded here plainly rather than either skipping the gap silently or writing an entry that reads like the live-verification bar above was met when it wasn't.
 
+# Pre-v0.10.3 hardening (2026-11-10): what was and was not verified
+
+## Result
+
+**PASS for the items listed under "Verified"; the items under "Not verified" have no live evidence.** This is not a claim that every feature is tested: experimental features keep the status in [`docs/STATUS.md`](docs/STATUS.md) and [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md).
+
+## Verified
+
+- **Combined `main` after the hardening PRs (#202-#211, #213):** `gofmt`, `go build ./...`, `go vet ./...`, `go test -count=1 ./...` (no failures or panics) and `helm lint charts/kairon` on a Linux x86_64 host (Go 1.27.3). Packages touched by the changes were also run with `-race` where noted below.
+- **Fresh install on a real host** (k3s v1.37.2, KVM, Ubuntu 26.04, FluxVM 0.4.18 from the checksum-verified `.deb`, `kaironctl` v0.10.2 from the release with `SHA256SUMS` verified): `kaironctl doctor` 7 OK, `kaironctl selftest --profile standard` 6 passed (control-plane, boot, power, pause-resume, hotplug-cpu, observability) and 2 skipped (console-log needs the dashboard; network could not reach the forwarded port from outside the host). The existing workloads on that cluster were unaffected.
+- **Defects found by that install:** the chart's default image tag (`0.10.2`) did not exist (images are `v0.10.2`) and the node image-cache directory must be owned by UID 65532. Both fixed and documented.
+- **`kaironctl upgrade` applying the chart's CRDs:** run against the same real cluster (41 Kairon CRDs unchanged, release healthy, `doctor` 7 OK); unit tests in `internal/kaironctl`.
+- **Leader election:** `go test -race ./internal/leaderelection` including a test where the renew call hangs (leadership must end within the renew deadline).
+- **Security changes** (OIDC subject namespacing and `email_verified`, removed-user sessions, viewer scope, security headers, OIDC login-CSRF cookie, link-local download refusal, symlink-safe image paths, login-state eviction): unit tests in `internal/uiapi` and `internal/agent`.
+- **Chart:** rendered with `helm template`; server-side dry-run of the rendered chart accepted by the cluster's API server; the production profile fails with a clear message when the webhook TLS values are missing.
+
+## Not verified
+
+- The release workflow changes (`promote-latest`, tag/chart check, pre-release handling): `actionlint` only. Only a real tag push exercises them.
+- OIDC against a real identity provider (tests use a fake provider).
+- The admission webhook against a real API server (unit tests only), including the new create-only-field warning.
+- Dashboard behaviour in a browser after the security-header and session changes.
+- Live migration, multi-node, GPU, NVMe-oF, DR and macOS features: unchanged status in `docs/STATUS.md`.
+- Backup/restore failure reporting and `qemu-img` timeouts: unit-level only, no live failure injection.
+
 # Shipped in v0.5.0: guest-agent real guest-IP reporting test report
 
 ## Result
