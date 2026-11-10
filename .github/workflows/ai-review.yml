@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: Apache-2.0
+
 name: AI PR review
 # keep the trigger as pull_request: pull_request_target would expose the secret to untrusted diffs
 on:
