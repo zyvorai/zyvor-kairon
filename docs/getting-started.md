@@ -120,6 +120,27 @@ kubectl apply -f deploy/controller.yaml
 kubectl apply -f deploy/node.yaml
 ```
 
+## Upgrade, rollback and node drains
+
+```bash
+# 1. CRDs first: Helm never upgrades crds/ (kaironctl upgrade does this for you).
+kubectl apply --server-side -f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/vX.Y.Z/deploy/crd.yaml
+# 2. Keep your install's settings. Without --reuse-values (or the same -f/--set flags),
+#    Helm resets to chart defaults and silently drops production hardening.
+helm upgrade kairon oci://ghcr.io/zyvorai/charts/kairon --version X.Y.Z -n kairon-system --reuse-values
+# or: kaironctl upgrade   (keeps your values, applies the CRDs, reports what changed)
+```
+
+- **Rollback:** `helm rollback kairon -n kairon-system` reverts the workloads but **not** the CRDs, and
+  not objects already stored at a newer API version; roll back across a CRD version change only after
+  reading [CRD versioning](guides/crd-versioning.md). Use `helm upgrade --atomic` to have a failed
+  upgrade roll itself back.
+- **Draining a node:** the controller and dashboard PodDisruptionBudgets use `maxUnavailable: 0`
+  on purpose (never evict the only replica unnoticed), so `kubectl drain` waits on them. For a
+  planned drain either scale the Deployment up first, or set
+  `controller.podDisruptionBudget.enabled=false` / `ui.podDisruptionBudget.enabled=false` for the
+  maintenance window.
+
 ## Create a Machine
 
 ```bash
