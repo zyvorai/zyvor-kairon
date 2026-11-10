@@ -1,6 +1,9 @@
 # Copyright 2026 Zyvor · https://zyvor.dev
 # SPDX-License-Identifier: Apache-2.0
 
+{{- if and .Values.webhook.enabled (or (not .Values.webhook.tlsSecretName) (not .Values.webhook.caBundle)) }}
+{{- fail "webhook.enabled=true needs webhook.tlsSecretName (a kubernetes.io/tls-style Secret with tls.crt/tls.key in the release namespace) and webhook.caBundle (base64 CA). Create them first (scripts/gen-webhook-tls-certs.sh, docs/guides/admission-webhook.md), or install with --set webhook.enabled=false." }}
+{{- end }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:

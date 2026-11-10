@@ -289,7 +289,7 @@ chmod +x kaironctl && sudo mv kaironctl /usr/local/bin/      # or: kubectl krew 
 kaironctl create demo --image /var/lib/fluxvm/images/ubuntu.qcow2 --cpu 2 --memory 2Gi
 ```
 
-The production profile pins image tags to `Chart.AppVersion` and turns on the webhook, namespace isolation, network default-deny and migration data-plane TLS. Images: `ghcr.io/zyvorai/kairon-{controller,node,ui}`, signed with checksums and SBOM.
+**Before the production command above, create the webhook TLS Secret and the `kairon-migration-tls` Secret and pass `--set webhook.tlsSecretName=... --set webhook.caBundle=...`; the install stops with a message if they are missing (steps in [getting started](docs/getting-started.md#evaluation-vs-production)).** The production profile pins image tags to ``v` + `Chart.AppVersion`` and turns on the webhook, namespace isolation, network default-deny and migration data-plane TLS. Images: `ghcr.io/zyvorai/kairon-{controller,node,ui}`, signed with checksums and SBOM.
 
 From your laptop to a bare-metal host, built on the host so your laptop needs no Go or Node, with a smoke test at the end:
 
