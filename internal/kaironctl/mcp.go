@@ -61,7 +61,7 @@ capture. Logs go to stderr; stdout carries only protocol messages.`,
 						s.Approve = mcpResourceApproveHook(opts.Namespace)
 					}
 					if w := mcpApprovalModeWarning(os.Getenv("KAIRON_MCP_APPROVAL_MODE")); w != "" {
-						fmt.Fprintln(cmd.ErrOrStderr(), w) // stderr only: stdout carries protocol messages
+						_, _ = fmt.Fprintln(cmd.ErrOrStderr(), w) // stderr only: stdout carries protocol messages
 					}
 				}
 			}

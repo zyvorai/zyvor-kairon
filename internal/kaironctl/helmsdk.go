@@ -18,7 +18,6 @@ import (
 	"helm.sh/helm/v3/pkg/cli/values"
 	"helm.sh/helm/v3/pkg/engine"
 	"helm.sh/helm/v3/pkg/getter"
-	"helm.sh/helm/v3/pkg/kube"
 	"helm.sh/helm/v3/pkg/registry"
 	"helm.sh/helm/v3/pkg/release"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -384,7 +383,7 @@ func applyChartCRDs(cfg *action.Configuration, ch *chart.Chart) error {
 	if err != nil {
 		return fmt.Errorf("build chart CRDs: %w", err)
 	}
-	if _, err := cfg.KubeClient.Update(kube.ResourceList(original), kube.ResourceList(target), false); err != nil {
+	if _, err := cfg.KubeClient.Update(original, target, false); err != nil {
 		return fmt.Errorf("apply chart CRDs before upgrade: %w", err)
 	}
 	return nil
