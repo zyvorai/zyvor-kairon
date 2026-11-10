@@ -137,13 +137,23 @@ correctly later even after the PV/PVC is gone. See
 ## Day-2 operations on a running Machine
 
 `spec.cloudInit` (SSH keys, hostname, packages, first-boot commands) and
-`spec.network.forwards` (inbound SSH/etc. via SLIRP hostfwd) are both read
-only once, inside the FluxVM create call in `internal/agent.reconcileMachine`
--- editing either field, or `spec.resources`, on an already-running Machine
-is a silent no-op: no error, no status signal, no drift correction. Apply
-the change at creation, or delete and recreate. See
-[guides/machine-network.md](guides/machine-network.md) for `cloudInit`/
-`forwards` usage.
+`spec.network.forwards` (inbound SSH/etc. via SLIRP hostfwd) are read only
+once, inside the FluxVM create call in `internal/agent.reconcileMachine`.
+Editing either field on an already-running Machine is a silent no-op: no
+error, no status signal, no drift correction. Apply the change at creation,
+or delete and recreate. See [guides/machine-network.md](guides/machine-network.md)
+for `cloudInit`/`forwards` usage.
+
+`spec.resources` is different: raising `cpu` or `memory` on a running Machine
+is hot-plugged live (no reboot) up to the headroom reserved at creation
+(`maxCpu`/`maxMemory`), and `status.appliedVCPUs`/`appliedMemoryMiB` record
+what has actually been realized. Lowering them is logged and ignored (FluxVM
+has no CPU/DIMM unplug). See [guides/machine-hotplug.md](guides/machine-hotplug.md).
+
+The dashboard does not offer these fields on an existing Machine: hostname,
+SSH key and port forward appear only on the create form, so the silent no-op
+can be reached only by editing the `Machine` object directly (`kubectl edit`
+or apply).
 
 A graphical VNC console is available (`console.enabled`, off by default):
 `kairon-ui` relays a browser WebSocket through `kairon-node` to the VM's
