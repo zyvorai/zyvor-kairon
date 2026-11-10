@@ -4,6 +4,7 @@
 package uiapi
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/zyvorai/kairon/internal/model"
@@ -102,6 +103,10 @@ func (s *Server) handleCreateMachine(w http.ResponseWriter, r *http.Request) {
 	if req.Network == "" {
 		req.Network = "user"
 	}
+	if err := validateTenantForwards(req.Forwards, s.isAdminIdentity(r.Context(), usernameFromContext(r.Context()))); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	ns := namespaceParam(r)
 	m := model.Machine{
 		TypeMeta: model.TypeMeta{APIVersion: model.APIVersion, Kind: model.KindMachine},
@@ -173,4 +178,23 @@ func (s *Server) handlePowerMachine(state string) http.HandlerFunc {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+// privilegedPortMax is the highest privileged TCP/UDP port. User-mode forwards
+// bind on the node's network (kairon-node runs with hostNetwork), so a tenant
+// asking for a privileged host port could squat well-known node ports.
+const privilegedPortMax = 1023
+
+// validateTenantForwards rejects forwards that bind privileged host ports unless
+// the caller is an administrator, and zero ports for everyone.
+func validateTenantForwards(forwards []model.PortForward, admin bool) error {
+	for _, f := range forwards {
+		if f.HostPort == 0 || f.GuestPort == 0 {
+			return fmt.Errorf("port forward needs a non-zero hostPort and guestPort")
+		}
+		if !admin && f.HostPort <= privilegedPortMax {
+			return fmt.Errorf("hostPort %d is a privileged port; only administrators may forward ports 1-%d", f.HostPort, privilegedPortMax)
+		}
+	}
+	return nil
 }
