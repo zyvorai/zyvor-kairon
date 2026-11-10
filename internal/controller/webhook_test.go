@@ -951,3 +951,41 @@ func TestValidateMachineUpdateRejectsUnsatisfiableSpreadOnlyWhenPlacementChanges
 		t.Fatal("update introducing maxSkew 0 with DoNotSchedule was allowed")
 	}
 }
+
+func TestValidateMachineUpdateWarnsOnCreateOnlyFields(t *testing.T) {
+	ctl := newWebhookTestController(t, "prod", nil, nil, nil, nil)
+	old := model.Machine{
+		Metadata: model.ObjectMeta{Namespace: "prod", Name: "vm-1"},
+		Status:   model.MachineStatus{RuntimeID: "vm-abc"},
+	}
+
+	edited := old
+	edited.Spec.CloudInit.Hostname = "renamed"
+	edited.Spec.Network.Forwards = []model.PortForward{{HostPort: 2222, GuestPort: 22}}
+	r, req := admissionReqWithOld(t, "machines", "prod", admission.OperationUpdate, edited, old)
+	d := ctl.validateMachine(r, req)
+	if !d.Allowed {
+		t.Fatalf("expected the edit to stay allowed, got denied: %s", d.Reason)
+	}
+	if len(d.Warnings) != 2 {
+		t.Fatalf("expected 2 warnings (cloudInit, forwards), got %v", d.Warnings)
+	}
+
+	// Same edit before the VM exists still takes effect: no warning.
+	pending := old
+	pending.Status.RuntimeID = ""
+	editedPending := pending
+	editedPending.Spec.CloudInit.Hostname = "renamed"
+	r, req = admissionReqWithOld(t, "machines", "prod", admission.OperationUpdate, editedPending, pending)
+	if d := ctl.validateMachine(r, req); len(d.Warnings) != 0 {
+		t.Fatalf("expected no warnings before the VM exists, got %v", d.Warnings)
+	}
+
+	// Unrelated edit on a running Machine: no warning.
+	other := old
+	other.Metadata.Labels = map[string]string{"a": "b"}
+	r, req = admissionReqWithOld(t, "machines", "prod", admission.OperationUpdate, other, old)
+	if d := ctl.validateMachine(r, req); len(d.Warnings) != 0 {
+		t.Fatalf("expected no warnings for an unrelated edit, got %v", d.Warnings)
+	}
+}
