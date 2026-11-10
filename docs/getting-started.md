@@ -70,8 +70,22 @@ See [Self-test](guides/selftest.md) for what it checks and how to read the resul
 
 Default chart values are an **evaluation** profile (webhook and namespace isolation off; image tags default to `.Chart.AppVersion`). For a hardened install, use the production overlay (`kaironctl install --profile production`, or with Helm directly):
 
+Before installing the production profile, create what it needs (the install stops with a clear message if the webhook TLS values are missing):
+
 ```bash
-kaironctl install --profile production
+# 1. Admission webhook certificate and CA (self-signed for evaluation; use cert-manager or your CA in production)
+scripts/gen-webhook-tls-certs.sh          # see docs/guides/admission-webhook.md
+kubectl -n kairon-system create namespace kairon-system --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n kairon-system create secret generic kairon-webhook-tls --from-file=tls.crt --from-file=tls.key
+# 2. Live-migration mTLS Secret (kairon-node pods stay in ContainerCreating without it)
+scripts/gen-migration-mtls-certs.sh OUT_DIR NODE_NAME=NODE_IP ...    # then create kairon-migration-tls from its control-plane files
+```
+
+Then pass the webhook values:
+
+```bash
+kaironctl install --profile production \
+  --set webhook.tlsSecretName=kairon-webhook-tls --set webhook.caBundle="$(base64 -w0 ca.crt)"
 # or
 helm install kairon charts/kairon -n kairon-system --create-namespace \
   -f charts/kairon/values-production.yaml

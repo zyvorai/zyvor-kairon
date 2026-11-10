@@ -2,9 +2,17 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Production installation profile for Kairon.
+# Prerequisites (the install fails fast with a message if the webhook ones are missing):
+#   - webhook TLS:   scripts/gen-webhook-tls-certs.sh, then pass
+#                    --set webhook.tlsSecretName=kairon-webhook-tls \
+#                    --set webhook.caBundle="$(base64 -w0 ca.crt)"
+#   - migration TLS: create the kairon-migration-tls Secret (ca.crt, tls.crt, tls.key)
+#                    in the release namespace, or kairon-node pods stay in
+#                    ContainerCreating (scripts/gen-migration-mtls-certs.sh).
 # Usage:
 #   helm install kairon charts/kairon -n kairon-system --create-namespace \
-#     -f charts/kairon/values-production.yaml
+#     -f charts/kairon/values-production.yaml \
+#     --set webhook.tlsSecretName=... --set webhook.caBundle=...
 #
 # Evaluation installs should keep charts/kairon/values.yaml defaults
 # (webhook and multi-tenant hardening off) so demos keep working.

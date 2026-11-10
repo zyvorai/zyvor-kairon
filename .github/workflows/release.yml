@@ -261,7 +261,11 @@ jobs:
 
           ### Upgrade / rollback
           \`\`\`bash
-          helm upgrade kairon oci://ghcr.io/zyvorai/charts/kairon --version ${chart_version} -n kairon-system
+          # Helm never upgrades crds/: apply this release's CRDs first.
+          kubectl apply --server-side -f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/v${chart_version}/deploy/crd.yaml
+          # --reuse-values keeps your install's settings (webhook, namespace scoping, TLS...);
+          # without it Helm resets to chart defaults and drops production hardening.
+          helm upgrade kairon oci://ghcr.io/zyvorai/charts/kairon --version ${chart_version} -n kairon-system --reuse-values
           helm rollback kairon -n kairon-system
           \`\`\`
 
