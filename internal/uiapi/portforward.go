@@ -66,7 +66,7 @@ func (s *Server) handlePortForward(w http.ResponseWriter, r *http.Request) {
 	dialOpts := &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Bearer " + s.ConsoleToken}}}
 	if s.ConsoleTLS != nil {
 		scheme = "wss"
-		dialOpts.HTTPClient = &http.Client{Transport: &http.Transport{TLSClientConfig: s.ConsoleTLS}}
+		dialOpts.HTTPClient = &http.Client{Transport: s.nodeTransport()}
 	}
 	q := url.Values{"port": {strconv.FormatUint(port, 10)}}
 	if m.Status.GuestIP != "" {

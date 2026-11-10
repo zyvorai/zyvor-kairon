@@ -75,7 +75,9 @@ func (a *Agent) cloneBootDisk(ctx context.Context, m model.Machine) (path string
 		a.Log.Info("cloning machine disk", "namespace", m.Namespace(), "machine", m.Metadata.Name, "source", srcName)
 		go func() {
 			defer close(job.done)
-			job.err = convertDisk(disk, dst, "qcow2")
+			ctx, cancel := context.WithTimeout(context.Background(), convertDiskTimeout)
+			defer cancel()
+			job.err = convertDisk(ctx, disk, dst, "qcow2")
 		}()
 	}
 	return "", false, nil

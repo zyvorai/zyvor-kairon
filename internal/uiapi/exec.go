@@ -173,7 +173,7 @@ func (s *Server) relayExec(ctx context.Context, nodeAddr, runtimeID string, req 
 	transport := http.DefaultTransport
 	if s.ConsoleTLS != nil {
 		scheme = "https"
-		transport = &http.Transport{TLSClientConfig: s.ConsoleTLS}
+		transport = s.nodeTransport()
 	}
 	upstreamURL := fmt.Sprintf("%s://%s:%s/exec/%s", scheme, nodeAddr, s.ConsolePort, runtimeID)
 	body, err := json.Marshal(req)

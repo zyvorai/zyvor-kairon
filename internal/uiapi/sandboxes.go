@@ -199,7 +199,7 @@ func (s *Server) handleSandboxHTTPProxy(w http.ResponseWriter, r *http.Request) 
 	transport := http.DefaultTransport
 	if s.ConsoleTLS != nil {
 		scheme = "https"
-		transport = &http.Transport{TLSClientConfig: s.ConsoleTLS}
+		transport = s.nodeTransport()
 	}
 	upstreamURL := fmt.Sprintf("%s://%s:%s/sandbox-proxy/%s/%s/%s", scheme, nodeAddr, s.ConsolePort, runtimeID, port, rest)
 	if q := r.URL.RawQuery; q != "" {

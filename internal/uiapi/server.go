@@ -139,6 +139,11 @@ type Server struct {
 	// shared ConsoleToken already authenticates kairon-ui to kairon-node,
 	// so a client certificate would be redundant.
 	ConsoleTLS *tls.Config
+	// nodeTransportOnce/nodeTransportCached back nodeTransport: one shared
+	// connection pool to the node relays instead of a new Transport (and a
+	// leaked idle TLS connection) per proxied request.
+	nodeTransportOnce   sync.Once
+	nodeTransportCached *http.Transport
 	// RBACConsoleCheck, when true, additionally requires a real
 	// Kubernetes SubjectAccessReview (verb "get" on the machines/console
 	// subresource) to allow console access -- layered alongside, never
@@ -923,4 +928,25 @@ type routeMux struct {
 func (m *routeMux) HandleFunc(pattern string, h func(http.ResponseWriter, *http.Request)) {
 	*m.n++
 	m.ServeMux.HandleFunc(pattern, h)
+}
+
+// nodeTransport is the RoundTripper for requests to kairon-node's console
+// relay: the default transport for plaintext, otherwise one cached transport
+// that verifies the relay certificate with ConsoleTLS. Building a Transport
+// per request kept an idle keep-alive connection (and its goroutines) alive
+// for every call.
+func (s *Server) nodeTransport() http.RoundTripper {
+	if s.ConsoleTLS == nil {
+		return http.DefaultTransport
+	}
+	s.nodeTransportOnce.Do(func() {
+		s.nodeTransportCached = &http.Transport{
+			TLSClientConfig:     s.ConsoleTLS,
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 10,
+			IdleConnTimeout:     90 * time.Second,
+			TLSHandshakeTimeout: 10 * time.Second,
+		}
+	})
+	return s.nodeTransportCached
 }

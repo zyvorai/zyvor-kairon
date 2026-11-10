@@ -115,10 +115,23 @@ func (c *Controller) observeWebhookDecision(resource, operation string, allowed 
 // restart -- see internal/tlsreload.
 func (c *Controller) RunWebhook(ctx context.Context, addr string, tlsConfig *tls.Config, certWatcher *tlsreload.Watcher, tlsReloadInterval time.Duration) error {
 	go certWatcher.Run(ctx, tlsReloadInterval)
-	srv := &http.Server{Addr: addr, Handler: c.WebhookHandler(), TLSConfig: tlsConfig}
+	// Timeouts bound slow or stalled clients (the port is reachable from any pod);
+	// admission calls are small and the API server allows webhooks 10-30s.
+	srv := &http.Server{
+		Addr: addr, Handler: c.WebhookHandler(), TLSConfig: tlsConfig,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
 	go func() {
 		<-ctx.Done()
-		_ = srv.Close()
+		// Let in-flight admission requests finish instead of failing them.
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			_ = srv.Close()
+		}
 	}()
 	err := srv.ListenAndServeTLS("", "")
 	if err != nil && err != http.ErrServerClosed {

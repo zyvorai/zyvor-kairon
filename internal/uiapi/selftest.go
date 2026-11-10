@@ -362,7 +362,7 @@ func (s *Server) selftestSerialLog(ctx context.Context, ns, name string) (string
 	}
 	scheme, transport := "http", http.DefaultTransport
 	if s.ConsoleTLS != nil {
-		scheme, transport = "https", &http.Transport{TLSClientConfig: s.ConsoleTLS}
+		scheme, transport = "https", s.nodeTransport()
 	}
 	u := fmt.Sprintf("%s://%s:%s/logs/%s?lines=400&follow=false", scheme, addr, s.ConsolePort, m.Status.RuntimeID)
 	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)

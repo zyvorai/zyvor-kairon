@@ -51,6 +51,10 @@ func (j *backupJobs) busy(key string) bool {
 // backupJobTimeout bounds one background disk copy.
 const backupJobTimeout = 2 * time.Hour
 
+// statusPatchTimeout bounds writing a backup/restore result back to the API,
+// independent of the (possibly expired) job context.
+const statusPatchTimeout = 30 * time.Second
+
 // reconcileBackups runs the disk half of MachineBackups and
 // MachineBackupRestores whose status.nodeName is this node. The controller
 // hands work over by setting status.disk Pending; this side owns status.disk
@@ -158,7 +162,11 @@ func (a *Agent) reconcileDiskBackup(ctx context.Context, b model.MachineBackup, 
 		} else {
 			fillDiskBackup(&disk, out)
 		}
-		if err := a.patchDiskBackup(jobCtx, b, disk); err != nil {
+		// A fresh context: when BackupVM failed because jobCtx's deadline passed,
+		// jobCtx is already expired and the Failed status would never be written.
+		patchCtx, patchCancel := context.WithTimeout(context.WithoutCancel(ctx), statusPatchTimeout)
+		defer patchCancel()
+		if err := a.patchDiskBackup(patchCtx, b, disk); err != nil {
 			a.Log.Error("machine backup status patch failed", "namespace", b.Namespace(), "backup", b.Metadata.Name, "error", err)
 		}
 	}()
@@ -259,7 +267,9 @@ func (a *Agent) reconcileDiskRestore(ctx context.Context, r model.MachineBackupR
 		} else {
 			disk.Phase, disk.Message, disk.Disks = model.BackupSucceeded, "", restored
 		}
-		if err := a.patchDiskRestore(jobCtx, r, disk); err != nil {
+		patchCtx, patchCancel := context.WithTimeout(context.WithoutCancel(ctx), statusPatchTimeout)
+		defer patchCancel()
+		if err := a.patchDiskRestore(patchCtx, r, disk); err != nil {
 			a.Log.Error("machine backup restore status patch failed", "namespace", r.Namespace(), "restore", r.Metadata.Name, "error", err)
 		}
 	}()

@@ -56,7 +56,7 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	transport := http.DefaultTransport
 	if s.ConsoleTLS != nil {
 		scheme = "https"
-		transport = &http.Transport{TLSClientConfig: s.ConsoleTLS}
+		transport = s.nodeTransport()
 	}
 	upstreamURL := fmt.Sprintf("%s://%s:%s/logs/%s", scheme, nodeAddr, s.ConsolePort, m.Status.RuntimeID)
 	if q := r.URL.RawQuery; q != "" {

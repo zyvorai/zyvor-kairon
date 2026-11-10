@@ -84,6 +84,14 @@ func (e *Elector) renewPeriod() time.Duration {
 	return DefaultRenewPeriod
 }
 
+// renewDeadline is how long one renewal attempt may take. A third of the
+// lease duration keeps renewPeriod + renewDeadline under leaseDuration for
+// the default 15s/5s settings, so a stuck renewal always ends leadership
+// before the lease can expire under another replica.
+func (e *Elector) renewDeadline() time.Duration {
+	return e.leaseDuration() / 3
+}
+
 func (e *Elector) retryPeriod() time.Duration {
 	if e.RetryPeriod > 0 {
 		return e.RetryPeriod
@@ -132,7 +140,14 @@ func (e *Elector) holdLease(ctx context.Context, cancel func()) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			if !e.renew(ctx) {
+			// Bound each renewal well below the lease duration: with only the
+			// kube client's own HTTP timeout (20s) a hung apiserver call would
+			// let this process keep reconciling past the lease's expiry while
+			// another replica has already taken over.
+			rctx, rcancel := context.WithTimeout(ctx, e.renewDeadline())
+			ok := e.renew(rctx)
+			rcancel()
+			if !ok {
 				cancel()
 				return
 			}

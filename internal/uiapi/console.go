@@ -360,7 +360,7 @@ func (s *Server) handleConsole(w http.ResponseWriter, r *http.Request) {
 	dialOpts := &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Bearer " + s.ConsoleToken}}}
 	if s.ConsoleTLS != nil {
 		scheme = "wss"
-		dialOpts.HTTPClient = &http.Client{Transport: &http.Transport{TLSClientConfig: s.ConsoleTLS}}
+		dialOpts.HTTPClient = &http.Client{Transport: s.nodeTransport()}
 	}
 	upstreamURL := fmt.Sprintf("%s://%s:%s/%s/%s", scheme, nodeAddr, s.ConsolePort, nodePath, m.Status.RuntimeID)
 	if kind == "text" || guestfs {

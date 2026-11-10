@@ -381,7 +381,7 @@ func (s *Server) nodeReverseProxy(nodeAddr, path string, identity bool) *httputi
 	transport := http.DefaultTransport
 	if s.ConsoleTLS != nil {
 		scheme = "https"
-		transport = &http.Transport{TLSClientConfig: s.ConsoleTLS}
+		transport = s.nodeTransport()
 	}
 	return &httputil.ReverseProxy{
 		Transport:     transport,
