@@ -40,6 +40,11 @@ jobs:
         with:
           cluster_name: kairon-ci-${{ github.run_id }}-${{ github.run_attempt }}
           wait: 120s
+          # The shared Docker daemon sometimes fails to kill the kind node on teardown
+          # ("tried to kill container, but did not receive an exit event"), which failed
+          # the whole job after every assertion had passed. The stale-cluster step above
+          # removes anything left behind.
+          ignore_failed_clean: true
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310  # v5.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
