@@ -16,7 +16,7 @@ COPY web/package.json web/package-lock.json web/tsconfig.json web/vite.config.ts
 COPY web/src ./web/src
 RUN cd web && npm ci && npm run build
 
-FROM golang:1.27-bookworm@sha256:972b4110ba0f47539a975c31e52c64765e1ff19f2d74469ae4a595c6676e80a5 AS build
+FROM golang:1.27-bookworm@sha256:4fa7c968ba93f1635670522dbb01a2c78150443e1385746924566079f36570ea AS build
 WORKDIR /src
 COPY go.mod ./
 COPY . .
@@ -93,7 +93,7 @@ ENTRYPOINT ["/kairon-csi-controller"]
 # server offers read tools only unless the operator appends --allow-write
 # to the container arguments themselves (and then also needs a writable
 # --audit-log, see docs/guides/hermes-mcp.md).
-FROM golang:1.27-bookworm@sha256:972b4110ba0f47539a975c31e52c64765e1ff19f2d74469ae4a595c6676e80a5 AS build-mcp
+FROM golang:1.27-bookworm@sha256:4fa7c968ba93f1635670522dbb01a2c78150443e1385746924566079f36570ea AS build-mcp
 WORKDIR /src
 COPY go.mod ./
 COPY . .

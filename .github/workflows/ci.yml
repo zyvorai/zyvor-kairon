@@ -302,8 +302,9 @@ jobs:
           node_ds = next(d for d in docs if d.get('kind') == 'DaemonSet' and d['metadata']['name'] == 'kairon-node')
           ctrl_img = ctrl['spec']['template']['spec']['containers'][0]['image']
           node_img = node_ds['spec']['template']['spec']['containers'][0]['image']
-          assert ctrl_img.endswith(':' + app), (ctrl_img, app)
-          assert node_img.endswith(':' + app), (node_img, app)
+          # Release images are tagged v<version>; the chart defaults to 'v' + appVersion.
+          assert ctrl_img.endswith(':v' + app), (ctrl_img, app)
+          assert node_img.endswith(':v' + app), (node_img, app)
           ctrl_args = ctrl['spec']['template']['spec']['containers'][0]['args']
           assert any(str(a).startswith('--webhook-addr=') for a in ctrl_args), ctrl_args
           node_args = node_ds['spec']['template']['spec']['containers'][0]['args']
