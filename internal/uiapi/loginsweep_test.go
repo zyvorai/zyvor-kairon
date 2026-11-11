@@ -31,3 +31,26 @@ func TestLoginAttemptsAreEvicted(t *testing.T) {
 		t.Fatal("a currently locked entry must not be evicted")
 	}
 }
+
+// A failure recorded on a state the sweep is concurrently evicting must not be
+// lost: after the sweep, the count lives in the map entry.
+func TestLoginSweepDoesNotDropFailureCount(t *testing.T) {
+	s := &Server{}
+	ctx := t.Context()
+	st := s.loginState("u")
+	// Simulate a goroutine that obtained the state before the sweep ran.
+	s.sweepLoginAttempts(time.Now().Add(time.Hour))
+	st.mu.Lock()
+	evicted := st.evicted
+	st.mu.Unlock()
+	if !evicted {
+		t.Fatal("swept state must be marked evicted")
+	}
+	s.recordLoginResult(ctx, "u", false)
+	cur := s.loginState("u")
+	cur.mu.Lock()
+	defer cur.mu.Unlock()
+	if cur.count != 1 {
+		t.Fatalf("failure count lost: got %d, want 1", cur.count)
+	}
+}
