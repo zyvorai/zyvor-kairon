@@ -1,6 +1,6 @@
-# Kairon v0.10.3 (release candidate `v0.10.3-rc1`; final release pending)
+# Kairon v0.10.3
 
-A hardening and install-fix release, prepared from a review of the install, upgrade, reliability and security paths and tested on a real KVM host (see [`TEST_REPORT.md`](TEST_REPORT.md) for exactly what was and was not verified).
+A hardening and install-fix release, prepared from a review of the install, upgrade, reliability and security paths. The published `v0.10.3-rc2` build was installed fresh from the chart with default image tags and passed the standard self-test on a real KVM host (see [`TEST_REPORT.md`](TEST_REPORT.md) for exactly what was and was not verified).
 
 **Install and upgrade (fixes for v0.10.2)**
 
@@ -10,6 +10,8 @@ A hardening and install-fix release, prepared from a review of the install, upgr
 - **Node image cache.** The `node.imageCacheDir` host directory must be owned by UID 65532; documented in the quick-start and `values.yaml`.
 - **Raw manifests.** Releases attach `kairon-manifests-<tag>.tgz` with images pinned to the tag (the `deploy/*.yaml` files in the repo use `:latest`).
 - **`kaironctl selftest`** no longer fails `boot` when the dashboard has serial logs disabled (HTTP 501).
+- **`spec.network.egress` was missing from the Helm chart's CRDs.** The field (the VM's outbound policy, added after v0.10.2) was in `deploy/crd.yaml` only, so a Helm install had no schema for it and the API server would drop it when set. The chart's `machines` CRD now includes it and `deploy/crd.yaml` is regenerated from the chart again. **Apply the CRDs when upgrading** (`kaironctl upgrade` does this; with Helm use `kubectl apply --server-side -f .../deploy/crd.yaml`).
+- `scripts/validate.py` now derives the expected chart version from `VERSION` instead of a hard-coded number.
 
 **Security**
 

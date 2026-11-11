@@ -99,15 +99,15 @@ Tagged releases publish the Helm chart and the images to GitHub Container Regist
 
 ```bash
 helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \
-  --version 0.10.2 -n kairon-system --create-namespace \
-  -f https://raw.githubusercontent.com/zyvorai/kairon/v0.10.2/charts/kairon/values-production.yaml
+  --version 0.10.3 -n kairon-system --create-namespace \
+  -f https://raw.githubusercontent.com/zyvorai/kairon/v0.10.3/charts/kairon/values-production.yaml
 ```
 
 - Images are `ghcr.io/zyvorai/kairon-{controller,node,ui,csi-node,csi-controller}:<version>`; the chart's image tags default to `v` plus its `appVersion` (release images are tagged `v0.10.2`, not `0.10.2`), so the chart version selects the images.
 - Drop the `-f` overlay for the evaluation profile.
-- `kaironctl` installs the same published chart without Helm: `kaironctl install --chart oci://ghcr.io/zyvorai/charts/kairon --version 0.10.2 --profile production`.
-- Helm applies `crds/` only on first install. When upgrading, apply the CRDs from the same tag first (`kubectl apply --server-side -f https://raw.githubusercontent.com/zyvorai/kairon/v0.10.2/deploy/crd.yaml`); see [CRD versioning](guides/crd-versioning.md#upgrading-an-existing-cluster).
-- Fetch the matching `kaironctl` from the release: `https://github.com/zyvorai/kairon/releases/download/v0.10.2/kaironctl-linux-amd64`, or `kubectl krew install kairon`.
+- `kaironctl` installs the same published chart without Helm: `kaironctl install --chart oci://ghcr.io/zyvorai/charts/kairon --version 0.10.3 --profile production`.
+- Helm applies `crds/` only on first install. When upgrading, apply the CRDs from the same tag first (`kubectl apply --server-side -f https://raw.githubusercontent.com/zyvorai/kairon/v0.10.3/deploy/crd.yaml`); see [CRD versioning](guides/crd-versioning.md#upgrading-an-existing-cluster).
+- Fetch the matching `kaironctl` from the release: `https://github.com/zyvorai/kairon/releases/download/v0.10.3/kaironctl-linux-amd64`, or `kubectl krew install kairon`.
 
 Later, `kaironctl upgrade` keeps the values you installed with (`--reset-values` returns to chart defaults), `kaironctl upgrade --check` compares your release with the latest one without changing anything, `kaironctl config set KEY=VALUE` changes a single value, and `kaironctl history` / `kaironctl rollback` list and restore revisions. Add `--context NAME` or `--kubeconfig PATH` to target a specific cluster. See [CLI](CLI.md).
 

@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from pathlib import Path
+import re
 import sys
 import yaml
 
@@ -114,15 +115,18 @@ if chart_crds != bundle_crds:
     drift = sorted(n for n in chart_crds.keys() | bundle_crds.keys() if chart_crds.get(n) != bundle_crds.get(n))
     fail(f"deploy/crd.yaml differs from charts/kairon/crds ({', '.join(drift)}); run `make crds`")
 
+# VERSION is the single source of truth for the release; the chart must agree with it.
+release_version = (root / "VERSION").read_text().strip()
+if not re.fullmatch(r"v\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?", release_version):
+    fail(f"VERSION must look like vMAJOR.MINOR.PATCH[-pre], got {release_version!r}")
+chart_version = release_version[1:]
+
 try:
     chart = yaml.safe_load((root / "charts/kairon/Chart.yaml").read_text())
-    if chart.get("version") != "0.10.2" or chart.get("appVersion") != "0.10.2":
-        fail("Helm chart version/appVersion must be 0.10.2")
+    if chart.get("version") != chart_version or chart.get("appVersion") != chart_version:
+        fail(f"Helm chart version/appVersion must be {chart_version} (VERSION is {release_version})")
 except Exception as e:
     fail(f"Chart semantic check failed: {e}")
-
-if (root / "VERSION").read_text().strip() != "v0.10.2":
-    fail("VERSION must be v0.10.2")
 
 # MCP Registry metadata: server.json must track the release version and the
 # image that carries the ownership label (Dockerfile `mcp` target).

@@ -18,6 +18,11 @@ This file's own convention is specifically **real, live-cluster/live-host verifi
 - **Security changes** (OIDC subject namespacing and `email_verified`, removed-user sessions, viewer scope, security headers, OIDC login-CSRF cookie, link-local download refusal, symlink-safe image paths, login-state eviction): unit tests in `internal/uiapi` and `internal/agent`.
 - **Chart:** rendered with `helm template`; server-side dry-run of the rendered chart accepted by the cluster's API server; the production profile fails with a clear message when the webhook TLS values are missing.
 
+## Verified on the published release candidate (`v0.10.3-rc2`, 2026-11-11)
+
+- **Release pipeline, end to end on a real tag:** all six images passed the HIGH/CRITICAL vulnerability scan (rc1 had been stopped by CVE-2026-78661 in `golang.org/x/net`, fixed in 0.62.0), were pushed and signed, and the chart, CLI binaries, version-pinned manifests tarball and `SHA256SUMS` (11 entries) were published as a GitHub **pre-release**. `latest` and the MCP Registry were not touched. One step failed because the runner lacked the GitHub CLI; fixed on the runner and re-run.
+- **Fresh install from the published chart with default image tags** on a real k3s + KVM host: controller and node pulled `v0.10.3-rc2` and were Ready (v0.10.2's default install failed with `ImagePullBackOff`); `doctor` 7 OK; `selftest --profile standard` 6 passed; `kaironctl upgrade` against the published chart OK; the production profile without webhook values fails with a clear message.
+
 ## Not verified
 
 - The release workflow changes (`promote-latest`, tag/chart check, pre-release handling): `actionlint` only. Only a real tag push exercises them.
