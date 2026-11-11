@@ -82,6 +82,31 @@ Snapshot are hidden for Machine rows, and Restore for Snapshot rows, outside
 that namespace). The API form is `GET /api/v1/{machines,migrations,snapshots}?namespace=_all`
 (see the [API reference](kairon-ui-api.md)).
 
+### Adding or changing operators after install
+
+`ui.auth.users` only **seeds** the accounts. The chart renders the `kairon-ui-users`
+Secret from it when that Secret does not exist yet (the first install that sets
+`ui.auth.users`); on every later `helm upgrade`, `kaironctl upgrade` or
+`kaironctl config set` the chart keeps whatever the Secret already holds, because
+operators change passwords at runtime and an upgrade must not undo that. So
+editing `ui.auth.users` (adding an operator, changing `admin` or `namespaces`) on an existing
+install has **no effect**. To change the accounts afterwards, edit the Secret's `users.json` key
+(a JSON array of `{username, passwordHash, admin, namespaces}`) and restart the dashboard:
+
+```bash
+kubectl -n kairon-system get secret kairon-ui-users -o jsonpath='{.data.users\.json}' | base64 -d > users.json
+# edit users.json (hashes: kairon-ui -hash-password), then
+kubectl -n kairon-system create secret generic kairon-ui-users --from-file=users.json --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n kairon-system rollout restart deploy/kairon-ui
+```
+
+For accounts managed outside Helm (GitOps), point `ui.auth.existingSecret` at your own Secret
+instead; the dashboard then refuses in-app password changes (501). The same applies to an install that
+began with the seeded default `admin` (no `ui.auth.users`): that account is kept in the
+`kairon-ui-session` Secret, and setting `ui.auth.users` later creates `kairon-ui-users` for the first time.
+This behaviour is from the chart template (`charts/kairon/templates/all.yaml`, `lookup` of `kairon-ui-users`); the Secret-edit procedure above
+has not been run against a live cluster.
+
 ## Navigation
 
 Navigation is grouped into a frosted top bar with a mega-menu (a sheet on small

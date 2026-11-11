@@ -23,6 +23,12 @@ This file's own convention is specifically **real, live-cluster/live-host verifi
 - **Release pipeline, end to end on a real tag:** all six images passed the HIGH/CRITICAL vulnerability scan (rc1 had been stopped by CVE-2026-78661 in `golang.org/x/net`, fixed in 0.62.0), were pushed and signed, and the chart, CLI binaries, version-pinned manifests tarball and `SHA256SUMS` (11 entries) were published as a GitHub **pre-release**. `latest` and the MCP Registry were not touched. One step failed because the runner lacked the GitHub CLI; fixed on the runner and re-run.
 - **Fresh install from the published chart with default image tags** on a real k3s + KVM host: controller and node pulled `v0.10.3-rc2` and were Ready (v0.10.2's default install failed with `ImagePullBackOff`); `doctor` 7 OK; `selftest --profile standard` 6 passed; `kaironctl upgrade` against the published chart OK; the production profile without webhook values fails with a clear message.
 
+## The final v0.10.3 tag (2026-11-11): what the evidence covers
+
+- `v0.10.3` points at the same commit as `main` at release time (`ead3dcf`); the release workflow run for the tag and the CI run on that commit both concluded `success` (GitHub Actions). The release is marked Latest and carries the chart (`kairon-0.10.3.tgz`), the version-pinned manifests tarball, the CLI and `kubectl-kairon` binaries for linux amd64/arm64, `kairon_{linux,darwin}_{amd64,arm64}.tar.gz`, `kairon.yaml` and `SHA256SUMS`.
+- `v0.10.3-rc3` and `v0.10.3` differ only in `VERSION`, `charts/kairon/Chart.yaml` and `server.json` (`git diff --stat`). `v0.10.3-rc2`, the build that was installed on the real host, differs from the final tag in `go.mod` (the dependency upgrades of #225 and the Go 1.27.4 bump of #226) and in CI files; nothing under `internal/` or `cmd/` changed between rc2 and the final tag. **No install of the final `v0.10.3` or `rc3` images on a real host has been recorded**; the install evidence above is for rc2.
+- After the release, the docs for the install, upgrade and production-profile paths were re-checked against the chart and CLI: `helm lint charts/kairon` passes; `helm template` renders `ghcr.io/zyvorai/kairon-{controller,node}:v0.10.3` when the image tags are empty; the production profile without webhook values stops with the chart's message and renders with them; every `kaironctl` subcommand and flag named in the docs was compared with `kaironctl --help` output built from the same commit. None of this boots a Machine.
+
 ## Not verified
 
 - The release workflow changes (`promote-latest`, tag/chart check, pre-release handling): `actionlint` only. Only a real tag push exercises them.
@@ -31,6 +37,8 @@ This file's own convention is specifically **real, live-cluster/live-host verifi
 - Dashboard behaviour in a browser after the security-header and session changes.
 - Live migration, multi-node, GPU, NVMe-oF, DR and macOS features: unchanged status in `docs/STATUS.md`.
 - Backup/restore failure reporting and `qemu-img` timeouts: unit-level only, no live failure injection.
+- A real-host install of the final `v0.10.3` images (see above), and an upgrade from a v0.10.2 install (including clearing its image-tag overrides and the one-time OIDC session reset).
+- The `kairon-ui-users` Secret editing procedure in the dashboard guide and the `ui.auth.users` first-install-only behaviour: read from the chart template, not run against a cluster.
 
 # Shipped in v0.5.0: guest-agent real guest-IP reporting test report
 

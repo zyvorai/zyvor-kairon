@@ -291,6 +291,8 @@ chmod +x kaironctl && sudo mv kaironctl /usr/local/bin/      # or: kubectl krew 
 kaironctl create demo --image /var/lib/fluxvm/images/ubuntu.qcow2 --cpu 2 --memory 2Gi
 ```
 
+Other platforms: `kaironctl-linux-arm64` and `kairon_darwin_{amd64,arm64}.tar.gz` are on the [release page](https://github.com/zyvorai/zyvor-kairon/releases/tag/v0.10.3) with `SHA256SUMS`. Upgrading an existing install: [getting started](docs/getting-started.md#upgrade-rollback-and-node-drains) (apply CRDs first, keep your values; `kaironctl upgrade` does both).
+
 **Before the production command above, create the webhook TLS Secret and the `kairon-migration-tls` Secret and pass `--set webhook.tlsSecretName=... --set webhook.caBundle=...`; the install stops with a message if they are missing (steps in [getting started](docs/getting-started.md#evaluation-vs-production)).** The production profile pins image tags to ``v` + `Chart.AppVersion`` and turns on the webhook, namespace isolation, network default-deny and migration data-plane TLS. Images: `ghcr.io/zyvorai/kairon-{controller,node,ui}`, signed with checksums and SBOM.
 
 From your laptop to a bare-metal host, built on the host so your laptop needs no Go or Node, with a smoke test at the end:

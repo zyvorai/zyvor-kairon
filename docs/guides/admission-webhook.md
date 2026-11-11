@@ -8,14 +8,26 @@ Also see [machine-quotas.md](machine-quotas.md) and [machine-disruption-budgets.
 ```bash
 # You bring the certificate -- this chart doesn't mint one for you,
 # same posture as migration.tlsSecretName/console.tls.secretName.
-kubectl -n kairon-system create secret generic kairon-webhook-tls \
-  --from-file=tls.crt --from-file=tls.key
+# For evaluation, the repository script writes a throwaway CA and serving certificate
+# (ca.pem, cert.pem, key.pem), a ready-made Secret manifest and ca-bundle.b64:
+scripts/gen-webhook-tls-certs.sh ./webhook-certs
+kubectl create namespace kairon-system --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f ./webhook-certs/kairon-webhook-tls.secret.yaml
+# (or, with your own files: kubectl -n kairon-system create secret tls kairon-webhook-tls --cert=tls.crt --key=tls.key)
 
 helm upgrade --install kairon ./charts/kairon -n kairon-system \
   --set webhook.enabled=true \
   --set webhook.tlsSecretName=kairon-webhook-tls \
-  --set webhook.caBundle="$(base64 -w0 ca.crt)"
+  --set webhook.caBundle="$(cat ./webhook-certs/ca-bundle.b64)"
 ```
+
+`webhook.enabled=true` without both `webhook.tlsSecretName` and `webhook.caBundle` makes the chart stop
+with a message (v0.10.2 rendered an invalid volume instead), and `values-production.yaml` turns the webhook on.
+The script's certificates are valid for 30 days (`CERT_DAYS=N` changes it) and its CA is a throwaway one: with
+the default `failurePolicy: Fail`, an expired serving certificate blocks every Machine and MachineMigration write,
+so in production use cert-manager or your own CA with a rotation process, and renew before expiry.
+The webhook has been exercised by unit tests only, not against a real API server in the project's own CI
+([`TEST_REPORT.md`](../../TEST_REPORT.md)).
 
 **Warning on create-only fields.** `spec.cloudInit` and `spec.network.forwards`
 are read once, when the VM is created. With the webhook enabled, an edit to
