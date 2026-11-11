@@ -700,12 +700,12 @@ func TestClientIPUsesHeaderOnlyFromATrustedPeer(t *testing.T) {
 	s := &Server{TrustedProxyHeader: "X-Forwarded-For", TrustedProxyCIDRs: []*net.IPNet{trustedNet}}
 
 	// Direct peer is inside the trusted CIDR (the load balancer itself) --
-	// the header's leftmost entry (the real client) is trusted.
+	// the rightmost entry that is not itself a trusted proxy (the real client) is used.
 	trusted := httptest.NewRequest(http.MethodGet, "/", nil)
 	trusted.RemoteAddr = "10.0.0.5:5555"
 	trusted.Header.Set("X-Forwarded-For", "198.51.100.1, 10.0.0.5")
 	if got := s.clientIP(trusted); got != "198.51.100.1" {
-		t.Fatalf("expected the header's leftmost entry from a trusted peer, got %q", got)
+		t.Fatalf("expected the rightmost non-proxy entry from a trusted peer, got %q", got)
 	}
 
 	// Direct peer is NOT inside the trusted CIDR -- a client talking
@@ -734,6 +734,33 @@ func TestClientIPUsesHeaderOnlyFromATrustedPeer(t *testing.T) {
 	malformed.Header.Set("X-Forwarded-For", "not-an-ip")
 	if got := s.clientIP(malformed); got != "10.0.0.5" {
 		t.Fatalf("expected fallback to RemoteAddr on a malformed header value, got %q", got)
+	}
+}
+
+func TestClientIPIgnoresClientSuppliedForwardedForEntries(t *testing.T) {
+	_, trustedNet, err := net.ParseCIDR("10.0.0.0/8")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{TrustedProxyHeader: "X-Forwarded-For", TrustedProxyCIDRs: []*net.IPNet{trustedNet}}
+
+	// The client sent its own "X-Forwarded-For: 1.2.3.4"; the trusted proxy
+	// appended the address it actually saw. The spoofed leftmost value must not
+	// choose the rate-limit bucket.
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "10.0.0.5:5555"
+	req.Header.Set("X-Forwarded-For", "1.2.3.4, 198.51.100.7, 10.0.0.9")
+	if got := s.clientIP(req); got != "198.51.100.7" {
+		t.Fatalf("expected the rightmost non-proxy entry, got %q", got)
+	}
+
+	// Repeated header lines are one list.
+	multi := httptest.NewRequest(http.MethodGet, "/", nil)
+	multi.RemoteAddr = "10.0.0.5:5555"
+	multi.Header.Add("X-Forwarded-For", "1.2.3.4")
+	multi.Header.Add("X-Forwarded-For", "198.51.100.7")
+	if got := s.clientIP(multi); got != "198.51.100.7" {
+		t.Fatalf("expected the last header line's client entry, got %q", got)
 	}
 }
 
