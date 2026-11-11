@@ -484,3 +484,12 @@ func TestConsoleTLSConfigPinsTheServerName(t *testing.T) {
 		t.Errorf("an empty name verifies the dialled host: %+v %v", cfg, err)
 	}
 }
+
+func TestLoadUsersRejectsOIDCPrefixedUsername(t *testing.T) {
+	if _, err := loadUsers(`[{"username":"oidc:eve","passwordHash":"$2a$10$abc"}]`, ""); err == nil {
+		t.Fatal("a local username starting with the reserved oidc: prefix must be rejected")
+	}
+	if _, err := loadUsers(`[{"username":"alice","passwordHash":"$2a$10$abc"}]`, "Admin@321"); err != nil {
+		t.Fatalf("normal users and the seeded admin must still load: %v", err)
+	}
+}

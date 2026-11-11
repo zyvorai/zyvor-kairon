@@ -451,6 +451,11 @@ func loadUsers(usersJSON, defaultAdminPassword string) ([]uiapi.User, error) {
 		if err := json.Unmarshal([]byte(usersJSON), &users); err != nil {
 			return nil, fmt.Errorf("parse $KAIRON_UI_USERS_JSON: %w", err)
 		}
+		for _, u := range users {
+			if strings.HasPrefix(u.Username, uiapi.OIDCSubjectPrefix) {
+				return nil, fmt.Errorf("$KAIRON_UI_USERS_JSON: username %q uses the reserved %q prefix (it namespaces OIDC sessions)", u.Username, uiapi.OIDCSubjectPrefix)
+			}
+		}
 	}
 	if defaultAdminPassword != "" {
 		hash, err := bcrypt.GenerateFromPassword([]byte(defaultAdminPassword), bcrypt.DefaultCost)

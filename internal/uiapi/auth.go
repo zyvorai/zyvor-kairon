@@ -570,6 +570,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, found := s.findUser(req.Username)
+	if found && strings.HasPrefix(user.Username, oidcSubjectPrefix) {
+		found = false // reserved for OIDC session subjects; never a local login
+	}
 	hash := dummyHash
 	if found {
 		hash = []byte(user.PasswordHash)
