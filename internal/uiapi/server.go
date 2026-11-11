@@ -539,9 +539,9 @@ func remoteIP(remoteAddr string) string {
 // one of those CIDRs -- only then is TrustedProxyHeader's value trusted
 // at all, since without that check any direct client could set the
 // header itself to spoof or collide with another client's bucket. When
-// trusted, takes the leftmost entry of a comma-separated header value
-// (X-Forwarded-For's own convention: each proxy appends to the right, so
-// the leftmost entry is what the first hop -- the real client -- sent),
+// trusted, takes the rightmost entry of the comma-separated header value that
+// is not itself a trusted proxy (X-Forwarded-For's convention: each proxy
+// appends the address it saw; anything left of that is client-supplied),
 // falling back to r.RemoteAddr if the header is absent or doesn't parse
 // as an IP.
 func (s *Server) clientIP(r *http.Request) string {
@@ -563,15 +563,35 @@ func (s *Server) clientIP(r *http.Request) string {
 	if !trusted {
 		return direct
 	}
-	header := r.Header.Get(s.TrustedProxyHeader)
+	// Walk the list from the right: each proxy appends the address it saw, so
+	// the rightmost entries were written by our own infrastructure and the first
+	// one that is not a trusted proxy is the real client. Everything left of it
+	// is client-controlled; taking the leftmost entry would let any client
+	// choose its own rate-limit bucket by sending its own X-Forwarded-For.
+	header := strings.Join(r.Header.Values(s.TrustedProxyHeader), ",")
 	if header == "" {
 		return direct
 	}
-	forwarded := strings.TrimSpace(strings.SplitN(header, ",", 2)[0])
-	if net.ParseIP(forwarded) == nil {
-		return direct
+	entries := strings.Split(header, ",")
+	for i := len(entries) - 1; i >= 0; i-- {
+		ip := net.ParseIP(strings.TrimSpace(entries[i]))
+		if ip == nil {
+			return direct
+		}
+		if !s.isTrustedProxy(ip) {
+			return ip.String()
+		}
 	}
-	return forwarded
+	return direct
+}
+
+func (s *Server) isTrustedProxy(ip net.IP) bool {
+	for _, cidr := range s.TrustedProxyCIDRs {
+		if cidr.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 // withMetrics wraps every route (auth-gated or not, including /healthz/
