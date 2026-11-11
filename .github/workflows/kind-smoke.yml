@@ -32,7 +32,7 @@ jobs:
         run: |
           set -uo pipefail
           docker ps -a --filter "name=kairon-ci" --format '{{.ID}} {{.CreatedAt}}' | while read -r id created; do
-            age=$(( $(date +%s) - $(date -d "${created% *}" +%s 2>/dev/null || echo "$(date +%s)") ))
+            age=$(( $(date +%s) - $(date -d "${created% *}" +%s 2>/dev/null || date +%s) ))
             if [ "$age" -gt 3600 ]; then docker rm -f "$id" >/dev/null 2>&1 || true; fi
           done
           true
