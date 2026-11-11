@@ -20,8 +20,8 @@ repos keep working; new and rewritten objects are stored as `v1`. The
 **Apply the CRDs before the new binaries**: Kairon's clients now call
 `/apis/kairon.zyvor.dev/v1/...`, which a cluster that has not yet seen the
 `v1` CRDs does not serve. Helm installs `crds/` only on first install and
-never upgrades them, so apply them yourself (or let the host deploy script do
-it):
+never upgrades them, so apply them yourself. `kaironctl upgrade` (embedded Helm
+SDK, not `--helm-cli`) and the host deploy script do it for you:
 
 ```sh
 kubectl apply --server-side -f deploy/crd.yaml

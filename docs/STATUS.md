@@ -11,6 +11,8 @@ Release status and production gaps formerly maintained in the root README.
 
 **Pre-v0.10.3 hardening evidence (2026-11-10):** a fresh install of v0.10.2 with FluxVM 0.4.18 passed `kaironctl selftest --profile standard` (6 passed, 2 skipped), and the hardening changes on `main` were built and tested together; what was and was not verified is itemised in [`TEST_REPORT.md`](../TEST_REPORT.md). Experimental features keep their status below.
 
+The published `v0.10.3-rc2` was installed from the chart with default image tags on a real host (see the report). The final `v0.10.3` tag is the same code apart from dependency bumps and version files, and has not itself been installed on a real host.
+
 **Lab coverage of v0.10.0:** each experimental feature's lab rows are in [`COMPATIBILITY.md`](COMPATIBILITY.md); agent sessions and Mac Fabric have not run on a real Mac. Verified on the single-node lab: boot, power, network, vCPU hotplug, snapshot-restore. Cold migration passed on the two-host lab on 2026-10-14 and 2026-10-15 (see below). FluxVM on the lab host lacks the fork and disk-hotplug endpoints (those checks skip) and fails NIC hotplug with a QMP `Duplicate ID` error, which is tracked upstream in FluxVM.
 
 ### Still open after v0.9

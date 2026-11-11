@@ -73,22 +73,30 @@ Default chart values are an **evaluation** profile (webhook and namespace isolat
 Before installing the production profile, create what it needs (the install stops with a clear message if the webhook TLS values are missing):
 
 ```bash
-# 1. Admission webhook certificate and CA (self-signed for evaluation; use cert-manager or your CA in production)
-scripts/gen-webhook-tls-certs.sh          # see docs/guides/admission-webhook.md
-kubectl -n kairon-system create namespace kairon-system --dry-run=client -o yaml | kubectl apply -f -
-kubectl -n kairon-system create secret generic kairon-webhook-tls --from-file=tls.crt --from-file=tls.key
-# 2. Live-migration mTLS Secret (kairon-node pods stay in ContainerCreating without it)
-scripts/gen-migration-mtls-certs.sh OUT_DIR NODE_NAME=NODE_IP ...    # then create kairon-migration-tls from its control-plane files
+kubectl create namespace kairon-system --dry-run=client -o yaml | kubectl apply -f -
+# 1. Admission webhook certificate and CA. The script writes ca.pem, cert.pem, key.pem,
+#    kairon-webhook-tls.secret.yaml (the ready-made Secret) and ca-bundle.b64 (the webhook.caBundle value).
+#    Its CA is self-signed and valid 30 days (CERT_DAYS); use cert-manager or your own CA in production.
+scripts/gen-webhook-tls-certs.sh ./webhook-certs     # see docs/guides/admission-webhook.md
+kubectl apply -f ./webhook-certs/kairon-webhook-tls.secret.yaml
+# 2. Live-migration mTLS Secret. kairon-node pods stay in ContainerCreating without it
+#    (migration.enabled is on in the production profile; the Secret name is migration.tlsSecretName).
+scripts/gen-migration-mtls-certs.sh ./migration-certs NODE_NAME=NODE_IP ...     # use the real Kubernetes node names
+kubectl -n kairon-system create secret generic kairon-migration-tls \
+  --from-file=ca.crt=./migration-certs/control-plane/ca.pem \
+  --from-file=tls.crt=./migration-certs/control-plane/cert.pem \
+  --from-file=tls.key=./migration-certs/control-plane/key.pem
 ```
 
 Then pass the webhook values:
 
 ```bash
 kaironctl install --profile production \
-  --set webhook.tlsSecretName=kairon-webhook-tls --set webhook.caBundle="$(base64 -w0 ca.crt)"
+  --set webhook.tlsSecretName=kairon-webhook-tls --set webhook.caBundle="$(cat ./webhook-certs/ca-bundle.b64)"
 # or
 helm install kairon charts/kairon -n kairon-system --create-namespace \
-  -f charts/kairon/values-production.yaml
+  -f charts/kairon/values-production.yaml \
+  --set webhook.tlsSecretName=kairon-webhook-tls --set webhook.caBundle="$(cat ./webhook-certs/ca-bundle.b64)"
 ```
 
 That enables admission webhooks, namespace-scoped UI authorization, network default-deny, and migration dataplane TLS requirements. See [`charts/kairon/values-production.yaml`](../charts/kairon/values-production.yaml) and [`docs/COMPATIBILITY.md`](COMPATIBILITY.md).
@@ -131,6 +139,7 @@ helm upgrade kairon oci://ghcr.io/zyvorai/charts/kairon --version X.Y.Z -n kairo
 # or: kaironctl upgrade   (keeps your values, applies the CRDs, reports what changed)
 ```
 
+- **Upgrading from v0.10.2:** a v0.10.2 install needed `--set controller.image.tag=v0.10.2` (and the same for `node`, `ui`, and `csiNode`/`csiController` if enabled). Those overrides are kept by `--reuse-values` and by `kaironctl upgrade`, so the new chart would keep running the old images. Clear them in the same upgrade, for example `kaironctl upgrade --version 0.10.3 --chart oci://ghcr.io/zyvorai/charts/kairon --set controller.image.tag= --set node.image.tag= --set ui.image.tag=` (empty means `v` plus the chart's `appVersion`), then check `kaironctl version --server`. Dashboard OIDC sessions issued by v0.10.2 stop working once; users sign in again. If the node image cache is enabled, check that its directory is owned by UID 65532.
 - **Rollback:** `helm rollback kairon -n kairon-system` reverts the workloads but **not** the CRDs, and
   not objects already stored at a newer API version; roll back across a CRD version change only after
   reading [CRD versioning](guides/crd-versioning.md). Use `helm upgrade --atomic` to have a failed
@@ -232,6 +241,8 @@ helm upgrade --install kairon ./charts/kairon -n kairon-system \
   --set ui.auth.users[0].username=alice \
   --set ui.auth.users[0].passwordHash='$2a$10$...'
 ```
+
+`ui.auth.users` only seeds the accounts on the first install that sets it; later upgrades keep the stored `kairon-ui-users` Secret, so to add or change operators afterwards edit that Secret ([how](guides/kairon-ui-dashboard.md#adding-or-changing-operators-after-install)).
 
 The legacy single shared token (`ui.token`, or `ui.allowUnauthenticated=true`
 for local development) still works unchanged for existing deployments, and

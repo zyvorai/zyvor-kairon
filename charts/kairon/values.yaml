@@ -701,6 +701,9 @@ ui:
     #   users:
     #     - {username: alice, passwordHash: "$2a$...", admin: true}
     #     - {username: bob, passwordHash: "$2a$...", namespaces: [team-bob]}
+    # These only SEED the kairon-ui-users Secret: once it exists, upgrades keep
+    # its contents and changes here are ignored (edit the Secret, or use
+    # existingSecret). See docs/guides/kairon-ui-dashboard.md.
     # When empty (the default) and nothing above is set either, the chart
     # seeds one default "admin" account instead, with a random password it
     # generates once (see NOTES.txt after install/upgrade) -- so a fresh
