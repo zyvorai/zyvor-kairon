@@ -56,8 +56,16 @@ jobs:
       - name: License headers
         run: python3 scripts/check_license_headers.py
       - name: go mod tidy / verify
+        # `go mod verify` re-hashes every extracted module in GOMODCACHE. The
+        # self-hosted runners share one user and one ~/go/pkg/mod that
+        # concurrent jobs and cache restores write into, so it reports
+        # "dir has been modified" for modules nobody touched. Verify against a
+        # private per-job cache instead.
+        env:
+          GOMODCACHE: ${{ runner.temp }}/gomodcache-hygiene
         run: |
           set -euo pipefail
+          trap 'chmod -R u+w "$GOMODCACHE" 2>/dev/null; rm -rf "$GOMODCACHE"' EXIT
           go mod tidy
           git diff --exit-code -- go.mod go.sum
           go mod verify
