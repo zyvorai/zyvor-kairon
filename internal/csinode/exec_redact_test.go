@@ -45,3 +45,15 @@ func TestISCSIIdentifiersRejectOptionAndPathInjection(t *testing.T) {
 		t.Error("ensureFormatted accepted a path-like fsType")
 	}
 }
+
+func TestNVMeNQNRejectsOptionInjection(t *testing.T) {
+	ctx := map[string]string{volumeAttrTransport: "nvme-tcp", volumeAttrPortals: "10.0.0.1:4420"}
+	ctx[volumeAttrNQN] = "nqn.2014-08.org.nvmexpress:uuid:abc"
+	if _, err := parseNVMeConfig(ctx); err != nil {
+		t.Fatalf("valid nqn rejected: %v", err)
+	}
+	ctx[volumeAttrNQN] = "nqn.x,hostnqn=nqn.evil,traddr=6.6.6.6"
+	if _, err := parseNVMeConfig(ctx); err == nil {
+		t.Fatal("nqn with option separators accepted")
+	}
+}
