@@ -51,9 +51,9 @@ Checked against `go.mod` and `go list -deps` for `cmd/kairon-controller` and `cm
 
 ### Version floors and pins
 
-- **`golang.org/x/net` v0.60.0 (floor).** It is an indirect dependency (`// indirect` in `go.mod`). v0.60.0 fixes the HTTP/2 advisories GO-2026-6610 through GO-2026-6617, which are reachable from the FluxVM client, the Kubernetes client and the CSI gRPC path. Do not let it drop below v0.60.0 (v0.59.0, the previous pin, is affected). Landed in v0.7.2.
+- **`golang.org/x/net` v0.60.0 (floor).** It is an indirect dependency (`// indirect` in `go.mod`). v0.60.0 fixes the HTTP/2 advisories GO-2026-6610 through GO-2026-6617, which are reachable from the FluxVM client, the Kubernetes client and the CSI gRPC path. Do not let it drop below v0.60.0 (v0.59.0, the previous pin, is affected). Landed in v0.7.2; `go.mod` currently has v0.62.0.
 - **`google.golang.org/grpc` v1.86.0-dev (pre-release pin).** The history is: the repository was moved to a pre-release commit (`v1.85.0-dev.0.20260825072537-93e31b48545e`, commit 533d808) to pick up the fix for GO-2026-6443 (gRPC server panic on a missing `:authority`/Host, reachable from `kairon-csi-controller`) because there was no tagged v1.85.0 yet; Dependabot then moved it to the `v1.86.0-dev` tag (commit 975f704, PR #28). Whether a tagged, non-`-dev` release containing the fix now exists was not checked from this repository; move to the tagged release as soon as one does, and do not roll back below the GO-2026-6443 fix.
-- **Go 1.27.2** (`go 1.27.2` in `go.mod`) clears the Go standard-library advisories CVE-2026-78667 and CVE-2026-97031 (v0.7.1); `golangci-lint` v2.14 is required to load it.
+- **Go 1.27.2 or newer** clears the Go standard-library advisories CVE-2026-78667 and CVE-2026-97031 (v0.7.1); `go.mod` currently says `go 1.27.4`, and CI and the Dockerfile follow it (`go-version-file: go.mod`, `golang:1.27`). `golangci-lint` v2.14 is required to load it.
 
 ## What “embedded Helm” means for the CLI
 

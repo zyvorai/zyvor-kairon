@@ -64,6 +64,10 @@ it, as long as nodes keep the cached file.
 - `insecureSkipTLSVerify: true` downloads from a self-signed server; the
   digest check still guarantees the bytes.
 
+- Downloads share `kairon-node`'s size cap (`-image-max-download-bytes`, 256 GiB by default), and a qcow2 `disk` whose
+  header names a backing file is refused on the node; flatten it with `qemu-img convert -O qcow2 in.qcow2 out.qcow2`
+  (see [image import](machine-image-import.md#size-limit)).
+
 Images are checked when a Machine references them, not at `kubectl apply`.
 
 ## Versions

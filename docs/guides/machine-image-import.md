@@ -48,6 +48,10 @@ helm upgrade --install kairon ./charts/kairon -n kairon-system \
   --set node.imageCacheDir=/var/lib/fluxvm/images/cache
 ```
 
+Create the directory on every VM node first and give it to UID 65532 (`install -d -o 65532 -g 65532 DIR`):
+`kairon-node` runs non-root and Kubernetes `fsGroup` does not apply to hostPath volumes. If FluxVM is confined by AppArmor,
+the profile must allow the path as well.
+
 This mounts a writable `hostPath` volume into `kairon-node`'s container at
 exactly that path (unlike `--image-root`, which only ever validates a path
 *string* -- `kairon-node` itself never reads or writes an operator-placed
@@ -151,6 +155,37 @@ spec:
 - HTTPS only, anonymous pulls only (including the anonymous bearer-token
   flow Docker Hub, quay.io and ghcr.io use for public images). gzip and
   uncompressed layers; zstd layers are rejected.
+
+## Size limit
+
+`kairon-node` caps what it will fetch for one image: `-image-max-download-bytes` (env
+`KAIRON_IMAGE_MAX_DOWNLOAD_BYTES`), **256 GiB** by default (`0` means the default). It applies to an `httpURL`
+download (a larger `Content-Length`, or a body that runs past the limit, fails the download and leaves no temp file, so an
+endless response cannot fill the cache disk) and to an OCI containerDisk pull (the compressed layer and the extracted
+disk file, each). The digest pin still decides whether the bytes are accepted; the cap only bounds how many are read.
+The error says `exceeds the N byte limit (kairon-node -image-max-download-bytes)`.
+
+The Helm chart has no value for it. On a Helm install the default applies unless you add the environment variable to
+the `kairon-node` DaemonSet yourself (for example `kubectl -n kairon-system set env ds/kairon-node
+KAIRON_IMAGE_MAX_DOWNLOAD_BYTES=<bytes>`; check it again after a `helm upgrade`). On a `deploy-remote.sh` host put it in
+`/etc/kairon/kairon-node.env`, which the script leaves untouched on redeploys. This limit has been exercised by unit
+tests only.
+
+## Backing files are refused
+
+A qcow2 whose header names a backing file is refused on the node: for an image that arrives through
+`spec.image.source` (an `httpURL`, an `oci` containerDisk, an uploaded or catalog image) the Machine fails with
+`image ... is a qcow2 with a backing file; flatten it (qemu-img convert) before use`. The backing path would be opened
+on the node by `qemu-img` and by the hypervisor, so an image author could otherwise pull any file `kairon-node` can read
+into the guest's disk, and the digest pin does not help because the author controls the bytes. Flatten such an image first:
+
+```bash
+qemu-img convert -O qcow2 backed.qcow2 flat.qcow2
+```
+
+Conversions of qcow2 sources now pass `-f qcow2` instead of letting `qemu-img` probe the format. A file you place at
+`spec.image.path` yourself is not part of this check (it is an operator-placed path). Unit tests cover the refusal;
+it has not been tried with a real backed image on a node.
 
 ## Uploading images
 

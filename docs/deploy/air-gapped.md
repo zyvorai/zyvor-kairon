@@ -19,6 +19,10 @@ and the chart's default tag is `v` plus its `appVersion`.
 | `ghcr.io/zyvorai/kairon-controller`, `kairon-node` | always |
 | `ghcr.io/zyvorai/kairon-ui` | `ui.enabled` |
 | `ghcr.io/zyvorai/kairon-csi-node`, `kairon-csi-controller` | `csiNode.enabled`, `csiController.enabled` |
+| `registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.18.0` | `csiNode.enabled` (`csiNode.registrar.image.*`) |
+| `registry.k8s.io/sig-storage/csi-provisioner:v5.1.0`, `csi-resizer:v1.12.0`, `csi-snapshotter:v8.2.0` | `csiController.enabled` (`csiController.{provisioner,resizer,snapshotter}.image.*`) |
+| `busybox:1.36` | `migration.enabled` with `migration.adapterHostPath` and `migration.dataplaneTls` (an init container that stages certificates; its image is fixed in the template, so make the name resolvable on your nodes, for example by pre-loading it), and `node.cpuPinning.copierImage` (a value, same default) when CPU-pinning discovery is on |
+| `ghcr.io/zyvorai/kairon-mcp` | only if you run `kaironctl mcp serve` from the image; the chart does not deploy it |
 
 ```bash
 helm upgrade --install kairon charts/kairon -n kairon-system \

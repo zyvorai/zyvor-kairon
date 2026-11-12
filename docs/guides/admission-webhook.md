@@ -21,6 +21,13 @@ helm upgrade --install kairon ./charts/kairon -n kairon-system \
   --set webhook.caBundle="$(cat ./webhook-certs/ca-bundle.b64)"
 ```
 
+The chart itself creates the `kairon-controller-webhook` Service (port 443 to the controller's webhook port) and the
+`ValidatingWebhookConfiguration` of the same name, but only when `webhook.enabled`, `webhook.tlsSecretName` and
+`webhook.caBundle` are all set. The generator script's closing message still says to create that Service and
+configuration yourself; ignore that step, the chart does it. The script's certificate names
+`kairon-controller-webhook.kairon-system.svc`, so for a release namespace other than `kairon-system` run
+`scripts/gen-webhook-tls-certs.sh OUT_DIR kairon-controller-webhook YOUR_NAMESPACE`.
+
 `webhook.enabled=true` without both `webhook.tlsSecretName` and `webhook.caBundle` makes the chart stop
 with a message (v0.10.2 rendered an invalid volume instead), and `values-production.yaml` turns the webhook on.
 The script's certificates are valid for 30 days (`CERT_DAYS=N` changes it) and its CA is a throwaway one: with
@@ -28,6 +35,14 @@ the default `failurePolicy: Fail`, an expired serving certificate blocks every M
 so in production use cert-manager or your own CA with a rotation process, and renew before expiry.
 The webhook has been exercised by unit tests only, not against a real API server in the project's own CI
 ([`TEST_REPORT.md`](../../TEST_REPORT.md)).
+
+**CPU and memory quantities.** Since v0.10.4 the quantity parser (`model.ParseVCPUs`/`ParseMemoryMiB`/`ParseBytes`)
+returns an error for `NaN`, `Inf` and out-of-range values (for example `NaN`, `1e30Gi`, more than 2^20 vCPUs or 2^40 MiB
+of memory), and the Machine check rejects them at admission through that parser. Before, such a value parsed to an
+arbitrary number (usually 0), which read as "no request" and skipped the scheduler's capacity check. The webhook is
+the only place that rejects the Machine up front: with it off (the default), the apply still succeeds, and the
+scheduler, which has always treated a quantity it cannot parse as no request, does not enforce capacity for it.
+Existing Machines that relied on such a value need a real quantity.
 
 **Warning on create-only fields.** `spec.cloudInit` and `spec.network.forwards`
 are read once, when the VM is created. With the webhook enabled, an edit to

@@ -170,6 +170,19 @@ consumed by a real Kubernetes Pod via kubelet, never by a Kairon Machine,
 for exactly the same reason. Leaving the `StorageClass` with no secret
 parameters (the default) preserves demo mode exactly as before.
 
+## Input validation and secrets in errors (v0.10.4)
+
+Volume attributes come from whoever authored the PV, so the node plugin checks them before they reach a command line, a
+`targetcli` path or the NVMe-fabrics option string, and fails the mount with a plain error instead:
+
+- iSCSI portal and IQN must match `^[A-Za-z0-9\[][A-Za-z0-9.:_\[\],-]*$` and `^[A-Za-z0-9][A-Za-z0-9.:_@-]*$` (no leading `-`, no `/`, no whitespace);
+- an NVMe NQN must match `^nqn\.[A-Za-z0-9.:_@-]+$` (a `,` or `=` would let a PV author set other connect options);
+- `fsType` must be 1 to 16 lowercase letters or digits.
+
+CHAP passwords are masked (`password=***`) in the `iscsiadm` and `targetcli` command lines that appear in error text, which
+kubelet turns into Pod events. All of this is unit-tested only; it has not been exercised against real iSCSI or NVMe
+targets.
+
 ## Real limits today (first cut)
 
 - **iSCSI and NVMe-oF only.** No Ceph RBD, EBS, or any other network-block

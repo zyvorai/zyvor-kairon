@@ -100,12 +100,40 @@ kubectl -n kairon-system create secret generic kairon-ui-users --from-file=users
 kubectl -n kairon-system rollout restart deploy/kairon-ui
 ```
 
+Local usernames may not start with `oidc:`: that prefix namespaces OIDC session
+subjects (see [OIDC](kairon-ui-oidc.md)), which are always treated as valid
+sessions, so `kairon-ui` refuses to start when `$KAIRON_UI_USERS_JSON` holds such
+a username and refuses to log one in. Rename the account in the `kairon-ui-users`
+Secret before upgrading to v0.10.4 or later; the seeded `admin` user is unaffected.
+
 For accounts managed outside Helm (GitOps), point `ui.auth.existingSecret` at your own Secret
 instead; the dashboard then refuses in-app password changes (501). The same applies to an install that
 began with the seeded default `admin` (no `ui.auth.users`): that account is kept in the
 `kairon-ui-session` Secret, and setting `ui.auth.users` later creates `kairon-ui-users` for the first time.
 This behaviour is from the chart template (`charts/kairon/templates/all.yaml`, `lookup` of `kairon-ui-users`); the Secret-edit procedure above
 has not been run against a live cluster.
+
+## Rate limiting and login lockout
+
+Every route is limited per client address (`-rate-limit-rps`, default 20 requests per second sustained, and
+`-rate-limit-burst`, default 40; `0` for rps disables it). There is no Helm value for these two; set the flags on the
+dashboard's arguments if you need other numbers. On top of that, 5 failed logins for one username lock that username
+out for 5 minutes (`429` with `Retry-After`), counted per requested username, including unknown ones.
+
+By default the client address is the TCP peer. Behind a `Service`, Ingress or load balancer that is the proxy's own
+address, so every client would share one bucket. To key by the real client instead, set both
+`ui.rateLimit.trustedProxyHeader` (for example `X-Forwarded-For`) and `ui.rateLimit.trustedProxyCidrs` (the addresses
+of your proxies; setting only one of them stops the dashboard at startup):
+
+- The header is read only when the direct TCP peer is inside `trustedProxyCidrs`; otherwise it is ignored, so a client
+  that reaches the dashboard directly cannot choose its own bucket.
+- Since v0.10.4 the address used is the **rightmost** header entry that is not itself inside `trustedProxyCidrs`
+  (each proxy appends the address it saw, so entries further left are client-supplied; v0.10.3 and earlier used the
+  leftmost one, which a client could forge). If an entry does not parse as an IP the TCP peer is used instead.
+- List **every** proxy hop in front of `kairon-ui` in `trustedProxyCidrs`. If one hop is missing, that hop's address is
+  taken for the client and all clients behind it share one bucket.
+
+This logic is covered by unit tests only; it has not been run behind a real proxy or load balancer.
 
 ## Navigation
 
