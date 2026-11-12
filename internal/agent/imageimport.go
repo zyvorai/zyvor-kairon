@@ -65,7 +65,7 @@ func (a *Agent) fetchToCache(ctx context.Context, img model.ImageSpec) (string, 
 		}
 		return cachePath, nil
 	}
-	if err := downloadToTemp(ctx, img.Source.HTTPURL, cachePath, hexDigest, img.Source.InsecureSkipTLSVerify); err != nil {
+	if err := downloadToTemp(ctx, img.Source.HTTPURL, cachePath, hexDigest, img.Source.InsecureSkipTLSVerify, a.maxImageDownloadBytes()); err != nil {
 		return "", err
 	}
 	return cachePath, nil
@@ -293,6 +293,18 @@ func copyFileAtomic(src, dst string) error {
 	return os.Rename(tmpPath, dst)
 }
 
+// DefaultMaxImageDownloadBytes bounds a spec.image.source.httpURL download when
+// Agent.MaxImageDownloadBytes is unset: generous for real disk images, but an
+// endless body cannot fill the cache disk.
+const DefaultMaxImageDownloadBytes int64 = 256 << 30
+
+func (a *Agent) maxImageDownloadBytes() int64 {
+	if a.MaxImageDownloadBytes > 0 {
+		return a.MaxImageDownloadBytes
+	}
+	return DefaultMaxImageDownloadBytes
+}
+
 // downloadToTemp streams source into a temp file in the same directory as
 // destPath (so the final os.Rename is same-filesystem and atomic -- no
 // partial file is ever visible at destPath), hashing as it streams, and
@@ -301,7 +313,10 @@ func copyFileAtomic(src, dst string) error {
 // docs/guides/machine-storage.md), so bytes are trusted via digest, not
 // inspected -- which is also why skipping TLS verification is safe for
 // integrity.
-func downloadToTemp(ctx context.Context, source, destPath, wantHexDigest string, insecure bool) error {
+func downloadToTemp(ctx context.Context, source, destPath, wantHexDigest string, insecure bool, maxBytes int64) error {
+	if maxBytes <= 0 {
+		maxBytes = DefaultMaxImageDownloadBytes
+	}
 	if err := os.MkdirAll(filepath.Dir(destPath), 0o750); err != nil {
 		return fmt.Errorf("create image cache directory: %w", err)
 	}
@@ -318,6 +333,7 @@ func downloadToTemp(ctx context.Context, source, destPath, wantHexDigest string,
 	if insecure {
 		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // bytes are verified against the pinned sha256 below
 	}
+	defer tr.CloseIdleConnections() // the transport is per call; do not leave idle conns for 90s
 	client := &http.Client{Transport: tr}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -326,6 +342,9 @@ func downloadToTemp(ctx context.Context, source, destPath, wantHexDigest string,
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download %s: unexpected status %s", source, resp.Status)
+	}
+	if resp.ContentLength > maxBytes {
+		return fmt.Errorf("download %s: size %d exceeds the %d byte limit (kairon-node -image-max-download-bytes)", source, resp.ContentLength, maxBytes)
 	}
 
 	tmp, err := os.CreateTemp(filepath.Dir(destPath), ".import-*")
@@ -336,9 +355,16 @@ func downloadToTemp(ctx context.Context, source, destPath, wantHexDigest string,
 	defer func() { _ = os.Remove(tmpPath) }() // no-op once the rename below succeeds
 
 	hasher := sha256.New()
-	if _, err := io.Copy(tmp, io.TeeReader(resp.Body, hasher)); err != nil {
+	// Read one byte past the limit so an over-long (or endless) body is
+	// detected rather than silently truncated into a digest mismatch.
+	n, err := io.Copy(tmp, io.TeeReader(io.LimitReader(resp.Body, maxBytes+1), hasher))
+	if err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("download %s: %w", source, err)
+	}
+	if n > maxBytes {
+		_ = tmp.Close()
+		return fmt.Errorf("download %s: body exceeds the %d byte limit (kairon-node -image-max-download-bytes)", source, maxBytes)
 	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("finalize download of %s: %w", source, err)

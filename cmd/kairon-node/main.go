@@ -85,6 +85,7 @@ func run() int {
 	backend := flag.String("default-backend", env("KAIRON_DEFAULT_BACKEND", osDefault("qemu", "vz")), "backend used when Machine runtime.backend is auto")
 	imageRoot := flag.String("image-root", env("KAIRON_IMAGE_ROOT", osDefault("/var/lib/fluxvm/images", macSupport("FluxVM/images"))), "allowed root for Machine image paths")
 	exportDir := flag.String("export-dir", env("KAIRON_EXPORT_DIR", osDefault("/var/lib/kairon-node/exports", macSupport("Kairon/exports"))), "directory for MachineExport copies converted to another disk format")
+	imageMaxBytes := flag.Int64("image-max-download-bytes", int64(envUint("KAIRON_IMAGE_MAX_DOWNLOAD_BYTES", 0)), "maximum size of one spec.image.source.httpURL download in bytes (0 = 256 GiB); larger bodies fail the download")
 	imageCacheDir := flag.String("image-cache-dir", env("KAIRON_IMAGE_CACHE_DIR", ""), "directory kairon-node downloads/caches spec.image.source images into, keyed by digest -- empty (the default) refuses any Machine that sets spec.image.source; see docs/guides/machine-image-import.md")
 	vfioAllowlistRaw := flag.String("vfio-allowlist", env("KAIRON_VFIO_ALLOWLIST", ""), "comma-separated PCI BDFs this node permits for DRA-backed VFIO passthrough")
 	mdevParentsRaw := flag.String("mdev-parents", env("KAIRON_MDEV_PARENTS", ""), "comma-separated mediated device parents (PCI BDFs or names such as mbochs) the scheduler may create vGPUs on; empty allows every parent")
@@ -253,6 +254,7 @@ func run() int {
 		DefaultBackend:               *backend,
 		ImageRoot:                    *imageRoot,
 		ImageCacheDir:                *imageCacheDir,
+		MaxImageDownloadBytes:        *imageMaxBytes,
 		Exports:                      exports,
 		ExportDir:                    *exportDir,
 		VFIOAllowlist:                vfioAllowlist,

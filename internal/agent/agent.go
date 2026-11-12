@@ -114,6 +114,9 @@ type Agent struct {
 	// unaffected either way. Same fail-closed convention as
 	// CSISocketPath above.
 	ImageCacheDir string
+	// MaxImageDownloadBytes caps one spec.image.source.httpURL download; 0
+	// means DefaultMaxImageDownloadBytes.
+	MaxImageDownloadBytes int64
 	// Exports is shared with the node relay, which serves only its entries.
 	Exports *diskexport.Registry
 	// ExportDir holds MachineExport copies converted to another format.

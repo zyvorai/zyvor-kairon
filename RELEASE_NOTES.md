@@ -1,3 +1,11 @@
+## Unreleased
+
+**Fixed**
+
+- **Image downloads are size-capped.** A `spec.image.source.httpURL` download is limited to `kairon-node -image-max-download-bytes` (env `KAIRON_IMAGE_MAX_DOWNLOAD_BYTES`, default 256 GiB); a larger `Content-Length` or an over-long body fails cleanly and leaves no temp file, so an endless response cannot fill the image-cache disk. The per-download HTTP transport now also closes its idle connections.
+- **Local usernames may not start with `oidc:`.** That prefix namespaces OIDC session subjects and those subjects are always treated as valid; `ui.auth.users` entries using it are now rejected at startup and refused at login. The seeded `admin` user and default login are unchanged.
+- **Login-attempt counting is race-free.** The idle-entry sweep could evict a username's state while a failed login was being recorded on it, dropping that failure from the lockout count.
+
 # Kairon v0.10.3
 
 A hardening and install-fix release, prepared from a review of the install, upgrade, reliability and security paths. The published `v0.10.3-rc2` build was installed fresh from the chart with default image tags and passed the standard self-test on a real KVM host (see [`TEST_REPORT.md`](TEST_REPORT.md) for exactly what was and was not verified).

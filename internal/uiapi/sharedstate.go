@@ -266,12 +266,11 @@ func (s *Server) mergeSharedConfigMapEntry(key, raw string, now time.Time) bool 
 // recordLoginResult's own doc comment for why) -- maxLoginAttempts is
 // evaluated per-replica, only the resulting lockout itself is shared.
 func (s *Server) mergeLockout(username string, lockedUntil time.Time) {
-	st := s.loginState(username)
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	if lockedUntil.After(st.lockedUntil) {
-		st.lockedUntil = lockedUntil
-	}
+	s.withLoginState(username, func(st *loginAttemptState) {
+		if lockedUntil.After(st.lockedUntil) {
+			st.lockedUntil = lockedUntil
+		}
+	})
 }
 
 // mergePasswordChangedAt only ever moves a username's recorded reset time

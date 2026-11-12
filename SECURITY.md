@@ -146,6 +146,12 @@ Known limitations of the username/password mode: with `ui.replicaCount > 1`, ses
 - **MCP.** `kaironctl mcp serve --allow-write` warns when the weak default approval mode is in use.
 - **Dashboard connections.** The dashboard reuses one connection pool to the nodes instead of opening a TLS connection per proxied request.
 
+### Unreleased hardening
+
+- **Image downloads are size-capped** (`kairon-node -image-max-download-bytes`, default 256 GiB) so an endless body from an `httpURL` source cannot fill the cache disk; the digest pin still decides whether the bytes are accepted.
+- **Reserved `oidc:` username prefix.** Local `ui.auth.users` entries starting with `oidc:` are rejected at startup and refused at login, because such a subject is treated as an OIDC identity and skips the local-user existence check.
+- **Login lockout counting** no longer loses a failure that races the idle-entry sweep.
+
 Known gaps in v0.10.3 (not addressed): changing your own password does not revoke your other sessions; Machines created directly with `kubectl` bypass the dashboard's privileged-port-forward check; OIDC against a real identity provider, the admission webhook against a real API server and the dashboard's behaviour in a browser after these changes were not verified (see [`TEST_REPORT.md`](TEST_REPORT.md)).
 
 ## VNC console (`console.enabled`)

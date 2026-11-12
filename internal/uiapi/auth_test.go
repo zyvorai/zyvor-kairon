@@ -398,3 +398,12 @@ func TestLoginFlagsTheWellKnownDefaultPassword(t *testing.T) {
 		t.Fatal("no flag when the server has no well-known password configured")
 	}
 }
+
+// A local user named like an OIDC subject would be treated as always-valid by
+// sessionSubjectStillValid; password login must refuse such accounts.
+func TestLoginRefusesLocalUserWithOIDCPrefix(t *testing.T) {
+	s := newUserTestServer(t, []User{{Username: oidcSubjectPrefix + "mallory", PasswordHash: hashFor(t, "pw")}}, "test-session-secret")
+	if rr := login(t, s.Handler(), oidcSubjectPrefix+"mallory", "pw"); rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d: %s", rr.Code, rr.Body.String())
+	}
+}

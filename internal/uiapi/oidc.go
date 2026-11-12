@@ -294,7 +294,11 @@ func (s *Server) redirectOIDCError(w http.ResponseWriter, r *http.Request, messa
 }
 
 // oidcSubjectPrefix namespaces OIDC session subjects away from local users.
-const oidcSubjectPrefix = "oidc:"
+const oidcSubjectPrefix = OIDCSubjectPrefix
+
+// OIDCSubjectPrefix is exported so configuration loading can reserve it:
+// local usernames may not start with it.
+const OIDCSubjectPrefix = "oidc:"
 
 // stringClaimSlice extracts a []string from an ID token claim's own
 // decoded any value -- encoding/json always decodes a JSON array into

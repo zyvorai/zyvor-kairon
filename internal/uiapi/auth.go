@@ -400,6 +400,7 @@ type loginAttemptState struct {
 	count       int
 	lockedUntil time.Time
 	lastTouch   time.Time // for eviction of idle entries
+	evicted     bool      // set under mu by the sweep; a holder must re-fetch
 }
 
 const (
@@ -424,15 +425,34 @@ func (s *Server) loginState(username string) *loginAttemptState {
 
 const loginSweepEvery = 256
 
+// withLoginState runs fn with username's state locked and guaranteed to still
+// be the one in the map: the sweep marks a state evicted under its lock before
+// deleting it, so a caller that raced the sweep retries on a fresh entry
+// instead of recording a failure on an orphan (which dropped the count).
+func (s *Server) withLoginState(username string, fn func(st *loginAttemptState)) {
+	for {
+		st := s.loginState(username)
+		st.mu.Lock()
+		if st.evicted {
+			st.mu.Unlock()
+			continue
+		}
+		fn(st)
+		st.mu.Unlock()
+		return
+	}
+}
+
 func (s *Server) sweepLoginAttempts(now time.Time) {
 	s.loginAttempts.Range(func(k, v any) bool {
 		st := v.(*loginAttemptState)
 		st.mu.Lock()
 		stale := now.After(st.lockedUntil) && now.Sub(st.lastTouch) > 2*loginLockoutFor
-		st.mu.Unlock()
 		if stale {
+			st.evicted = true
 			s.loginAttempts.Delete(k)
 		}
+		st.mu.Unlock()
 		return true
 	})
 }
@@ -440,13 +460,11 @@ func (s *Server) sweepLoginAttempts(now time.Time) {
 // loginLockedFor returns how much longer username is locked out, or 0 if
 // it may attempt a login now.
 func (s *Server) loginLockedFor(username string) time.Duration {
-	st := s.loginState(username)
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	if remaining := time.Until(st.lockedUntil); remaining > 0 {
-		return remaining
-	}
-	return 0
+	var remaining time.Duration
+	s.withLoginState(username, func(st *loginAttemptState) {
+		remaining = max(time.Until(st.lockedUntil), 0)
+	})
+	return remaining
 }
 
 // recordLoginResult clears a username's failure count on success, or
@@ -463,24 +481,26 @@ func (s *Server) loginLockedFor(username string) time.Duration {
 // here. With SharedStateConfigMapName unset (the default), this behaves
 // exactly as it always did on a single replica.
 func (s *Server) recordLoginResult(ctx context.Context, username string, success bool) {
-	st := s.loginState(username)
-	st.mu.Lock()
+	newlyLocked := false
+	var lockedUntil time.Time
+	s.withLoginState(username, func(st *loginAttemptState) {
+		if success {
+			st.count = 0
+			st.lockedUntil = time.Time{}
+			return
+		}
+		st.count++
+		if st.count >= maxLoginAttempts {
+			st.lockedUntil = time.Now().Add(loginLockoutFor)
+			st.count = 0
+			newlyLocked = true
+		}
+		lockedUntil = st.lockedUntil
+	})
 	if success {
-		st.count = 0
-		st.lockedUntil = time.Time{}
-		st.mu.Unlock()
 		s.deleteSharedState(ctx, sharedLockoutKey(username))
 		return
 	}
-	st.count++
-	newlyLocked := false
-	if st.count >= maxLoginAttempts {
-		st.lockedUntil = time.Now().Add(loginLockoutFor)
-		st.count = 0
-		newlyLocked = true
-	}
-	lockedUntil := st.lockedUntil
-	st.mu.Unlock()
 	if newlyLocked {
 		s.writeSharedState(ctx, sharedLockoutKey(username), sharedLockoutEntry{LockedUntil: lockedUntil})
 	}
@@ -550,6 +570,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, found := s.findUser(req.Username)
+	if found && strings.HasPrefix(user.Username, oidcSubjectPrefix) {
+		found = false // reserved for OIDC session subjects; never a local login
+	}
 	hash := dummyHash
 	if found {
 		hash = []byte(user.PasswordHash)
