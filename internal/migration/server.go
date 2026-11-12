@@ -42,7 +42,24 @@ type Server struct {
 // attacker-controlled at volume, so this is an acceptable simplicity
 // tradeoff rather than a real leak.
 func (s *Server) lockFor(id string) func() {
+	l := s.sessionMutex(id)
+	l.Lock()
+	return l.Unlock
+}
+
+// tryLockFor is lockFor that gives up instead of waiting; ok is false when
+// a transition or reap holds the session right now.
+func (s *Server) tryLockFor(id string) (unlock func(), ok bool) {
+	l := s.sessionMutex(id)
+	if !l.TryLock() {
+		return nil, false
+	}
+	return l.Unlock, true
+}
+
+func (s *Server) sessionMutex(id string) *sync.Mutex {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.locks == nil {
 		s.locks = map[string]*sync.Mutex{}
 	}
@@ -51,9 +68,7 @@ func (s *Server) lockFor(id string) func() {
 		l = &sync.Mutex{}
 		s.locks[id] = l
 	}
-	s.mu.Unlock()
-	l.Lock()
-	return l.Unlock
+	return l
 }
 
 func (s *Server) Handler() http.Handler {
@@ -109,6 +124,10 @@ func (s *Server) prepare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Serialize with other prepares/commits/aborts of this session: a source
+	// retrying after a timeout would otherwise run Driver.Prepare twice and
+	// leak the first reservation when the second Put wins.
+	defer s.lockFor(req.Session.ID)()
 	existing, err := s.Store.Get(req.Session.ID)
 	if err == nil {
 		if !existing.SameIdentity(req.Session) {
@@ -225,15 +244,22 @@ func (s *Server) transition(w http.ResponseWriter, r *http.Request, desired stri
 // doesn't treat its source as gone. A no-op (not an error) on an
 // already-terminal session -- the source learns the real outcome through
 // its own Commit/Abort call result or Diagnose, not through this
-// best-effort liveness ping. Deliberately doesn't take lockFor: it never
-// calls the (possibly slow) Driver, and a racing UpdatedAt write is
-// harmless last-write-wins.
+// best-effort liveness ping. It only try-locks the session (never waits
+// behind a slow Driver call) and skips the write if a transition holds it.
 func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 	if s.Store == nil {
 		writeError(w, http.StatusServiceUnavailable, errors.New("migration store is not configured"))
 		return
 	}
 	id := r.PathValue("id")
+	// A commit/abort/reap in flight owns the session; writing a stale
+	// "Prepared" copy back over its result would undo it (and let the reaper
+	// abort a destination that already committed). Skip the renewal then --
+	// that transition is itself proof of life.
+	unlock, owned := s.tryLockFor(id)
+	if owned {
+		defer unlock()
+	}
 	session, err := s.Store.Get(id)
 	if errors.Is(err, ErrNotFound) {
 		writeError(w, http.StatusNotFound, err)
@@ -243,7 +269,7 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	if session.Phase == "Prepared" {
+	if owned && session.Phase == "Prepared" {
 		session.UpdatedAt = s.now()
 		if err := s.Store.Put(session); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
