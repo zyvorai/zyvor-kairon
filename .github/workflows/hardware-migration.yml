@@ -45,11 +45,11 @@ jobs:
             bash -n scripts/multi-host-migration-test-run.sh
           fi
           # Safety gate must refuse without KAIRON_HW_LAB=1.
-          if scripts/hardware-migration-matrix.sh 2>/tmp/hw-refuse.txt; then
+          if scripts/hardware-migration-matrix.sh 2>${{ runner.temp }}/hw-refuse.txt; then
             echo "expected refuse without KAIRON_HW_LAB=1" >&2
             exit 1
           fi
-          grep -qi 'KAIRON_HW_LAB' /tmp/hw-refuse.txt
+          grep -qi 'KAIRON_HW_LAB' ${{ runner.temp }}/hw-refuse.txt
           echo "hardware-migration validate: OK"
       - name: Report what the lab matrix has and has not proven
         run: |

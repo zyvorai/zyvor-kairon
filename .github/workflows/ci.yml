@@ -71,15 +71,15 @@ jobs:
       - name: Helm lint and render
         run: |
           helm lint charts/kairon
-          helm template kairon charts/kairon --namespace kairon-system > /tmp/kairon.yaml
-          helm template kairon charts/kairon --namespace kairon-system --set migration.enabled=true > /tmp/kairon-migration.yaml
+          helm template kairon charts/kairon --namespace kairon-system > ${{ runner.temp }}/kairon.yaml
+          helm template kairon charts/kairon --namespace kairon-system --set migration.enabled=true > ${{ runner.temp }}/kairon-migration.yaml
           python3 - <<'PY'
           import yaml
-          for path in ['/tmp/kairon.yaml', '/tmp/kairon-migration.yaml']:
+          for path in ['${{ runner.temp }}/kairon.yaml', '${{ runner.temp }}/kairon-migration.yaml']:
               with open(path) as f:
                   docs = [d for d in yaml.safe_load_all(f) if d]
               assert docs, path
-          enabled = [d for d in yaml.safe_load_all(open('/tmp/kairon-migration.yaml')) if d]
+          enabled = [d for d in yaml.safe_load_all(open('${{ runner.temp }}/kairon-migration.yaml')) if d]
           ds = next(d for d in enabled if d.get('kind') == 'DaemonSet')
           container = ds['spec']['template']['spec']['containers'][0]
           assert any(str(arg).startswith('--migration-ca=') for arg in container['args'])
@@ -93,10 +93,10 @@ jobs:
           # No ui.* auth configured: the chart now seeds a default admin
           # account (random password, generated once) instead of refusing
           # to render or coming up unauthenticated.
-          helm template kairon charts/kairon --namespace kairon-system --set ui.enabled=true > /tmp/kairon-ui-default.yaml
+          helm template kairon charts/kairon --namespace kairon-system --set ui.enabled=true > ${{ runner.temp }}/kairon-ui-default.yaml
           python3 - <<'PY'
           import yaml
-          docs = [d for d in yaml.safe_load_all(open('/tmp/kairon-ui-default.yaml')) if d]
+          docs = [d for d in yaml.safe_load_all(open('${{ runner.temp }}/kairon-ui-default.yaml')) if d]
           kinds = {d['kind'] for d in docs if d.get('metadata', {}).get('name') == 'kairon-ui'}
           for want in ['ServiceAccount', 'ClusterRole', 'ClusterRoleBinding', 'Deployment', 'Service']:
               assert want in kinds, f"missing kairon-ui {want}"
@@ -114,10 +114,10 @@ jobs:
           # seeding stops entirely.
           # shellcheck disable=SC2016  # bcrypt hash must stay single-quoted
           helm template kairon charts/kairon --namespace kairon-system --set ui.enabled=true \
-            --set ui.auth.users[0].username=alice --set-string ui.auth.users[0].passwordHash='$2a$10$abcdefghijklmnopqrstuv' > /tmp/kairon-ui-users.yaml
+            --set ui.auth.users[0].username=alice --set-string ui.auth.users[0].passwordHash='$2a$10$abcdefghijklmnopqrstuv' > ${{ runner.temp }}/kairon-ui-users.yaml
           python3 - <<'PY'
           import yaml
-          docs = [d for d in yaml.safe_load_all(open('/tmp/kairon-ui-users.yaml')) if d]
+          docs = [d for d in yaml.safe_load_all(open('${{ runner.temp }}/kairon-ui-users.yaml')) if d]
           users_secret = next(d for d in docs if d.get('kind') == 'Secret' and d['metadata']['name'] == 'kairon-ui-users')
           assert 'alice' in users_secret['stringData']['users.json']
           deployment = next(d for d in docs if d.get('kind') == 'Deployment' and d['metadata']['name'] == 'kairon-ui')
@@ -130,10 +130,10 @@ jobs:
           PY
 
           # Legacy shared token still works unchanged.
-          helm template kairon charts/kairon --namespace kairon-system --set ui.enabled=true --set ui.token=ci-test-token > /tmp/kairon-ui-token.yaml
+          helm template kairon charts/kairon --namespace kairon-system --set ui.enabled=true --set ui.token=ci-test-token > ${{ runner.temp }}/kairon-ui-token.yaml
           python3 - <<'PY'
           import yaml
-          docs = [d for d in yaml.safe_load_all(open('/tmp/kairon-ui-token.yaml')) if d]
+          docs = [d for d in yaml.safe_load_all(open('${{ runner.temp }}/kairon-ui-token.yaml')) if d]
           secret = next(d for d in docs if d.get('kind') == 'Secret' and d['metadata']['name'] == 'kairon-ui-token')
           assert secret['stringData']['token'] == 'ci-test-token'
           print('helm render YAML: OK (kairon-ui legacy token)')
@@ -252,10 +252,10 @@ jobs:
         run: |
           helm template kairon charts/kairon --namespace kairon-system \
             --set network.ciliumAttach.enabled=true \
-            --set network.ciliumPolicySync.enabled=true > /tmp/kairon-cilium.yaml
+            --set network.ciliumPolicySync.enabled=true > ${{ runner.temp }}/kairon-cilium.yaml
           python3 - <<'PY'
           import yaml
-          docs = [d for d in yaml.safe_load_all(open('/tmp/kairon-cilium.yaml')) if d]
+          docs = [d for d in yaml.safe_load_all(open('${{ runner.temp }}/kairon-cilium.yaml')) if d]
           role = next(d for d in docs if d.get('kind') == 'ClusterRole' and d['metadata']['name'] == 'kairon-controller')
           resources = set()
           for rule in role.get('rules', []):
@@ -270,10 +270,10 @@ jobs:
           print('helm render YAML: OK (cilium attach + policy sync)')
           PY
           # Flags off (chart default): no cilium.io rules.
-          helm template kairon charts/kairon --namespace kairon-system > /tmp/kairon-nocilium.yaml
+          helm template kairon charts/kairon --namespace kairon-system > ${{ runner.temp }}/kairon-nocilium.yaml
           python3 - <<'PY'
           import yaml
-          docs = [d for d in yaml.safe_load_all(open('/tmp/kairon-nocilium.yaml')) if d]
+          docs = [d for d in yaml.safe_load_all(open('${{ runner.temp }}/kairon-nocilium.yaml')) if d]
           role = next(d for d in docs if d.get('kind') == 'ClusterRole' and d['metadata']['name'] == 'kairon-controller')
           for rule in role.get('rules', []):
               assert 'cilium.io' not in rule.get('apiGroups', []), rule
@@ -295,10 +295,10 @@ jobs:
             --set webhook.tlsSecretName=ci-webhook-tls \
             --set webhook.caBundle=Y2ktY2EtYnVuZGxl \
             --set migration.dataplaneTlsSecretName=ci-migration-dataplane \
-            > /tmp/kairon-production.yaml
+            > ${{ runner.temp }}/kairon-production.yaml
           python3 - <<'PY'
           import yaml
-          docs = [d for d in yaml.safe_load_all(open('/tmp/kairon-production.yaml')) if d]
+          docs = [d for d in yaml.safe_load_all(open('${{ runner.temp }}/kairon-production.yaml')) if d]
           chart = yaml.safe_load(open('charts/kairon/Chart.yaml'))
           app = str(chart['appVersion']).strip('"')
           ctrl = next(d for d in docs if d.get('kind') == 'Deployment' and d['metadata']['name'] == 'kairon-controller')
