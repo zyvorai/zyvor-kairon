@@ -68,9 +68,9 @@ jobs:
             --set controller.image.pullPolicy=IfNotPresent \
             --set node.image.pullPolicy=IfNotPresent \
             --set controller.replicaCount=1
-          kubectl -n kairon-system get deploy,ds,sa | tee /tmp/kairon-kind.txt
-          grep -q kairon-controller /tmp/kairon-kind.txt
-          grep -q kairon-node /tmp/kairon-kind.txt
+          kubectl -n kairon-system get deploy,ds,sa | tee ${{ runner.temp }}/kairon-kind.txt
+          grep -q kairon-controller ${{ runner.temp }}/kairon-kind.txt
+          grep -q kairon-node ${{ runner.temp }}/kairon-kind.txt
           echo "kind-smoke: OK"
       - name: Helm production overlay dry-run
         run: |
