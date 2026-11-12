@@ -168,6 +168,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
           go-version-file: go.mod
+          cache: ${{ runner.environment == 'github-hosted' }}  # self-hosted: shared GOMODCACHE, cache restore/save takes 15-35 min
       # Per-job docker config dir: the self-hosted runners share one user, so
       # a default ~/.docker/config.json is overwritten or logged out by
       # concurrent jobs (helm push then fails with 403 denied). Same value on
