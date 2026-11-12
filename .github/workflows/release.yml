@@ -299,22 +299,34 @@ jobs:
           # Tags with a hyphen (v1.2.3-rc1) are published as GitHub pre-releases.
           extra=()
           case "$version" in *-*) extra=(--prerelease) ;; esac
-          gh release create "$version" \
-            "${extra[@]}" \
-            dist/kaironctl-linux-amd64 \
-            dist/kaironctl-linux-arm64 \
-            dist/kubectl-kairon-linux-amd64 \
-            dist/kubectl-kairon-linux-arm64 \
-            dist/SHA256SUMS \
-            dist/krew/kairon_darwin_arm64.tar.gz \
-            dist/krew/kairon_darwin_amd64.tar.gz \
-            dist/krew/kairon_linux_amd64.tar.gz \
-            dist/krew/kairon_linux_arm64.tar.gz \
-            dist/krew/kairon.yaml \
-            "dist/kairon-${chart_version}.tgz" \
-            "dist/kairon-manifests-${version}.tgz" \
-            --title "$version" \
-            --notes "$notes"
+          assets=(
+            dist/kaironctl-linux-amd64
+            dist/kaironctl-linux-arm64
+            dist/kubectl-kairon-linux-amd64
+            dist/kubectl-kairon-linux-arm64
+            dist/SHA256SUMS
+            dist/krew/kairon_darwin_arm64.tar.gz
+            dist/krew/kairon_darwin_amd64.tar.gz
+            dist/krew/kairon_linux_amd64.tar.gz
+            dist/krew/kairon_linux_arm64.tar.gz
+            dist/krew/kairon.yaml
+            "dist/kairon-${chart_version}.tgz"
+            "dist/kairon-manifests-${version}.tgz"
+          )
+          # Re-run safe: a release that already exists (a re-run of this job, or one
+          # created by hand) is not an error. Its assets are (re)uploaded with
+          # --clobber and its notes/title are left as they are, so a hand-written
+          # release body survives. Only a missing release is created.
+          if gh release view "$version" >/dev/null 2>&1; then
+            echo "::notice::release ${version} already exists; uploading assets with --clobber"
+            gh release upload "$version" "${assets[@]}" --clobber
+          else
+            gh release create "$version" \
+              "${extra[@]}" \
+              "${assets[@]}" \
+              --title "$version" \
+              --notes "$notes"
+          fi
 
   # MCP Registry metadata only: the kairon-mcp image built above is what
   # clients pull. Tag pushes only (the workflow only triggers on tags).
