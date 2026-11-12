@@ -62,6 +62,16 @@ type registryClient struct {
 	http  *http.Client
 	ref   model.OCIReference
 	token string
+	// maxBytes caps one layer blob (as served) and the disk file extracted
+	// from it; 0 means DefaultMaxImageDownloadBytes.
+	maxBytes int64
+}
+
+func (c *registryClient) limit() int64 {
+	if c.maxBytes > 0 {
+		return c.maxBytes
+	}
+	return DefaultMaxImageDownloadBytes
 }
 
 func (c *registryClient) get(ctx context.Context, p, accept string) (*http.Response, error) {
@@ -230,7 +240,7 @@ func (a *Agent) pullOCIDisk(ctx context.Context, img model.ImageSpec, destPath s
 	if err != nil {
 		return err
 	}
-	c := &registryClient{http: a.registryHTTP(), ref: ref}
+	c := &registryClient{http: a.registryHTTP(), ref: ref, maxBytes: a.maxImageDownloadBytes()}
 	m, err := c.manifest(ctx, img.Digest)
 	if err != nil {
 		return err
@@ -274,7 +284,9 @@ func (c *registryClient) extractDisk(ctx context.Context, layer ociDescriptor, d
 	}
 	defer func() { _ = resp.Body.Close() }()
 	hasher := sha256.New()
-	raw := io.TeeReader(resp.Body, hasher)
+	// One byte past the cap tells "exactly at the cap" from "endless body".
+	blob := &io.LimitedReader{R: resp.Body, N: c.limit() + 1}
+	raw := io.TeeReader(blob, hasher)
 	br := bufio.NewReader(raw)
 	magic, _ := br.Peek(4)
 	var stream io.Reader = br
@@ -313,7 +325,11 @@ func (c *registryClient) extractDisk(ctx context.Context, layer ociDescriptor, d
 			return false, err
 		}
 		tmpPath = tmp.Name()
-		if _, err := io.Copy(tmp, tr); err != nil {
+		n, err := io.Copy(tmp, io.LimitReader(tr, c.limit()+1))
+		if err == nil && n > c.limit() {
+			err = fmt.Errorf("larger than the %d byte image size limit", c.limit())
+		}
+		if err != nil {
 			_ = tmp.Close()
 			return false, fmt.Errorf("extract %s: %w", name, err)
 		}
@@ -324,6 +340,9 @@ func (c *registryClient) extractDisk(ctx context.Context, layer ociDescriptor, d
 	// Hash the rest of the blob so the digest covers every byte.
 	if _, err := io.Copy(io.Discard, br); err != nil {
 		return false, fmt.Errorf("read layer: %w", err)
+	}
+	if blob.N <= 0 {
+		return false, fmt.Errorf("layer is larger than the %d byte image size limit", c.limit())
 	}
 	if got := model.ImageDigestPrefix + hex.EncodeToString(hasher.Sum(nil)); got != layer.Digest {
 		return false, fmt.Errorf("layer digest mismatch: got %s", got)

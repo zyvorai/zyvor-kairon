@@ -64,7 +64,25 @@ func (execRunner) Run(ctx context.Context, name string, args ...string) (string,
 	out, err := cmd.CombinedOutput()
 	trimmed := strings.TrimSpace(string(out))
 	if err != nil {
-		return trimmed, fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, trimmed)
+		return trimmed, fmt.Errorf("%s %s: %w: %s", name, strings.Join(redactArgs(args), " "), err, trimmed)
 	}
 	return trimmed, nil
+}
+
+// redactArgs masks CHAP secrets in a command line before it lands in an
+// error: the error is returned to kubelet over gRPC and shows up in Pod
+// events, so `-v <password>` and `password=<secret>` must not survive it.
+func redactArgs(args []string) []string {
+	out := append([]string(nil), args...)
+	for i, a := range out {
+		switch {
+		case strings.HasPrefix(a, "password="):
+			out[i] = "password=***"
+		case a == "-v" && i >= 2 && out[i-2] == "-n" && strings.HasSuffix(out[i-1], ".password"):
+			if i+1 < len(out) {
+				out[i+1] = "***"
+			}
+		}
+	}
+	return out
 }

@@ -33,7 +33,9 @@ func TestReconcileCreatesFluxVMAndUpdatesStatus(t *testing.T) {
 			PowerState: "Running",
 		},
 	}
+	machine.Metadata.ResourceVersion = "77"
 	var finalizerPatched, statusPatched bool
+	var finalizerPatchBody string
 	var status model.MachineStatus
 	var phaseEvent model.Event
 	ks := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -42,6 +44,10 @@ func TestReconcileCreatesFluxVMAndUpdatesStatus(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(model.MachineList{Items: []model.Machine{machine}})
 		case r.Method == http.MethodPatch && r.URL.Path == "/apis/kairon.zyvor.dev/v1/namespaces/prod/machines/db":
 			finalizerPatched = true
+			if finalizerPatchBody == "" {
+				b, _ := io.ReadAll(r.Body)
+				finalizerPatchBody = string(b)
+			}
 			w.WriteHeader(http.StatusOK)
 		case r.Method == http.MethodPatch && r.URL.Path == "/apis/kairon.zyvor.dev/v1/namespaces/prod/machines/db/status":
 			var p struct {
@@ -84,6 +90,9 @@ func TestReconcileCreatesFluxVMAndUpdatesStatus(t *testing.T) {
 	}
 	if !finalizerPatched || !created || !statusPatched {
 		t.Fatalf("finalizer=%v created=%v status=%v", finalizerPatched, created, statusPatched)
+	}
+	if !strings.Contains(finalizerPatchBody, `"resourceVersion":"77"`) {
+		t.Fatalf("finalizer add must be guarded by resourceVersion, body=%s", finalizerPatchBody)
 	}
 	if status.RuntimeID != "vm-123" || status.Phase != "Running" || status.GuestIP != "10.44.0.8" {
 		t.Fatalf("unexpected status: %+v", status)

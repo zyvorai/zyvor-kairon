@@ -219,3 +219,30 @@ func TestResolveImportedImageCallsFluxVMOncePerDigest(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A qcow2 whose header names a backing file must not be used as a boot image:
+// qemu-img/the hypervisor would read that node-local path into the guest.
+func TestResolveImageSourceRejectsBackedQcow2(t *testing.T) {
+	hdr := make([]byte, 72)
+	copy(hdr, qcow2Magic)
+	hdr[8+7] = 0x48 // backing_file_offset != 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(hdr)
+	}))
+	defer srv.Close()
+	a := &Agent{ImageCacheDir: t.TempDir()}
+	_, err := a.resolveImageSource(context.Background(), machineWithImageSource(srv.URL, digestOf(hdr)))
+	if err == nil || !strings.Contains(err.Error(), "backing file") {
+		t.Fatalf("want backing-file rejection, got %v", err)
+	}
+	plain := append([]byte(nil), hdr...)
+	plain[8+7] = 0
+	if err := os.WriteFile(filepath.Join(t.TempDir(), "x"), plain, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(t.TempDir(), "plain")
+	_ = os.WriteFile(p, plain, 0o600)
+	if err := rejectBackedQcow2(p); err != nil {
+		t.Fatalf("standalone qcow2 rejected: %v", err)
+	}
+}

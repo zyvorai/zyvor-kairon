@@ -43,12 +43,20 @@ func parseNVMeConfig(volumeContext map[string]string) (nvmeConfig, error) {
 	if !strings.HasPrefix(nqn, "nqn.") {
 		return nvmeConfig{}, fmt.Errorf("volume_context %q must be an NVMe qualified name (nqn....)", volumeAttrNQN)
 	}
+	// The NQN is spliced into the comma-separated option string written to
+	// /dev/nvme-fabrics; a "," or "=" would let a PV author set other
+	// connect options (hostnqn, traddr, keys).
+	if !nqnPattern.MatchString(nqn) {
+		return nvmeConfig{}, fmt.Errorf("volume_context %q has characters outside [A-Za-z0-9.:_@-]", volumeAttrNQN)
+	}
 	portals, err := splitPortals(volumeContext[volumeAttrPortals])
 	if err != nil {
 		return nvmeConfig{}, err
 	}
 	return nvmeConfig{Transport: t, NQN: nqn, Portals: portals, FSType: defaultFSType}, nil
 }
+
+var nqnPattern = regexp.MustCompile(`^nqn\.[A-Za-z0-9.:_@-]+$`)
 
 func splitPortals(s string) ([]string, error) {
 	var out []string

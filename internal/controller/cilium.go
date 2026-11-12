@@ -72,10 +72,8 @@ func (c *Controller) reconcileMachineCiliumAttach(ctx context.Context, m model.M
 	}
 
 	if !hasFinalizer {
-		finals := append(append([]string{}, m.Metadata.Finalizers...), model.FinalizerCiliumAttach)
-		if err := c.Kube.PatchMachine(ctx, m.Namespace(), m.Metadata.Name, map[string]any{
-			"metadata": map[string]any{"finalizers": finals},
-		}); err != nil {
+		meta := model.AddFinalizerMeta(m.Metadata.Finalizers, model.FinalizerCiliumAttach, m.Metadata.ResourceVersion)
+		if err := c.Kube.PatchMachine(ctx, m.Namespace(), m.Metadata.Name, map[string]any{"metadata": meta}); err != nil {
 			return fmt.Errorf("add cilium-attach finalizer: %w", err)
 		}
 	}

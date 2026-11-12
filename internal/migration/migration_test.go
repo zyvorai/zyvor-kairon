@@ -19,6 +19,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -604,5 +605,91 @@ func writePEM(t *testing.T, path, typ string, der []byte, mode os.FileMode) {
 	data := pem.EncodeToMemory(&pem.Block{Type: typ, Bytes: der})
 	if err := os.WriteFile(path, data, mode); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// gateStore blocks the first Get after arm() until released, to hold a
+// heartbeat between its read and write.
+type gateStore struct {
+	Store
+	mu      sync.Mutex
+	armed   bool
+	reached chan struct{}
+	release chan struct{}
+}
+
+func (g *gateStore) Get(id string) (Session, error) {
+	sess, err := g.Store.Get(id)
+	g.mu.Lock()
+	hold := g.armed
+	g.armed = false
+	g.mu.Unlock()
+	if hold {
+		close(g.reached)
+		<-g.release
+	}
+	return sess, err
+}
+
+// A heartbeat that read "Prepared" must not write it back over a commit that
+// finished in between.
+func TestHeartbeatDoesNotRevertConcurrentCommit(t *testing.T) {
+	d := &fakeDestination{prepare: PrepareResult{TransferSupported: true, Endpoint: "opaque://session/123"}}
+	gs := &gateStore{Store: NewFileStore(t.TempDir()), reached: make(chan struct{}), release: make(chan struct{})}
+	srv := &Server{Store: gs, Driver: d}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	c := NewClient(ts.Client())
+	if _, err := c.Prepare(context.Background(), ts.URL, testSession()); err != nil {
+		t.Fatal(err)
+	}
+	gs.mu.Lock()
+	gs.armed = true
+	gs.mu.Unlock()
+	hbDone := make(chan struct{})
+	go func() { defer close(hbDone); _ = c.Heartbeat(context.Background(), ts.URL, "kmm-123") }()
+	<-gs.reached
+	commitDone := make(chan struct{})
+	go func() { defer close(commitDone); _ = c.Commit(context.Background(), ts.URL, "kmm-123") }()
+	select {
+	case <-commitDone:
+	case <-time.After(300 * time.Millisecond):
+	}
+	close(gs.release)
+	<-hbDone
+	<-commitDone
+	got, err := gs.Store.Get("kmm-123")
+	if err != nil || got.Phase != "Committed" {
+		t.Fatalf("phase=%q err=%v, want Committed", got.Phase, err)
+	}
+}
+
+type countingDestination struct {
+	fakeDestination
+	mu sync.Mutex
+	n  int
+}
+
+func (c *countingDestination) Prepare(ctx context.Context, s Session) (PrepareResult, error) {
+	c.mu.Lock()
+	c.n++
+	c.mu.Unlock()
+	time.Sleep(50 * time.Millisecond)
+	return c.prepare, nil
+}
+
+func TestConcurrentPreparePreparesDestinationOnce(t *testing.T) {
+	d := &countingDestination{fakeDestination: fakeDestination{prepare: PrepareResult{TransferSupported: true, Endpoint: "opaque://s"}}}
+	ts := httptest.NewServer((&Server{Store: NewFileStore(t.TempDir()), Driver: d}).Handler())
+	defer ts.Close()
+	c := NewClient(ts.Client())
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); _, _ = c.Prepare(context.Background(), ts.URL, testSession()) }()
+	}
+	wg.Wait()
+	if d.n != 1 {
+		t.Fatalf("Driver.Prepare ran %d times for one session", d.n)
 	}
 }

@@ -113,7 +113,7 @@ func (r *fakeRegistry) putManifest(t *testing.T, layers ...[]byte) string {
 
 func TestResolveImageSourcePullsOCIContainerDisk(t *testing.T) {
 	reg := newFakeRegistry(t, "containerdisks/alpine")
-	disk := []byte("QFI\xfbfake qcow2 disk")
+	disk := append([]byte("QFI\xfb\x00\x00\x00\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"), "fake qcow2 disk"...)
 	manifest := reg.putManifest(t,
 		tarLayer(t, true, map[string][]byte{"disk/old.img": []byte("lower layer")}),
 		tarLayer(t, true, map[string][]byte{"etc/x": []byte("x"), "./disk/alpine.qcow2": disk}),
@@ -200,5 +200,23 @@ func TestParseAuthParams(t *testing.T) {
 	got := parseAuthParams(`realm="https://auth.example/token",service=registry.example,scope="repository:a/b:pull,push"`)
 	if got["realm"] != "https://auth.example/token" || got["service"] != "registry.example" || got["scope"] != "repository:a/b:pull,push" {
 		t.Fatalf("parseAuthParams = %v", got)
+	}
+}
+
+func TestPullOCIDiskEnforcesSizeLimit(t *testing.T) {
+	reg := newFakeRegistry(t, "d/x")
+	manifest := reg.putManifest(t, tarLayer(t, true, map[string][]byte{"disk/x.img": bytes.Repeat([]byte{7}, 4096)}))
+	a := &Agent{ImageCacheDir: t.TempDir(), RegistryHTTP: reg.srv.Client(), MaxImageDownloadBytes: 1024}
+	img := model.ImageSpec{Source: &model.ImageSource{OCI: reg.host() + "/d/x"}, Digest: manifest}
+	dest := filepath.Join(a.ImageCacheDir, "disk")
+	if err := a.pullOCIDisk(context.Background(), img, dest); err == nil || !strings.Contains(err.Error(), "size limit") {
+		t.Fatalf("expected a size limit error, got %v", err)
+	}
+	if _, err := os.Stat(dest); !os.IsNotExist(err) {
+		t.Fatal("oversized disk must not reach the cache")
+	}
+	a.MaxImageDownloadBytes = 1 << 20
+	if err := a.pullOCIDisk(context.Background(), img, dest); err != nil {
+		t.Fatalf("within the limit: %v", err)
 	}
 }

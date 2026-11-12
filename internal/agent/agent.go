@@ -323,8 +323,8 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 		return a.cleanup(ctx, m)
 	}
 	if !model.HasFinalizer(m, model.Finalizer) {
-		finalizers := append(append([]string{}, m.Metadata.Finalizers...), model.Finalizer)
-		if err := a.Kube.PatchMachine(ctx, m.Namespace(), m.Metadata.Name, map[string]any{"metadata": map[string]any{"finalizers": finalizers}}); err != nil {
+		meta := model.AddFinalizerMeta(m.Metadata.Finalizers, model.Finalizer, m.Metadata.ResourceVersion)
+		if err := a.Kube.PatchMachine(ctx, m.Namespace(), m.Metadata.Name, map[string]any{"metadata": meta}); err != nil {
 			return err
 		}
 	}
