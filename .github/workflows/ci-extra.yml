@@ -157,7 +157,9 @@ jobs:
       - name: Krew package
         run: |
           set -euo pipefail
-          make krew-package
+          # Call the script directly (as release.yml does): `make` is not installed on
+          # every self-hosted runner (zyvor-build-f: "make: command not found", exit 127).
+          ./scripts/krew-package.sh
           test -f dist/krew/kairon.yaml
           count=$(find dist/krew -maxdepth 1 -name 'kairon_*.tar.gz' | wc -l | tr -d ' ')
           test "$count" = "4"
