@@ -69,4 +69,4 @@ migration:
 # See docs/network-fabric.md and docs/getting-started.md#network-fabric-ebpf-edge.
 
 # Prefer digest pins in locked-down environments by overriding:
-#   controller.image.tag: "v0.10.3@sha256:..."
+#   controller.image.tag: "v0.10.4@sha256:..."

@@ -107,15 +107,15 @@ Tagged releases publish the Helm chart and the images to GitHub Container Regist
 
 ```bash
 helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \
-  --version 0.10.3 -n kairon-system --create-namespace \
-  -f https://raw.githubusercontent.com/zyvorai/kairon/v0.10.3/charts/kairon/values-production.yaml
+  --version 0.10.4 -n kairon-system --create-namespace \
+  -f https://raw.githubusercontent.com/zyvorai/kairon/v0.10.4/charts/kairon/values-production.yaml
 ```
 
 - Images are `ghcr.io/zyvorai/kairon-{controller,node,ui,csi-node,csi-controller}:<version>`; the chart's image tags default to `v` plus its `appVersion` (release images are tagged `v0.10.2`, not `0.10.2`), so the chart version selects the images.
 - Drop the `-f` overlay for the evaluation profile.
-- `kaironctl` installs the same published chart without Helm: `kaironctl install --chart oci://ghcr.io/zyvorai/charts/kairon --version 0.10.3 --profile production`.
-- Helm applies `crds/` only on first install. When upgrading, apply the CRDs from the same tag first (`kubectl apply --server-side -f https://raw.githubusercontent.com/zyvorai/kairon/v0.10.3/deploy/crd.yaml`); see [CRD versioning](guides/crd-versioning.md#upgrading-an-existing-cluster).
-- Fetch the matching `kaironctl` from the release: `https://github.com/zyvorai/kairon/releases/download/v0.10.3/kaironctl-linux-amd64`, or `kubectl krew install kairon`.
+- `kaironctl` installs the same published chart without Helm: `kaironctl install --chart oci://ghcr.io/zyvorai/charts/kairon --version 0.10.4 --profile production`.
+- Helm applies `crds/` only on first install. When upgrading, apply the CRDs from the same tag first (`kubectl apply --server-side -f https://raw.githubusercontent.com/zyvorai/kairon/v0.10.4/deploy/crd.yaml`); see [CRD versioning](guides/crd-versioning.md#upgrading-an-existing-cluster).
+- Fetch the matching `kaironctl` from the release: `https://github.com/zyvorai/kairon/releases/download/v0.10.4/kaironctl-linux-amd64`, or `kubectl krew install kairon`.
 
 Later, `kaironctl upgrade` keeps the values you installed with (`--reset-values` returns to chart defaults), `kaironctl upgrade --check` compares your release with the latest one without changing anything, `kaironctl config set KEY=VALUE` changes a single value, and `kaironctl history` / `kaironctl rollback` list and restore revisions. Add `--context NAME` or `--kubeconfig PATH` to target a specific cluster. See [CLI](CLI.md).
 
@@ -139,7 +139,7 @@ helm upgrade kairon oci://ghcr.io/zyvorai/charts/kairon --version X.Y.Z -n kairo
 # or: kaironctl upgrade   (keeps your values, applies the CRDs, reports what changed)
 ```
 
-- **Upgrading from v0.10.2:** a v0.10.2 install needed `--set controller.image.tag=v0.10.2` (and the same for `node`, `ui`, and `csiNode`/`csiController` if enabled). Those overrides are kept by `--reuse-values` and by `kaironctl upgrade`, so the new chart would keep running the old images. Clear them in the same upgrade, for example `kaironctl upgrade --version 0.10.3 --chart oci://ghcr.io/zyvorai/charts/kairon --set controller.image.tag= --set node.image.tag= --set ui.image.tag=` (empty means `v` plus the chart's `appVersion`), then check `kaironctl version --server`. Dashboard OIDC sessions issued by v0.10.2 stop working once; users sign in again. If the node image cache is enabled, check that its directory is owned by UID 65532.
+- **Upgrading from v0.10.2:** a v0.10.2 install needed `--set controller.image.tag=v0.10.2` (and the same for `node`, `ui`, and `csiNode`/`csiController` if enabled). Those overrides are kept by `--reuse-values` and by `kaironctl upgrade`, so the new chart would keep running the old images. Clear them in the same upgrade, for example `kaironctl upgrade --version 0.10.4 --chart oci://ghcr.io/zyvorai/charts/kairon --set controller.image.tag= --set node.image.tag= --set ui.image.tag=` (empty means `v` plus the chart's `appVersion`), then check `kaironctl version --server`. Dashboard OIDC sessions issued by v0.10.2 stop working once; users sign in again. If the node image cache is enabled, check that its directory is owned by UID 65532.
 - **Rollback:** `helm rollback kairon -n kairon-system` reverts the workloads but **not** the CRDs, and
   not objects already stored at a newer API version; roll back across a CRD version change only after
   reading [CRD versioning](guides/crd-versioning.md). Use `helm upgrade --atomic` to have a failed

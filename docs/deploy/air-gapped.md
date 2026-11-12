@@ -11,7 +11,7 @@ build elsewhere.
 
 ## Container images
 
-Mirror the images you enable, **keeping the tag**: release images are tagged with a `v` prefix (`v0.10.3`)
+Mirror the images you enable, **keeping the tag**: release images are tagged with a `v` prefix (`v0.10.4`)
 and the chart's default tag is `v` plus its `appVersion`.
 
 | Image | Needed when |
@@ -27,9 +27,9 @@ helm upgrade --install kairon charts/kairon -n kairon-system \
   --set ui.image.repository=registry.internal/kairon-ui
 ```
 
-The chart itself can be mirrored as an OCI artifact (`oci://ghcr.io/zyvorai/charts/kairon`, version `0.10.3`), or use the copy
-embedded in `kaironctl` (`kaironctl install`, no download). Releases also attach `kairon-0.10.3.tgz` and
-`kairon-manifests-v0.10.3.tgz` (raw manifests with the images pinned to the tag) for offline use. Verify downloads
+The chart itself can be mirrored as an OCI artifact (`oci://ghcr.io/zyvorai/charts/kairon`, version `0.10.4`), or use the copy
+embedded in `kaironctl` (`kaironctl install`, no download). Releases also attach `kairon-0.10.4.tgz` and
+`kairon-manifests-v0.10.4.tgz` (raw manifests with the images pinned to the tag) for offline use. Verify downloads
 against the release's `SHA256SUMS`. Image signature verification (cosign) needs network access to the signing
 infrastructure unless you mirror that too; this has not been tested offline.
 
