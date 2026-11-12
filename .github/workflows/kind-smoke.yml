@@ -36,15 +36,33 @@ jobs:
             if [ "$age" -gt 3600 ]; then docker rm -f "$id" >/dev/null 2>&1 || true; fi
           done
           true
+      # kind-action only installs kind and kubectl here (install_only). The cluster is created
+      # below with a per-job kubeconfig and retried: on the shared Docker host kubeadm init
+      # sometimes times out waiting for the API server ("connect: connection refused" on
+      # :6443), and every runner shares one ~/.kube/config, so a default-kubeconfig cluster can
+      # also be clobbered or deleted by a concurrent job.
       - uses: helm/kind-action@ea822c7bf1874f08e5a491df991c228edffc3376  # v1.15.2
         with:
-          cluster_name: kairon-ci-${{ github.run_id }}-${{ github.run_attempt }}
-          wait: 120s
-          # The shared Docker daemon sometimes fails to kill the kind node on teardown
-          # ("tried to kill container, but did not receive an exit event"), which failed
-          # the whole job after every assertion had passed. The stale-cluster step above
-          # removes anything left behind.
-          ignore_failed_clean: true
+          install_only: true
+      - name: Create kind cluster (per-job kubeconfig, retried)
+        env:
+          CLUSTER: kairon-ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -uo pipefail
+          export KUBECONFIG="$RUNNER_TEMP/kubeconfig"
+          echo "KUBECONFIG=$KUBECONFIG" >> "$GITHUB_ENV"
+          for attempt in 1 2 3; do
+            if kind create cluster --name "$CLUSTER" --kubeconfig "$KUBECONFIG" --wait 120s; then
+              exit 0
+            fi
+            echo "kind create attempt $attempt failed; cleaning up and retrying" >&2
+            kind delete cluster --name "$CLUSTER" --kubeconfig "$KUBECONFIG" || true
+            # The shared daemon sometimes cannot kill the node ("did not receive an exit event").
+            docker rm -f -v "${CLUSTER}-control-plane" >/dev/null 2>&1 || true
+            sleep 15
+          done
+          echo "kind cluster creation failed after 3 attempts" >&2
+          exit 1
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310  # v5.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
@@ -115,3 +133,10 @@ jobs:
           # and the run created no Machine
           test -z "$(kubectl get machines.kairon.zyvor.dev -A --no-headers 2>/dev/null)"
           echo "kind selftest: OK"
+      - name: Delete kind cluster
+        if: always()
+        env:
+          CLUSTER: kairon-ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          kind delete cluster --name "$CLUSTER" --kubeconfig "$RUNNER_TEMP/kubeconfig" || true
+          docker rm -f -v "${CLUSTER}-control-plane" >/dev/null 2>&1 || true
