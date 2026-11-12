@@ -10,6 +10,17 @@ import (
 	"strings"
 )
 
+// Upper bounds keep float-to-integer conversion defined (NaN, Inf and
+// out-of-range floats convert to arbitrary values in Go, which would read as
+// a zero request and skip every capacity check) and leave headroom for the
+// scheduler's sums.
+const (
+	maxVCPUs     = 1 << 20
+	maxMemoryMiB = 1 << 40
+)
+
+func finite(f float64) bool { return !math.IsNaN(f) && !math.IsInf(f, 0) }
+
 func ParseVCPUs(v string) (uint32, error) {
 	v = strings.TrimSpace(v)
 	if v == "" {
@@ -17,13 +28,13 @@ func ParseVCPUs(v string) (uint32, error) {
 	}
 	if strings.HasSuffix(v, "m") {
 		milli, err := strconv.ParseFloat(strings.TrimSuffix(v, "m"), 64)
-		if err != nil || milli <= 0 {
+		if err != nil || milli <= 0 || !finite(milli) || math.Ceil(milli/1000) > maxVCPUs {
 			return 0, fmt.Errorf("invalid cpu quantity %q", v)
 		}
 		return uint32(math.Ceil(milli / 1000)), nil
 	}
 	n, err := strconv.ParseFloat(v, 64)
-	if err != nil || n <= 0 {
+	if err != nil || n <= 0 || !finite(n) || math.Ceil(n) > maxVCPUs {
 		return 0, fmt.Errorf("invalid cpu quantity %q", v)
 	}
 	return uint32(math.Ceil(n)), nil
@@ -51,7 +62,7 @@ func ParseBytes(v string) (int64, error) {
 		}
 	}
 	n, err := strconv.ParseFloat(num, 64)
-	if err != nil || n <= 0 || n*mult >= math.MaxInt64 {
+	if err != nil || n <= 0 || !finite(n) || n*mult >= math.MaxInt64 {
 		return 0, fmt.Errorf("invalid size quantity %q", v)
 	}
 	return int64(math.Ceil(n * mult)), nil
@@ -78,14 +89,14 @@ func ParseMemoryMiB(v string) (uint64, error) {
 	for _, u := range units {
 		if strings.HasSuffix(v, u.suffix) {
 			n, err := strconv.ParseFloat(strings.TrimSpace(strings.TrimSuffix(v, u.suffix)), 64)
-			if err != nil || n <= 0 {
+			if err != nil || n <= 0 || !finite(n) || n*u.bytes/(1024*1024) > maxMemoryMiB {
 				return 0, fmt.Errorf("invalid memory quantity %q", v)
 			}
 			return uint64(math.Ceil(n * u.bytes / (1024 * 1024))), nil
 		}
 	}
 	bytes, err := strconv.ParseFloat(v, 64)
-	if err != nil || bytes <= 0 {
+	if err != nil || bytes <= 0 || !finite(bytes) || bytes/(1024*1024) > maxMemoryMiB {
 		return 0, fmt.Errorf("invalid memory quantity %q", v)
 	}
 	return uint64(math.Ceil(bytes / (1024 * 1024))), nil
