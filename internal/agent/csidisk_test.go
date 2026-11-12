@@ -94,7 +94,7 @@ func TestSeedBlockDeviceOnlyWritesABlankDevice(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(log)
-	if got := strings.TrimSpace(string(b)); got != "convert -n -O raw "+qcow+" "+dev {
+	if got := strings.TrimSpace(string(b)); got != "convert -f qcow2 -n -O raw "+qcow+" "+dev {
 		t.Fatalf("qemu-img %q", got)
 	}
 	used := make([]byte, 2<<20)

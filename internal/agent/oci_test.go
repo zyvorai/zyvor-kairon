@@ -113,7 +113,7 @@ func (r *fakeRegistry) putManifest(t *testing.T, layers ...[]byte) string {
 
 func TestResolveImageSourcePullsOCIContainerDisk(t *testing.T) {
 	reg := newFakeRegistry(t, "containerdisks/alpine")
-	disk := []byte("QFI\xfbfake qcow2 disk")
+	disk := append([]byte("QFI\xfb\x00\x00\x00\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"), "fake qcow2 disk"...)
 	manifest := reg.putManifest(t,
 		tarLayer(t, true, map[string][]byte{"disk/old.img": []byte("lower layer")}),
 		tarLayer(t, true, map[string][]byte{"etc/x": []byte("x"), "./disk/alpine.qcow2": disk}),

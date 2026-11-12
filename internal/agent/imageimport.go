@@ -41,7 +41,31 @@ func (a *Agent) resolveImageSource(ctx context.Context, m model.Machine) (string
 	if err := model.ValidateImageSource(m.Spec.Image); err != nil {
 		return "", err
 	}
-	return a.fetchToCache(ctx, m.Spec.Image)
+	path, err := a.fetchToCache(ctx, m.Spec.Image)
+	if err != nil {
+		return "", err
+	}
+	if err := rejectBackedQcow2(path); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// rejectBackedQcow2 refuses a qcow2 image whose header names a backing file.
+// The path is chosen by whoever authored the image, and both qemu-img
+// convert and the hypervisor would open it as a node-local path, copying
+// (or exposing) any file kairon-node can read -- another Machine's disk, a
+// service account token -- into the guest's boot disk. The digest only
+// pins the bytes the author supplied, so it does not help.
+func rejectBackedQcow2(path string) error {
+	_, backed, err := diskFormat(path)
+	if err != nil {
+		return err
+	}
+	if backed {
+		return fmt.Errorf("image %s is a qcow2 with a backing file; flatten it (qemu-img convert) before use", filepath.Base(path))
+	}
+	return nil
 }
 
 // fetchToCache returns the digest-keyed cache path for img.Source,
@@ -191,7 +215,7 @@ func convertRawAtomic(src, dst string) error {
 	tmpPath := tmp.Name()
 	_ = tmp.Close()
 	defer func() { _ = os.Remove(tmpPath) }()
-	if out, err := exec.Command(qemuImg, "convert", "-O", "raw", src, tmpPath).CombinedOutput(); err != nil {
+	if out, err := exec.Command(qemuImg, "convert", "-f", "qcow2", "-O", "raw", src, tmpPath).CombinedOutput(); err != nil {
 		return fmt.Errorf("convert image %s to raw: %w: %s", src, err, strings.TrimSpace(string(out)))
 	}
 	return os.Rename(tmpPath, dst)
@@ -244,7 +268,7 @@ func seedBlockDevice(device, sourcePath string) error {
 	if _, err := exec.LookPath(qemuImg); err != nil {
 		return fmt.Errorf("writing a qcow2 image onto Block volume %s needs qemu-img on kairon-node's PATH, which the kairon-node container image does not have; use a raw image (spec.image.source.format: raw)", device)
 	}
-	out, err := exec.Command(qemuImg, "convert", "-n", "-O", "raw", sourcePath, device).CombinedOutput()
+	out, err := exec.Command(qemuImg, "convert", "-f", "qcow2", "-n", "-O", "raw", sourcePath, device).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("write image onto boot device %s: %w: %s", device, err, strings.TrimSpace(string(out)))
 	}
