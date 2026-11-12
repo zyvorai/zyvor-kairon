@@ -50,9 +50,18 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Apply CRDs
+        # The shared Docker host can be busy enough that the kind API server drops
+        # connections right after the cluster is reported up ("failed to download
+        # openapi: ... EOF"). Wait for the node, then retry the apply a few times.
         run: |
           set -euo pipefail
-          kubectl apply --server-side -f deploy/crd.yaml
+          kubectl wait --for=condition=Ready node --all --timeout=180s
+          for attempt in 1 2 3 4 5; do
+            if kubectl apply --server-side -f deploy/crd.yaml; then break; fi
+            if [ "$attempt" = 5 ]; then echo "CRD apply failed after $attempt attempts" >&2; exit 1; fi
+            echo "apply attempt $attempt failed; retrying in 15s" >&2
+            sleep 15
+          done
           kubectl get crd | grep kairon.zyvor.dev
       - name: Helm install
         run: |
