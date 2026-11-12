@@ -43,12 +43,20 @@ const PATHS: Path[] = [
       `# 1. mark the nodes that can run VMs
 kubectl label node worker-1 kairon.zyvor.dev/capable=true
 
-# 2. install the production profile
+# 2. install the evaluation profile (chart defaults)
 helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \\
-  --version 0.10.0 -n kairon-system --create-namespace \\
-  -f https://raw.githubusercontent.com/zyvorai/kairon/v0.10.0/charts/kairon/values-production.yaml`,
+  --version 0.10.4 -n kairon-system --create-namespace`,
+      `# production profile: first create the webhook TLS Secret and the
+# kairon-migration-tls Secret (see the Helm deployment guide), then
+helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \\
+  --version 0.10.4 -n kairon-system --create-namespace \\
+  -f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/v0.10.4/charts/kairon/values-production.yaml \\
+  --set webhook.tlsSecretName=kairon-webhook-tls \\
+  --set webhook.caBundle="$(cat ./webhook-certs/ca-bundle.b64)"`,
       `# or, without Helm
-kaironctl install --profile production`,
+kaironctl install --profile production \\
+  --set webhook.tlsSecretName=kairon-webhook-tls \\
+  --set webhook.caBundle="$(cat ./webhook-certs/ca-bundle.b64)"`,
       `# 3. check it, then prove it
 kaironctl doctor
 kaironctl selftest --profile quick`,
@@ -58,7 +66,7 @@ kaironctl selftest --profile quick`,
       'KVM and a reachable FluxVM service on each VM node.',
       'The CSI snapshot stack if you want MachineSnapshot.',
     ],
-    notes: 'Drop the -f overlay for the evaluation profile. Helm applies CRDs only on first install; apply them from the same tag before upgrading.',
+    notes: 'The production overlay needs the webhook TLS Secret, its CA bundle and the kairon-migration-tls Secret first; without the webhook values the install stops with a message. Helm applies CRDs only on first install; apply them from the same tag before upgrading (kaironctl upgrade does).',
     doc: {to: '/docs/deploy/helm', label: 'Helm deployment guide'},
   },
   {
@@ -251,7 +259,7 @@ function Day2() {
       <div className="zv-two">
         <List
           items={[
-            'From v0.9: apply deploy/crd.yaml and deploy/rbac.yaml from the v0.10.0 tag first, then upgrade kairon-ui and kairon-node together (both now speak TLS).',
+            'From v0.9: apply deploy/crd.yaml and deploy/rbac.yaml from the v0.10.0 tag first, then upgrade kairon-ui and kairon-node together (both now speak TLS). From v0.10.3: apply the CRDs from the new tag (v0.10.4 has no schema change) and read the v0.10.4 upgrade notes.',
             'kaironctl upgrade keeps your values; --check compares with the latest release first.',
             'kaironctl history and rollback list and restore Helm revisions.',
             'kaironctl doctor explains every problem with a hint.',

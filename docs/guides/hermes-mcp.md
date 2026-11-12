@@ -140,7 +140,7 @@ tools on the Hermes side as well:
 `io.github.zyvorai/kairon` and ships as the cosign-signed image
 `ghcr.io/zyvorai/kairon-mcp`. Registry entries are published from
 `server.json` by the `publish-mcp` job in `.github/workflows/release.yml` on
-every `v*` tag; the image carries the `io.modelcontextprotocol.server.name`
+every final `vX.Y.Z` tag (a pre-release tag with a hyphen, such as `v0.10.3-rc1`, skips it); the image carries the `io.modelcontextprotocol.server.name`
 label the registry uses to verify ownership. The image runs as nonroot and
 its entrypoint is `kaironctl mcp serve` with no flags.
 

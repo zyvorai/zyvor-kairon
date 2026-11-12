@@ -20,11 +20,21 @@ Global flags: `-n/--namespace`, `--kubeconfig PATH`, `--context NAME` (see [Meta
 
 ## Install via Krew
 
-```bash
-# From a release (once assets are published):
-kubectl krew install kairon
+Kairon is **not in the public Krew index**, so `kubectl krew install kairon` does not work. Each release attaches the plugin archives (`kairon_{darwin,linux}_{amd64,arm64}.tar.gz`) and a manifest with their checksums (`kairon.yaml`); install from those:
 
-# Local smoke-test from this repo:
+```bash
+V=v0.10.4
+curl -fsSLO https://github.com/zyvorai/zyvor-kairon/releases/download/$V/kairon.yaml
+curl -fsSLO https://github.com/zyvorai/zyvor-kairon/releases/download/$V/kairon_linux_amd64.tar.gz   # or darwin / arm64
+kubectl krew install --manifest=kairon.yaml --archive=kairon_linux_amd64.tar.gz
+kubectl kairon version
+```
+
+(The commands were not re-run against the published v0.10.4 assets; the `kairon.yaml` checksums do match the release's `SHA256SUMS`.) You can also skip Krew: the `kaironctl-linux-{amd64,arm64}` binaries on the same release page are the same command tree.
+
+To test the packaging from a checkout:
+
+```bash
 make krew-package
 kubectl krew install --manifest=dist/krew/kairon.yaml \
   --archive=dist/krew/kairon_$(uname -s | tr A-Z a-z)_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz
@@ -33,7 +43,7 @@ kubectl kairon version
 kubectl kairon install --dry-run
 ```
 
-Manifest: [`deploy/krew/kairon.yaml`](../deploy/krew/kairon.yaml). Packaging script: [`scripts/krew-package.sh`](../scripts/krew-package.sh).
+Manifest template (placeholder checksums; `make krew-package` and the release workflow fill in the version and checksums): [`deploy/krew/kairon.yaml`](../deploy/krew/kairon.yaml). Packaging script: [`scripts/krew-package.sh`](../scripts/krew-package.sh).
 
 ## Lifecycle (embedded Helm SDK)
 

@@ -15,7 +15,9 @@ The root [README](https://github.com/zyvorai/zyvor-kairon/blob/main/README.md) i
 | Install and run a first Machine | [getting-started.md](getting-started.md) |
 | Deploy to a host in one command, no local build | [getting-started.md#fastest-path](getting-started.md#fastest-path) |
 | Check that it all works | [guides/selftest.md](guides/selftest.md) (`kaironctl selftest`) |
-| See what's new in v0.10.0 and how to upgrade | [RELEASE_NOTES.md](https://github.com/zyvorai/zyvor-kairon/blob/main/RELEASE_NOTES.md) (agent sessions, agent sandboxes, cross-cluster DR, Mac Fabric, GPUs, DRS, NVMe-oF; HTTPS and console TLS by default) |
+| See what's new in v0.10.4 and how to upgrade | [RELEASE_NOTES.md](https://github.com/zyvorai/zyvor-kairon/blob/main/RELEASE_NOTES.md) (v0.10.4 hardening patch and its upgrade notes; v0.10.0: agent sessions, agent sandboxes, cross-cluster DR, Mac Fabric, GPUs, DRS, NVMe-oF, HTTPS and console TLS by default) |
+| Upgrade or roll back an install (CRDs first, keep your values) | [getting-started.md#upgrade-rollback-and-node-drains](getting-started.md#upgrade-rollback-and-node-drains) |
+| Install for production (webhook TLS Secret, migration Secrets) | [getting-started.md#evaluation-vs-production](getting-started.md#evaluation-vs-production) |
 | Find the kaironctl verb for a virtctl command | [CLI.md#coming-from-virtctl](CLI.md#coming-from-virtctl) |
 | Give an AI coding agent its own VM | [guides/agent-sessions.md](guides/agent-sessions.md) · [guides/agent-sandboxes.md](guides/agent-sandboxes.md) |
 | Ten-minute architecture tour | [../ARCHITECTURE.md](https://github.com/zyvorai/zyvor-kairon/blob/main/ARCHITECTURE.md) |
@@ -37,6 +39,9 @@ The root [README](https://github.com/zyvorai/zyvor-kairon/blob/main/README.md) i
 | Doc | Covers |
 |---|---|
 | [`ARCHITECTURE.md`](https://github.com/zyvorai/zyvor-kairon/blob/main/ARCHITECTURE.md) | The ten-minute tour: components, request flow, trust boundaries/deployment topology, design rationale |
+| [`deploy/`](deploy/helm.md) | Install paths: [Helm](deploy/helm.md), [one command to a host](deploy/bare-metal.md), [kind](deploy/kind.md), [air-gapped](deploy/air-gapped.md), [macOS](deploy/macos.md) |
+| [`RELEASING.md`](RELEASING.md) · [`STABILITY.md`](STABILITY.md) | How a release is cut and checked; the GA and Experimental labels and how CI enforces them |
+| [`TEST_REPORT.md`](https://github.com/zyvorai/zyvor-kairon/blob/main/TEST_REPORT.md) | What was and was not verified per release (read this before trusting a claim) |
 | [`getting-started.md`](getting-started.md) | Install, first Machine, cold migrate, live migration, the dashboard, Network Fabric |
 | [`tutorials/machine-lifecycle.md`](tutorials/machine-lifecycle.md) | Narrated walkthrough: one Machine through create → relocate → snapshot → restore |
 | [`architecture.md`](architecture.md) | Deep reference: the cold/live migration state machines, session durability, CSI/DRA mechanics, operational visibility |
@@ -59,7 +64,7 @@ The root [README](https://github.com/zyvorai/zyvor-kairon/blob/main/README.md) i
 | [`guides/machine-migration-tls.md`](guides/machine-migration-tls.md) | Control-plane vs. data-plane migration TLS, and real per-node data-plane identity via `migration.dataplaneTlsSecretName` |
 | [`guides/kairon-ui-oidc.md`](guides/kairon-ui-oidc.md) | OIDC/SSO setup, the Authorization Code + PKCE flow, and why it breaks Go-stdlib-only |
 | [`guides/kairon-ui-console-rbac.md`](guides/kairon-ui-console-rbac.md) | Real Kubernetes RBAC (`machines/console` + `SubjectAccessReview`) for console access, opt-in alongside the annotation allowlist |
-| [`guides/machine-storage.md`](guides/machine-storage.md) · [`guides/machine-storage-csi.md`](guides/machine-storage-csi.md) | PVC-backed boot disks; Kairon's own first-cut iSCSI CSI driver and why it breaks Go-stdlib-only |
+| [`guides/machine-storage.md`](guides/machine-storage.md) · [`guides/machine-storage-csi.md`](guides/machine-storage-csi.md) | PVC-backed boot disks; Kairon's own first-cut CSI driver (iSCSI and NVMe-oF) and why it breaks Go-stdlib-only |
 | [`guides/disk-qos.md`](guides/disk-qos.md) | Per-disk IOPS and bandwidth limits (`spec.image.io.throttle`, `spec.disks[].io.throttle`) enforced by QEMU and changed live; why virtiofs DAX is not available |
 | [`guides/machine-storage-nvmeof.md`](guides/machine-storage-nvmeof.md) | NVMe-oF volumes (`nvme-tcp`, `nvme-rdma`, native multipath), raw Block boot in place, per-disk QEMU I/O and the `StoragePaths` condition (experimental) |
 | [`guides/machine-storage-atlas.md`](guides/machine-storage-atlas.md) | `spec.volumes[].atlas`: controller provisions Machine disks through Atlas (PVC or raw RBD), gates scheduling on readiness, releases after runtime cleanup |

@@ -7,11 +7,15 @@ title: Getting started
 
 ## Prerequisites
 
-- Kubernetes cluster and Kairon-capable nodes.
-- KVM and a reachable FluxVM service on each VM node.
+- Kubernetes cluster and Kairon-capable nodes (label each VM node `kairon.zyvor.dev/capable=true`).
+- KVM and a reachable FluxVM service on each VM node (default `127.0.0.1:7788`).
 - VM image paths available below `--image-root`.
 - CSI snapshot stack for `MachineSnapshot`.
 - Kubernetes DRA plus administrator-approved BDFs for VFIO.
+- For the **production profile**, create these before installing (details in [Evaluation vs production](#evaluation-vs-production)):
+  the admission-webhook TLS Secret and its CA bundle (`webhook.tlsSecretName`, `webhook.caBundle`), the live-migration
+  TLS Secret `kairon-migration-tls`, and (optionally, per-node data-plane identity) the data-plane Secret named by
+  `migration.dataplaneTlsSecretName`. When **upgrading**, apply the target release's CRDs first (`kaironctl upgrade` does).
 
 ## Fastest path
 
@@ -68,15 +72,25 @@ See [Self-test](guides/selftest.md) for what it checks and how to read the resul
 
 ### Evaluation vs production
 
-Default chart values are an **evaluation** profile (webhook and namespace isolation off; image tags default to `.Chart.AppVersion`). For a hardened install, use the production overlay (`kaironctl install --profile production`, or with Helm directly):
+Default chart values are an **evaluation** profile (webhook and namespace isolation off; image tags default to `v` plus `.Chart.AppVersion`). For a hardened install, use the production overlay (`kaironctl install --profile production`, or with Helm directly). It turns on:
 
-Before installing the production profile, create what it needs (the install stops with a clear message if the webhook TLS values are missing):
+| Setting | What it does | What you must provide |
+|---|---|---|
+| `webhook.enabled: true` | Validating admission webhook for Machines and MachineMigrations (`failurePolicy: Fail`). The chart creates the `kairon-controller-webhook` Service and the `ValidatingWebhookConfiguration`; it does **not** mint the certificate | `webhook.tlsSecretName` (a `kubernetes.io/tls` Secret in the release namespace) and `webhook.caBundle` (base64 CA). The install stops with a message without both |
+| `migration.enabled: true` | The mTLS live-migration peer on every `kairon-node` | Secret `kairon-migration-tls` (`ca.crt`, `tls.crt`, `tls.key`); the certificate needs `serverAuth` and `clientAuth` and the DNS SAN `kairon-node` (`migration.tlsServerName`). `kairon-node` pods stay in `ContainerCreating` without it |
+| `migration.dataplaneTls: true` | Stages data-plane certificate material for a host-level migration adapter | Only has an effect when `migration.adapterHostPath` is also set; the chart does not install the adapter. Optionally `migration.dataplaneTlsSecretName` for a real per-node identity (below) |
+| `node.networkDefaultDeny: true`, `ui.auth.namespaceScoping.enabled: true` | Network default-deny and namespace-scoped dashboard authorization | nothing |
+| `ui.auth.wellKnownDefault: false` | The dashboard's `admin` password is random, not the lab default | read it from the `kairon-ui-session` Secret after install |
+
+Before installing the production profile, create what it needs:
 
 ```bash
 kubectl create namespace kairon-system --dry-run=client -o yaml | kubectl apply -f -
 # 1. Admission webhook certificate and CA. The script writes ca.pem, cert.pem, key.pem,
 #    kairon-webhook-tls.secret.yaml (the ready-made Secret) and ca-bundle.b64 (the webhook.caBundle value).
 #    Its CA is self-signed and valid 30 days (CERT_DAYS); use cert-manager or your own CA in production.
+#    The certificate names the Service kairon-controller-webhook in kairon-system; for another
+#    release namespace pass it as the third argument (see docs/guides/admission-webhook.md).
 scripts/gen-webhook-tls-certs.sh ./webhook-certs     # see docs/guides/admission-webhook.md
 kubectl apply -f ./webhook-certs/kairon-webhook-tls.secret.yaml
 # 2. Live-migration mTLS Secret. kairon-node pods stay in ContainerCreating without it
@@ -86,6 +100,12 @@ kubectl -n kairon-system create secret generic kairon-migration-tls \
   --from-file=ca.crt=./migration-certs/control-plane/ca.pem \
   --from-file=tls.crt=./migration-certs/control-plane/cert.pem \
   --from-file=tls.key=./migration-certs/control-plane/key.pem
+# 3. Optional: a real per-node data-plane identity (only used with migration.adapterHostPath).
+#    The script also wrote data-plane/kairon-migration-dataplane-tls.secret.yaml, one Secret holding
+#    every node's <node>-ca.crt/-tls.crt/-tls.key. It is generated for namespace kairon-system.
+kubectl apply -f ./migration-certs/data-plane/kairon-migration-dataplane-tls.secret.yaml
+#    then add: --set migration.adapterHostPath=HOST_DIR_THE_ADAPTER_READS \
+#              --set migration.dataplaneTlsSecretName=kairon-migration-dataplane-tls
 ```
 
 Then pass the webhook values:
@@ -99,23 +119,30 @@ helm install kairon charts/kairon -n kairon-system --create-namespace \
   --set webhook.tlsSecretName=kairon-webhook-tls --set webhook.caBundle="$(cat ./webhook-certs/ca-bundle.b64)"
 ```
 
-That enables admission webhooks, namespace-scoped UI authorization, network default-deny, and migration dataplane TLS requirements. See [`charts/kairon/values-production.yaml`](../charts/kairon/values-production.yaml) and [`docs/COMPATIBILITY.md`](COMPATIBILITY.md).
+If a per-node data-plane Secret is set but lacks a node's three files, that node's pod fails its init container on purpose rather than falling back to a shared identity. With `dataplaneTlsSecretName` empty, the shared `kairon-migration-tls` certificate is staged instead (weaker: every node can present the same identity). The migration data plane is only encrypted end to end once each node's host-level adapter is also configured for TLS; see [migration TLS](guides/machine-migration-tls.md) and the [runbook](runbook-migration-failures.md#unencrypted-migration-data-plane).
+
+See [`charts/kairon/values-production.yaml`](../charts/kairon/values-production.yaml) and [`docs/COMPATIBILITY.md`](COMPATIBILITY.md). The webhook and the production profile have been exercised by unit tests and chart rendering only, not on a real cluster ([`TEST_REPORT.md`](../TEST_REPORT.md)).
 
 ### Install from the published chart (GHCR)
 
 Tagged releases publish the Helm chart and the images to GitHub Container Registry, so no repository checkout is needed:
 
 ```bash
+# Evaluation profile (chart defaults): nothing to prepare first.
+helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \
+  --version 0.10.4 -n kairon-system --create-namespace
+
+# Production profile: create the Secrets from "Evaluation vs production" first.
 helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \
   --version 0.10.4 -n kairon-system --create-namespace \
-  -f https://raw.githubusercontent.com/zyvorai/kairon/v0.10.4/charts/kairon/values-production.yaml
+  -f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/v0.10.4/charts/kairon/values-production.yaml \
+  --set webhook.tlsSecretName=kairon-webhook-tls --set webhook.caBundle="$(cat ./webhook-certs/ca-bundle.b64)"
 ```
 
-- Images are `ghcr.io/zyvorai/kairon-{controller,node,ui,csi-node,csi-controller}:<version>`; the chart's image tags default to `v` plus its `appVersion` (release images are tagged `v0.10.2`, not `0.10.2`), so the chart version selects the images.
-- Drop the `-f` overlay for the evaluation profile.
+- Without the `-f` overlay and the two `--set webhook.*` values you get the evaluation profile. The production overlay on its own (as in earlier versions of this page) stops with `webhook.enabled=true needs webhook.tlsSecretName ...`.
 - `kaironctl` installs the same published chart without Helm: `kaironctl install --chart oci://ghcr.io/zyvorai/charts/kairon --version 0.10.4 --profile production`.
 - Helm applies `crds/` only on first install. When upgrading, apply the CRDs from the same tag first (`kubectl apply --server-side -f https://raw.githubusercontent.com/zyvorai/kairon/v0.10.4/deploy/crd.yaml`); see [CRD versioning](guides/crd-versioning.md#upgrading-an-existing-cluster).
-- Fetch the matching `kaironctl` from the release: `https://github.com/zyvorai/kairon/releases/download/v0.10.4/kaironctl-linux-amd64`, or `kubectl krew install kairon`.
+- Fetch the matching `kaironctl` from the release: `https://github.com/zyvorai/zyvor-kairon/releases/download/v0.10.4/kaironctl-linux-amd64` (check it against the release's `SHA256SUMS`). The `kubectl kairon` plugin is on the same page; Kairon is not in the public Krew index, see [CLI](CLI.md#install-via-krew).
 
 Later, `kaironctl upgrade` keeps the values you installed with (`--reset-values` returns to chart defaults), `kaironctl upgrade --check` compares your release with the latest one without changing anything, `kaironctl config set KEY=VALUE` changes a single value, and `kaironctl history` / `kaironctl rollback` list and restore revisions. Add `--context NAME` or `--kubeconfig PATH` to target a specific cluster. See [CLI](CLI.md).
 
@@ -134,13 +161,23 @@ kubectl apply -f deploy/node.yaml
 # 1. CRDs first: Helm never upgrades crds/ (kaironctl upgrade does this for you).
 kubectl apply --server-side -f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/vX.Y.Z/deploy/crd.yaml
 # 2. Keep your install's settings. Without --reuse-values (or the same -f/--set flags),
-#    Helm resets to chart defaults and silently drops production hardening.
+#    Helm resets to chart defaults and silently drops production hardening
+#    (webhook, namespace isolation, migration TLS).
 helm upgrade kairon oci://ghcr.io/zyvorai/charts/kairon --version X.Y.Z -n kairon-system --reuse-values
 # or: kaironctl upgrade   (keeps your values, applies the CRDs, reports what changed)
+kaironctl upgrade --check   # first: compares the installed chart, this kaironctl's chart and the latest release; changes nothing
 ```
 
+`--reuse-values` reuses the previous release's computed values verbatim, so defaults the new chart changed are not picked up; with Helm 3.14 or later `--reset-then-reuse-values` (the new chart's defaults, then your earlier overrides) is what `kaironctl upgrade` uses and is usually the better choice. Check the result afterwards with `kaironctl version --server` and `kaironctl doctor`.
+
+- **Upgrading from v0.10.3 to v0.10.4:** there are no CRD schema changes in this release (the chart's `crds/` and `deploy/crd.yaml` are identical to v0.10.3), but apply them anyway as above. Behaviour changes to check first (details in the [release notes](../RELEASE_NOTES.md)):
+  - a qcow2 boot image whose header names a backing file is refused for images resolved through `spec.image.source` (`httpURL`, `oci`, an uploaded or catalog image); flatten it with `qemu-img convert -O qcow2 backed.qcow2 flat.qcow2`;
+  - `NaN`, `Inf` and out-of-range CPU/memory quantities (more than 2^20 vCPUs or 2^40 MiB) are rejected by the scheduler's parser and by the Machine admission webhook, so a Machine that relied on such a value reading as "no request" must be given a real quantity;
+  - a `ui.auth.users` entry whose username starts with `oidc:` stops `kairon-ui` at startup; rename it **before** upgrading (a seeded `kairon-ui-users` Secret keeps its old contents across upgrades, so edit the Secret, see [the dashboard guide](guides/kairon-ui-dashboard.md#adding-or-changing-operators-after-install));
+  - with `ui.rateLimit.trustedProxyHeader` set, the client address is now the rightmost `X-Forwarded-For` entry **not** inside `ui.rateLimit.trustedProxyCidrs`; list every proxy hop in front of `kairon-ui` there, otherwise the last proxy's address becomes every client's key and all clients share one bucket;
+  - `kairon-node` has a new flag `-image-max-download-bytes` (env `KAIRON_IMAGE_MAX_DOWNLOAD_BYTES`, default 256 GiB) that caps `httpURL` downloads and OCI containerDisk pulls. The chart has no value for it yet, so on a Helm install the default applies unless you add the environment variable to the `kairon-node` DaemonSet yourself (for example `kubectl -n kairon-system set env ds/kairon-node KAIRON_IMAGE_MAX_DOWNLOAD_BYTES=<bytes>`; re-check it after each `helm upgrade`, which was not tested here). On a systemd install put it in `/etc/kairon/kairon-node.env`.
 - **Upgrading from v0.10.2:** a v0.10.2 install needed `--set controller.image.tag=v0.10.2` (and the same for `node`, `ui`, and `csiNode`/`csiController` if enabled). Those overrides are kept by `--reuse-values` and by `kaironctl upgrade`, so the new chart would keep running the old images. Clear them in the same upgrade, for example `kaironctl upgrade --version 0.10.4 --chart oci://ghcr.io/zyvorai/charts/kairon --set controller.image.tag= --set node.image.tag= --set ui.image.tag=` (empty means `v` plus the chart's `appVersion`), then check `kaironctl version --server`. Dashboard OIDC sessions issued by v0.10.2 stop working once; users sign in again. If the node image cache is enabled, check that its directory is owned by UID 65532.
-- **Rollback:** `helm rollback kairon -n kairon-system` reverts the workloads but **not** the CRDs, and
+- **Rollback:** `kaironctl rollback [REVISION]` or `helm rollback kairon -n kairon-system` reverts the workloads but **not** the CRDs, and
   not objects already stored at a newer API version; roll back across a CRD version change only after
   reading [CRD versioning](guides/crd-versioning.md). Use `helm upgrade --atomic` to have a failed
   upgrade roll itself back.
@@ -196,6 +233,8 @@ helm upgrade --install kairon ./charts/kairon -n kairon-system --set ui.enabled=
 kubectl -n kairon-system port-forward svc/kairon-ui 18082:18082
 ```
 
+The `helm upgrade --install` examples in this section and the next assume the chart defaults. On an install that already has other settings (the production profile, for example) add `--reuse-values`, or use `kaironctl config set ui.enabled=true`, which keeps everything else.
+
 The dashboard serves **HTTPS** by default. With nothing configured each pod
 generates a self-signed certificate at startup, so your browser warns once and
 the certificate changes on every restart: fine to evaluate. For a stable
@@ -242,7 +281,7 @@ helm upgrade --install kairon ./charts/kairon -n kairon-system \
   --set ui.auth.users[0].passwordHash='$2a$10$...'
 ```
 
-`ui.auth.users` only seeds the accounts on the first install that sets it; later upgrades keep the stored `kairon-ui-users` Secret, so to add or change operators afterwards edit that Secret ([how](guides/kairon-ui-dashboard.md#adding-or-changing-operators-after-install)).
+Usernames may not start with `oidc:` (reserved for OIDC session subjects): `kairon-ui` refuses to start with such an entry and would not let it log in. The seeded `admin` account and the default login are unchanged. `ui.auth.users` only seeds the accounts on the first install that sets it; later upgrades keep the stored `kairon-ui-users` Secret, so to add or change operators afterwards edit that Secret ([how](guides/kairon-ui-dashboard.md#adding-or-changing-operators-after-install)).
 
 The legacy single shared token (`ui.token`, or `ui.allowUnauthenticated=true`
 for local development) still works unchanged for existing deployments, and

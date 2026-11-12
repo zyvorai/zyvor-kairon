@@ -5,7 +5,18 @@ This file's own convention is specifically **real, live-cluster/live-host verifi
 # v0.10.4 (2026-11-12): what was and was not verified
 
 - Prepared as a patch of the hardening merged after v0.10.3 (#228-#230). Verified only by source-level gates on a Linux dev host before the release PR: `python3 scripts/validate.py`, `helm lint charts/kairon`, `go build ./...`, `go vet ./...`, `go test -count=1 ./...`. Each fix has unit tests.
-- **Not verified:** no install, upgrade or self-test of v0.10.4 on a real host; the published-image, release-workflow and MCP Registry steps run only when the tag is pushed; the XFF change behind a real proxy/load balancer; a real backed-qcow2 image refusal on a node; CSI against real iSCSI/NVMe targets; migration races under real two-host load. Everything under the v0.10.3 sections below is evidence for v0.10.3 and earlier, not for v0.10.4.
+- **Not verified:** no install, upgrade or self-test of v0.10.4 on a real host; the XFF change behind a real proxy/load balancer; a real backed-qcow2 image refusal on a node; CSI against real iSCSI/NVMe targets; migration races under real two-host load. Everything under the v0.10.3 sections below is evidence for v0.10.3 and earlier, not for v0.10.4.
+
+## After the v0.10.4 tag (2026-11-12): publication checks
+
+These checks show that the artifacts exist and are consistent with the repository. They do not show that v0.10.4 installs or runs on a host.
+
+- **Tag workflow (`release.yml`, run for `v0.10.4`):** the six image `publish` jobs (build, scan, push, sign, attest) and `publish-mcp` concluded `success`. `release-assets` passed up to and including packaging and pushing the Helm chart to OCI and checksumming the assets, then **failed at the `Create GitHub Release` step** (the log was not examined further; the GitHub Release had already been created by hand with its 12 assets). `promote-latest` was **skipped**, so `latest` was not moved by the workflow.
+- **Registry state** (anonymous reads of `ghcr.io`): `v0.10.4` exists for `kairon-controller`, `kairon-node`, `kairon-ui`, `kairon-csi-node`, `kairon-csi-controller` and `kairon-mcp`, and `latest` resolves to the same digest as `v0.10.4` for each of them. The chart `oci://ghcr.io/zyvorai/charts/kairon:0.10.4` exists; its contents equal `charts/kairon` at the tag (apart from how `Chart.yaml` is serialised) and equal the release's `kairon-0.10.4.tgz`.
+- **GitHub Release:** not a draft or pre-release, with 12 assets; `SHA256SUMS` has 11 lines (every asset except itself), the `kairon-0.10.4.tgz` and Krew archive checksums match it, and the Krew `kairon.yaml` carries the same checksums and `v0.10.4` URLs. The darwin/arm64 `kubectl-kairon` archive was downloaded, its checksum matched, and `kubectl-kairon version` printed `v0.10.4`; the other binaries were not run.
+- **MCP Registry:** `io.github.zyvorai/kairon` lists versions 0.10.1 to 0.10.4, with 0.10.4 marked latest (public registry API, read on 2026-11-12).
+- **Not checked here:** the cosign signatures and SBOM attestations (the signing jobs succeeded; the `cosign verify` commands in `SECURITY.md` were not run); the release page's own description, which was written before the images and OCI chart existed and still says they are "not in this release yet".
+- **Chart and docs checks against the tagged tree:** `helm lint charts/kairon` passes with and without the production profile and the two `--set webhook.*` values; the production profile without them stops with the chart's message (this is why the docs now show those values in every production command). Every `kaironctl` subcommand and every flag named in the docs was compared with the source and with `kaironctl --help` built from the same tree, and every relative link and anchor in the Markdown files was checked. None of this boots a Machine.
 
 # Pre-v0.10.3 hardening (2026-11-10): what was and was not verified
 

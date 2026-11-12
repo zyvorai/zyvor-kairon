@@ -794,7 +794,11 @@ ui:
     # the direct connection's own address. Set this when kairon-ui sits
     # behind a Service/Ingress/load balancer: without it, every real
     # client collapses into that one proxy's address, so one noisy
-    # client throttles everyone. See README.md's Production-gaps section.
+    # client throttles everyone. The address used is the rightmost entry of
+    # the header that is not inside trustedProxyCidrs (v0.10.4; earlier
+    # versions took the leftmost, which clients could forge), so
+    # trustedProxyCidrs must list every proxy hop in front of kairon-ui.
+    # See docs/guides/kairon-ui-dashboard.md#rate-limiting-and-login-lockout.
     trustedProxyHeader: ""
     # trustedProxyCidrs bounds which immediate peer addresses
     # trustedProxyHeader is ever trusted from -- required alongside it.

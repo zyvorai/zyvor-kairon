@@ -116,7 +116,10 @@ as two identities. When `usernameClaim` is `email`, a token whose
 `email_verified` claim is explicitly `false` is rejected. (Before v0.10.3 the
 raw claim was used as the session subject, and a matching local username gave
 the OIDC session that account's rights. OIDC sessions issued by an older
-version stop working once after upgrading; users sign in again.)
+version stop working once after upgrading; users sign in again.) Since v0.10.4 the
+other direction is closed as well: a local `ui.auth.users` entry may not start with
+`oidc:` (the dashboard refuses to start with one and would not log it in), because a
+session subject with that prefix is always treated as a valid OIDC identity.
 
 **OIDC admin capability is opt-in, via group mapping.** By default,
 `ui.oidc.adminGroups` is empty and an OIDC-authenticated session can do

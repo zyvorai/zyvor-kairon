@@ -35,7 +35,7 @@
 
 ## What's new
 
-**v0.10.4:** security and reliability hardening patch (rate-limit client address, image download cap, backed-qcow2 refusal, quantity parsing, migration and finalizer races, CSI hardening); read the upgrade notes in the [release notes](RELEASE_NOTES.md). v0.10.3 fixed the install and upgrade path (default image tags, production-profile prerequisites, CRDs applied on `kaironctl upgrade`). v0.10.2's default `helm install` cannot pull its images (it asks for `0.10.2`, the images are tagged `v0.10.2`); upgrade to v0.10.3 or later, or pin the image tags as the [release notes](RELEASE_NOTES.md) describe.
+**v0.10.4:** security and reliability hardening patch (rate-limit client address, image download cap, backed-qcow2 refusal, quantity parsing, migration and finalizer races, CSI hardening); read the upgrade notes in the [release notes](RELEASE_NOTES.md) and the [upgrade steps](docs/getting-started.md#upgrade-rollback-and-node-drains). It has been verified by unit tests and CI only; no install or upgrade of v0.10.4 on a real host has been recorded ([what was verified](TEST_REPORT.md)). v0.10.3 fixed the install and upgrade path (default image tags, production-profile prerequisites, CRDs applied on `kaironctl upgrade`). v0.10.2's default `helm install` cannot pull its images (it asks for `0.10.2`, the images are tagged `v0.10.2`); upgrade to v0.10.3 or later, or pin the image tags as the [release notes](RELEASE_NOTES.md) describe.
 
 **Experimental operations:** [Kairon Rehearsal](docs/guides/rehearsal.md) tests upgrades on isolated CSI copies. [Advanced operations](docs/guides/advanced-operations.md) adds health-gated configuration change plans, application recovery verification, traffic/RTT placement recommendations, and incident reproduction with fix verification. Includes runnable scenarios and failure-path tests. VM/CSI and host-isolation hardware qualification is still pending.
 
@@ -276,24 +276,39 @@ Full write-up: [ARCHITECTURE.md](ARCHITECTURE.md) · [docs/architecture.md](docs
 
 ## Quickstart
 
-On a Kubernetes cluster whose VM hosts run [FluxVM](https://github.com/zyvorai/zyvor-fluxvm):
+On a Kubernetes cluster whose VM hosts run [FluxVM](https://github.com/zyvorai/zyvor-fluxvm). The **evaluation** profile (the chart's defaults) needs nothing else:
 
 ```bash
 kubectl label node worker-1 kairon.zyvor.dev/capable=true
 
 helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \
-  --version 0.10.4 -n kairon-system --create-namespace \
-  -f https://raw.githubusercontent.com/zyvorai/kairon/v0.10.4/charts/kairon/values-production.yaml
+  --version 0.10.4 -n kairon-system --create-namespace
 
-curl -fsSL -o kaironctl https://github.com/zyvorai/kairon/releases/download/v0.10.4/kaironctl-linux-amd64
-chmod +x kaironctl && sudo mv kaironctl /usr/local/bin/      # or: kubectl krew install kairon
+curl -fsSL -o kaironctl https://github.com/zyvorai/zyvor-kairon/releases/download/v0.10.4/kaironctl-linux-amd64
+chmod +x kaironctl && sudo mv kaironctl /usr/local/bin/
 
 kaironctl create demo --image /var/lib/fluxvm/images/ubuntu.qcow2 --cpu 2 --memory 2Gi
 ```
 
-Other platforms: `kaironctl-linux-arm64` and `kairon_darwin_{amd64,arm64}.tar.gz` are on the [release page](https://github.com/zyvorai/zyvor-kairon/releases/tag/v0.10.4) with `SHA256SUMS`. Upgrading an existing install: [getting started](docs/getting-started.md#upgrade-rollback-and-node-drains) (apply CRDs first, keep your values; `kaironctl upgrade` does both).
+Other platforms: `kaironctl-linux-arm64` and `kairon_darwin_{amd64,arm64}.tar.gz` (the `kubectl kairon` plugin) are on the [release page](https://github.com/zyvorai/zyvor-kairon/releases/tag/v0.10.4); verify downloads against the release's `SHA256SUMS`. `kubectl krew install kairon` is **not** available: Kairon is not in the public Krew index, so install the plugin from the release's `kairon.yaml` (see [CLI](docs/CLI.md#install-via-krew)).
 
-**Before the production command above, create the webhook TLS Secret and the `kairon-migration-tls` Secret and pass `--set webhook.tlsSecretName=... --set webhook.caBundle=...`; the install stops with a message if they are missing (steps in [getting started](docs/getting-started.md#evaluation-vs-production)).** The production profile pins image tags to ``v` + `Chart.AppVersion`` and turns on the webhook, namespace isolation, network default-deny and migration data-plane TLS. Images: `ghcr.io/zyvorai/kairon-{controller,node,ui}`, signed with checksums and SBOM.
+**Production profile.** Add `-f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/v0.10.4/charts/kairon/values-production.yaml` (or `kaironctl install --profile production`) only after you have created its prerequisites; without them the install stops with a message (webhook values) or `kairon-node` pods stay in `ContainerCreating` (migration Secret):
+
+1. **Webhook TLS Secret and CA.** `webhook.tlsSecretName` (a `kubernetes.io/tls` Secret in `kairon-system`) and `webhook.caBundle` (the base64 CA). `scripts/gen-webhook-tls-certs.sh` writes both for a lab; use cert-manager or your own CA with rotation in production, because an expired certificate blocks every Machine write under `failurePolicy: Fail`.
+2. **`kairon-migration-tls` Secret** (`ca.crt`, `tls.crt`, `tls.key`; `scripts/gen-migration-mtls-certs.sh`), because the profile sets `migration.enabled: true`. The profile also sets `migration.dataplaneTls: true`: that only stages certificates for a host-level migration adapter when `migration.adapterHostPath` is set, and an optional per-node Secret (`migration.dataplaneTlsSecretName`) gives each node its own data-plane identity. It does not install the adapter.
+3. **CRDs before every upgrade.** Helm applies `crds/` only on first install: `kaironctl upgrade` applies them for you; with plain Helm run `kubectl apply --server-side -f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/v0.10.4/deploy/crd.yaml` first and keep your values (`--reuse-values` or `--reset-then-reuse-values`).
+
+```bash
+kubectl create namespace kairon-system --dry-run=client -o yaml | kubectl apply -f -
+scripts/gen-webhook-tls-certs.sh ./webhook-certs && kubectl apply -f ./webhook-certs/kairon-webhook-tls.secret.yaml
+# kairon-migration-tls: see getting started
+helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \
+  --version 0.10.4 -n kairon-system \
+  -f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/v0.10.4/charts/kairon/values-production.yaml \
+  --set webhook.tlsSecretName=kairon-webhook-tls --set webhook.caBundle="$(cat ./webhook-certs/ca-bundle.b64)"
+```
+
+Full steps, including the migration Secret and upgrade/rollback: [getting started](docs/getting-started.md#evaluation-vs-production) and [upgrade](docs/getting-started.md#upgrade-rollback-and-node-drains). The production profile also turns on namespace isolation and network default-deny, and generates a random dashboard admin password instead of the lab default (see [the dashboard guide](docs/guides/kairon-ui-dashboard.md#signing-in)). Image tags default to `v` plus the chart's `appVersion`. Images: `ghcr.io/zyvorai/kairon-{controller,node,ui,csi-node,csi-controller,mcp}`, signed with cosign, with SBOM attestations and `SHA256SUMS` for the release assets.
 
 From your laptop to a bare-metal host, built on the host so your laptop needs no Go or Node, with a smoke test at the end:
 
@@ -304,6 +319,8 @@ From your laptop to a bare-metal host, built on the host so your laptop needs no
 Without `--remote-build` the binaries are cross-compiled locally and shipped as static files. Either way the dashboard and the console relay are HTTPS. [All flags and the deploy flow →](docs/getting-started.md#fastest-path)
 
 Then, on any install: `kaironctl doctor` checks the control plane and `kaironctl selftest` boots a CirrOS VM to prove it end to end.
+
+Dashboard login: the dashboard is off by default (`ui.enabled=false`); once enabled, a fresh install with the chart defaults seeds `admin` / `Admin@321`, the documented lab default (`ui.auth.wellKnownDefault: true`); the sign-in page says so, and you should change the password before exposing the dashboard. The production profile sets `wellKnownDefault: false` and generates a random password instead ([how to read it](docs/getting-started.md#deploy-the-web-dashboard)).
 
 <details>
 <summary><strong>From source, kind, or raw manifests</strong></summary>
