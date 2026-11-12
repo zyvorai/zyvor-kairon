@@ -162,15 +162,17 @@ print(json.dumps({"apiVersion": "kairon.zyvor.dev/v1", "kind": "Machine", "metad
 EOF
 }
 codes=""
+bad_dir="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/qlab-bad.XXXXXX")"
 for c in total-and-read vhost-user-blk; do
-  code="$(curl -sS -o "/tmp/qlab-bad-$c.json" -w '%{http_code}' -X POST -H "Authorization: Bearer $KAIRON_KUBE_TOKEN" \
+  code="$(curl -sS -o "$bad_dir/bad-$c.json" -w '%{http_code}' -X POST -H "Authorization: Bearer $KAIRON_KUBE_TOKEN" \
     -H 'Content-Type: application/json' ${KAIRON_KUBE_INSECURE:+-k} --data "$(bad_body "$c")" \
     "$KAIRON_KUBE_URL/$LAB_API/namespaces/$NAMESPACE/machines" || true)"
-  msg="$(json_eval '(o.get("message") or "")' <"/tmp/qlab-bad-$c.json" 2>/dev/null | grep -oE '(iopsTotal excludes[^"]*|vhost-user-blk bypasses[^"]*)' | head -1 || true)"
+  msg="$(json_eval '(o.get("message") or "")' <"$bad_dir/bad-$c.json" 2>/dev/null | grep -oE '(iopsTotal excludes[^"]*|vhost-user-blk bypasses[^"]*)' | head -1 || true)"
   codes+="$c=$code ($msg); "
-  rm -f "/tmp/qlab-bad-$c.json"
+  rm -f "$bad_dir/bad-$c.json"
   [[ "$code" == 422 && -n "$msg" ]] || bad=1
 done
+rmdir "$bad_dir" 2>/dev/null || true
 if [[ -z "${bad:-}" ]]; then
   result crd-validation pass "${codes%; }"
 else

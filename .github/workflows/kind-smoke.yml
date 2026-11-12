@@ -49,10 +49,20 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
           go-version-file: go.mod
+          cache: ${{ runner.environment == 'github-hosted' }}  # self-hosted: shared GOMODCACHE, cache restore/save takes 15-35 min
       - name: Apply CRDs
+        # The shared Docker host can be busy enough that the kind API server drops
+        # connections right after the cluster is reported up ("failed to download
+        # openapi: ... EOF"). Wait for the node, then retry the apply a few times.
         run: |
           set -euo pipefail
-          kubectl apply --server-side -f deploy/crd.yaml
+          kubectl wait --for=condition=Ready node --all --timeout=180s
+          for attempt in 1 2 3 4 5; do
+            if kubectl apply --server-side -f deploy/crd.yaml; then break; fi
+            if [ "$attempt" = 5 ]; then echo "CRD apply failed after $attempt attempts" >&2; exit 1; fi
+            echo "apply attempt $attempt failed; retrying in 15s" >&2
+            sleep 15
+          done
           kubectl get crd | grep kairon.zyvor.dev
       - name: Helm install
         run: |
@@ -68,9 +78,9 @@ jobs:
             --set controller.image.pullPolicy=IfNotPresent \
             --set node.image.pullPolicy=IfNotPresent \
             --set controller.replicaCount=1
-          kubectl -n kairon-system get deploy,ds,sa | tee /tmp/kairon-kind.txt
-          grep -q kairon-controller /tmp/kairon-kind.txt
-          grep -q kairon-node /tmp/kairon-kind.txt
+          kubectl -n kairon-system get deploy,ds,sa | tee ${{ runner.temp }}/kairon-kind.txt
+          grep -q kairon-controller ${{ runner.temp }}/kairon-kind.txt
+          grep -q kairon-node ${{ runner.temp }}/kairon-kind.txt
           echo "kind-smoke: OK"
       - name: Helm production overlay dry-run
         run: |

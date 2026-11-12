@@ -37,12 +37,23 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
           go-version-file: go.mod
+          cache: ${{ runner.environment == 'github-hosted' }}  # self-hosted: shared GOMODCACHE, cache restore/save takes 15-35 min
       - if: matrix.language == 'go'
         name: Autobuild Go
         run: |
           go build ./cmd/kairon-controller ./cmd/kairon-node ./cmd/kairon-ui \
             ./cmd/kaironctl ./cmd/kubectl-kairon \
             ./cmd/kairon-csi-node ./cmd/kairon-csi-controller
+      # npm is not installed on the self-hosted runners (zyvor-build-e: "npm: command not found",
+      # exit 127), so provide Node the same way ci.yml's web/website jobs do.
+      - if: matrix.language == 'javascript-typescript'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            website/package-lock.json
       - if: matrix.language == 'javascript-typescript'
         name: Build web + website
         run: |
