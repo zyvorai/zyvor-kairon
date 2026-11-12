@@ -102,13 +102,12 @@ func (c *Controller) reconcileMachineAtlasVolumes(ctx context.Context, m *model.
 		return "spec.volumes[].atlas requires kairon-controller --atlas-url", nil
 	}
 	if !hasFinalizer {
-		finals := append(append([]string{}, m.Metadata.Finalizers...), model.FinalizerAtlasVolumes)
-		if err := c.Kube.PatchMachine(ctx, m.Namespace(), m.Metadata.Name, map[string]any{
-			"metadata": map[string]any{"finalizers": finals},
-		}); err != nil {
+		meta := model.AddFinalizerMeta(m.Metadata.Finalizers, model.FinalizerAtlasVolumes, m.Metadata.ResourceVersion)
+		if err := c.Kube.PatchMachine(ctx, m.Namespace(), m.Metadata.Name, map[string]any{"metadata": meta}); err != nil {
 			return "", fmt.Errorf("add atlas-volumes finalizer: %w", err)
 		}
-		m.Metadata.Finalizers = finals
+		m.Metadata.Finalizers = meta["finalizers"].([]string)
+		m.Metadata.ResourceVersion = "" // the patch moved it; later guarded writes in this pass use a fresh listing
 	}
 
 	states := model.AtlasVolumeStates(*m)

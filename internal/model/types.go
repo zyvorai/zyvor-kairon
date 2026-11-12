@@ -1777,6 +1777,22 @@ func HasFinalizerList(finalizers []string, name string) bool {
 	return false
 }
 
+// AddFinalizerMeta is the metadata merge-patch that adds finalizer to an
+// object read at resourceVersion rv. A merge patch replaces the whole
+// finalizers list, so two writers adding different finalizers from the same
+// listing (kairon-controller's atlas/cilium finalizers and kairon-node's
+// runtime-cleanup on a fresh Machine) would silently drop one. The
+// resourceVersion makes the later writer fail with 409 and retry from a
+// fresh read instead.
+func AddFinalizerMeta(existing []string, finalizer, rv string) map[string]any {
+	finals := append(append([]string{}, existing...), finalizer)
+	meta := map[string]any{"finalizers": finals}
+	if rv != "" {
+		meta["resourceVersion"] = rv
+	}
+	return meta
+}
+
 func RemoveFinalizer(finalizers []string, name string) []string {
 	out := make([]string, 0, len(finalizers))
 	for _, f := range finalizers {

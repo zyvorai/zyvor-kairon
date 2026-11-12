@@ -23,3 +23,17 @@ func TestQuantitiesRejectNonFiniteAndOverflow(t *testing.T) {
 		t.Errorf("ParseVCPUs(2) = %d, %v", n, err)
 	}
 }
+
+func TestAddFinalizerMetaGuardsWithResourceVersion(t *testing.T) {
+	orig := []string{"a"}
+	meta := AddFinalizerMeta(orig, "b", "42")
+	if got := meta["finalizers"].([]string); len(got) != 2 || got[1] != "b" || len(orig) != 1 {
+		t.Fatalf("finalizers=%v orig=%v", got, orig)
+	}
+	if meta["resourceVersion"] != "42" {
+		t.Fatalf("a merge patch that replaces the finalizer list must carry resourceVersion, got %v", meta)
+	}
+	if _, ok := AddFinalizerMeta(nil, "b", "")["resourceVersion"]; ok {
+		t.Fatal("empty resourceVersion must be omitted")
+	}
+}
