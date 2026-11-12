@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -54,6 +55,9 @@ func parseISCSIConfig(volumeContext, secrets map[string]string) (iscsiConfig, er
 	if portal == "" || iqn == "" {
 		return iscsiConfig{}, fmt.Errorf("volume_context must set %q and %q for Kairon's iSCSI driver", volumeAttrPortal, volumeAttrIQN)
 	}
+	if err := validateISCSITarget(portal, iqn); err != nil {
+		return iscsiConfig{}, err
+	}
 	lun := volumeContext[volumeAttrLUN]
 	if lun == "" {
 		lun = defaultLUN
@@ -92,7 +96,29 @@ func decodeVolumeID(id string) (iscsiConfig, error) {
 	if len(parts) != 4 || parts[0] != iscsiVolumeIDPrefix {
 		return iscsiConfig{}, fmt.Errorf("volume_id %q is not a Kairon iSCSI volume handle (expected %q)", id, "iscsi|<portal>|<iqn>|<lun>")
 	}
+	if err := validateISCSITarget(parts[1], parts[2]); err != nil {
+		return iscsiConfig{}, err
+	}
 	return iscsiConfig{Portal: parts[1], IQN: parts[2], LUN: parts[3]}, nil
+}
+
+var (
+	// An IQN or portal reaches iscsiadm and targetcli as one argv word and
+	// a targetcli path segment: a leading "-" would be read as an option,
+	// and "/" or whitespace would escape the path segment.
+	iscsiIQNPattern    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.:_@-]*$`)
+	iscsiPortalPattern = regexp.MustCompile(`^[A-Za-z0-9\[][A-Za-z0-9.:_\[\],-]*$`)
+	fsTypePattern      = regexp.MustCompile(`^[a-z0-9]{1,16}$`)
+)
+
+func validateISCSITarget(portal, iqn string) error {
+	if !iscsiPortalPattern.MatchString(portal) {
+		return fmt.Errorf("invalid iSCSI portal %q", portal)
+	}
+	if !iscsiIQNPattern.MatchString(iqn) {
+		return fmt.Errorf("invalid iSCSI target name %q", iqn)
+	}
+	return nil
 }
 
 // deviceWaitTimeout/deviceWaitInterval are vars, not consts, purely so
@@ -225,6 +251,9 @@ func growFilesystem(ctx context.Context, run CommandRunner, device, mountPath st
 // blkid failure is propagated rather than risking mkfs running over data
 // blkid merely failed to identify for some other reason.
 func ensureFormatted(ctx context.Context, run CommandRunner, device, fsType string) error {
+	if !fsTypePattern.MatchString(fsType) {
+		return fmt.Errorf("invalid filesystem type %q", fsType)
+	}
 	_, err := run.Run(ctx, "blkid", "-p", "-o", "value", "-s", "TYPE", device)
 	if err == nil {
 		return nil // already formatted
