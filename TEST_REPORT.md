@@ -2,6 +2,11 @@
 
 This file's own convention is specifically **real, live-cluster/live-host verification beyond source-level gates** -- every entry below documents an actual deployment, a real API call against a running FluxVM/Kubernetes, or a bug a real environment surfaced that unit tests alone didn't. Being honest about that bar: the batch of 24 fixes/features described in RELEASE_NOTES.md's newest `## Added`/`## Changed` entries (MachineQuota hotplug self-check through the migration heartbeat/reaper) was verified via `go build`/`go vet`/the full `go test ./...` suite (including `-race` for the migration heartbeat/reaper's concurrency-critical path, run repeatedly), `gofmt`, `helm lint`, `helm template`, and `python3 scripts/validate.py` -- real, and in several cases (the reaper's per-session locking) deliberately adversarial test design proving a specific race can't happen -- but none of it was exercised against an actual running Kubernetes cluster or a live FluxVM host. No live cluster/host was available in this working session. Recorded here plainly rather than either skipping the gap silently or writing an entry that reads like the live-verification bar above was met when it wasn't.
 
+# v0.10.4 (2026-11-12): what was and was not verified
+
+- Prepared as a patch of the hardening merged after v0.10.3 (#228-#230). Verified only by source-level gates on a Linux dev host before the release PR: `python3 scripts/validate.py`, `helm lint charts/kairon`, `go build ./...`, `go vet ./...`, `go test -count=1 ./...`. Each fix has unit tests.
+- **Not verified:** no install, upgrade or self-test of v0.10.4 on a real host; the published-image, release-workflow and MCP Registry steps run only when the tag is pushed; the XFF change behind a real proxy/load balancer; a real backed-qcow2 image refusal on a node; CSI against real iSCSI/NVMe targets; migration races under real two-host load. Everything under the v0.10.3 sections below is evidence for v0.10.3 and earlier, not for v0.10.4.
+
 # Pre-v0.10.3 hardening (2026-11-10): what was and was not verified
 
 ## Result

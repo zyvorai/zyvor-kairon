@@ -286,7 +286,10 @@ jobs:
           # Webhook ValidatingWebhookConfiguration only renders when both
           # tlsSecretName and caBundle are set — inject CI placeholders so
           # the full production surface is exercised.
-          helm lint charts/kairon -f charts/kairon/values-production.yaml
+          helm lint charts/kairon -f charts/kairon/values-production.yaml \
+            --set webhook.tlsSecretName=ci-webhook-tls \
+            --set webhook.caBundle=Y2ktY2EtYnVuZGxl \
+            --set migration.dataplaneTlsSecretName=ci-migration-dataplane
           helm template kairon charts/kairon --namespace kairon-system \
             -f charts/kairon/values-production.yaml \
             --set webhook.tlsSecretName=ci-webhook-tls \

@@ -6,12 +6,12 @@ A tag `vX.Y.Z` runs `.github/workflows/release.yml`: it scans, pushes, signs and
 
 The first step of the `release-assets` job fails the release unless these match (before anything is built):
 
-| File | Value for tag `v0.10.3` |
+| File | Value for tag `v0.10.4` |
 |---|---|
-| `VERSION` | `v0.10.3` |
-| `charts/kairon/Chart.yaml` `version` | `0.10.3` |
-| `charts/kairon/Chart.yaml` `appVersion` | `"0.10.3"` |
-| `server.json` `version` and the `kairon-mcp` image tag | `0.10.3` / `ghcr.io/zyvorai/kairon-mcp:v0.10.3` |
+| `VERSION` | `v0.10.4` |
+| `charts/kairon/Chart.yaml` `version` | `0.10.4` |
+| `charts/kairon/Chart.yaml` `appVersion` | `"0.10.4"` |
+| `server.json` `version` and the `kairon-mcp` image tag | `0.10.4` / `ghcr.io/zyvorai/kairon-mcp:v0.10.4` |
 
 Image tags are `vX.Y.Z`; the chart prefixes `v` to `appVersion` for its default image tags.
 

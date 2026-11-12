@@ -148,13 +148,16 @@ Known limitations of the username/password mode: with `ui.replicaCount > 1`, ses
 - **MCP.** `kaironctl mcp serve --allow-write` warns when the weak default approval mode is in use.
 - **Dashboard connections.** The dashboard reuses one connection pool to the nodes instead of opening a TLS connection per proxied request.
 
-### Unreleased hardening
+### Hardening added in v0.10.4
 
 - **Image downloads are size-capped** (`kairon-node -image-max-download-bytes`, default 256 GiB) so an endless body from an `httpURL` source cannot fill the cache disk; the digest pin still decides whether the bytes are accepted.
 - **Reserved `oidc:` username prefix.** Local `ui.auth.users` entries starting with `oidc:` are rejected at startup and refused at login, because such a subject is treated as an OIDC identity and skips the local-user existence check.
 - **Login lockout counting** no longer loses a failure that races the idle-entry sweep.
+- **Rate-limit client address** behind `trustedProxyHeader` is the rightmost entry not inside `trustedProxyCidrs` (the leftmost was client-controlled).
+- **Backed qcow2 images are refused** (the backing-file path would be read on the node); non-finite or overflowing CPU/memory quantities are rejected; OCI containerDisk pulls share the download size cap.
+- **Migration peer and finalizer races** (concurrent prepare/heartbeat; optimistic-locked finalizer adds) and **CSI node** CHAP redaction and iSCSI/NVMe/`fsType` validation.
 
-Known gaps in v0.10.3 (not addressed): changing your own password does not revoke your other sessions; Machines created directly with `kubectl` bypass the dashboard's privileged-port-forward check; OIDC against a real identity provider, the admission webhook against a real API server and the dashboard's behaviour in a browser after these changes were not verified (see [`TEST_REPORT.md`](TEST_REPORT.md)).
+Known gaps in v0.10.4 (not addressed): changing your own password does not revoke your other sessions; Machines created directly with `kubectl` bypass the dashboard's privileged-port-forward check; OIDC against a real identity provider, the admission webhook against a real API server and the dashboard's behaviour in a browser after these changes were not verified (see [`TEST_REPORT.md`](TEST_REPORT.md)).
 
 ## VNC console (`console.enabled`)
 

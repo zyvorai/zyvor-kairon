@@ -35,11 +35,11 @@
 
 ## What's new
 
-**v0.10.3:** install and upgrade fixes (default image tags, production-profile prerequisites, CRDs applied on `kaironctl upgrade`) plus security and reliability hardening. v0.10.2's default `helm install` cannot pull its images (it asks for `0.10.2`, the images are tagged `v0.10.2`); upgrade to v0.10.3, or pin the image tags as the [release notes](RELEASE_NOTES.md) describe.
+**v0.10.4:** security and reliability hardening patch (rate-limit client address, image download cap, backed-qcow2 refusal, quantity parsing, migration and finalizer races, CSI hardening); read the upgrade notes in the [release notes](RELEASE_NOTES.md). v0.10.3 fixed the install and upgrade path (default image tags, production-profile prerequisites, CRDs applied on `kaironctl upgrade`). v0.10.2's default `helm install` cannot pull its images (it asks for `0.10.2`, the images are tagged `v0.10.2`); upgrade to v0.10.3 or later, or pin the image tags as the [release notes](RELEASE_NOTES.md) describe.
 
 **Experimental operations:** [Kairon Rehearsal](docs/guides/rehearsal.md) tests upgrades on isolated CSI copies. [Advanced operations](docs/guides/advanced-operations.md) adds health-gated configuration change plans, application recovery verification, traffic/RTT placement recommendations, and incident reproduction with fix verification. Includes runnable scenarios and failure-path tests. VM/CSI and host-isolation hardware qualification is still pending.
 
-New since v0.6.0 (latest tag: v0.10.3; the rows down to incident bundles are new in v0.10.0):
+New since v0.6.0 (latest tag: v0.10.4; the rows down to incident bundles are new in v0.10.0):
 
 | | |
 |---|---|
@@ -282,16 +282,16 @@ On a Kubernetes cluster whose VM hosts run [FluxVM](https://github.com/zyvorai/z
 kubectl label node worker-1 kairon.zyvor.dev/capable=true
 
 helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \
-  --version 0.10.3 -n kairon-system --create-namespace \
-  -f https://raw.githubusercontent.com/zyvorai/kairon/v0.10.3/charts/kairon/values-production.yaml
+  --version 0.10.4 -n kairon-system --create-namespace \
+  -f https://raw.githubusercontent.com/zyvorai/kairon/v0.10.4/charts/kairon/values-production.yaml
 
-curl -fsSL -o kaironctl https://github.com/zyvorai/kairon/releases/download/v0.10.3/kaironctl-linux-amd64
+curl -fsSL -o kaironctl https://github.com/zyvorai/kairon/releases/download/v0.10.4/kaironctl-linux-amd64
 chmod +x kaironctl && sudo mv kaironctl /usr/local/bin/      # or: kubectl krew install kairon
 
 kaironctl create demo --image /var/lib/fluxvm/images/ubuntu.qcow2 --cpu 2 --memory 2Gi
 ```
 
-Other platforms: `kaironctl-linux-arm64` and `kairon_darwin_{amd64,arm64}.tar.gz` are on the [release page](https://github.com/zyvorai/zyvor-kairon/releases/tag/v0.10.3) with `SHA256SUMS`. Upgrading an existing install: [getting started](docs/getting-started.md#upgrade-rollback-and-node-drains) (apply CRDs first, keep your values; `kaironctl upgrade` does both).
+Other platforms: `kaironctl-linux-arm64` and `kairon_darwin_{amd64,arm64}.tar.gz` are on the [release page](https://github.com/zyvorai/zyvor-kairon/releases/tag/v0.10.4) with `SHA256SUMS`. Upgrading an existing install: [getting started](docs/getting-started.md#upgrade-rollback-and-node-drains) (apply CRDs first, keep your values; `kaironctl upgrade` does both).
 
 **Before the production command above, create the webhook TLS Secret and the `kairon-migration-tls` Secret and pass `--set webhook.tlsSecretName=... --set webhook.caBundle=...`; the install stops with a message if they are missing (steps in [getting started](docs/getting-started.md#evaluation-vs-production)).** The production profile pins image tags to ``v` + `Chart.AppVersion`` and turns on the webhook, namespace isolation, network default-deny and migration data-plane TLS. Images: `ghcr.io/zyvorai/kairon-{controller,node,ui}`, signed with checksums and SBOM.
 
@@ -373,7 +373,7 @@ kaironctl ui                         # or through the API server, no port-forwar
 | MCP server for AI agents | Preview, CI end-to-end with the official SDK |
 | CPU/memory hotplug | Grow-only (QEMU) |
 
-**v0.10.3** is the latest release (install and upgrade fixes plus security and reliability hardening, see the [release notes](RELEASE_NOTES.md); v0.10.2 fixed the release pipeline and v0.10.1 added the MCP server image and the MCP Registry listing). Two-host live migration ran on a real lab on 2026-10-14 (cold, source failure, controller failover, all three adaptive cases and post-copy source failure pass in both directions on matched QEMU 10.2.1; plain pre-copy under a heavy write load did not converge, and the `NeedsRecovery` drill passed 5 of 6 runs with one unexplained failure that left a migration in `Adopting`). There is no live + eBPF run and no nightly CI yet, so it stays Preview. Adaptive live migration stays Experimental until its matrix cases pass on the nightly lab workflow. Honest gaps live in [docs/STATUS.md](docs/STATUS.md); what comes next is in [ROADMAP.md](ROADMAP.md).
+**v0.10.4** is the latest release (security and reliability hardening, see the [release notes](RELEASE_NOTES.md); v0.10.3 fixed install and upgrade; v0.10.2 fixed the release pipeline and v0.10.1 added the MCP server image and the MCP Registry listing). Two-host live migration ran on a real lab on 2026-10-14 (cold, source failure, controller failover, all three adaptive cases and post-copy source failure pass in both directions on matched QEMU 10.2.1; plain pre-copy under a heavy write load did not converge, and the `NeedsRecovery` drill passed 5 of 6 runs with one unexplained failure that left a migration in `Adopting`). There is no live + eBPF run and no nightly CI yet, so it stays Preview. Adaptive live migration stays Experimental until its matrix cases pass on the nightly lab workflow. Honest gaps live in [docs/STATUS.md](docs/STATUS.md); what comes next is in [ROADMAP.md](ROADMAP.md).
 
 ---
 

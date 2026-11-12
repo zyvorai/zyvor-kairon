@@ -1,7 +1,19 @@
-## Unreleased
+# Kairon v0.10.4 (2026-11-12)
+
+A security and reliability hardening patch on v0.10.3, from a review of the dashboard, node agent, migration peer and CSI node. No new features. It has been verified by unit tests and CI only; no install or upgrade of v0.10.4 on a real host has been recorded (see [`TEST_REPORT.md`](TEST_REPORT.md)).
+
+**Upgrade notes / behaviour changes**
+
+- **Backed qcow2 images are now refused.** A qcow2 boot image whose header names a backing file fails on the node. Flatten it first: `qemu-img convert -O qcow2 backed.qcow2 flat.qcow2`.
+- **NaN, Inf and overflowing CPU/memory quantities are rejected** (for example `NaN`, `1e30Gi`), by the scheduler's parser and by the Machine admission webhook. Existing Machines that relied on such a value reading as "no request" must be given a real quantity.
+- **`oidc:`-prefixed local usernames are rejected.** A `ui.auth.users` entry starting with `oidc:` stops the dashboard at startup and cannot log in; rename it before upgrading.
+- **New flag `-image-max-download-bytes` (env `KAIRON_IMAGE_MAX_DOWNLOAD_BYTES`), default 256 GiB** on `kairon-node`. HTTP image downloads and OCI containerDisk pulls larger than this now fail; raise it if you legitimately use bigger images.
+- **X-Forwarded-For handling changed for `trustedProxyHeader`.** The rate limiter now uses the rightmost entry not inside `trustedProxyCidrs` instead of the leftmost. Make sure `trustedProxyCidrs` lists every proxy hop in front of `kairon-ui`, otherwise the last proxy's address becomes the client key and clients share one bucket.
+- Apply the chart's CRDs when upgrading as usual (`kaironctl upgrade` does); there are no CRD schema changes in this release.
 
 **Fixed**
 
+- **Rate limiting behind a trusted proxy could be evaded.** The client address was taken from the leftmost `X-Forwarded-For` entry, which the client controls, so a client could choose its own bucket. It now walks from the right and skips trusted proxies.
 - **Image downloads are size-capped.** A `spec.image.source.httpURL` download is limited to `kairon-node -image-max-download-bytes` (env `KAIRON_IMAGE_MAX_DOWNLOAD_BYTES`, default 256 GiB); a larger `Content-Length` or an over-long body fails cleanly and leaves no temp file, so an endless response cannot fill the image-cache disk. The per-download HTTP transport now also closes its idle connections.
 - **Local usernames may not start with `oidc:`.** That prefix namespaces OIDC session subjects and those subjects are always treated as valid; `ui.auth.users` entries using it are now rejected at startup and refused at login. The seeded `admin` user and default login are unchanged.
 - **Login-attempt counting is race-free.** The idle-entry sweep could evict a username's state while a failed login was being recorded on it, dropping that failure from the lockout count.
