@@ -722,6 +722,12 @@ spec:
 {{ if .Values.migration.adapterSocket }}
             - "--migration-adapter-socket={{ .Values.migration.adapterSocket }}"
 {{ end }}
+{{ if .Values.migration.requireEncryptedDataPlane }}
+            - "--migration-require-encrypted"
+{{ end }}
+{{ if .Values.migration.heartbeatTTL }}
+            - "--migration-heartbeat-ttl={{ .Values.migration.heartbeatTTL }}"
+{{ end }}
 {{ end }}
 {{ if .Values.console.enabled }}
             - "--console-addr=:{{ .Values.console.port }}"

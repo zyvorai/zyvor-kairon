@@ -488,6 +488,21 @@ migration:
   # Optional local Kairon migration adapter. Current FluxVM does not expose this
   # contract, so leave empty unless an adapter is installed on every VM node.
   adapterSocket: ""
+  # Block a live migration whose destination reports an unencrypted data plane
+  # (kairon-node --migration-require-encrypted) instead of only alerting: the
+  # prepared target is aborted before guest memory moves and the Machine parks
+  # in Blocked. Off by default. Turn it on only once every node reports
+  # status.dataPlaneEncrypted=true; the adapter's own -migration-data-tls is
+  # still configured outside Helm (see dataplaneTls below and
+  # docs/runbook-migration-failures.md#unencrypted-migration-data-plane).
+  requireEncryptedDataPlane: false
+  # How long a destination-side Prepared migration session may go without a
+  # heartbeat from its source before kairon-node self-aborts it
+  # (--migration-heartbeat-ttl, a Go duration such as 15m). Empty (the default)
+  # is off. Keep it well above several multiples of node.interval, which is
+  # also the source's heartbeat period (default 5m). See
+  # docs/runbook-migration-failures.md#abandoned-pre-commit-sessions-destination-side-opt-in.
+  heartbeatTTL: ""
   adapterHostPath: ""
   # Authenticate/encrypt the QEMU migration data stream (not just the
   # control-plane RPCs, which always use mTLS) via TLS. Opt-in: enable only
