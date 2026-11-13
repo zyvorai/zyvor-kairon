@@ -3,7 +3,7 @@
 
 [Unit]
 Description=kairon - watch kubelet cpu_manager_state for kairon-node
-Documentation=https://github.com/zyvorai/kairon
+Documentation=https://github.com/zyvorai/zyvor-kairon
 
 [Path]
 PathChanged=/var/lib/kubelet/cpu_manager_state

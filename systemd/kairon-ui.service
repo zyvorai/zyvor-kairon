@@ -3,7 +3,7 @@
 
 [Unit]
 Description=kairon-ui - kairon web dashboard (Machines, Migrations, Snapshots, recovery)
-Documentation=https://github.com/zyvorai/kairon
+Documentation=https://github.com/zyvorai/zyvor-kairon
 After=network-online.target
 Wants=network-online.target
 
