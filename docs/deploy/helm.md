@@ -26,6 +26,8 @@ helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \
   --set webhook.tlsSecretName=kairon-webhook-tls --set webhook.caBundle="$(cat ./webhook-certs/ca-bundle.b64)"
 ```
 
+CI lints the overlay with `webhook.tlsSecretName`, `webhook.caBundle` and `migration.dataplaneTlsSecretName` all set (`.github/workflows/ci.yml`); the first two are required, `migration.dataplaneTlsSecretName` is optional (per-node data-plane identities, see [migration TLS](../guides/machine-migration-tls.md)).
+
 Without Helm: `kaironctl install --profile production --set webhook.tlsSecretName=... --set webhook.caBundle=...`.
 
 ## Check it

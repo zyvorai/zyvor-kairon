@@ -140,8 +140,9 @@ helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \
 ```
 
 - Without the `-f` overlay and the two `--set webhook.*` values you get the evaluation profile. The production overlay on its own (as in earlier versions of this page) stops with `webhook.enabled=true needs webhook.tlsSecretName ...`.
+- CI lints and renders the production overlay with all three of `--set webhook.tlsSecretName=...`, `--set webhook.caBundle=...` and `--set migration.dataplaneTlsSecretName=...` (placeholders; `.github/workflows/ci.yml`, step "Helm render -- production profile"). The first two are required for the webhook to render. `migration.dataplaneTlsSecretName` is optional: leave it empty and the data plane stages the shared `kairon-migration-tls` certificate (only relevant when `migration.adapterHostPath` is set); set it to a Secret holding `<nodeName>-ca.crt`/`-tls.crt`/`-tls.key` per node for per-node identities (see [migration TLS](guides/machine-migration-tls.md)).
 - `kaironctl` installs the same published chart without Helm: `kaironctl install --chart oci://ghcr.io/zyvorai/charts/kairon --version 0.10.4 --profile production`.
-- Helm applies `crds/` only on first install. When upgrading, apply the CRDs from the same tag first (`kubectl apply --server-side -f https://raw.githubusercontent.com/zyvorai/kairon/v0.10.4/deploy/crd.yaml`); see [CRD versioning](guides/crd-versioning.md#upgrading-an-existing-cluster).
+- Helm applies `crds/` only on first install. When upgrading, apply the CRDs from the same tag first (`kubectl apply --server-side -f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/v0.10.4/deploy/crd.yaml`); see [CRD versioning](guides/crd-versioning.md#upgrading-an-existing-cluster).
 - Fetch the matching `kaironctl` from the release: `https://github.com/zyvorai/zyvor-kairon/releases/download/v0.10.4/kaironctl-linux-amd64` (check it against the release's `SHA256SUMS`). The `kubectl kairon` plugin is on the same page; Kairon is not in the public Krew index, see [CLI](CLI.md#install-via-krew).
 
 Later, `kaironctl upgrade` keeps the values you installed with (`--reset-values` returns to chart defaults), `kaironctl upgrade --check` compares your release with the latest one without changing anything, `kaironctl config set KEY=VALUE` changes a single value, and `kaironctl history` / `kaironctl rollback` list and restore revisions. Add `--context NAME` or `--kubeconfig PATH` to target a specific cluster. See [CLI](CLI.md).
@@ -301,7 +302,7 @@ helm upgrade --install kairon ./charts/kairon -n kairon-system --set ui.enabled=
 Adds a "Console" button per Machine in the dashboard -- a real graphical
 VNC session in the browser, for QEMU-backend Machines only (the button
 hides itself for ineligible Machines, or entirely when `console.enabled`
-is off). Read [SECURITY.md](https://github.com/zyvorai/kairon/blob/main/SECURITY.md)'s "VNC console" section first:
+is off). Read [SECURITY.md](https://github.com/zyvorai/zyvor-kairon/blob/main/SECURITY.md)'s "VNC console" section first:
 FluxVM's own VNC socket has no auth of its own, so this feature's security
 rests on kairon-ui's operator auth, a single-use connection ticket bound
 to the requesting username (every session is audit-logged), and a shared

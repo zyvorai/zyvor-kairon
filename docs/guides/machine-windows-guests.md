@@ -110,6 +110,6 @@ than refused outright.
   Kairon's own side is guest-OS-agnostic, but hasn't been verified
   end-to-end against a real Windows guest in this repo's own CI.
 - The graphical VNC console (`console.enabled`,
-  [SECURITY.md](https://github.com/zyvorai/kairon/blob/main/SECURITY.md)) is QEMU-backend-only and
+  [SECURITY.md](https://github.com/zyvorai/zyvor-kairon/blob/main/SECURITY.md)) is QEMU-backend-only and
   guest-OS-agnostic -- it should work against a Windows guest exactly
   like a Linux one, but likewise hasn't been specifically verified here.

@@ -36,7 +36,7 @@ spec:
   `ui.oidc.adminGroups` (opt-in, empty by default; see
   [`kairon-ui-oidc.md`](kairon-ui-oidc.md)) -- stricter than the text
   console's any-authenticated-operator default, the same posture guest
-  exec already has. See [SECURITY.md](https://github.com/zyvorai/kairon/blob/main/SECURITY.md)'s "Guest file
+  exec already has. See [SECURITY.md](https://github.com/zyvorai/zyvor-kairon/blob/main/SECURITY.md)'s "Guest file
   access" section for why.
 - The target Machine must be `Running` with `spec.guestAgent.console: true`.
 

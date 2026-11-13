@@ -2,7 +2,7 @@
 
 A real interactive shell inside the guest, rendered in-browser -- Kairon's
 equivalent of `virtctl console`. Distinct from the graphical
-[VNC console](https://github.com/zyvorai/kairon/blob/main/SECURITY.md) (a display, not a shell),
+[VNC console](https://github.com/zyvorai/zyvor-kairon/blob/main/SECURITY.md) (a display, not a shell),
 [guest exec](machine-guest-exec.md) (one-shot commands, no interactive
 session), and [guest file access](machine-guest-agent-files.md) (read/write
 a file, no shell) -- the latter shares this feature's own
@@ -44,7 +44,7 @@ either, both, or neither.
 You also need the console relay itself configured
 (`console.enabled`/`KAIRON_NODE_CONSOLE_TOKEN`) -- the same deployment-level
 gate the VNC console and guest exec already share. See
-[SECURITY.md](https://github.com/zyvorai/kairon/blob/main/SECURITY.md)'s "Text console" section for the full
+[SECURITY.md](https://github.com/zyvorai/zyvor-kairon/blob/main/SECURITY.md)'s "Text console" section for the full
 trust chain and authorization model (same as VNC's: any authenticated
 operator by default, restrictable via
 `kairon.zyvor.dev/console-allowed-users`).
