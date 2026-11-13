@@ -791,6 +791,13 @@ ui:
       # either -- both documented, honest first-cut limits, not bugs.
       enabled: false
   rateLimit:
+    # rps and burst set kairon-ui's per-client-address limit on every route
+    # (-rate-limit-rps / -rate-limit-burst). null (the default) renders no flag, so
+    # the binary's defaults apply (20 requests/second sustained, burst 40).
+    # rps: 0 disables rate limiting entirely; the per-username login
+    # lockout is separate and unaffected.
+    rps: null
+    burst: null
     # trustedProxyHeader, when set alongside trustedProxyCidrs, is the
     # header (e.g. "X-Forwarded-For") kairon-ui reads the real client
     # address from for rate limiting, instead of the immediate TCP peer.
