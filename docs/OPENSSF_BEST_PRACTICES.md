@@ -10,7 +10,7 @@ silver → 7, gold → 10.
 
 | Criteria area | Evidence |
 |---------------|----------|
-| Description, obtain, feedback | [`README.md`](https://github.com/zyvorai/zyvor-kairon/blob/main/README.md), [GitHub Issues](https://github.com/zyvorai/kairon/issues), [Releases](https://github.com/zyvorai/kairon/releases) |
+| Description, obtain, feedback | [`README.md`](https://github.com/zyvorai/zyvor-kairon/blob/main/README.md), [GitHub Issues](https://github.com/zyvorai/zyvor-kairon/issues), [Releases](https://github.com/zyvorai/zyvor-kairon/releases) |
 | Contribution process + requirements | [`CONTRIBUTING.md`](https://github.com/zyvorai/zyvor-kairon/blob/main/CONTRIBUTING.md) (PR process, coding standard, test policy) |
 | License | [`LICENSE`](https://github.com/zyvorai/zyvor-kairon/blob/main/LICENSE) (Apache-2.0) |
 | Interface docs | [`docs/CLI.md`](CLI.md), [`docs/guides/`](guides/), CRDs in [`charts/kairon`](https://github.com/zyvorai/zyvor-kairon/tree/main/charts/kairon) |

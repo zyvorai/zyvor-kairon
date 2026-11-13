@@ -42,7 +42,7 @@ A `ResourceClaim` must be allocated before Kairon considers it. Resolved PCI BDF
 Every published image is also SBOM'd and signed: `anchore/sbom-action` (wrapping `syft`) generates a real SPDX SBOM from the exact pushed image (by digest, not tag -- a tag is mutable, a digest isn't), `cosign` signs that digest and attests the SBOM to it, keylessly -- no private key this project generates, stores, or can leak; the GitHub Actions job's own short-lived OIDC token (`id-token: write`) is exchanged for a Fulcio-issued certificate scoped to this exact workflow/repo/ref, and the signature is recorded in Sigstore's public Rekor transparency log. Verify either with `cosign`:
 
 ```bash
-CERT_ID='^https://github.com/zyvorai/kairon/\.github/workflows/release\.yml@refs/tags/.*$'
+CERT_ID='^https://github.com/zyvorai/zyvor-kairon/\.github/workflows/release\.yml@refs/tags/.*$'
 ISSUER='https://token.actions.githubusercontent.com'
 
 cosign verify --certificate-identity-regexp "$CERT_ID" --certificate-oidc-issuer "$ISSUER" \

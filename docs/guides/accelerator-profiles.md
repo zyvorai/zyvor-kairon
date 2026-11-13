@@ -15,7 +15,7 @@ not change Machines already expanded from it.
 
 ## Example
 
-[`examples/acceleratorprofile.yaml`](https://github.com/zyvorai/kairon/blob/main/examples/acceleratorprofile.yaml):
+[`examples/acceleratorprofile.yaml`](https://github.com/zyvorai/zyvor-kairon/blob/main/examples/acceleratorprofile.yaml):
 
 ```yaml
 apiVersion: kairon.zyvor.dev/v1

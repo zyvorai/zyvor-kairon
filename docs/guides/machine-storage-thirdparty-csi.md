@@ -228,4 +228,4 @@ in full for Kairon's own driver; it applies identically here.
   an arbitrary operator-configured map aren't templated in this first
   cut. `kairon-node` itself only ever connects to the one socket path
   configured per driver name; nothing in this codebase lists or reads
-  anything else under that mount. See [SECURITY.md](https://github.com/zyvorai/kairon/blob/main/SECURITY.md).
+  anything else under that mount. See [SECURITY.md](https://github.com/zyvorai/zyvor-kairon/blob/main/SECURITY.md).

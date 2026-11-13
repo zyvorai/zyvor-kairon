@@ -28,7 +28,7 @@ console:
 
 - **The deployment needs the console relay configured** (`console.enabled`
   -- exec rides the exact same `kairon-ui` &harr; `kairon-node` relay
-  infrastructure, see [SECURITY.md](https://github.com/zyvorai/kairon/blob/main/SECURITY.md)'s "VNC console"
+  infrastructure, see [SECURITY.md](https://github.com/zyvorai/zyvor-kairon/blob/main/SECURITY.md)'s "VNC console"
   section for that trust chain).
 - **The calling operator must be an admin identity** -- a `ui.auth.users[].admin`
   account, or an OIDC session in `ui.oidc.adminGroups` (opt-in, empty by

@@ -43,7 +43,7 @@ kubectl kairon version
 kubectl kairon install --dry-run
 ```
 
-Manifest template (placeholder checksums; `make krew-package` and the release workflow fill in the version and checksums): [`deploy/krew/kairon.yaml`](../deploy/krew/kairon.yaml). Packaging script: [`scripts/krew-package.sh`](../scripts/krew-package.sh).
+Manifest template (placeholder checksums, committed at an older version; `make krew-package` and the release workflow rewrite the version, the `/releases/download/vX.Y.Z/` URLs and the checksums, so the template's version is not what you install and the release's `kairon.yaml` is the manifest to use; the URIs in it still use the pre-rename `zyvorai/kairon` repository path, which GitHub redirects): [`deploy/krew/kairon.yaml`](../deploy/krew/kairon.yaml). Packaging script: [`scripts/krew-package.sh`](../scripts/krew-package.sh).
 
 ## Lifecycle (embedded Helm SDK)
 
@@ -336,6 +336,10 @@ kaironctl mac network NAME [-n NS]        # each member's host slice, address an
 ```
 
 See [guides/mac-fabric.md](guides/mac-fabric.md).
+
+### Known issue: `--help` on `migrate` and `snapshot`
+
+`kaironctl migrate --help` and `kaironctl snapshot --help` (and `-h`) do **not** print help. These two commands parse their own flags, so Cobra never sees `--help`; the first argument is taken as the Machine name. The result is a `MachineMigration` or `MachineSnapshot` for a Machine literally called `--help`; objects have been created this way. Do not probe these commands with `--help` against a real cluster. Use `kaironctl help migrate` / `kaironctl help snapshot` (or the usage lines above) instead, and if you already ran it, look for a stray object with `kubectl get machinemigrations,machinesnapshots`. Other commands that parse their own flags may behave the same way; check with `kaironctl help COMMAND` first. Tracked as a code bug; this page will change when it is fixed.
 
 ## Images
 

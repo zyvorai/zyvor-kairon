@@ -270,7 +270,7 @@ targets.
   environment around it) and the one that runs `privileged: true` -- both
   inherent to actually attaching/mounting network block devices from
   inside a container, not specific to this implementation. See
-  [SECURITY.md](https://github.com/zyvorai/kairon/blob/main/SECURITY.md).
+  [SECURITY.md](https://github.com/zyvorai/zyvor-kairon/blob/main/SECURITY.md).
 - **iSCSI's own operational requirements aren't Kairon's to solve.**
   Network reachability to the target, multipath (if you need it), and
   target-side ACLs are all your storage infrastructure's responsibility,

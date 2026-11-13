@@ -706,6 +706,9 @@ spec:
             - "--default-backend={{ .Values.node.defaultBackend }}"
             - "--image-root={{ .Values.node.imageRoot }}"
             - "--image-cache-dir={{ .Values.node.imageCacheDir }}"
+{{ if .Values.node.imageMaxDownloadBytes }}
+            - "--image-max-download-bytes={{ .Values.node.imageMaxDownloadBytes | int64 }}"
+{{ end }}
             - "--vfio-allowlist={{ .Values.node.vfioAllowlist }}"
             - "--mdev-parents={{ .Values.node.mdevParents }}"
 {{ if .Values.migration.enabled }}

@@ -357,7 +357,7 @@ back to the Machine's `spec.powerState`.
   calls time out (30 s; a capture after its length plus 45 s), and tokens
   never appear in results.
 
-See [SECURITY.md](https://github.com/zyvorai/kairon/blob/main/SECURITY.md)
+See [SECURITY.md](https://github.com/zyvorai/zyvor-kairon/blob/main/SECURITY.md)
 ("MCP server for AI agents").
 
 ## Troubleshooting
