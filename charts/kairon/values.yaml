@@ -149,6 +149,10 @@ node:
   # The directory must be writable by UID 65532 (kairon-node runs non-root and
   # fsGroup does not apply to hostPath): `install -d -o 65532 -g 65532 DIR`.
   imageCacheDir: ""
+  # Maximum bytes kairon-node reads for one spec.image.source download or OCI
+  # containerDisk pull (kairon-node -image-max-download-bytes). 0 keeps the
+  # binary's default of 256 GiB. See docs/guides/machine-image-import.md#size-limit.
+  imageMaxDownloadBytes: 0
   # Comma-separated PCI BDFs, e.g. 0000:65:00.0. Empty is fail-closed for DeviceClaims.
   vfioAllowlist: ""
   # Mediated device (vGPU) parents the scheduler may create instances on:

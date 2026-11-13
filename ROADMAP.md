@@ -7,7 +7,7 @@ v0.10.4 (security and reliability hardening patch, see [`RELEASE_NOTES.md`](RELE
 Open after v0.10.4 (gaps found while checking the docs against the code, not dated commitments):
 
 - [ ] Install, upgrade and self-test of v0.10.4 on a real host, recorded in [`TEST_REPORT.md`](TEST_REPORT.md) (today: unit tests, CI and a check that the published artifacts exist).
-- [ ] A Helm value for `kairon-node -image-max-download-bytes` (the chart has none; see [image import](docs/guides/machine-image-import.md#size-limit)).
+- [x] A Helm value for `kairon-node -image-max-download-bytes`: `node.imageMaxDownloadBytes`, on `main` and unreleased (see [image import](docs/guides/machine-image-import.md#size-limit)).
 - [ ] A public Krew index entry (`kubectl krew install kairon` does not work today; install from the release's `kairon.yaml`, see [CLI](docs/CLI.md#install-via-krew)).
 - [ ] The migration data plane's TLS is only staged by the chart (`migration.dataplaneTls` needs `migration.adapterHostPath`); the chart does not install or configure the host-level adapter.
 

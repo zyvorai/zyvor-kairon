@@ -165,11 +165,12 @@ endless response cannot fill the cache disk) and to an OCI containerDisk pull (t
 disk file, each). The digest pin still decides whether the bytes are accepted; the cap only bounds how many are read.
 The error says `exceeds the N byte limit (kairon-node -image-max-download-bytes)`.
 
-The Helm chart has no value for it. On a Helm install the default applies unless you add the environment variable to
-the `kairon-node` DaemonSet yourself (for example `kubectl -n kairon-system set env ds/kairon-node
-KAIRON_IMAGE_MAX_DOWNLOAD_BYTES=<bytes>`; check it again after a `helm upgrade`). On a `deploy-remote.sh` host put it in
-`/etc/kairon/kairon-node.env`, which the script leaves untouched on redeploys. This limit has been exercised by unit
-tests only.
+On a Helm install set `node.imageMaxDownloadBytes` (for example `--set node.imageMaxDownloadBytes=107374182400` for
+100 GiB); the chart passes it to `kairon-node` as `--image-max-download-bytes`, and leaving it at `0` renders no flag,
+so the 256 GiB default applies. On a `deploy-remote.sh` host put the environment variable in
+`/etc/kairon/kairon-node.env`, which the script leaves untouched on redeploys. The limit itself has been exercised by
+unit tests only; the Helm value is checked by `helm template` in `make helm-check` and has not been installed on a
+cluster.
 
 ## Backing files are refused
 

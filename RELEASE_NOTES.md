@@ -1,3 +1,9 @@
+# Unreleased
+
+**Added**
+
+- **Helm value `node.imageMaxDownloadBytes`** sets `kairon-node -image-max-download-bytes` (the cap on one `httpURL` image download or OCI containerDisk pull). `0` (the default) renders no flag, so the 256 GiB default applies. Checked with `helm template` only; not installed on a cluster ([image import](docs/guides/machine-image-import.md#size-limit)).
+
 # Kairon v0.10.4 (2026-11-12)
 
 A security and reliability hardening patch on v0.10.3, from a review of the dashboard, node agent, migration peer and CSI node. No new features. It has been verified by unit tests and CI only; no install or upgrade of v0.10.4 on a real host has been recorded (see [`TEST_REPORT.md`](TEST_REPORT.md)).

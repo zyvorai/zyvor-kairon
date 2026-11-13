@@ -97,6 +97,11 @@ helm-check:
 		--set webhook.caBundle=Y2ktY2EtYnVuZGxl \
 		--set migration.dataplaneTlsSecretName=ci-migration-dataplane \
 		>/dev/null
+	@# node.imageMaxDownloadBytes: absent by default, passed through as a plain integer when set.
+	@if helm template kairon charts/kairon --namespace kairon-system | grep -q -- '--image-max-download-bytes'; then \
+		echo "helm-check: --image-max-download-bytes rendered with default values" >&2; exit 1; fi
+	@helm template kairon charts/kairon --namespace kairon-system --set node.imageMaxDownloadBytes=107374182400 \
+		| grep -q -- '"--image-max-download-bytes=107374182400"'
 
 # Multi-arch kubectl-kairon tarballs + filled deploy/krew/kairon.yaml checksums.
 krew-package:
