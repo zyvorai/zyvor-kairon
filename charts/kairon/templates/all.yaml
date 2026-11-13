@@ -761,6 +761,15 @@ spec:
             - "--memory-low-watermark-mib={{ .Values.node.memoryReclaim.lowWatermarkMiB }}"
             - "--memory-high-watermark-mib={{ .Values.node.memoryReclaim.highWatermarkMiB }}"
             - "--memory-psi-some-avg10={{ .Values.node.memoryReclaim.psiSomeAvg10 }}"
+{{ if .Values.node.memoryReclaim.interval }}
+            - "--memory-reclaim-interval={{ .Values.node.memoryReclaim.interval }}"
+{{ end }}
+{{ if eq (toString (.Values.node.pressureReport).enabled) "false" }}
+            - "--pressure-report=false"
+{{ end }}
+{{ if (.Values.node.pressureReport).interval }}
+            - "--pressure-report-interval={{ .Values.node.pressureReport.interval }}"
+{{ end }}
             - "--virtual-networks={{ .Values.node.virtualNetworks.enabled }}"
             - "--vnet-uplink={{ .Values.node.virtualNetworks.uplink }}"
             - "--vnet-node-ip={{ .Values.node.virtualNetworks.nodeIP }}"

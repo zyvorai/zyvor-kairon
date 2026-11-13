@@ -119,7 +119,7 @@ Flags and environment (kairon-node; Helm `node.memoryReclaim`):
 | `--memory-low-watermark-mib` | `KAIRON_MEMORY_LOW_WATERMARK_MIB` | 10% of MemTotal |
 | `--memory-high-watermark-mib` | `KAIRON_MEMORY_HIGH_WATERMARK_MIB` | 20% of MemTotal (2× low when only low is set) |
 | `--memory-psi-some-avg10` | `KAIRON_MEMORY_PSI_SOME_AVG10` | `10` |
-| `--memory-reclaim-interval` | - | `10s` |
+| `--memory-reclaim-interval` (Helm `node.memoryReclaim.interval`) | - | `10s` |
 
 The loop runs only when FluxVM reports `host.balloon` in
 `/v1/runtime/capabilities`. It writes the node condition even on a node

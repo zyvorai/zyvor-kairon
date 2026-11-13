@@ -150,7 +150,7 @@ are considered.
 
 With `-drs-signal pressure` (Helm `controller.drs.signal`), DRS plans from
 what the hosts measure instead of what Machines reserved. Every 30 s
-(`--pressure-report-interval`) kairon-node asks FluxVM for the host's PSI
+(`--pressure-report-interval`, Helm `node.pressureReport.interval`) kairon-node asks FluxVM for the host's PSI
 (`GET /v1/host/pressure`, from `/proc/pressure`) and each local Machine's own
 cgroup PSI, and writes the `some avg60` values to its Node:
 
@@ -198,7 +198,7 @@ prod/vm1  worker-1  worker-2  cpu pressure on worker-1 is 41.0% (threshold 25%);
 
 kairon-node needs a FluxVM with `GET /v1/host/pressure`. With an older one it
 logs one warning and publishes nothing, and DRS treats the node as
-unmeasured. Turn the publisher off with `--pressure-report=false`.
+unmeasured. Turn the publisher off with `--pressure-report=false` (Helm `node.pressureReport.enabled=false`).
 
 ### Modes
 

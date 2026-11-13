@@ -102,6 +102,12 @@ helm-check:
 	@helm template kairon charts/kairon --namespace kairon-system --set migration.enabled=true \
 		--set migration.requireEncryptedDataPlane=true --set migration.heartbeatTTL=30m 2>/dev/null \
 		| grep -q -e '"--migration-heartbeat-ttl=30m"'
+	@# node.pressureReport / node.memoryReclaim.interval: no extra flags by default, rendered when set.
+	@if helm template kairon charts/kairon --namespace kairon-system | grep -q -e '--pressure-report' -e '--memory-reclaim-interval'; then \
+		echo "helm-check: pressure/reclaim interval flags rendered with default values" >&2; exit 1; fi
+	@helm template kairon charts/kairon --namespace kairon-system --set node.pressureReport.enabled=false \
+		--set node.pressureReport.interval=1m --set node.memoryReclaim.interval=5s \
+		| grep -q -e '"--pressure-report-interval=1m"'
 	helm template kairon charts/kairon --namespace kairon-system \
 		-f charts/kairon/values-production.yaml \
 		--set webhook.tlsSecretName=ci-webhook-tls \

@@ -257,6 +257,19 @@ node:
     lowWatermarkMiB: 0
     highWatermarkMiB: 0
     psiSomeAvg10: 0
+    # Time between reclaim passes as a Go duration (--memory-reclaim-interval).
+    # Empty keeps the binary's default of 10s.
+    interval: ""
+  # pressureReport: kairon-node publishes the host's and each local Machine's
+  # PSI on its Node's kairon.zyvor.dev/pressure annotation, which
+  # controller.drs.signal=pressure plans from (needs a FluxVM with
+  # GET /v1/host/pressure; an older one logs one warning and publishes
+  # nothing). enabled: false renders --pressure-report=false. interval is a Go
+  # duration (--pressure-report-interval); empty keeps the default of 30s.
+  # See docs/guides/node-maintenance-drs.md#pressure-signal.
+  pressureReport:
+    enabled: true
+    interval: ""
   # VirtualNetwork dataplane (docs/guides/virtual-networks.md). kairon-node
   # applies every VirtualNetwork with a Machine on this node to the local
   # FluxVM. uplink is the host interface carrying egress SNAT and floating
