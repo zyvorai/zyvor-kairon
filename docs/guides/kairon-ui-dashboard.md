@@ -116,8 +116,9 @@ has not been run against a live cluster.
 ## Rate limiting and login lockout
 
 Every route is limited per client address (`-rate-limit-rps`, default 20 requests per second sustained, and
-`-rate-limit-burst`, default 40; `0` for rps disables it). There is no Helm value for these two; set the flags on the
-dashboard's arguments if you need other numbers. On top of that, 5 failed logins for one username lock that username
+`-rate-limit-burst`, default 40; `0` for rps disables it). On Helm, set `ui.rateLimit.rps` and `ui.rateLimit.burst`
+(for example `--set ui.rateLimit.rps=50 --set ui.rateLimit.burst=100`); both default to `null`, which renders no flag so
+the defaults above apply, and `rps=0` disables the per-address limit (the login lockout below stays). On top of that, 5 failed logins for one username lock that username
 out for 5 minutes (`429` with `Retry-After`), counted per requested username, including unknown ones.
 
 By default the client address is the TCP peer. Behind a `Service`, Ingress or load balancer that is the proxy's own

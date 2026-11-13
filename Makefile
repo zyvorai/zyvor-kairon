@@ -91,6 +91,11 @@ helm-check:
 	python3 scripts/gen-rbac-bundle.py --check
 	helm lint charts/kairon
 	helm lint charts/kairon -f charts/kairon/values-production.yaml
+	@# ui.rateLimit.rps/burst: no flag by default, rps=0 is passed through (it disables the limiter).
+	@if helm template kairon charts/kairon --namespace kairon-system --set ui.enabled=true --set ui.token=ci | grep -q -- '-rate-limit-'; then \
+		echo "helm-check: -rate-limit-* rendered with default values" >&2; exit 1; fi
+	@helm template kairon charts/kairon --namespace kairon-system --set ui.enabled=true --set ui.token=ci \
+		--set ui.rateLimit.rps=0 --set ui.rateLimit.burst=7 | grep -q -- '"-rate-limit-rps=0"'
 	helm template kairon charts/kairon --namespace kairon-system \
 		-f charts/kairon/values-production.yaml \
 		--set webhook.tlsSecretName=ci-webhook-tls \

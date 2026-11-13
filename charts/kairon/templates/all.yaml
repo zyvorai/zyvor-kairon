@@ -1495,6 +1495,12 @@ spec:
             - "-listen=:{{ .Values.ui.service.port }}"
             - "-allow-unauthenticated={{ .Values.ui.allowUnauthenticated }}"
             - "-namespace-scoping-enabled={{ .Values.ui.auth.namespaceScoping.enabled }}"
+{{ if not (kindIs "invalid" .Values.ui.rateLimit.rps) }}
+            - "-rate-limit-rps={{ .Values.ui.rateLimit.rps }}"
+{{ end }}
+{{ if not (kindIs "invalid" .Values.ui.rateLimit.burst) }}
+            - "-rate-limit-burst={{ .Values.ui.rateLimit.burst | int }}"
+{{ end }}
           env:
             - name: KAIRON_UI_TOKEN
               valueFrom: {secretKeyRef: {name: {{ .Values.ui.existingSecret | default "kairon-ui-token" }}, key: {{ .Values.ui.existingSecretKey | default "token" }}}}

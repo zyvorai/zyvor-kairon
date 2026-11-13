@@ -3,6 +3,7 @@
 **Added**
 
 - **Helm value `node.imageMaxDownloadBytes`** sets `kairon-node -image-max-download-bytes` (the cap on one `httpURL` image download or OCI containerDisk pull). `0` (the default) renders no flag, so the 256 GiB default applies. Checked with `helm template` only; not installed on a cluster ([image import](docs/guides/machine-image-import.md#size-limit)).
+- **Helm values `ui.rateLimit.rps` and `ui.rateLimit.burst`** set `kairon-ui -rate-limit-rps` / `-rate-limit-burst` (per-client-address limit; defaults 20 and 40 when left `null`, `rps: 0` disables it). Previously the chart had no way to set them. Checked with `helm template` only; not installed on a cluster ([dashboard guide](docs/guides/kairon-ui-dashboard.md#rate-limiting-and-login-lockout)).
 
 # Kairon v0.10.4 (2026-11-12)
 
