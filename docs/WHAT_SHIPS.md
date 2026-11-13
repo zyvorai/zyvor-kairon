@@ -5,7 +5,7 @@ title: What ships today
 
 # What ships today
 
-Full feature inventory. The root [README](https://github.com/zyvorai/kairon/blob/main/README.md) is the short product landing; guides linked below remain authoritative for how-to detail.
+Full feature inventory. The root [README](https://github.com/zyvorai/zyvor-kairon/blob/main/README.md) is the short product landing; guides linked below remain authoritative for how-to detail.
 
 **Machine lifecycle & placement**
 - **Machine CRD** — CPU, memory, image, network, power state, volumes, DRA device claims
@@ -43,7 +43,7 @@ Full feature inventory. The root [README](https://github.com/zyvorai/kairon/blob
 - **DRA → VFIO** — an allocated `ResourceClaim`'s PCI BDF against the node's `vfio_devices` administrator allowlist, fail-closed (an empty allowlist denies all passthrough); device-type-agnostic, so this also covers **SR-IOV NIC passthrough** once a VF is bound to `vfio-pci` on the host — the same mechanism GPU passthrough already uses, not a Multus integration (Machines have no Pod for Multus to attach to) — [guide](guides/machine-sriov.md)
 - **Native macOS node** — `kairon-node` registers an Apple silicon Mac as a Node and runs `runtime.backend: vz` Machines through FluxVM; verified on one M4, multi-Mac not yet — [guide](macos.md) · [cluster](macos-cluster.md)
 - **Mac Fabric** (`spec.apple`, `MacNetwork`, experimental) — Macs publish chip, macOS, Rosetta, nested virtualization and Thunderbolt Bridge addresses; `spec.apple` schedules vz Machines by them; `MacNetwork` gives Machines on different Macs one private network over FluxVM's encrypted overlay, over Thunderbolt for a fabric, with keys derived on each Mac; `kaironctl mac`; run against simulated Mac Nodes only — [guide](guides/mac-fabric.md)
-- **Developer ecosystem kit** — dependency-free Python/TypeScript SDKs, digest-pinned recipes, disposable-VM GitHub Actions, orphan sweeper, Terraform composition — [`ecosystem/README.md`](https://github.com/zyvorai/kairon/blob/main/ecosystem/README.md)
+- **Developer ecosystem kit** — dependency-free Python/TypeScript SDKs, digest-pinned recipes, disposable-VM GitHub Actions, orphan sweeper, Terraform composition — [`ecosystem/README.md`](https://github.com/zyvorai/zyvor-kairon/blob/main/ecosystem/README.md)
 - **Fleet automation (experimental, opt-in)** — Redfish fencing, balancing, autoscaling, backup/recovery plans, template claims, usage CSV — [guide](guides/enterprise-fleet.md)
 - **Preemption by Halt** (opt-in on both sides) — a pending `kairon.zyvor.dev/preempt=true` Machine that can't be placed halts one same-namespace, lower-priority `kairon.zyvor.dev/preemption-policy=Halt` Machine per tick, respecting disruption budgets and in-flight migrations, and resumes it when the preemptor is gone — [guide](guides/preemption.md)
 - **CPU/memory hotplug** — grow a running Machine's `spec.resources` via FluxVM's real QMP `device_add`/`object-add`, no reboot; a stop/start boots at the realized size, a Halted resume hotplugs back to it, and `kairon.zyvor.dev/hotplug-persist=true` writes it back into spec — [guide](guides/machine-hotplug.md)
@@ -117,6 +117,6 @@ spec:
     - name: gpu-claim   # administrator allowlist on the node -- empty allowlist denies all
 ```
 
-More worked examples: [`examples/`](https://github.com/zyvorai/kairon/tree/main/examples).
+More worked examples: [`examples/`](https://github.com/zyvorai/zyvor-kairon/tree/main/examples).
 
 ---

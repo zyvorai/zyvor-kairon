@@ -61,7 +61,7 @@ The dashboard's **Nodes** page shows the same tree in the node inspector
 
 ## Example
 
-[`examples/topology-gpu-nic.yaml`](https://github.com/zyvorai/kairon/blob/main/examples/topology-gpu-nic.yaml):
+[`examples/topology-gpu-nic.yaml`](https://github.com/zyvorai/zyvor-kairon/blob/main/examples/topology-gpu-nic.yaml):
 
 ```yaml
 spec:

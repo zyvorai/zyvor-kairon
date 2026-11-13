@@ -3,7 +3,7 @@
 Kubernetes is Kairon's only source of truth for *declarative* state
 (`Machine`, `MachineMigration`, `MachineSnapshot`, `MachineSnapshotRestore`,
 `MachineNetworkPolicy`, `NetworkSecurityGroup`, `MachineDisruptionBudget`,
-`MachineQuota`) -- see [`ARCHITECTURE.md`](https://github.com/zyvorai/kairon/blob/main/ARCHITECTURE.md). Until now
+`MachineQuota`) -- see [`ARCHITECTURE.md`](https://github.com/zyvorai/zyvor-kairon/blob/main/ARCHITECTURE.md). Until now
 that had no backup story at all: an etcd/cluster loss had no documented
 recovery path. This closes that gap for the Kubernetes-level state; read
 "What this does and doesn't protect" below before assuming more than that.

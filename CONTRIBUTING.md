@@ -4,7 +4,7 @@ Kairon is Apache License 2.0 open source from [Zyvor](https://zyvor.dev).
 
 ## Reporting bugs and requesting features
 
-Use [GitHub Issues](https://github.com/zyvorai/kairon/issues) for bug reports and enhancement requests, in English. Include the Kairon version (`VERSION` or `kaironctl version`), Kubernetes version, hypervisor backend, and the smallest reproduction you can. Issues and pull requests are public and searchable; maintainers aim to acknowledge new reports within 14 days.
+Use [GitHub Issues](https://github.com/zyvorai/zyvor-kairon/issues) for bug reports and enhancement requests, in English. Include the Kairon version (`VERSION` or `kaironctl version`), Kubernetes version, hypervisor backend, and the smallest reproduction you can. Issues and pull requests are public and searchable; maintainers aim to acknowledge new reports within 14 days.
 
 Do **not** file security vulnerabilities as public issues -- follow [SECURITY.md](SECURITY.md).
 

@@ -66,7 +66,7 @@ spec:
   hyphen-separated hex, like the example above). With
   `webhook.enabled` set, a malformed `mac` is rejected immediately on
   `kubectl apply`/edit instead of only failing once `kairon-node` asks
-  FluxVM to attach the NIC -- see [SECURITY.md](https://github.com/zyvorai/kairon/blob/main/SECURITY.md#machine-network-mac-address-admission).
+  FluxVM to attach the NIC -- see [SECURITY.md](https://github.com/zyvorai/zyvor-kairon/blob/main/SECURITY.md#machine-network-mac-address-admission).
 
 ### VM edge: anti-spoof, learn-IP, QoS
 
