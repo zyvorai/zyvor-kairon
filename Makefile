@@ -96,6 +96,12 @@ helm-check:
 		echo "helm-check: -rate-limit-* rendered with default values" >&2; exit 1; fi
 	@helm template kairon charts/kairon --namespace kairon-system --set ui.enabled=true --set ui.token=ci \
 		--set ui.rateLimit.rps=0 --set ui.rateLimit.burst=7 | grep -q -- '"-rate-limit-rps=0"'
+	@# migration.requireEncryptedDataPlane / heartbeatTTL: absent by default, rendered when set.
+	@if helm template kairon charts/kairon --namespace kairon-system --set migration.enabled=true 2>/dev/null | grep -q -e '--migration-require-encrypted' -e '--migration-heartbeat-ttl'; then \
+		echo "helm-check: migration node flags rendered with default values" >&2; exit 1; fi
+	@helm template kairon charts/kairon --namespace kairon-system --set migration.enabled=true \
+		--set migration.requireEncryptedDataPlane=true --set migration.heartbeatTTL=30m 2>/dev/null \
+		| grep -q -e '"--migration-heartbeat-ttl=30m"'
 	helm template kairon charts/kairon --namespace kairon-system \
 		-f charts/kairon/values-production.yaml \
 		--set webhook.tlsSecretName=ci-webhook-tls \

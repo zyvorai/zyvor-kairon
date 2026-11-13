@@ -7,6 +7,7 @@
 **Fixed**
 
 - **`kaironctl get protectionplans` and `kaironctl get macnetworks` now print tables.** [`docs/CLI.md`](docs/CLI.md#kaironctl) and the [Mac Fabric guide](docs/guides/mac-fabric.md#inspecting) listed both (and the `kmpp`/`kmn` aliases) but the table path answered `unknown resource`; only `-o json|yaml|name` worked. They reuse the tables of `kaironctl dr get` and `kaironctl mac networks`, take `-n` and `--selector`, and are covered by unit tests against a fake API server only.
+- **Helm values `migration.requireEncryptedDataPlane` and `migration.heartbeatTTL`** set `kairon-node --migration-require-encrypted` and `--migration-heartbeat-ttl` (both off by default; they render only with `migration.enabled`). Until now only the flags existed and the chart had no way to pass them ([runbook](docs/runbook-migration-failures.md#unencrypted-migration-data-plane)). Checked with `helm template` only; not installed on a cluster, and no migration was run with either set.
 
 # Kairon v0.10.4 (2026-11-12)
 
