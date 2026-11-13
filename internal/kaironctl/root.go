@@ -222,9 +222,15 @@ func legacyCmd(opts *Options, use, short, example string, fn func(context.Contex
 		DisableFlagParsing: true,
 		ValidArgsFunction:  legacyCompletion(opts, use),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if wantsHelp(args) {
+				return cmd.Help()
+			}
+			args = extractConnFlags(args)
+			if err := checkLeadingPositional(use, args); err != nil {
+				return err
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			args = extractConnFlags(args)
 			kc, err := newKubeClient()
 			if err != nil {
 				return err
@@ -252,6 +258,9 @@ func powerCmd(opts *Options, use, state string) *cobra.Command {
 		DisableFlagParsing: true,
 		ValidArgsFunction:  completeMachineNames(&opts.Namespace),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if wantsHelp(args) {
+				return cmd.Help()
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			args = extractConnFlags(args)
@@ -265,7 +274,46 @@ func powerCmd(opts *Options, use, state string) *cobra.Command {
 	}
 }
 
-// withDefaultNamespace prepends --namespace NS when the root persistent
+// wantsHelp reports whether args ask for help. Commands with
+// DisableFlagParsing never see cobra's own -h/--help handling, so without
+// this check the flag would be taken as a resource name.
+func wantsHelp(args []string) bool {
+	for _, a := range args {
+		if a == "--" {
+			return false
+		}
+		if a == "-h" || a == "--help" || a == "-help" {
+			return true
+		}
+	}
+	return false
+}
+
+// positionalFirst lists the legacy verbs whose handlers take args[0] as a
+// resource name (or sub-kind) unconditionally.
+var positionalFirst = map[string]bool{
+	"create": true, "scale": true, "edit": true, "trigger": true,
+	"migrate": true, "evacuate": true, "recover": true, "cancel-migration": true,
+	"fence": true, "snapshot": true, "restore": true, "volumes": true,
+	"disk": true, "nic": true, "import": true,
+}
+
+// checkLeadingPositional rejects a leading flag-like argument for verbs
+// that expect a name first, before any API call is made. Otherwise
+// "kaironctl migrate --bogus" would create a MachineMigration named after
+// the flag.
+func checkLeadingPositional(use string, args []string) error {
+	verb := strings.Fields(use)[0]
+	if !positionalFirst[verb] || len(args) == 0 {
+		return nil
+	}
+	if strings.HasPrefix(args[0], "-") {
+		return fmt.Errorf("%s: expected a name or kind before flags, got %q (see `%s --help`)", verb, args[0], verb)
+	}
+	return nil
+}
+
+// withDefaultNamespace appends --namespace NS when the root persistent
 // flag is set to a non-default value and args do not already set
 // namespace. Handlers that use flag.FlagSet only define -namespace (no
 // short -n), so we must inject the long form — never -n.
@@ -282,9 +330,10 @@ func withDefaultNamespace(ns string, args []string) []string {
 	if ns == "" || ns == "default" {
 		return args
 	}
+	// Appended, not prepended: handlers read the name or kind from args[0].
 	out := make([]string, 0, len(args)+2)
-	out = append(out, "--namespace", ns)
 	out = append(out, args...)
+	out = append(out, "--namespace", ns)
 	return out
 }
 

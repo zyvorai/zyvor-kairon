@@ -163,7 +163,7 @@ func TestVersionNoKube(t *testing.T) {
 
 func TestWithDefaultNamespace(t *testing.T) {
 	got := withDefaultNamespace("staging", []string{"machines"})
-	if len(got) < 3 || got[0] != "--namespace" || got[1] != "staging" || got[2] != "machines" {
+	if len(got) < 3 || got[0] != "machines" || got[1] != "--namespace" || got[2] != "staging" {
 		t.Fatalf("got %v", got)
 	}
 	got = withDefaultNamespace("staging", []string{"-n", "other", "machines"})

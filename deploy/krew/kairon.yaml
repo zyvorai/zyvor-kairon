@@ -13,8 +13,8 @@ kind: Plugin
 metadata:
   name: kairon
 spec:
-  version: "v0.10.2"
-  homepage: https://github.com/zyvorai/kairon
+  version: "v0.10.4"
+  homepage: https://github.com/zyvorai/zyvor-kairon
   shortDescription: Operate Kairon Machines on Kubernetes
   description: |
     kubectl kairon is the kubectl plugin twin of kaironctl: create and operate
@@ -31,27 +31,27 @@ spec:
       matchLabels:
         os: darwin
         arch: arm64
-    uri: https://github.com/zyvorai/kairon/releases/download/v0.10.2/kairon_darwin_arm64.tar.gz
+    uri: https://github.com/zyvorai/zyvor-kairon/releases/download/v0.10.4/kairon_darwin_arm64.tar.gz
     sha256: "PLACEHOLDER_SHA256_DARWIN_ARM64"
     bin: kubectl-kairon
   - selector:
       matchLabels:
         os: darwin
         arch: amd64
-    uri: https://github.com/zyvorai/kairon/releases/download/v0.10.2/kairon_darwin_amd64.tar.gz
+    uri: https://github.com/zyvorai/zyvor-kairon/releases/download/v0.10.4/kairon_darwin_amd64.tar.gz
     sha256: "PLACEHOLDER_SHA256_DARWIN_AMD64"
     bin: kubectl-kairon
   - selector:
       matchLabels:
         os: linux
         arch: amd64
-    uri: https://github.com/zyvorai/kairon/releases/download/v0.10.2/kairon_linux_amd64.tar.gz
+    uri: https://github.com/zyvorai/zyvor-kairon/releases/download/v0.10.4/kairon_linux_amd64.tar.gz
     sha256: "PLACEHOLDER_SHA256_LINUX_AMD64"
     bin: kubectl-kairon
   - selector:
       matchLabels:
         os: linux
         arch: arm64
-    uri: https://github.com/zyvorai/kairon/releases/download/v0.10.2/kairon_linux_arm64.tar.gz
+    uri: https://github.com/zyvorai/zyvor-kairon/releases/download/v0.10.4/kairon_linux_arm64.tar.gz
     sha256: "PLACEHOLDER_SHA256_LINUX_ARM64"
     bin: kubectl-kairon

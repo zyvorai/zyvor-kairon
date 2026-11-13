@@ -13,7 +13,7 @@
 
 [Unit]
 Description=kairon-migration-adapter-fluxvm - real FluxVM-backed Kairon migration adapter (moves real VM memory)
-Documentation=https://github.com/zyvorai/kairon
+Documentation=https://github.com/zyvorai/zyvor-kairon
 After=network.target fluxvm.service
 Requires=fluxvm.service
 

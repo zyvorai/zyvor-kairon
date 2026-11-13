@@ -3,7 +3,7 @@
 
 [Unit]
 Description=kairon-controller - kairon cluster-level scheduler/controller
-Documentation=https://github.com/zyvorai/kairon
+Documentation=https://github.com/zyvorai/zyvor-kairon
 After=network-online.target
 Wants=network-online.target
 

@@ -121,14 +121,21 @@ func argsDryRun(args []string) bool {
 func newCreateCmd(opts *Options) *cobra.Command {
 	cmd := legacyCmd(opts, "create", "Create a Machine or other Kairon resource", createExamples, cmdCreate)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if wantsHelp(args) {
+			return cmd.Help()
+		}
+		args = extractConnFlags(args)
+		createArgs := createArgsWithNamespace(opts.Namespace, args)
+		if err := checkLeadingPositional("create", createArgs); err != nil {
+			return err
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		args = extractConnFlags(args)
 		kc, err := newKubeClient()
 		if err != nil && !argsDryRun(args) {
 			return err
 		}
-		cmdCreate(ctx, kc, createArgsWithNamespace(opts.Namespace, args))
+		cmdCreate(ctx, kc, createArgs)
 		return nil
 	}
 	return cmd

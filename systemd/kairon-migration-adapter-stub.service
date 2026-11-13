@@ -3,7 +3,7 @@
 
 [Unit]
 Description=kairon-migration-adapter-stub - TEST DOUBLE for the Kairon migration adapter contract (simulates transfers, does not move real VM memory)
-Documentation=https://github.com/zyvorai/kairon
+Documentation=https://github.com/zyvorai/zyvor-kairon
 After=network.target
 
 [Service]

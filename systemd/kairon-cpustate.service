@@ -8,7 +8,7 @@
 # as a refusal and clear the label.
 [Unit]
 Description=kairon - copy kubelet cpu_manager_state for kairon-node
-Documentation=https://github.com/zyvorai/kairon
+Documentation=https://github.com/zyvorai/zyvor-kairon
 ConditionPathExists=/var/lib/kubelet/cpu_manager_state
 
 [Service]
