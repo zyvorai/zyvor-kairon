@@ -363,6 +363,28 @@ func cmdGet(ctx context.Context, kc *kube.Client, args []string) {
 			}
 			fmt.Printf("%s\t%s\t%d\t%s\t%s\t%d\t%d\n", p.Metadata.Name, class, count, dash(p.Spec.Profile), ready, p.Status.Capacity, p.Status.Machines)
 		}
+	case "protectionplan", "protectionplans", "machineprotectionplan", "machineprotectionplans", "kmpp":
+		items, err := kc.ListMachineProtectionPlansNamespace(ctx, ns)
+		if err != nil {
+			fatal(err)
+		}
+		items = selectorFilter(items, selector, func(p model.MachineProtectionPlan) map[string]string { return p.Metadata.Labels })
+		printProtectionPlans(os.Stdout, items)
+	case "macnetwork", "macnetworks", "kmn":
+		// ListMacNetworks is cluster-wide; keep -n/--namespace's meaning
+		// the same as for every other namespaced kind, like `mac networks`.
+		all, err := kc.ListMacNetworks(ctx)
+		if err != nil {
+			fatal(err)
+		}
+		var items []model.MacNetwork
+		for _, n := range all {
+			if n.Namespace() == ns {
+				items = append(items, n)
+			}
+		}
+		items = selectorFilter(items, selector, func(n model.MacNetwork) map[string]string { return n.Metadata.Labels })
+		printMacNetworks(os.Stdout, items)
 	default:
 		fatal(fmt.Errorf("unknown resource %q", resource))
 	}

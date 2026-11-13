@@ -4,6 +4,9 @@
 
 - **Helm value `node.imageMaxDownloadBytes`** sets `kairon-node -image-max-download-bytes` (the cap on one `httpURL` image download or OCI containerDisk pull). `0` (the default) renders no flag, so the 256 GiB default applies. Checked with `helm template` only; not installed on a cluster ([image import](docs/guides/machine-image-import.md#size-limit)).
 - **Helm values `ui.rateLimit.rps` and `ui.rateLimit.burst`** set `kairon-ui -rate-limit-rps` / `-rate-limit-burst` (per-client-address limit; defaults 20 and 40 when left `null`, `rps: 0` disables it). Previously the chart had no way to set them. Checked with `helm template` only; not installed on a cluster ([dashboard guide](docs/guides/kairon-ui-dashboard.md#rate-limiting-and-login-lockout)).
+**Fixed**
+
+- **`kaironctl get protectionplans` and `kaironctl get macnetworks` now print tables.** [`docs/CLI.md`](docs/CLI.md#kaironctl) and the [Mac Fabric guide](docs/guides/mac-fabric.md#inspecting) listed both (and the `kmpp`/`kmn` aliases) but the table path answered `unknown resource`; only `-o json|yaml|name` worked. They reuse the tables of `kaironctl dr get` and `kaironctl mac networks`, take `-n` and `--selector`, and are covered by unit tests against a fake API server only.
 
 # Kairon v0.10.4 (2026-11-12)
 
