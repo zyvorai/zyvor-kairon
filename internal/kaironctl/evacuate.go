@@ -17,7 +17,7 @@ import (
 
 func cmdEvacuate(ctx context.Context, kc *kube.Client, args []string) {
 	if len(args) < 1 {
-		fatal(fmt.Errorf("usage: kaironctl evacuate NODE [--strategy cold|auto] [--wait] [--timeout 15m] [--poll-interval 10s]"))
+		fatal(fmt.Errorf("usage: kaironctl evacuate NODE [--strategy cold|auto] [--dry-run] [--wait] [--timeout 15m] [--poll-interval 10s]"))
 	}
 	node := args[0]
 	fs := flag.NewFlagSet("evacuate", flag.ExitOnError)
@@ -25,9 +25,22 @@ func cmdEvacuate(ctx context.Context, kc *kube.Client, args []string) {
 	wait := fs.Bool("wait", false, "keep retrying -- respecting MachineDisruptionBudget and skipping any Machine already mid-migration -- until every Machine has left NODE or --timeout elapses, instead of the default single pass that leaves budget-blocked Machines behind for good. Matches kubectl drain's own retry model; this is the closest thing to an automatic node-drain Kairon has, deliberately still operator-invoked rather than triggered silently by e.g. node.spec.unschedulable, the same 'operator attests, Kairon then follows through' shape as kaironctl fence/recover.")
 	timeout := fs.Duration("timeout", 15*time.Minute, "with --wait, how long to keep retrying before giving up")
 	pollInterval := fs.Duration("poll-interval", 10*time.Second, "with --wait, how often to re-check and retry")
+	dryRun := fs.Bool("dry-run", false, "print which Machines would be migrated and which would be skipped (and why) without creating any MachineMigration; reads the cluster only")
 	_ = fs.Parse(args[1:])
+	if *dryRun && *wait {
+		fatal(fmt.Errorf("evacuate --dry-run is a single read-only preview; it cannot be combined with --wait"))
+	}
 	if *strategy != "cold" && *strategy != "auto" {
 		fatal(fmt.Errorf("evacuate supports --strategy cold|auto; use migrate for explicit live migration"))
+	}
+
+	if *dryRun {
+		would, skipped, remaining, err := evacuatePassMode(ctx, kc, node, *strategy, true)
+		if err != nil {
+			fatal(err)
+		}
+		fmt.Printf("dry-run: %d of %d machine(s) on %s would be queued for evacuation, %d skipped; nothing was created\n", would, remaining, node, skipped)
+		return
 	}
 
 	created, skipped, remaining, err := evacuatePass(ctx, kc, node, *strategy)
@@ -75,6 +88,14 @@ func cmdEvacuate(ctx context.Context, kc *kube.Client, args []string) {
 // (including ones just queued this pass, since they haven't actually left
 // yet) -- the number cmdEvacuate's --wait loop polls until it reaches 0.
 func evacuatePass(ctx context.Context, kc *kube.Client, node, strategy string) (created, skipped, remaining int, err error) {
+	return evacuatePassMode(ctx, kc, node, strategy, false)
+}
+
+// evacuatePassMode is evacuatePass with an optional dryRun: it makes the
+// same decisions (budget admission, already-migrating skip) but creates no
+// MachineMigration and only prints what it would do. In dry-run mode the
+// returned created counts the migrations that would be created.
+func evacuatePassMode(ctx context.Context, kc *kube.Client, node, strategy string, dryRun bool) (created, skipped, remaining int, err error) {
 	machines, err := kc.ListMachines(ctx)
 	if err != nil {
 		return 0, 0, 0, err
@@ -106,6 +127,9 @@ func evacuatePass(ctx context.Context, kc *kube.Client, node, strategy string) (
 		remaining++
 		key := machine.Namespace() + "/" + machine.Metadata.Name
 		if inFlight[key] {
+			if dryRun {
+				fmt.Printf("machine %s skipped: already has a MachineMigration in flight\n", key)
+			}
 			continue // already migrating -- wait for it, don't create a second one
 		}
 		if blocker := controller.AdmitDisruption(states, machine); blocker != "" {
@@ -114,6 +138,11 @@ func evacuatePass(ctx context.Context, kc *kube.Client, node, strategy string) (
 			continue
 		}
 		name := resourceName("evacuate-" + node + "-" + machine.Metadata.Name + "-" + stamp)
+		if dryRun {
+			fmt.Printf("machine %s would be migrated (strategy %s, machinemigration/%s)\n", key, strategy, name)
+			created++
+			continue
+		}
 		migration := model.MachineMigration{
 			TypeMeta: model.TypeMeta{APIVersion: model.APIVersion, Kind: model.KindMachineMigration},
 			Metadata: model.ObjectMeta{Name: name, Namespace: machine.Namespace()},

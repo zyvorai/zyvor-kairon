@@ -2349,3 +2349,38 @@ func TestDescribeMachineWithoutTenantShowsNoNote(t *testing.T) {
 		t.Errorf("expected no non-enforcement note when spec.tenant is unset, got:\n%s", out)
 	}
 }
+
+func TestEvacuatePassDryRunCreatesNothing(t *testing.T) {
+	s := &evacuateTestServer{
+		machines: []model.Machine{evacuateMachine("vm-1"), evacuateMachine("vm-2")},
+		migrations: []model.MachineMigration{
+			{Metadata: model.ObjectMeta{Namespace: "default", Name: "existing"}, Spec: model.MachineMigrationSpec{MachineName: "vm-2"}, Status: model.MachineMigrationStatus{Phase: "Running"}},
+		},
+	}
+	srv := httptest.NewServer(s.handler())
+	defer srv.Close()
+	kc, err := kube.New(srv.URL, "", "", false)
+	if err != nil {
+		t.Fatalf("kube.New: %v", err)
+	}
+	kc.HTTP = srv.Client()
+
+	var would, skipped, remaining int
+	out := captureStdout(t, func() {
+		would, skipped, remaining, err = evacuatePassMode(context.Background(), kc, "worker-1", "cold", true)
+	})
+	if err != nil {
+		t.Fatalf("evacuatePassMode: %v", err)
+	}
+	if would != 1 || skipped != 0 || remaining != 2 {
+		t.Fatalf("would=%d skipped=%d remaining=%d, want 1/0/2", would, skipped, remaining)
+	}
+	if len(s.created) != 0 {
+		t.Fatalf("dry-run created %d MachineMigrations, want none", len(s.created))
+	}
+	for _, want := range []string{"default/vm-1 would be migrated", "default/vm-2 skipped: already has a MachineMigration in flight"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
