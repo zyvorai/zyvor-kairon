@@ -35,11 +35,11 @@
 
 ## What's new
 
-**v0.10.4:** security and reliability hardening patch (rate-limit client address, image download cap, backed-qcow2 refusal, quantity parsing, migration and finalizer races, CSI hardening); read the upgrade notes in the [release notes](RELEASE_NOTES.md) and the [upgrade steps](docs/getting-started.md#upgrade-rollback-and-node-drains). It has been verified by unit tests and CI only; no install or upgrade of v0.10.4 on a real host has been recorded ([what was verified](TEST_REPORT.md)). v0.10.3 fixed the install and upgrade path (default image tags, production-profile prerequisites, CRDs applied on `kaironctl upgrade`). v0.10.2's default `helm install` cannot pull its images (it asks for `0.10.2`, the images are tagged `v0.10.2`); upgrade to v0.10.3 or later, or pin the image tags as the [release notes](RELEASE_NOTES.md) describe.
+**v0.10.5:** adds `kaironctl explain`, `kaironctl audit`, `kaironctl evacuate --dry-run`, `get protectionplans|macnetworks` tables and Helm values for several `kairon-node`/`kairon-ui` flags (see the [release notes](RELEASE_NOTES.md)). v0.10.4 was a security and reliability hardening patch (rate-limit client address, image download cap, backed-qcow2 refusal, quantity parsing, migration and finalizer races, CSI hardening); read the upgrade notes in the [release notes](RELEASE_NOTES.md) and the [upgrade steps](docs/getting-started.md#upgrade-rollback-and-node-drains). It has been verified by unit tests and CI only; no install or upgrade of v0.10.4 on a real host has been recorded ([what was verified](TEST_REPORT.md)). v0.10.3 fixed the install and upgrade path (default image tags, production-profile prerequisites, CRDs applied on `kaironctl upgrade`). v0.10.2's default `helm install` cannot pull its images (it asks for `0.10.2`, the images are tagged `v0.10.2`); upgrade to v0.10.3 or later, or pin the image tags as the [release notes](RELEASE_NOTES.md) describe.
 
 **Experimental operations:** [Kairon Rehearsal](docs/guides/rehearsal.md) tests upgrades on isolated CSI copies. [Advanced operations](docs/guides/advanced-operations.md) adds health-gated configuration change plans, application recovery verification, traffic/RTT placement recommendations, and incident reproduction with fix verification. Includes runnable scenarios and failure-path tests. VM/CSI and host-isolation hardware qualification is still pending.
 
-New since v0.6.0 (latest tag: v0.10.4; the rows down to incident bundles are new in v0.10.0):
+New since v0.6.0 (latest tag: v0.10.5; the rows down to incident bundles are new in v0.10.0):
 
 | | |
 |---|---|
@@ -282,29 +282,29 @@ On a Kubernetes cluster whose VM hosts run [FluxVM](https://github.com/zyvorai/z
 kubectl label node worker-1 kairon.zyvor.dev/capable=true
 
 helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \
-  --version 0.10.4 -n kairon-system --create-namespace
+  --version 0.10.5 -n kairon-system --create-namespace
 
-curl -fsSL -o kaironctl https://github.com/zyvorai/zyvor-kairon/releases/download/v0.10.4/kaironctl-linux-amd64
+curl -fsSL -o kaironctl https://github.com/zyvorai/zyvor-kairon/releases/download/v0.10.5/kaironctl-linux-amd64
 chmod +x kaironctl && sudo mv kaironctl /usr/local/bin/
 
 kaironctl create demo --image /var/lib/fluxvm/images/ubuntu.qcow2 --cpu 2 --memory 2Gi
 ```
 
-Other platforms: `kaironctl-linux-arm64` and `kairon_darwin_{amd64,arm64}.tar.gz` (the `kubectl kairon` plugin) are on the [release page](https://github.com/zyvorai/zyvor-kairon/releases/tag/v0.10.4); verify downloads against the release's `SHA256SUMS`. `kubectl krew install kairon` is **not** available: Kairon is not in the public Krew index, so install the plugin from the release's `kairon.yaml` (see [CLI](docs/CLI.md#install-via-krew)).
+Other platforms: `kaironctl-linux-arm64` and `kairon_darwin_{amd64,arm64}.tar.gz` (the `kubectl kairon` plugin) are on the [release page](https://github.com/zyvorai/zyvor-kairon/releases/tag/v0.10.5); verify downloads against the release's `SHA256SUMS`. `kubectl krew install kairon` is **not** available: Kairon is not in the public Krew index, so install the plugin from the release's `kairon.yaml` (see [CLI](docs/CLI.md#install-via-krew)).
 
-**Production profile.** Add `-f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/v0.10.4/charts/kairon/values-production.yaml` (or `kaironctl install --profile production`) only after you have created its prerequisites; without them the install stops with a message (webhook values) or `kairon-node` pods stay in `ContainerCreating` (migration Secret):
+**Production profile.** Add `-f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/v0.10.5/charts/kairon/values-production.yaml` (or `kaironctl install --profile production`) only after you have created its prerequisites; without them the install stops with a message (webhook values) or `kairon-node` pods stay in `ContainerCreating` (migration Secret):
 
 1. **Webhook TLS Secret and CA.** `webhook.tlsSecretName` (a `kubernetes.io/tls` Secret in `kairon-system`) and `webhook.caBundle` (the base64 CA). `scripts/gen-webhook-tls-certs.sh` writes both for a lab; use cert-manager or your own CA with rotation in production, because an expired certificate blocks every Machine write under `failurePolicy: Fail`.
 2. **`kairon-migration-tls` Secret** (`ca.crt`, `tls.crt`, `tls.key`; `scripts/gen-migration-mtls-certs.sh`), because the profile sets `migration.enabled: true`. The profile also sets `migration.dataplaneTls: true`: that only stages certificates for a host-level migration adapter when `migration.adapterHostPath` is set, and an optional per-node Secret (`migration.dataplaneTlsSecretName`) gives each node its own data-plane identity. It does not install the adapter.
-3. **CRDs before every upgrade.** Helm applies `crds/` only on first install: `kaironctl upgrade` applies them for you; with plain Helm run `kubectl apply --server-side -f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/v0.10.4/deploy/crd.yaml` first and keep your values (`--reuse-values` or `--reset-then-reuse-values`).
+3. **CRDs before every upgrade.** Helm applies `crds/` only on first install: `kaironctl upgrade` applies them for you; with plain Helm run `kubectl apply --server-side -f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/v0.10.5/deploy/crd.yaml` first and keep your values (`--reuse-values` or `--reset-then-reuse-values`).
 
 ```bash
 kubectl create namespace kairon-system --dry-run=client -o yaml | kubectl apply -f -
 scripts/gen-webhook-tls-certs.sh ./webhook-certs && kubectl apply -f ./webhook-certs/kairon-webhook-tls.secret.yaml
 # kairon-migration-tls: see getting started
 helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \
-  --version 0.10.4 -n kairon-system \
-  -f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/v0.10.4/charts/kairon/values-production.yaml \
+  --version 0.10.5 -n kairon-system \
+  -f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/v0.10.5/charts/kairon/values-production.yaml \
   --set webhook.tlsSecretName=kairon-webhook-tls --set webhook.caBundle="$(cat ./webhook-certs/ca-bundle.b64)"
 ```
 
@@ -390,7 +390,7 @@ kaironctl ui                         # or through the API server, no port-forwar
 | MCP server for AI agents | Preview, CI end-to-end with the official SDK |
 | CPU/memory hotplug | Grow-only (QEMU) |
 
-**v0.10.4** is the latest release (security and reliability hardening, see the [release notes](RELEASE_NOTES.md); v0.10.3 fixed install and upgrade; v0.10.2 fixed the release pipeline and v0.10.1 added the MCP server image and the MCP Registry listing). Two-host live migration ran on a real lab on 2026-10-14 (cold, source failure, controller failover, all three adaptive cases and post-copy source failure pass in both directions on matched QEMU 10.2.1; plain pre-copy under a heavy write load did not converge, and the `NeedsRecovery` drill passed 5 of 6 runs with one unexplained failure that left a migration in `Adopting`). There is no live + eBPF run and no nightly CI yet, so it stays Preview. Adaptive live migration stays Experimental until its matrix cases pass on the nightly lab workflow. Honest gaps live in [docs/STATUS.md](docs/STATUS.md); what comes next is in [ROADMAP.md](ROADMAP.md).
+**v0.10.5** is the latest release (new `kaironctl` commands and chart values, see the [release notes](RELEASE_NOTES.md); v0.10.4 was security and reliability hardening, see the [release notes](RELEASE_NOTES.md); v0.10.3 fixed install and upgrade; v0.10.2 fixed the release pipeline and v0.10.1 added the MCP server image and the MCP Registry listing). Two-host live migration ran on a real lab on 2026-10-14 (cold, source failure, controller failover, all three adaptive cases and post-copy source failure pass in both directions on matched QEMU 10.2.1; plain pre-copy under a heavy write load did not converge, and the `NeedsRecovery` drill passed 5 of 6 runs with one unexplained failure that left a migration in `Adopting`). There is no live + eBPF run and no nightly CI yet, so it stays Preview. Adaptive live migration stays Experimental until its matrix cases pass on the nightly lab workflow. Honest gaps live in [docs/STATUS.md](docs/STATUS.md); what comes next is in [ROADMAP.md](ROADMAP.md).
 
 ---
 
