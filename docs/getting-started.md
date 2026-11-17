@@ -130,20 +130,20 @@ Tagged releases publish the Helm chart and the images to GitHub Container Regist
 ```bash
 # Evaluation profile (chart defaults): nothing to prepare first.
 helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \
-  --version 0.10.4 -n kairon-system --create-namespace
+  --version 0.10.5 -n kairon-system --create-namespace
 
 # Production profile: create the Secrets from "Evaluation vs production" first.
 helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \
-  --version 0.10.4 -n kairon-system --create-namespace \
-  -f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/v0.10.4/charts/kairon/values-production.yaml \
+  --version 0.10.5 -n kairon-system --create-namespace \
+  -f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/v0.10.5/charts/kairon/values-production.yaml \
   --set webhook.tlsSecretName=kairon-webhook-tls --set webhook.caBundle="$(cat ./webhook-certs/ca-bundle.b64)"
 ```
 
 - Without the `-f` overlay and the two `--set webhook.*` values you get the evaluation profile. The production overlay on its own (as in earlier versions of this page) stops with `webhook.enabled=true needs webhook.tlsSecretName ...`.
 - CI lints and renders the production overlay with all three of `--set webhook.tlsSecretName=...`, `--set webhook.caBundle=...` and `--set migration.dataplaneTlsSecretName=...` (placeholders; `.github/workflows/ci.yml`, step "Helm render -- production profile"). The first two are required for the webhook to render. `migration.dataplaneTlsSecretName` is optional: leave it empty and the data plane stages the shared `kairon-migration-tls` certificate (only relevant when `migration.adapterHostPath` is set); set it to a Secret holding `<nodeName>-ca.crt`/`-tls.crt`/`-tls.key` per node for per-node identities (see [migration TLS](guides/machine-migration-tls.md)).
-- `kaironctl` installs the same published chart without Helm: `kaironctl install --chart oci://ghcr.io/zyvorai/charts/kairon --version 0.10.4 --profile production`.
-- Helm applies `crds/` only on first install. When upgrading, apply the CRDs from the same tag first (`kubectl apply --server-side -f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/v0.10.4/deploy/crd.yaml`); see [CRD versioning](guides/crd-versioning.md#upgrading-an-existing-cluster).
-- Fetch the matching `kaironctl` from the release: `https://github.com/zyvorai/zyvor-kairon/releases/download/v0.10.4/kaironctl-linux-amd64` (check it against the release's `SHA256SUMS`). The `kubectl kairon` plugin is on the same page; Kairon is not in the public Krew index, see [CLI](CLI.md#install-via-krew).
+- `kaironctl` installs the same published chart without Helm: `kaironctl install --chart oci://ghcr.io/zyvorai/charts/kairon --version 0.10.5 --profile production`.
+- Helm applies `crds/` only on first install. When upgrading, apply the CRDs from the same tag first (`kubectl apply --server-side -f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/v0.10.5/deploy/crd.yaml`); see [CRD versioning](guides/crd-versioning.md#upgrading-an-existing-cluster).
+- Fetch the matching `kaironctl` from the release: `https://github.com/zyvorai/zyvor-kairon/releases/download/v0.10.5/kaironctl-linux-amd64` (check it against the release's `SHA256SUMS`). The `kubectl kairon` plugin is on the same page; Kairon is not in the public Krew index, see [CLI](CLI.md#install-via-krew).
 
 Later, `kaironctl upgrade` keeps the values you installed with (`--reset-values` returns to chart defaults), `kaironctl upgrade --check` compares your release with the latest one without changing anything, `kaironctl config set KEY=VALUE` changes a single value, and `kaironctl history` / `kaironctl rollback` list and restore revisions. Add `--context NAME` or `--kubeconfig PATH` to target a specific cluster. See [CLI](CLI.md).
 
@@ -177,7 +177,7 @@ kaironctl upgrade --check   # first: compares the installed chart, this kaironct
   - a `ui.auth.users` entry whose username starts with `oidc:` stops `kairon-ui` at startup; rename it **before** upgrading (a seeded `kairon-ui-users` Secret keeps its old contents across upgrades, so edit the Secret, see [the dashboard guide](guides/kairon-ui-dashboard.md#adding-or-changing-operators-after-install));
   - with `ui.rateLimit.trustedProxyHeader` set, the client address is now the rightmost `X-Forwarded-For` entry **not** inside `ui.rateLimit.trustedProxyCidrs`; list every proxy hop in front of `kairon-ui` there, otherwise the last proxy's address becomes every client's key and all clients share one bucket;
   - `kairon-node` has a new flag `-image-max-download-bytes` (env `KAIRON_IMAGE_MAX_DOWNLOAD_BYTES`, default 256 GiB) that caps `httpURL` downloads and OCI containerDisk pulls. The chart has no value for it yet, so on a Helm install the default applies unless you add the environment variable to the `kairon-node` DaemonSet yourself (for example `kubectl -n kairon-system set env ds/kairon-node KAIRON_IMAGE_MAX_DOWNLOAD_BYTES=<bytes>`; re-check it after each `helm upgrade`, which was not tested here). On a systemd install put it in `/etc/kairon/kairon-node.env`.
-- **Upgrading from v0.10.2:** a v0.10.2 install needed `--set controller.image.tag=v0.10.2` (and the same for `node`, `ui`, and `csiNode`/`csiController` if enabled). Those overrides are kept by `--reuse-values` and by `kaironctl upgrade`, so the new chart would keep running the old images. Clear them in the same upgrade, for example `kaironctl upgrade --version 0.10.4 --chart oci://ghcr.io/zyvorai/charts/kairon --set controller.image.tag= --set node.image.tag= --set ui.image.tag=` (empty means `v` plus the chart's `appVersion`), then check `kaironctl version --server`. Dashboard OIDC sessions issued by v0.10.2 stop working once; users sign in again. If the node image cache is enabled, check that its directory is owned by UID 65532.
+- **Upgrading from v0.10.2:** a v0.10.2 install needed `--set controller.image.tag=v0.10.2` (and the same for `node`, `ui`, and `csiNode`/`csiController` if enabled). Those overrides are kept by `--reuse-values` and by `kaironctl upgrade`, so the new chart would keep running the old images. Clear them in the same upgrade, for example `kaironctl upgrade --version 0.10.5 --chart oci://ghcr.io/zyvorai/charts/kairon --set controller.image.tag= --set node.image.tag= --set ui.image.tag=` (empty means `v` plus the chart's `appVersion`), then check `kaironctl version --server`. Dashboard OIDC sessions issued by v0.10.2 stop working once; users sign in again. If the node image cache is enabled, check that its directory is owned by UID 65532.
 - **Rollback:** `kaironctl rollback [REVISION]` or `helm rollback kairon -n kairon-system` reverts the workloads but **not** the CRDs, and
   not objects already stored at a newer API version; roll back across a CRD version change only after
   reading [CRD versioning](guides/crd-versioning.md). Use `helm upgrade --atomic` to have a failed

@@ -13,7 +13,7 @@ kubectl label node worker-1 kairon.zyvor.dev/capable=true
 
 # evaluation profile (the chart defaults)
 helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \
-  --version 0.10.4 -n kairon-system --create-namespace
+  --version 0.10.5 -n kairon-system --create-namespace
 ```
 
 For production add the overlay **and** the webhook values, after creating the Secrets the profile needs
@@ -21,8 +21,8 @@ For production add the overlay **and** the webhook values, after creating the Se
 
 ```bash
 helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \
-  --version 0.10.4 -n kairon-system --create-namespace \
-  -f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/v0.10.4/charts/kairon/values-production.yaml \
+  --version 0.10.5 -n kairon-system --create-namespace \
+  -f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/v0.10.5/charts/kairon/values-production.yaml \
   --set webhook.tlsSecretName=kairon-webhook-tls --set webhook.caBundle="$(cat ./webhook-certs/ca-bundle.b64)"
 ```
 
@@ -44,7 +44,7 @@ kaironctl selftest --profile quick   # boots a tiny CirrOS VM, see ../guides/sel
   without it) and, per release, `webhook.caBundle` and the webhook certificate must be kept valid (an expired one blocks
   every Machine write under `failurePolicy: Fail`).
 - Helm applies `crds/` only on first install. Apply the CRDs from the same tag before upgrading
-  (`kubectl apply --server-side -f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/v0.10.4/deploy/crd.yaml`, or let
+  (`kubectl apply --server-side -f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/v0.10.5/deploy/crd.yaml`, or let
   `kaironctl upgrade` do it) and keep your values (`--reuse-values`); see
   [CRD versioning](../guides/crd-versioning.md#upgrading-an-existing-cluster) and
   [Upgrade, rollback and node drains](../getting-started.md#upgrade-rollback-and-node-drains).

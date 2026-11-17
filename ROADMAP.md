@@ -4,9 +4,9 @@
 
 v0.10.4 (security and reliability hardening patch, see [`RELEASE_NOTES.md`](RELEASE_NOTES.md)) is the current release. v0.10.3 fixed install and upgrade and added hardening. v0.10.2 was a patch on v0.10.1 that fixes the release pipeline (Helm chart push, MCP Registry re-run). v0.10.1 added the MCP server image `ghcr.io/zyvorai/kairon-mcp` and the MCP Registry listing `io.github.zyvorai/kairon`. v0.10.0 (2026-10-14) shipped HTTPS by default for the dashboard and the console relay, `kaironctl selftest`, virtctl parity in `kaironctl`, and, as experimental features, agent sessions and agent sandboxes, Mac Fabric, cross-cluster DR, DRS, node maintenance, per-disk I/O QoS, accelerator and vGPU profiles, NVMe-oF, incremental S3 backups, topology-aware placement, elastic memory, virtual networks, hibernate, adaptive live migration and incident bundles. Each experimental feature's lab status is in [COMPATIBILITY.md](docs/COMPATIBILITY.md). See [RELEASE_NOTES.md](RELEASE_NOTES.md).
 
-Open after v0.10.4 (gaps found while checking the docs against the code, not dated commitments):
+Open after v0.10.5 (gaps found while checking the docs against the code, not dated commitments):
 
-- [ ] Install, upgrade and self-test of v0.10.4 on a real host, recorded in [`TEST_REPORT.md`](TEST_REPORT.md) (today: unit tests, CI and a check that the published artifacts exist).
+- [ ] Install, upgrade and self-test of v0.10.5 on a real host, recorded in [`TEST_REPORT.md`](TEST_REPORT.md) (today: unit tests, CI and a check that the published artifacts exist).
 - [x] A Helm value for `kairon-node -image-max-download-bytes`: `node.imageMaxDownloadBytes`, on `main` and unreleased (see [image import](docs/guides/machine-image-import.md#size-limit)).
 - [ ] A public Krew index entry (`kubectl krew install kairon` does not work today; install from the release's `kairon.yaml`, see [CLI](docs/CLI.md#install-via-krew)).
 - [ ] The migration data plane's TLS is only staged by the chart (`migration.dataplaneTls` needs `migration.adapterHostPath`); the chart does not install or configure the host-level adapter.

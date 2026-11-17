@@ -1,4 +1,7 @@
-# Unreleased
+# Kairon v0.10.5 (2026-11-17)
+
+A feature and chart-values release on v0.10.4: three new `kaironctl` commands/flags and chart values for flags that previously had no Helm setting. There are no CRD schema changes and no behaviour changes that need upgrade steps. It has been verified by unit tests, `helm template` and CI only; no install or upgrade of v0.10.5 on a real host has been recorded (see [`TEST_REPORT.md`](TEST_REPORT.md)).
+
 
 **Added**
 

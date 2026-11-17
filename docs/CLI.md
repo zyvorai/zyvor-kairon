@@ -23,14 +23,14 @@ Global flags: `-n/--namespace`, `--kubeconfig PATH`, `--context NAME` (see [Meta
 Kairon is **not in the public Krew index**, so `kubectl krew install kairon` does not work. Each release attaches the plugin archives (`kairon_{darwin,linux}_{amd64,arm64}.tar.gz`) and a manifest with their checksums (`kairon.yaml`); install from those:
 
 ```bash
-V=v0.10.4
+V=v0.10.5
 curl -fsSLO https://github.com/zyvorai/zyvor-kairon/releases/download/$V/kairon.yaml
 curl -fsSLO https://github.com/zyvorai/zyvor-kairon/releases/download/$V/kairon_linux_amd64.tar.gz   # or darwin / arm64
 kubectl krew install --manifest=kairon.yaml --archive=kairon_linux_amd64.tar.gz
 kubectl kairon version
 ```
 
-(The commands were not re-run against the published v0.10.4 assets; the `kairon.yaml` checksums do match the release's `SHA256SUMS`.) You can also skip Krew: the `kaironctl-linux-{amd64,arm64}` binaries on the same release page are the same command tree.
+(The commands were not re-run against the published v0.10.5 assets, and the `kairon.yaml` checksums were not compared with that release's `SHA256SUMS`.) You can also skip Krew: the `kaironctl-linux-{amd64,arm64}` binaries on the same release page are the same command tree.
 
 To test the packaging from a checkout:
 
@@ -71,7 +71,7 @@ kaironctl version [--server] [-o text|json|yaml]
 - **`upgrade` keeps your settings.** It reuses the values the release was last installed with (Helm's reset-then-reuse: the new chart's defaults, then your previous overrides, then this call's `--set`/`-f`). `--reset-values` restores the old reset-to-defaults behaviour; `--reuse-values` reuses the previous computed values verbatim. `install` re-runs keep Helm's reset semantics. `--dry-run` renders offline, so it cannot show previously stored values.
 - **`config set`/`unset`** change single values through an in-place upgrade. They refuse when the chart this binary would apply is not the chart version the release runs; run `kaironctl upgrade` first.
 - **`--profile production`** layers the chart's `values-production.yaml` under your `-f` and `--set`. Rollback restores the chart and values of a revision; it does not downgrade CRDs already applied.
-- **`--chart oci://ghcr.io/zyvorai/charts/kairon --version 0.10.4`** installs the published chart; image tags default to `v` plus the chart's `appVersion`, so the chart version selects the images. Upgrading with `kaironctl` applies that chart's CRDs; with plain Helm, apply them yourself first ([CRD versioning](guides/crd-versioning.md#upgrading-an-existing-cluster)).
+- **`--chart oci://ghcr.io/zyvorai/charts/kairon --version 0.10.5`** installs the published chart; image tags default to `v` plus the chart's `appVersion`, so the chart version selects the images. Upgrading with `kaironctl` applies that chart's CRDs; with plain Helm, apply them yourself first ([CRD versioning](guides/crd-versioning.md#upgrading-an-existing-cluster)).
 - **`ui.auth.users` seeds only on first install.** A `helm upgrade` or `kaironctl upgrade`/`config set` keeps the accounts already stored in the `kairon-ui-users` Secret (operators change their own passwords at runtime), so editing `ui.auth.users` afterwards has no effect; see [the dashboard guide](guides/kairon-ui-dashboard.md#adding-or-changing-operators-after-install).
 - **`upgrade --check`** compares the installed chart, the chart this kaironctl would apply and the latest published release (GitHub, or `KAIRON_RELEASE_API`), prints the CRD-first reminder when a minor version is crossed, and changes nothing.
 - **`config view`** prints the values you supplied; `--all` adds the chart defaults (computed values). **`config get`** reads one dotted path from the computed values. **`history`** lists the release revisions and **`rollback`** returns to `REVISION` (the previous one when omitted).
