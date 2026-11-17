@@ -476,7 +476,10 @@ grant commands always need an admin. `get`, `describe` and
 ```text
 kaironctl version [--server]
 kaironctl completion bash|zsh|fish|powershell
+kaironctl explain [RESOURCE[.FIELD...]] [-o text|json|yaml]
 ```
+
+`explain` prints the documented fields of a resource (kind, plural or short name, for example `machine`, `vm`, `machinemigrations`), optionally descending with a dotted path (`kaironctl explain machine.spec.resources`). It reads the CRD schemas embedded in the binary, so it needs no cluster access and documents the schema this build ships, not what a cluster currently serves. Without an argument it lists the known kinds. Resource names complete in the shell.
 
 Shell completion is dynamic: after `get`, `describe`, `delete`, `edit` it completes resource kinds and then object names from the cluster (honouring `-n` and `--context`), and Machine names after `start`, `stop`, `network flows` and similar. Failures complete nothing rather than printing errors. Example: `source <(kaironctl completion zsh)`.
 
