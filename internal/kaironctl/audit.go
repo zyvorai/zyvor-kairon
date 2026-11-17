@@ -108,7 +108,7 @@ func writeAudit(w io.Writer, rep auditReport, output string, now time.Time) erro
 		return fmt.Errorf("unknown output format %q (want table, json or yaml)", output)
 	}
 	if rep.Total == 0 {
-		fmt.Fprintln(w, "no migrations in the selected window")
+		_, _ = fmt.Fprintln(w, "no migrations in the selected window")
 		return nil
 	}
 	phases := make([]string, 0, len(rep.ByPhase))
@@ -120,15 +120,15 @@ func writeAudit(w io.Writer, rep auditReport, output string, now time.Time) erro
 	for _, p := range phases {
 		parts = append(parts, fmt.Sprintf("%s=%d", p, rep.ByPhase[p]))
 	}
-	fmt.Fprintf(w, "%d migration(s): %s\n\n", rep.Total, strings.Join(parts, " "))
+	_, _ = fmt.Fprintf(w, "%d migration(s): %s\n\n", rep.Total, strings.Join(parts, " "))
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "AGE\tNAMESPACE\tMACHINE\tSTRATEGY\tPHASE\tFROM\tTO\tDOWNTIME\tMESSAGE")
+	_, _ = fmt.Fprintln(tw, "AGE\tNAMESPACE\tMACHINE\tSTRATEGY\tPHASE\tFROM\tTO\tDOWNTIME\tMESSAGE")
 	for _, e := range rep.Entries {
 		down := "-"
 		if e.DowntimeMs > 0 {
 			down = (time.Duration(e.DowntimeMs) * time.Millisecond).String()
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			auditAge(now, e.Created), e.Namespace, e.Machine, dash(e.Strategy), e.Phase, dash(e.Source), dash(e.Target), down, dash(e.Message))
 	}
 	return tw.Flush()

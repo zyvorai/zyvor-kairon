@@ -64,3 +64,7 @@ jobs:
       - uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066  # v4
         with:
           category: "/language:${{ matrix.language }}"
+          # The self-hosted runner OOM-killed `codeql database run-queries` (exit 137, then
+          # "runner received a shutdown signal") with the default of all host RAM / 12 threads.
+          ram: 8192
+          threads: 4
