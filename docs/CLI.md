@@ -337,10 +337,6 @@ kaironctl mac network NAME [-n NS]        # each member's host slice, address an
 
 See [guides/mac-fabric.md](guides/mac-fabric.md).
 
-### Known issue: `--help` on `migrate` and `snapshot`
-
-`kaironctl migrate --help` and `kaironctl snapshot --help` (and `-h`) do **not** print help. These two commands parse their own flags, so Cobra never sees `--help`; the first argument is taken as the Machine name. The result is a `MachineMigration` or `MachineSnapshot` for a Machine literally called `--help`; objects have been created this way. Do not probe these commands with `--help` against a real cluster. Use `kaironctl help migrate` / `kaironctl help snapshot` (or the usage lines above) instead, and if you already ran it, look for a stray object with `kubectl get machinemigrations,machinesnapshots`. Other commands that parse their own flags may behave the same way; check with `kaironctl help COMMAND` first. Tracked as a code bug; this page will change when it is fixed.
-
 ## Images
 
 ```bash
