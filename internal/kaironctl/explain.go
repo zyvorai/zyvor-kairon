@@ -264,30 +264,30 @@ func writeExplain(w io.Writer, e explainJSON, path, output string) error {
 	default:
 		return fmt.Errorf("unknown output format %q (want text, json or yaml)", output)
 	}
-	fmt.Fprintf(w, "KIND:     %s\nGROUP:    %s\nVERSION:  %s\n", e.Kind, e.Group, e.Version)
+	_, _ = fmt.Fprintf(w, "KIND:     %s\nGROUP:    %s\nVERSION:  %s\n", e.Kind, e.Group, e.Version)
 	if path != "" {
-		fmt.Fprintf(w, "\nFIELD:    %s <%s>\n", path, e.Type)
+		_, _ = fmt.Fprintf(w, "\nFIELD:    %s <%s>\n", path, e.Type)
 	}
 	if e.Description != "" {
-		fmt.Fprintf(w, "\nDESCRIPTION:\n    %s\n", strings.ReplaceAll(e.Description, "\n", "\n    "))
+		_, _ = fmt.Fprintf(w, "\nDESCRIPTION:\n    %s\n", strings.ReplaceAll(e.Description, "\n", "\n    "))
 	}
 	if len(e.Enum) > 0 {
 		vals := make([]string, len(e.Enum))
 		for i, v := range e.Enum {
 			vals[i] = fmt.Sprint(v)
 		}
-		fmt.Fprintf(w, "\nVALUES:\n    %s\n", strings.Join(vals, ", "))
+		_, _ = fmt.Fprintf(w, "\nVALUES:\n    %s\n", strings.Join(vals, ", "))
 	}
 	if len(e.Fields) > 0 {
-		fmt.Fprintln(w, "\nFIELDS:")
+		_, _ = fmt.Fprintln(w, "\nFIELDS:")
 		for _, f := range e.Fields {
 			req := ""
 			if f.Required {
 				req = " -required-"
 			}
-			fmt.Fprintf(w, "  %s <%s>%s\n", f.Field, f.Type, req)
+			_, _ = fmt.Fprintf(w, "  %s <%s>%s\n", f.Field, f.Type, req)
 			if f.Description != "" {
-				fmt.Fprintf(w, "    %s\n", strings.ReplaceAll(f.Description, "\n", "\n    "))
+				_, _ = fmt.Fprintf(w, "    %s\n", strings.ReplaceAll(f.Description, "\n", "\n    "))
 			}
 		}
 	}
@@ -332,7 +332,7 @@ argument the known resource kinds are listed.`,
 			out := cmd.OutOrStdout()
 			if len(args) == 0 {
 				for _, k := range kinds {
-					fmt.Fprintf(out, "%-40s %s/%s\n", strings.ToLower(k.Kind), k.Group, k.Version)
+					_, _ = fmt.Fprintf(out, "%-40s %s/%s\n", strings.ToLower(k.Kind), k.Group, k.Version)
 				}
 				return nil
 			}
