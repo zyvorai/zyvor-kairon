@@ -145,7 +145,7 @@ migrations, snapshots, and more. Same command tree as kubectl-kairon.`,
 		legacyCmd(opts, "scale", "Scale a MachineSet or MachinePool", scaleExamples, cmdScale),
 		legacyCmd(opts, "claim", "Claim a warm Machine from a MachinePool", claimExamples, cmdClaim),
 		legacyCmd(opts, "fork", "Fork a running Machine into live copies", forkExamples, cmdFork),
-		legacyCmd(opts, "import", "Create a Machine from a VMware OVA", importExamples, cmdImport),
+		newImportCmd(opts),
 		legacyCmd(opts, "top", "Show live Machine or node resource usage", topExamples, cmdTop),
 		legacyCmd(opts, "trigger", "Trigger a SnapshotSchedule run now", triggerExamples, cmdTrigger),
 		powerCmd(opts, "start", "Running"),
@@ -357,9 +357,28 @@ const deleteExamples = `  $ kaironctl delete machine demo
 const editExamples = `  $ kaironctl edit machine demo --priority 10
   $ kaironctl edit machineset web --replicas 5`
 
+// newImportCmd is the legacy `import ova` command plus the offline
+// `import kubevirt`, which must run before any cluster client is built.
+func newImportCmd(opts *Options) *cobra.Command {
+	cmd := legacyCmd(opts, "import", "Create a Machine from a VMware OVA, or convert KubeVirt VirtualMachines offline", importExamples, cmdImport)
+	ova := cmd.RunE
+	cmd.RunE = func(c *cobra.Command, args []string) error {
+		if len(args) > 0 && strings.EqualFold(args[0], "kubevirt") {
+			if wantsHelp(args[1:]) {
+				return c.Help()
+			}
+			return importKubevirtArgs(c, args[1:])
+		}
+		return ova(c, args)
+	}
+	return cmd
+}
+
 const importExamples = `  $ kaironctl import ova https://files.example.com/web01.ova
   $ kaironctl import ova ./web01.ova --url https://files.example.com/web01.ova --name web01 --network tap
-  $ kaironctl import ova https://files.example.com/db.ova --cpu 8 --memory 32Gi --sha256 sha256:... --dry-run`
+  $ kaironctl import ova https://files.example.com/db.ova --cpu 8 --memory 32Gi --sha256 sha256:... --dry-run
+  $ kaironctl import kubevirt vm.yaml -o yaml > machine.yaml
+  $ cat vm.yaml | kaironctl import kubevirt - --strict`
 
 const forkExamples = `  $ kaironctl fork base
   $ kaironctl fork base --count 8 --prefix trial

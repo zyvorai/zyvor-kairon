@@ -1,3 +1,9 @@
+# Unreleased
+
+**Added**
+
+- **`kaironctl import kubevirt FILE...`** converts KubeVirt `VirtualMachine` manifests (YAML or JSON, multi-document, `-` for stdin) into Kairon Machine manifests, offline: it reads files only and never contacts a cluster. It maps name, namespace, labels, CPU, memory, run strategy, secure boot, TPM, PVC/DataVolume/containerDisk disks and `#cloud-config` user data; anything a Machine cannot express (Multus networks, host devices, SR-IOV, instancetype references, extra disks, ...) is reported as `warning: VM: PATH not converted: REASON` on stderr, and `--strict` exits non-zero. Covered by unit tests on hand-written fixtures only; not run against a real cluster or a real migrated VM ([docs/CLI.md](docs/CLI.md#coming-from-virtctl)).
+
 # Kairon v0.10.5 (2026-11-17)
 
 A feature and chart-values release on v0.10.4: three new `kaironctl` commands/flags and chart values for flags that previously had no Helm setting. There are no CRD schema changes and no behaviour changes that need upgrade steps. It has been verified by unit tests, `helm template` and CI only; no install or upgrade of v0.10.5 on a real host has been recorded (see [`TEST_REPORT.md`](TEST_REPORT.md)).
