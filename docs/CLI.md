@@ -269,7 +269,7 @@ Notes:
 kaironctl container run [--wait] [--rm] [-p H:C] [-e K=V] IMAGE [CMD...]   # experimental; see guides/container-sandboxes.md
 kaironctl container ps|inspect|rm
 kaironctl migrate MACHINE --strategy auto|cold|live --target-node NODE [--fallback-to-cold]
-kaironctl evacuate NODE [--strategy cold|auto] [--wait] [--timeout 15m] [--poll-interval 10s]
+kaironctl evacuate NODE [--strategy cold|auto] [--dry-run] [--wait] [--timeout 15m] [--poll-interval 10s]
 kaironctl recover MIGRATION --action ACTION --diagnosis DIAGNOSIS --reason REASON
 kaironctl cancel-migration MIGRATION
 kaironctl fence MACHINE --reason REASON
@@ -309,6 +309,8 @@ kaironctl backup chain MACHINE
 kaironctl backuppolicy create NAME --selector k=v --incremental-every 1h --s3-endpoint URL --s3-bucket NAME --s3-credentials SECRET [--hourly N] [--daily N] [--monthly N]
 kaironctl backuppolicy get [NAME] | describe NAME | suspend NAME | resume NAME | delete NAME
 ```
+
+`evacuate --dry-run` prints which Machines on the node would be migrated and which would be skipped (a `MachineDisruptionBudget` blocks them, or a migration is already in flight), then exits 0 having created nothing; it cannot be combined with `--wait`.
 
 `get`, `describe` and `delete` also take `backup`, `backuprestore` and
 `backuppolicy`. See [guides/machine-backup.md](guides/machine-backup.md) and,
