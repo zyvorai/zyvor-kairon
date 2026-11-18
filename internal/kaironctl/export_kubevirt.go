@@ -561,39 +561,9 @@ func newExportKubevirtCmd(_ *Options) *cobra.Command {
 }
 
 func exportKubevirtArgs(cmd *cobra.Command, args []string) error {
-	ns, format, strict := "", "yaml", false
-	var files []string
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		next := func() (string, error) {
-			if i+1 >= len(args) {
-				return "", fmt.Errorf("%s needs a value", a)
-			}
-			i++
-			return args[i], nil
-		}
-		var err error
-		switch {
-		case a == "--strict":
-			strict = true
-		case a == "-n" || a == "--namespace":
-			ns, err = next()
-		case strings.HasPrefix(a, "--namespace="):
-			ns = strings.TrimPrefix(a, "--namespace=")
-		case a == "-o" || a == "--output":
-			format, err = next()
-		case strings.HasPrefix(a, "--output="):
-			format = strings.TrimPrefix(a, "--output=")
-		case strings.HasPrefix(a, "-o="):
-			format = strings.TrimPrefix(a, "-o=")
-		case a == "-" || !strings.HasPrefix(a, "-"):
-			files = append(files, a)
-		default:
-			err = fmt.Errorf("unknown flag %s\n%s", a, kveUsage)
-		}
-		if err != nil {
-			return err
-		}
+	p, err := parseKubevirtConvertArgs(args, kveUsage)
+	if err != nil {
+		return err
 	}
-	return exportKubevirt(files, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr(), ns, format, strict)
+	return exportKubevirt(p.files, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr(), p.ns, p.format, p.strict)
 }
