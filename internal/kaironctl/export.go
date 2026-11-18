@@ -28,7 +28,7 @@ func newExportCmd(opts *Options) *cobra.Command {
 		Use:   "export",
 		Short: "Download a Machine's disk or print its manifest",
 	}
-	cmd.AddCommand(newExportManifestCmd(opts), newExportMachineCmd(opts), newExportCreateCmd(opts), newExportListCmd(opts), newExportDownloadCmd(opts), newExportDeleteCmd(opts))
+	cmd.AddCommand(newExportManifestCmd(opts), newExportKubevirtCmd(opts), newExportMachineCmd(opts), newExportCreateCmd(opts), newExportListCmd(opts), newExportDownloadCmd(opts), newExportDeleteCmd(opts))
 	return cmd
 }
 
