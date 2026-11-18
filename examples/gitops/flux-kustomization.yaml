@@ -1,0 +1,75 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: Apache-2.0
+
+# Flux health checks for Kairon custom resources (Flux 2.5+, which added
+# Kustomization.spec.healthCheckExprs). Flux's built-in kstatus has no idea
+# what Kairon's status.phase means (kstatus only understands the standard
+# Ready / Reconciling / Stalled conditions and observedGeneration), so without
+# these expressions a Machine stuck in Failed is reported as "Current".
+#
+# Each entry has three CEL expressions over `data` (the live object); `current`
+# is the success condition, `inProgress` keeps Flux waiting until `wait` /
+# timeout, `failed` fails the Kustomization.
+#
+# Replace the path, sourceRef and healthChecks names with your own.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kairon-machines
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./clusters/prod/machines
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: fleet
+  wait: false              # health checks below are explicit; no need to wait on everything
+  timeout: 15m
+  healthChecks:
+    - {apiVersion: kairon.zyvor.dev/v1, kind: Machine, name: web-1, namespace: default}
+    - {apiVersion: kairon.zyvor.dev/v1, kind: MachineSet, name: web, namespace: default}
+  healthCheckExprs:
+    - apiVersion: kairon.zyvor.dev/v1
+      kind: Machine
+      current: >-
+        has(data.status) && has(data.status.phase) &&
+        data.status.phase in ['Running', 'Stopped', 'Paused', 'Hibernated', 'Halted']
+      inProgress: >-
+        !has(data.status) || !has(data.status.phase) ||
+        data.status.phase in ['', 'Pending', 'Starting', 'Stopping', 'Restarting', 'Freezing', 'Thawing', 'Adopting']
+      failed: >-
+        has(data.status) && has(data.status.phase) &&
+        data.status.phase in ['Failed', 'Blocked']
+    - apiVersion: kairon.zyvor.dev/v1
+      kind: MachineSet
+      current: >-
+        has(data.status) && has(data.status.readyReplicas) &&
+        data.status.readyReplicas == data.spec.replicas &&
+        has(data.status.updatedReplicas) && data.status.updatedReplicas == data.spec.replicas
+      inProgress: >-
+        !has(data.status) || !has(data.status.readyReplicas) ||
+        data.status.readyReplicas != data.spec.replicas
+    - apiVersion: kairon.zyvor.dev/v1
+      kind: MachineMigration
+      current: has(data.status) && has(data.status.phase) && data.status.phase == 'Succeeded'
+      inProgress: >-
+        !has(data.status) || !has(data.status.phase) ||
+        !(data.status.phase in ['Succeeded', 'Failed', 'Cancelled', 'NeedsRecovery'])
+      failed: >-
+        has(data.status) && has(data.status.phase) &&
+        data.status.phase in ['Failed', 'Cancelled', 'NeedsRecovery']
+    - apiVersion: kairon.zyvor.dev/v1
+      kind: MachineSnapshot
+      current: has(data.status) && has(data.status.readyToUse) && data.status.readyToUse == true
+      inProgress: >-
+        !has(data.status) || !has(data.status.phase) ||
+        !(data.status.phase in ['Failed']) && !(has(data.status.readyToUse) && data.status.readyToUse == true)
+      failed: has(data.status) && has(data.status.phase) && data.status.phase == 'Failed'
+    - apiVersion: kairon.zyvor.dev/v1
+      kind: MachineBackup
+      current: has(data.status) && has(data.status.phase) && data.status.phase == 'Succeeded'
+      inProgress: >-
+        !has(data.status) || !has(data.status.phase) ||
+        !(data.status.phase in ['Succeeded', 'Failed'])
+      failed: has(data.status) && has(data.status.phase) && data.status.phase == 'Failed'

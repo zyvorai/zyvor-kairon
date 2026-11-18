@@ -1,0 +1,72 @@
+{{- /*
+prometheus-operator scrape config, off by default (metrics.serviceMonitor.enabled).
+kairon-controller and kairon-node have no Service, so they get a PodMonitor on
+their "health" container port (/metrics); kairon-ui has a Service, so it gets a
+ServiceMonitor. Each is skipped when its CRD is not installed unless
+metrics.serviceMonitor.requireCRD=false.
+*/}}
+{{- $sm := .Values.metrics.serviceMonitor }}
+{{- if $sm.enabled }}
+{{- $crd := $sm.requireCRD }}
+{{- $hasPM := or (not $crd) (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1/PodMonitor") }}
+{{- $hasSM := or (not $crd) (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1/ServiceMonitor") }}
+{{- $ns := .Release.Namespace }}
+{{- $labels := $sm.labels | default dict }}
+{{- if $hasPM }}
+{{- range $c := list (dict "name" "kairon-controller" "on" $sm.controller.enabled) (dict "name" "kairon-node" "on" $sm.node.enabled) }}
+{{- if $c.on }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ $c.name }}
+  namespace: {{ $ns }}
+  labels:
+    app.kubernetes.io/name: {{ $c.name }}
+{{- with $labels }}
+{{ toYaml . | indent 4 }}
+{{- end }}
+spec:
+  namespaceSelector: {matchNames: [{{ $ns }}]}
+  selector:
+    matchLabels: {app.kubernetes.io/name: {{ $c.name }}}
+  podMetricsEndpoints:
+    - port: health
+      path: /metrics
+      interval: {{ $sm.interval }}
+{{- if $sm.scrapeTimeout }}
+      scrapeTimeout: {{ $sm.scrapeTimeout }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if and $hasSM .Values.ui.enabled $sm.ui.enabled }}
+{{- $uiPort := ternary "http" "https" (.Values.ui.insecureHttp | default false) }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kairon-ui
+  namespace: {{ $ns }}
+  labels:
+    app.kubernetes.io/name: kairon-ui
+{{- with $labels }}
+{{ toYaml . | indent 4 }}
+{{- end }}
+spec:
+  namespaceSelector: {matchNames: [{{ $ns }}]}
+  selector:
+    matchLabels: {app.kubernetes.io/name: kairon-ui}
+  endpoints:
+    - port: {{ $uiPort }}
+      path: /metrics
+      scheme: {{ $uiPort }}
+      interval: {{ $sm.interval }}
+{{- if $sm.scrapeTimeout }}
+      scrapeTimeout: {{ $sm.scrapeTimeout }}
+{{- end }}
+{{- if and (eq $uiPort "https") $sm.ui.insecureSkipVerify }}
+      tlsConfig: {insecureSkipVerify: true}
+{{- end }}
+{{- end }}
+{{- end }}

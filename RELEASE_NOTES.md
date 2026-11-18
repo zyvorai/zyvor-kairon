@@ -1,3 +1,18 @@
+# Kairon Unreleased
+
+Observability and GitOps pack: chart values, dashboards and examples only. There are no Go, CRD or default-render changes; every new value is off by default and a default `helm template` is identical to v0.10.6. Verified by `helm lint`, `helm template`, JSON/YAML checks and a LuaJIT run of the Argo CD health scripts; the dashboards were not loaded into a real Grafana, the monitors and health checks were not applied to a real cluster, and nothing was installed or upgraded (see [`TEST_REPORT.md`](TEST_REPORT.md)).
+
+**Added**
+
+- **Helm value `metrics.grafanaDashboards.enabled`** renders four Grafana dashboards (fleet overview, machines, migrations, snapshots/backups/DR) from `charts/kairon/dashboards/*.json` as labelled ConfigMaps for the Grafana sidecar (`label`, `labelValue`, `namespace`, `folder` are values). Queries use only metrics registered in `internal/metrics`; there are no per-Machine network byte counters and no snapshot-state metric, so those panels show drops and reconcile errors instead ([guide](docs/guides/observability.md#grafana-dashboards)).
+- **Helm value `metrics.serviceMonitor.enabled`** renders a `PodMonitor` for `kairon-controller` and `kairon-node` and, with `ui.enabled`, a `ServiceMonitor` for `kairon-ui`. Each is skipped when its CRD is not reported by the cluster unless `metrics.serviceMonitor.requireCRD=false`. The existing `metrics.prometheusRule` alerts are unchanged ([guide](docs/guides/observability.md#scraping-with-prometheus-operator)).
+- **[`examples/gitops/`](examples/gitops/README.md)**: Argo CD `resource.customizations.health` Lua for `Machine`, `MachineMigration`, `MachineSnapshot`, `MachineSnapshotRestore`, `MachineBackup`, `MachineBackupRestore`, `MachineExport`, `MachineProtectionPlan`, `MachineImage` and `MachineSet`, a Flux `healthCheckExprs` example and an Argo CD `Application`. The Lua was run under LuaJIT on hand-written objects; phase names come from the Go sources, not a live cluster.
+- **CI** renders the chart with the new values off (no new objects) and on (valid YAML, expected objects, dashboard JSON parses, every dashboard query metric is a known Kairon metric).
+
+**Known issue (not changed here)**
+
+- The shipped `KaironMigrationDataPlaneUnencrypted` alert selects `kairon_migration_dataplane_encrypted{phase=~"Starting|Running"}`, but the metric has only `namespace` and `name` labels, so the alert cannot match.
+
 # Kairon v0.10.6 (2026-11-18)
 
 A feature release on v0.10.5: offline `kaironctl` commands for moving to and from KubeVirt and for checking and scaffolding Machines, multi-VM OVF import, and Helm pod-scheduling values (all default off). There are no CRD schema changes and no behaviour changes that need upgrade steps. It has been verified by unit tests, CI, and a build, test and offline-command run on a Linux dev host; no install, upgrade or self-test of v0.10.6 on a cluster has been recorded (see [`TEST_REPORT.md`](TEST_REPORT.md)).

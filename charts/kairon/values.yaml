@@ -688,6 +688,45 @@ metrics:
   # alerts.yaml's rule group into your own Prometheus rule_files config.
   prometheusRule:
     enabled: false
+  # prometheus-operator scrape config (see docs/guides/observability.md).
+  # Off by default. Renders a PodMonitor for kairon-controller and
+  # kairon-node (their /metrics is on the "health" container port; neither
+  # has a Service) and, with ui.enabled, a ServiceMonitor for kairon-ui.
+  # Each object is skipped, with no error, when its CRD is absent from the
+  # cluster (.Capabilities.APIVersions) -- set requireCRD: false to render
+  # them anyway, e.g. for `helm template` without --api-versions.
+  serviceMonitor:
+    enabled: false
+    requireCRD: true
+    interval: 30s
+    scrapeTimeout: ""
+    # Extra labels on the monitors, e.g. {release: kube-prometheus-stack}
+    # when your Prometheus selects monitors by label.
+    labels: {}
+    controller:
+      enabled: true
+    node:
+      enabled: true
+    ui:
+      enabled: true
+      # kairon-ui serves HTTPS by default with a self-signed certificate
+      # unless ui.insecureHttp is true; the scrape then skips verification.
+      insecureSkipVerify: true
+  # Grafana dashboards (charts/kairon/dashboards/*.json) as ConfigMaps that
+  # the Grafana sidecar (grafana-sc-dashboard) loads by label. Off by default.
+  grafanaDashboards:
+    enabled: false
+    # Sidecar label: Grafana's chart default is `grafana_dashboard: "1"`.
+    label: grafana_dashboard
+    labelValue: "1"
+    # Namespace for the ConfigMaps; empty = the release namespace. Set it to
+    # Grafana's namespace if the sidecar does not search all namespaces.
+    namespace: ""
+    # Grafana folder, via the sidecar's folderAnnotation (default
+    # `grafana_folder`); empty = no annotation.
+    folder: Kairon
+    folderAnnotation: grafana_folder
+    annotations: {}
 # otel: opt-in OTLP/HTTP JSON reconcile spans (internal/oteltrace). Off by
 # default -- when enabled, set endpoint to your collector's /v1/traces URL
 # (e.g. http://otel-collector:4318/v1/traces). Tiny exporter, not the full

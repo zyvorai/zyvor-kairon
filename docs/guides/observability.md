@@ -233,6 +233,71 @@ renaming in place): `kubectl delete prometheusrule kairon-migrations -n
 <namespace>` cleans it up. Otherwise, copy the rule groups into your own
 Prometheus `rule_files` config directly.
 
+## Scraping with prometheus-operator
+
+`metrics.serviceMonitor.enabled=true` renders:
+
+- a `PodMonitor` for `kairon-controller` and one for `kairon-node` (neither has a Service; `/metrics` is on the `health` container port), and
+- with `ui.enabled`, a `ServiceMonitor` for `kairon-ui` (`/metrics` on its dashboard port; `scheme` follows `ui.insecureHttp`, and with HTTPS the scrape sets `insecureSkipVerify` because the default certificate is self-signed; turn it off with `metrics.serviceMonitor.ui.insecureSkipVerify=false` once you have a trusted certificate).
+
+Each object is skipped, without an error, when the cluster does not report
+its CRD (`.Capabilities.APIVersions`). `helm template` does not know your
+cluster's CRDs, so pass `--api-versions monitoring.coreos.com/v1/PodMonitor`
+(and `.../ServiceMonitor`) or set `metrics.serviceMonitor.requireCRD=false`.
+Use `metrics.serviceMonitor.labels` when your Prometheus selects monitors by
+label (for example `release: kube-prometheus-stack`), and `.controller`,
+`.node` and `.ui` `.enabled` to drop one target. With `networkPolicy.enabled`
+remember `allowIngressFrom` for the Prometheus namespace. The existing
+`metrics.prometheusRule.enabled` alerts are unchanged.
+
+## Grafana dashboards
+
+`metrics.grafanaDashboards.enabled=true` renders one ConfigMap per file in
+`charts/kairon/dashboards/`, labelled `grafana_dashboard: "1"` for the
+Grafana sidecar (`grafana-sc-dashboard`; label, namespace and folder
+annotation are values, see `metrics.grafanaDashboards`). The files are also
+plain Grafana JSON you can import by hand. Each has a `datasource` variable
+(any Prometheus data source).
+
+| Dashboard | Covers | Metrics used |
+|---|---|---|
+| Fleet overview | Reconcile and apiserver health, webhook decisions, quotas, MachineSets, disruption budgets, DRS, placement failures, node maintenance, PSI and memory pressure, GPUs, NUMA, `kairon-ui` | `kairon_reconcile_*`, `kairon_apiserver_request_duration_seconds`, `kairon_webhook_decisions_total`, `kairon_quota_resource`, `kairon_machineset_status`, `kairon_disruption_budget_status`, `kairon_drs_*`, `kairon_topology_allocation_failures_total`, `kairon_node_maintenance*`, `kairon_node_psi_some_avg60_percent`, `kairon_node_memory_pressure`, `kairon_gpu_*`, `kairon_node_numa_free_cpus`, `kairon_ui_request_duration_seconds` |
+| Machines | CPU, memory, disk, network edge, balloon, sample age, lifecycle actions | `kairon_machine_resource_usage` (`cpu_percent`, `memory_bytes`, `disk_read_bytes`, `disk_write_bytes`), `kairon_machine_usage_sample_timestamp_seconds`, `kairon_net_drops_total`, `kairon_net_conntrack_restored_total`, `kairon_net_migration_blackhole_ms`, `kairon_machine_balloon_mib`, `kairon_memory_reclaim_actions_total`, `kairon_lifecycle_actions_total` |
+| Migrations | Phases, age, results, encryption, timings, live telemetry, adaptive engine | `kairon_migration_*` |
+| Snapshots, backups and DR | S3 backup age, chain length, duration, bytes, reconcile errors for snapshot and backup kinds, DR RPO, RTO, peer and test state | `kairon_backup_*`, `kairon_reconcile_item_errors_total{kind=~"snapshot.*|machinebackup.*|backuppolicy"}`, `kairon_dr_*` |
+
+Every query uses only metric names registered in this repository's Go code
+(`internal/metrics`); each panel's description names its metric. Known gaps,
+so you are not surprised by an empty panel:
+
+- **No per-Machine network throughput.** Kairon exports no rx/tx byte
+  counters; the network panels show VM-edge drops and live-migration conntrack
+  metrics only. Use node-level metrics from your node exporter for bandwidth.
+- **No snapshot-state metric.** There is no metric for MachineSnapshot
+  readiness or age; the dashboard shows reconcile errors for those kinds, and
+  the object state is covered by the [GitOps health checks](https://github.com/zyvorai/zyvor-kairon/tree/main/examples/gitops).
+- **Per-Machine usage comes from `kairon-node`** (`kairon_machine_resource_usage`),
+  so the node PodMonitor must be on. The disk panels apply `rate()` on the
+  assumption that FluxVM reports cumulative byte counts; this has not been
+  checked against a running VM.
+- **Migration transfer and downtime histograms use Prometheus's default
+  buckets (up to 10 s)**, so their quantiles saturate at 10 s for longer
+  migrations.
+- The shipped `KaironMigrationDataPlaneUnencrypted` alert selects
+  `kairon_migration_dataplane_encrypted{phase=~...}`, but that metric has only
+  `namespace` and `name` labels, so the selector matches nothing. The
+  dashboard uses the unfiltered series. The alert is left as is here.
+
+The dashboards were checked as JSON and as chart output only; they have not
+been loaded into a real Grafana, and the queries have not been run against a
+Prometheus holding real Kairon data.
+
+## Argo CD and Flux health
+
+Neither tool understands Kairon's `status.phase`. Ready-made Argo CD health
+Lua, a Flux `healthCheckExprs` example and an Argo CD `Application` are in
+[`examples/gitops/`](https://github.com/zyvorai/zyvor-kairon/tree/main/examples/gitops).
+
 ## Real limits today (first cut)
 
 - Distributed tracing is opt-in via `otel.enabled` / `KAIRON_OTEL_ENDPOINT`
