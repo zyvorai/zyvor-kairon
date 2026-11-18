@@ -584,10 +584,18 @@ func importKubevirt(files []string, stdin io.Reader, out, errOut io.Writer, ns, 
 	return nil
 }
 
-// importKubevirtArgs parses the arguments after `import kubevirt`.
-func importKubevirtArgs(cmd *cobra.Command, args []string) error {
-	ns, format, strict := "", "yaml", false
-	var files []string
+// kubevirtConvertArgs holds what `import kubevirt` and `export kubevirt` both parse from their command line.
+type kubevirtConvertArgs struct {
+	files  []string
+	ns     string
+	format string
+	strict bool
+}
+
+// parseKubevirtConvertArgs parses the shared flags (-n/--namespace, -o/--output, --strict) and file operands. usage is
+// appended to the "unknown flag" error.
+func parseKubevirtConvertArgs(args []string, usage string) (kubevirtConvertArgs, error) {
+	p := kubevirtConvertArgs{format: "yaml"}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		next := func() (string, error) {
@@ -600,25 +608,34 @@ func importKubevirtArgs(cmd *cobra.Command, args []string) error {
 		var err error
 		switch {
 		case a == "--strict":
-			strict = true
+			p.strict = true
 		case a == "-n" || a == "--namespace":
-			ns, err = next()
+			p.ns, err = next()
 		case strings.HasPrefix(a, "--namespace="):
-			ns = strings.TrimPrefix(a, "--namespace=")
+			p.ns = strings.TrimPrefix(a, "--namespace=")
 		case a == "-o" || a == "--output":
-			format, err = next()
+			p.format, err = next()
 		case strings.HasPrefix(a, "--output="):
-			format = strings.TrimPrefix(a, "--output=")
+			p.format = strings.TrimPrefix(a, "--output=")
 		case strings.HasPrefix(a, "-o="):
-			format = strings.TrimPrefix(a, "-o=")
+			p.format = strings.TrimPrefix(a, "-o=")
 		case a == "-" || !strings.HasPrefix(a, "-"):
-			files = append(files, a)
+			p.files = append(p.files, a)
 		default:
-			err = fmt.Errorf("unknown flag %s\n%s", a, kubevirtImportUsage)
+			err = fmt.Errorf("unknown flag %s\n%s", a, usage)
 		}
 		if err != nil {
-			return err
+			return p, err
 		}
 	}
-	return importKubevirt(files, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr(), ns, format, strict)
+	return p, nil
+}
+
+// importKubevirtArgs parses the arguments after `import kubevirt`.
+func importKubevirtArgs(cmd *cobra.Command, args []string) error {
+	p, err := parseKubevirtConvertArgs(args, kubevirtImportUsage)
+	if err != nil {
+		return err
+	}
+	return importKubevirt(p.files, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr(), p.ns, p.format, p.strict)
 }
