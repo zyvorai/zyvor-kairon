@@ -45,12 +45,12 @@ kubectl label node worker-1 kairon.zyvor.dev/capable=true
 
 # 2. install the evaluation profile (chart defaults)
 helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \\
-  --version 0.10.5 -n kairon-system --create-namespace`,
+  --version 0.10.6 -n kairon-system --create-namespace`,
       `# production profile: first create the webhook TLS Secret and the
 # kairon-migration-tls Secret (see the Helm deployment guide), then
 helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \\
-  --version 0.10.5 -n kairon-system --create-namespace \\
-  -f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/v0.10.5/charts/kairon/values-production.yaml \\
+  --version 0.10.6 -n kairon-system --create-namespace \\
+  -f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/v0.10.6/charts/kairon/values-production.yaml \\
   --set webhook.tlsSecretName=kairon-webhook-tls \\
   --set webhook.caBundle="$(cat ./webhook-certs/ca-bundle.b64)"`,
       `# or, without Helm
