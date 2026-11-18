@@ -37,9 +37,9 @@ func machineCRDSchema(t *testing.T) map[string]any {
 	return vers[0].(map[string]any)["schema"].(map[string]any)["openAPIV3Schema"].(map[string]any)
 }
 
-// validateSchema checks v against the structural subset of OpenAPI v3 the
+// validateCRDSchemaMap checks v against the structural subset of OpenAPI v3 the
 // Machine CRD uses. CEL rules (x-kubernetes-validations) are not evaluated.
-func validateSchema(s map[string]any, v any, path string) []string {
+func validateCRDSchemaMap(s map[string]any, v any, path string) []string {
 	var errs []string
 	add := func(f string, a ...any) { errs = append(errs, path+": "+fmt.Sprintf(f, a...)) }
 	if s["x-kubernetes-int-or-string"] == true {
@@ -70,9 +70,9 @@ func validateSchema(s map[string]any, v any, path string) []string {
 		for k, child := range obj {
 			switch {
 			case props[k] != nil:
-				errs = append(errs, validateSchema(props[k].(map[string]any), child, path+"."+k)...)
+				errs = append(errs, validateCRDSchemaMap(props[k].(map[string]any), child, path+"."+k)...)
 			case hasAddl:
-				errs = append(errs, validateSchema(addl, child, path+"."+k)...)
+				errs = append(errs, validateCRDSchemaMap(addl, child, path+"."+k)...)
 			case s["x-kubernetes-preserve-unknown-fields"] == true || (len(props) == 0 && s["additionalProperties"] == true):
 			// The API server owns apiVersion, kind and metadata.
 			case path == "" && (k == "apiVersion" || k == "kind" || k == "metadata"):
@@ -94,7 +94,7 @@ func validateSchema(s map[string]any, v any, path string) []string {
 		}
 		if items, ok := s["items"].(map[string]any); ok {
 			for i, e := range arr {
-				errs = append(errs, validateSchema(items, e, fmt.Sprintf("%s[%d]", path, i))...)
+				errs = append(errs, validateCRDSchemaMap(items, e, fmt.Sprintf("%s[%d]", path, i))...)
 			}
 		}
 	case "string":
@@ -187,7 +187,7 @@ func checkScaffold(t *testing.T, o newMachineOptions) {
 	if err := yaml.Unmarshal([]byte(text), &doc); err != nil {
 		t.Fatalf("YAML does not parse: %v\n%s", err, text)
 	}
-	if errs := validateSchema(schema, doc, ""); len(errs) > 0 {
+	if errs := validateCRDSchemaMap(schema, doc, ""); len(errs) > 0 {
 		t.Errorf("CRD schema violations:\n%s\n%s", strings.Join(errs, "\n"), text)
 	}
 	// 2. Strict decode into the real type: no field outside model.Machine.
@@ -376,7 +376,7 @@ func TestNewMachineSchemaValidatorCatchesErrors(t *testing.T) {
 		"apiVersion": "kairon.zyvor.dev/v1", "kind": "Machine",
 		"spec": map[string]any{"bogusField": 1, "resources": map[string]any{"cpu": 2.0}},
 	}
-	errs := strings.Join(validateSchema(schema, bad, ""), "\n")
+	errs := strings.Join(validateCRDSchemaMap(schema, bad, ""), "\n")
 	if !strings.Contains(errs, "bogusField") || !strings.Contains(errs, "want string") {
 		t.Errorf("validator missed errors: %q", errs)
 	}
