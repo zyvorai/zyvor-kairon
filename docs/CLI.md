@@ -139,6 +139,7 @@ kaironctl scale machineset NAME --replicas N
 kaironctl scale machineset --selector k=v --replicas N
 kaironctl scale machinepool NAME --replicas N
 kaironctl import ova SOURCE [--url URL] [--name NAME] [--no-repair] [--dry-run] [create flags]
+                    # multi-VM OVF: prints one Machine per VM as multi-doc YAML (no create), warnings on stderr; see guides/migrate-from-vmware.md
 kaironctl import kubevirt FILE... [--namespace NS] [-o yaml|json] [--strict]   # offline; FILE - reads stdin
 kaironctl claim POOL [NAME] [--label k=v] [--retain] [--ttl 1h] [--allow-fqdn H] [--allow-sni N] [--allow-cidr C] [--allow-port P] [--allow-dns N] [--allow-icmp] [--wait 60s | --no-wait]
 kaironctl fork MACHINE [--count N] [--prefix P] [--wait 60s | --no-wait]   # see guides/machine-fork.md
