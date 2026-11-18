@@ -282,6 +282,57 @@ jobs:
           print('helm render YAML: OK (cilium flags default off)')
           PY
 
+      - name: Helm render -- pod scheduling knobs
+        run: |
+          cat > ${{ runner.temp }}/pod-knobs.yaml <<'EOF'
+          controller: &k
+            podAnnotations: {team: infra}
+            podLabels: {tier: x, app.kubernetes.io/name: ignored}
+            priorityClassName: pc
+            terminationGracePeriodSeconds: 90
+            topologySpreadConstraints:
+              - {maxSkew: 1, topologyKey: topology.kubernetes.io/zone, whenUnsatisfiable: ScheduleAnyway}
+              - {maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: ScheduleAnyway, labelSelector: {matchLabels: {custom: sel}}}
+            extraEnv: [{name: EXTRA_ENV, value: "1"}]
+            extraEnvFrom: [{secretRef: {name: extra-sec}}]
+          node: *k
+          csiNode: *k
+          csiController: *k
+          ui: *k
+          EOF
+          helm template kairon charts/kairon --namespace kairon-system -f ${{ runner.temp }}/pod-knobs.yaml \
+            --set ui.enabled=true --set ui.token=ci --set csiNode.enabled=true --set csiController.enabled=true \
+            > ${{ runner.temp }}/kairon-pod-knobs.yaml
+          python3 - <<'PY'
+          import yaml
+          docs = [d for d in yaml.safe_load_all(open('${{ runner.temp }}/kairon-pod-knobs.yaml')) if d]
+          wl = [d for d in docs if d.get('kind') in ('Deployment', 'DaemonSet')]
+          assert len(wl) == 5, [d['metadata']['name'] for d in wl]
+          for d in wl:
+              name = d['metadata']['name']
+              tpl = d['spec']['template']
+              sp = tpl['spec']
+              assert tpl['metadata']['annotations'] == {'team': 'infra'}, name
+              assert tpl['metadata']['labels'] == {'app.kubernetes.io/name': name, 'tier': 'x'}, (name, tpl['metadata'])
+              assert d['spec']['selector']['matchLabels'] == {'app.kubernetes.io/name': name}, name
+              assert sp['priorityClassName'] == 'pc' and sp['terminationGracePeriodSeconds'] == 90, name
+              tsc = sp['topologySpreadConstraints']
+              assert tsc[0]['labelSelector'] == {'matchLabels': {'app.kubernetes.io/name': name}}, (name, tsc)
+              assert tsc[1]['labelSelector'] == {'matchLabels': {'custom': 'sel'}}, (name, tsc)
+              main = next(c for c in sp['containers'] if c['name'] in ('controller', 'node', 'csi-node', 'csi-controller', 'ui'))
+              assert {'name': 'EXTRA_ENV', 'value': '1'} in main['env'], name
+              assert main['envFrom'] == [{'secretRef': {'name': 'extra-sec'}}], name
+          print('helm render YAML: OK (pod scheduling knobs set)')
+          PY
+          # Defaults: none of the knobs render.
+          helm template kairon charts/kairon --namespace kairon-system --set ui.enabled=true --set ui.token=ci \
+            --set csiNode.enabled=true --set csiController.enabled=true > ${{ runner.temp }}/kairon-no-pod-knobs.yaml
+          for k in topologySpreadConstraints priorityClassName terminationGracePeriodSeconds envFrom; do
+            if grep -qE "^ +$k" ${{ runner.temp }}/kairon-no-pod-knobs.yaml; then
+              echo "pod knob $k rendered with default values" >&2; exit 1; fi
+          done
+          echo 'helm render YAML: OK (pod scheduling knobs default off)'
+
       - name: Helm render -- production profile
         run: |
           # values-production.yaml is the hardened install overlay (PR5).

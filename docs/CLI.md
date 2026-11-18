@@ -139,6 +139,7 @@ kaironctl scale machineset NAME --replicas N
 kaironctl scale machineset --selector k=v --replicas N
 kaironctl scale machinepool NAME --replicas N
 kaironctl import ova SOURCE [--url URL] [--name NAME] [--no-repair] [--dry-run] [create flags]
+                    # multi-VM OVF: prints one Machine per VM as multi-doc YAML (no create), warnings on stderr; see guides/migrate-from-vmware.md
 kaironctl import kubevirt FILE... [--namespace NS] [-o yaml|json] [--strict]   # offline; FILE - reads stdin
 kaironctl export kubevirt FILE... [--namespace NS] [-o yaml|json] [--strict]   # offline; Machine to KubeVirt VirtualMachine; FILE - reads stdin
 kaironctl claim POOL [NAME] [--label k=v] [--retain] [--ttl 1h] [--allow-fqdn H] [--allow-sni N] [--allow-cidr C] [--allow-port P] [--allow-dns N] [--allow-icmp] [--wait 60s | --no-wait]
@@ -212,6 +213,25 @@ and any matching `MachineNetworkPolicy` with `spec.cilium.sync`. `--flows` /
   state (`running`, `done`, `failed`, `interrupted`) and packet counts.
 
 See [ebpf-edge.md](ebpf-edge.md).
+
+## Starter manifests (offline)
+
+`kaironctl new machine NAME [flags]` prints a commented starter Machine manifest from a built-in preset, so you do not start from a blank file. It is complementary to `create`: `create` builds a Machine from flags and sends it to the cluster, while `new` only writes YAML (or JSON) to stdout for you to edit, keep in git and `kubectl apply`. It never builds a cluster client and needs no kubeconfig.
+
+```bash
+kaironctl new machine --list-presets
+kaironctl new machine web-1 --preset small > web-1.yaml
+kaironctl new machine db-1 --preset database --disk-size 500Gi --ssh-key-file ~/.ssh/id_ed25519.pub -n prod
+kaironctl new machine win11 --preset windows --secure-boot --tpm -o json
+```
+
+- **Presets** (`--preset`, default `medium`): `small` (1 vCPU, 2Gi, 20Gi disk), `medium` (2, 4Gi, 40Gi), `large` (8, 16Gi, 100Gi), `gpu` (8, 32Gi, 100Gi, one `spec.accelerators` entry), `windows` (4, 8Gi, 80Gi, guest agent on), `sandbox` (1, 512Mi, `spec.sandbox` with a 15-minute `ttlSeconds`) and `database` (4, 16Gi, 200Gi, guest agent on). `--list-presets` prints the table.
+- **Overrides:** `--cpu`, `--memory`, `--disk-size` (`spec.image.diskSize`), `--namespace`/`-n`, `--secure-boot`, `--tpm` (qemu backend; refused for `sandbox`), `-o yaml|json` (default YAML with a short `#` comment on every field). `--instance-type NAME` and `--preference NAME` (with `--cluster-instance-type` / `--cluster-preference`) reference a MachineInstanceType or MachinePreference instead of fixed sizes; see [instance types](guides/machine-instance-types.md).
+- **`--image REF`** is an absolute node path (`spec.image.path`), `catalog:NAME` (`spec.image.catalogName`) or `image:NAME` (a MachineImage, `spec.image.imageRef`). Without it the manifest has a placeholder path you must edit.
+- **`--ssh-key-file PATH`** reads a PUBLIC key file (`ssh-ed25519 ...`, one key per line) into `spec.cloudInit.sshAuthorizedKeys`. A file that looks like a private key is refused. **`--cloud-init-file PATH`** reads a `#cloud-config` file with the same conversion as `import kubevirt` (`hostname`, `ssh_authorized_keys`, `packages`, `runcmd`, `write_files`); other keys are reported on stderr and not copied.
+- The manifest is built from the same `Machine` type the controller uses, so it holds only real fields, and it is checked with the webhook's pure Machine-create validators (quantities, image, disks, sandbox, accelerators, lifecycle, ...) before it is printed. Checks that need a cluster (instance-type lookups, quotas) are not run.
+
+Presets are starting points, not tuned for any workload: the sizes are plausible defaults, the image path is a placeholder, and the `gpu` preset names a placeholder `MachineAcceleratorProfile` (`gpu-profile`) your cluster admin must have defined. The command is covered by unit tests only (every preset is validated against the embedded Machine CRD schema and the admission validators); no generated manifest has been applied to a real cluster.
 
 ## Coming from virtctl
 

@@ -431,9 +431,9 @@ spec:
   replicas: {{ .Values.controller.replicaCount }}
   selector: {matchLabels: {app.kubernetes.io/name: kairon-controller}}
   template:
-    metadata: {labels: {app.kubernetes.io/name: kairon-controller}}
+    metadata:{{ include "kairon.podMeta" (dict "name" "kairon-controller" "v" .Values.controller) }}
     spec:
-      serviceAccountName: kairon-controller
+      serviceAccountName: kairon-controller{{ with include "kairon.podSpecExtras" (dict "name" "kairon-controller" "v" .Values.controller) }}{{ . | nindent 6 }}{{ end }}
       containers:
         - name: controller
           image: "{{ .Values.controller.image.repository }}:{{ .Values.controller.image.tag | default (.Chart.AppVersion | trimPrefix "v" | printf "v%s") }}"
@@ -518,6 +518,13 @@ spec:
             - name: KAIRON_COSIGN_PUBLIC_KEY
               valueFrom: {secretKeyRef: {name: {{ .Values.agentPlane.cosignPublicKeySecret.name | quote }}, key: {{ .Values.agentPlane.cosignPublicKeySecret.key | quote }}}}
 {{ end }}
+{{- with .Values.controller.extraEnv }}
+{{ toYaml . | indent 12 }}
+{{- end }}
+{{- with .Values.controller.extraEnvFrom }}
+          envFrom:
+{{ toYaml . | indent 12 }}
+{{- end }}
           ports:
             - {name: health, containerPort: {{ .Values.controller.healthPort }}}
 {{ if .Values.webhook.enabled }}
@@ -593,9 +600,9 @@ metadata: {name: kairon-node, namespace: {{ .Release.Namespace }}}
 spec:
   selector: {matchLabels: {app.kubernetes.io/name: kairon-node}}
   template:
-    metadata: {labels: {app.kubernetes.io/name: kairon-node}}
+    metadata:{{ include "kairon.podMeta" (dict "name" "kairon-node" "v" .Values.node) }}
     spec:
-      serviceAccountName: kairon-node
+      serviceAccountName: kairon-node{{ with include "kairon.podSpecExtras" (dict "name" "kairon-node" "v" .Values.node) }}{{ . | nindent 6 }}{{ end }}
 {{ if .Values.migration.enabled }}
       securityContext:
         fsGroup: 65532
@@ -802,6 +809,13 @@ spec:
             - name: KAIRON_NODE_CONSOLE_TOKEN
               valueFrom: {secretKeyRef: {name: {{ .Values.console.existingSecret | default "kairon-console-token" }}, key: {{ .Values.console.existingSecretKey | default "token" }}}}
 {{ end }}
+{{- with .Values.node.extraEnv }}
+{{ toYaml . | indent 12 }}
+{{- end }}
+{{- with .Values.node.extraEnvFrom }}
+          envFrom:
+{{ toYaml . | indent 12 }}
+{{- end }}
           ports:
             - {name: health, containerPort: {{ .Values.node.healthPort }}}
 {{ if .Values.migration.enabled }}
@@ -938,9 +952,9 @@ metadata: {name: kairon-csi-node, namespace: {{ .Release.Namespace }}}
 spec:
   selector: {matchLabels: {app.kubernetes.io/name: kairon-csi-node}}
   template:
-    metadata: {labels: {app.kubernetes.io/name: kairon-csi-node}}
+    metadata:{{ include "kairon.podMeta" (dict "name" "kairon-csi-node" "v" .Values.csiNode) }}
     spec:
-      serviceAccountName: kairon-csi-node
+      serviceAccountName: kairon-csi-node{{ with include "kairon.podSpecExtras" (dict "name" "kairon-csi-node" "v" .Values.csiNode) }}{{ . | nindent 6 }}{{ end }}
       automountServiceAccountToken: false
       # iscsiadm needs direct L3 reachability to the iSCSI target's real
       # IP -- the same reason kairon-node itself runs hostNetwork: true.
@@ -969,6 +983,13 @@ spec:
           env:
             - name: KAIRON_NODE_NAME
               valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
+{{- with .Values.csiNode.extraEnv }}
+{{ toYaml . | indent 12 }}
+{{- end }}
+{{- with .Values.csiNode.extraEnvFrom }}
+          envFrom:
+{{ toYaml . | indent 12 }}
+{{- end }}
           # Privileged, not just a capabilities list: attaching an iSCSI
           # target and mounting the resulting filesystem genuinely needs
           # this. See SECURITY.md and
@@ -1130,9 +1151,9 @@ spec:
   strategy: {type: Recreate}
   selector: {matchLabels: {app.kubernetes.io/name: kairon-csi-controller}}
   template:
-    metadata: {labels: {app.kubernetes.io/name: kairon-csi-controller}}
+    metadata:{{ include "kairon.podMeta" (dict "name" "kairon-csi-controller" "v" .Values.csiController) }}
     spec:
-      serviceAccountName: kairon-csi-controller
+      serviceAccountName: kairon-csi-controller{{ with include "kairon.podSpecExtras" (dict "name" "kairon-csi-controller" "v" .Values.csiController) }}{{ . | nindent 6 }}{{ end }}
       # LIO's iSCSI portal must be reachable on the storage node's real
       # interfaces, not a Pod-network address other nodes' initiators
       # can't route to -- same reason csiNode's DaemonSet runs this way.
@@ -1175,6 +1196,14 @@ spec:
             - "--volume-dir={{ .Values.csiController.volumeDir }}"
 {{- if .Values.csiController.nvmePortals }}
             - "--nvme-portals={{ .Values.csiController.nvmePortals }}"
+{{- end }}
+{{- with .Values.csiController.extraEnv }}
+          env:
+{{ toYaml . | indent 12 }}
+{{- end }}
+{{- with .Values.csiController.extraEnvFrom }}
+          envFrom:
+{{ toYaml . | indent 12 }}
 {{- end }}
           # Privileged: real Linux LIO/configfs target management
           # (internal/csinode/lio.go) needs this, the same tradeoff
@@ -1496,9 +1525,9 @@ spec:
   replicas: {{ .Values.ui.replicaCount }}
   selector: {matchLabels: {app.kubernetes.io/name: kairon-ui}}
   template:
-    metadata: {labels: {app.kubernetes.io/name: kairon-ui}}
+    metadata:{{ include "kairon.podMeta" (dict "name" "kairon-ui" "v" .Values.ui) }}
     spec:
-      serviceAccountName: kairon-ui
+      serviceAccountName: kairon-ui{{ with include "kairon.podSpecExtras" (dict "name" "kairon-ui" "v" .Values.ui) }}{{ . | nindent 6 }}{{ end }}
 {{ if .Values.ui.imageStore.enabled }}
       securityContext: {fsGroup: {{ .Values.ui.imageStore.fsGroup }}}
 {{ end }}
@@ -1643,6 +1672,13 @@ spec:
             - name: KAIRON_UI_IMAGE_STORE_MAX_BYTES
               value: {{ .Values.ui.imageStore.maxBytes | int64 | quote }}
 {{ end }}
+{{- with .Values.ui.extraEnv }}
+{{ toYaml . | indent 12 }}
+{{- end }}
+{{- with .Values.ui.extraEnvFrom }}
+          envFrom:
+{{ toYaml . | indent 12 }}
+{{- end }}
           ports: [{name: {{ $uiPortName }}, containerPort: {{ .Values.ui.service.port }}}]
           readinessProbe: {httpGet: {path: /readyz, port: {{ $uiPortName }}, scheme: {{ $uiScheme }}}}
           livenessProbe: {httpGet: {path: /healthz, port: {{ $uiPortName }}, scheme: {{ $uiScheme }}}}

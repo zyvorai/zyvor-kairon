@@ -41,6 +41,22 @@ For a local file pass the URL it will be served from:
 and the other `kaironctl create` flags override the OVF. With `--sha256`,
 `--cpu` and `--memory` all set, kaironctl doesn't read the OVA at all.
 
+## OVAs with several VMs
+
+An OVF with a `VirtualSystemCollection` (a vApp) or several `VirtualSystem`
+entries is handled too. `kaironctl import ova` prints one Machine per VM as a
+multi-document YAML stream on stdout and never creates anything, so review it
+and pipe it to `kaironctl apply -f -`. Names come from the VM names, made
+DNS-safe and unique (`Web 01` and `web-01` become `web-01` and `web-01-2`);
+`--name` is rejected. vCPUs and memory come from each VM's own hardware
+section and `--cpu`/`--memory` override all of them. Every Machine points at
+the same OVA and digest. Anything not converted is printed as a `warning:`
+line on stderr: startup ordering, vApp properties, shared disks, VMs with more
+than one disk, UEFI guests, and the fact that kairon-node does not pick a
+per-VM disk out of the OVA. This path has only been unit-tested against
+hand-written OVF fixtures; it has not been run against a real VMware export or
+booted on a node.
+
 ## What the repair changes
 
 | Area | Change |
