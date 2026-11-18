@@ -19,7 +19,6 @@
 
 A feature and chart-values release on v0.10.4: three new `kaironctl` commands/flags and chart values for flags that previously had no Helm setting. There are no CRD schema changes and no behaviour changes that need upgrade steps. It has been verified by unit tests, `helm template` and CI only; no install or upgrade of v0.10.5 on a real host has been recorded (see [`TEST_REPORT.md`](TEST_REPORT.md)).
 
-
 **Added**
 
 - **`kaironctl evacuate NODE --dry-run`** previews an evacuation: it lists the Machines on the node that would get a `MachineMigration` and those that would be skipped (blocked by a `MachineDisruptionBudget`, or already migrating), creates nothing and reads the cluster only. It cannot be combined with `--wait`. Covered by a unit test against a fake API server only ([docs/CLI.md](docs/CLI.md#migrate--recover--fence--snapshot)).
@@ -27,6 +26,7 @@ A feature and chart-values release on v0.10.4: three new `kaironctl` commands/fl
 - **`kaironctl audit`** summarizes the MachineMigrations still present in the cluster: counts per phase plus a newest-first log with strategy, source/target node, downtime and message. Flags: `-n`, `--machine`, `--since`, `--limit`, `-o json|yaml`. Read-only; it cannot show migrations that were already deleted. Covered by unit tests against a fake API server only ([docs/CLI.md](docs/CLI.md#diagnostics)).
 - **Helm value `node.imageMaxDownloadBytes`** sets `kairon-node -image-max-download-bytes` (the cap on one `httpURL` image download or OCI containerDisk pull). `0` (the default) renders no flag, so the 256 GiB default applies. Checked with `helm template` only; not installed on a cluster ([image import](docs/guides/machine-image-import.md#size-limit)).
 - **Helm values `ui.rateLimit.rps` and `ui.rateLimit.burst`** set `kairon-ui -rate-limit-rps` / `-rate-limit-burst` (per-client-address limit; defaults 20 and 40 when left `null`, `rps: 0` disables it). Previously the chart had no way to set them. Checked with `helm template` only; not installed on a cluster ([dashboard guide](docs/guides/kairon-ui-dashboard.md#rate-limiting-and-login-lockout)).
+
 **Fixed**
 
 - **`kaironctl get protectionplans` and `kaironctl get macnetworks` now print tables.** [`docs/CLI.md`](docs/CLI.md#kaironctl) and the [Mac Fabric guide](docs/guides/mac-fabric.md#inspecting) listed both (and the `kmpp`/`kmn` aliases) but the table path answered `unknown resource`; only `-o json|yaml|name` worked. They reuse the tables of `kaironctl dr get` and `kaironctl mac networks`, take `-n` and `--selector`, and are covered by unit tests against a fake API server only.
