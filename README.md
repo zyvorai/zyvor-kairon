@@ -31,6 +31,8 @@
 
 </div>
 
+[Client overview (PDF)](docs/Kairon-Client-Overview.pdf)
+
 ---
 
 ## What's new
