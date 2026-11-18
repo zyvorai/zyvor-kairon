@@ -254,7 +254,7 @@ func (c *kveConverter) strings(path string, v []any) []string {
 func convertMachineToKubevirt(doc map[string]any, nsOverride string) (map[string]any, []string, error) {
 	name := kveStr(doc, "metadata", "name")
 	if name == "" {
-		return nil, nil, errors.New("Machine has no metadata.name")
+		return nil, nil, errors.New("machine has no metadata.name")
 	}
 	c := &kveConverter{machine: name}
 
@@ -407,8 +407,9 @@ func (c *kveConverter) cloudConfig(doc map[string]any) string {
 	if rc := c.strings("spec.cloudInit.runCmd", kveList(ci, "runCmd")); len(rc) > 0 {
 		cfg["runcmd"] = rc
 	}
-	var files []any
-	for _, e := range kveList(ci, "writeFiles") {
+	wf := kveList(ci, "writeFiles")
+	files := make([]any, 0, len(wf))
+	for _, e := range wf {
 		f := map[string]any{"path": kveStr(e, "path"), "content": kveStr(e, "content")}
 		if p := kveStr(e, "permissions"); p != "" {
 			f["permissions"] = p
