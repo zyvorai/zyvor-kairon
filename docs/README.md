@@ -105,6 +105,7 @@ The root [README](https://github.com/zyvorai/zyvor-kairon/blob/main/README.md) i
 | [`guides/machine-placement.md`](guides/machine-placement.md) | Scheduler internals: affinity/anti-affinity, weighted soft scoring, `topologySpreadConstraints`, DRA topology hints |
 | [`guides/machine-sriov.md`](guides/machine-sriov.md) | SR-IOV NIC passthrough by reusing the existing GPU/VFIO DRA mechanism — why Multus doesn't apply to Kairon Machines at all |
 | [`guides/machine-guest-agent.md`](guides/machine-guest-agent.md) | `spec.guestAgent`: real `qemu-guest-agent`-reported `status.guestIP`, including `user`/SLIRP networking |
+| [`guides/machine-health-probes.md`](guides/machine-health-probes.md) | `spec.healthCheck`: readiness and liveness probes (guest agent, TCP, exec), the `Ready` condition that gates `kaironctl expose` endpoints, and opt-in auto-restart with backoff and a cap |
 | [`guides/machine-guest-exec.md`](guides/machine-guest-exec.md) | Guest exec (`qemu-guest-agent`), and the smaller API-only fsfreeze-status/firewall endpoints alongside it |
 | [`guides/machine-guest-agent-files.md`](guides/machine-guest-agent-files.md) | Guest file access and the backend-agnostic vsock-agent guest exec, both over `spec.guestAgent.console` |
 | [`guides/machine-port-forward.md`](guides/machine-port-forward.md) | `kaironctl port-forward`, `ssh` and `scp`: reach a port inside a Machine through the console relay, without a Service or a route to the guest network |

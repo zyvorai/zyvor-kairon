@@ -4692,6 +4692,140 @@ spec:
                     type: boolean
                   console:
                     type: boolean
+              healthCheck:
+                type: object
+                description: >-
+                  Opt-in readiness and liveness probes. kairon-node runs them
+                  and sets the Ready condition; a Machine that is not Ready
+                  gets no traffic from kaironctl expose endpoints. With
+                  restartPolicy.enabled, kairon-controller restarts a Machine
+                  whose liveness probe keeps failing, with backoff and a
+                  maxRestarts cap. See docs/guides/machine-health-probes.md.
+                properties:
+                  readiness:
+                    description: Gates the Ready condition; never restarts.
+                    type: object
+                    required: [type]
+                    properties:
+                      type:
+                        type: string
+                        enum: [GuestAgent, TCP, Exec]
+                        description: >-
+                          GuestAgent answers a guest-agent request; TCP opens
+                          guestIP:port; Exec runs command in the guest (exit
+                          0 is healthy). GuestAgent and Exec need
+                          spec.guestAgent.enabled.
+                      port:
+                        type: integer
+                        format: int32
+                        minimum: 1
+                        maximum: 65535
+                        description: TCP port (TCP probes only).
+                      command:
+                        type: array
+                        items:
+                          type: string
+                        description: argv run in the guest, no shell (Exec probes only).
+                      initialDelaySeconds:
+                        type: integer
+                        format: int32
+                        minimum: 0
+                        description: Wait after the Machine starts Running before probing.
+                      periodSeconds:
+                        type: integer
+                        format: int32
+                        minimum: 0
+                        description: Seconds between probes (default 10).
+                      timeoutSeconds:
+                        type: integer
+                        format: int32
+                        minimum: 0
+                        maximum: 10
+                        description: Seconds one probe may take (default 2).
+                      failureThreshold:
+                        type: integer
+                        format: int32
+                        minimum: 0
+                        description: Consecutive failures before the probe is Failing (default 3).
+                      successThreshold:
+                        type: integer
+                        format: int32
+                        minimum: 0
+                        description: Consecutive successes before the probe is Passing (default 1; always 1 for liveness).
+                  liveness:
+                    description: >-
+                      Detects a hung guest. Failing marks the Machine not
+                      Ready and, with restartPolicy.enabled, restarts it.
+                    type: object
+                    required: [type]
+                    properties:
+                      type:
+                        type: string
+                        enum: [GuestAgent, TCP, Exec]
+                        description: >-
+                          GuestAgent answers a guest-agent request; TCP opens
+                          guestIP:port; Exec runs command in the guest (exit
+                          0 is healthy). GuestAgent and Exec need
+                          spec.guestAgent.enabled.
+                      port:
+                        type: integer
+                        format: int32
+                        minimum: 1
+                        maximum: 65535
+                        description: TCP port (TCP probes only).
+                      command:
+                        type: array
+                        items:
+                          type: string
+                        description: argv run in the guest, no shell (Exec probes only).
+                      initialDelaySeconds:
+                        type: integer
+                        format: int32
+                        minimum: 0
+                        description: Wait after the Machine starts Running before probing.
+                      periodSeconds:
+                        type: integer
+                        format: int32
+                        minimum: 0
+                        description: Seconds between probes (default 10).
+                      timeoutSeconds:
+                        type: integer
+                        format: int32
+                        minimum: 0
+                        maximum: 10
+                        description: Seconds one probe may take (default 2).
+                      failureThreshold:
+                        type: integer
+                        format: int32
+                        minimum: 0
+                        description: Consecutive failures before the probe is Failing (default 3).
+                      successThreshold:
+                        type: integer
+                        format: int32
+                        minimum: 0
+                        description: Consecutive successes before the probe is Passing (default 1; always 1 for liveness).
+                  restartPolicy:
+                    type: object
+                    description: Opt-in automatic restart on a failing liveness probe.
+                    properties:
+                      enabled:
+                        type: boolean
+                      maxRestarts:
+                        type: integer
+                        format: int32
+                        minimum: 0
+                        description: Cap on automatic restarts (default 3); none after it is reached.
+                      backoffSeconds:
+                        type: integer
+                        format: int64
+                        minimum: 0
+                        maximum: 3600
+                        description: Wait before the first retry (default 60, 10 to 3600); doubles per restart.
+                      resetAfterSeconds:
+                        type: integer
+                        format: int64
+                        minimum: 0
+                        description: Clear the restart count after liveness has passed this long since the last restart (default 3600).
               sandbox:
                 type: object
                 properties:
@@ -4954,6 +5088,49 @@ spec:
                   lastActivityTime:
                     type: string
                     description: Last guest activity kairon-node saw (RFC3339).
+              health:
+                type: object
+                description: kairon-node's spec.healthCheck probe record.
+                properties:
+                  readiness:
+                    type: object
+                    nullable: true
+                    properties:
+                      state:
+                        type: string
+                        enum: [Unknown, Passing, Failing]
+                      consecutiveFailures:
+                        type: integer
+                        format: int32
+                      consecutiveSuccesses:
+                        type: integer
+                        format: int32
+                      lastTransitionTime:
+                        type: string
+                      message:
+                        type: string
+                  liveness:
+                    type: object
+                    nullable: true
+                    properties:
+                      state:
+                        type: string
+                        enum: [Unknown, Passing, Failing]
+                      consecutiveFailures:
+                        type: integer
+                        format: int32
+                      consecutiveSuccesses:
+                        type: integer
+                        format: int32
+                      lastTransitionTime:
+                        type: string
+                      message:
+                        type: string
+                  runningSince:
+                    type: string
+                    description: When probing started counting for this run (RFC3339).
+                  restartMarker:
+                    type: string
               hibernation:
                 type: object
                 properties:

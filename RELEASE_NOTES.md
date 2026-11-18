@@ -1,3 +1,9 @@
+# Kairon Unreleased
+
+**Added**
+
+- **`spec.healthCheck`: machine health probes with an opt-in auto-restart.** A Machine can declare `readiness` and `liveness` probes (`GuestAgent`, `TCP` or `Exec`, with initial delay, period, timeout and thresholds). kairon-node runs them while the Machine is Running and records them in `status.health`; the `Ready` condition now turns `False` while readiness is not passing or liveness is failing, and `kaironctl expose` EndpointSlices mark such a Machine `ready: false`. With `restartPolicy.enabled` (off by default), kairon-controller restarts a Machine whose liveness probe keeps failing, through the existing `restart-requested` annotation, with exponential backoff, a `maxRestarts` cap (default 3) and Events; at the cap it stops and records one Warning. The Machine CRD gains `spec.healthCheck` and `status.health` (additive; both CRD copies updated) and the admission webhook and `kaironctl preflight` validate the probes. A Machine without `spec.healthCheck` behaves as before. Covered by unit tests with a fake guest-agent client only; not run against a real VM, FluxVM or cluster ([guide](docs/guides/machine-health-probes.md)).
+
 # Kairon v0.10.6 (2026-11-18)
 
 A feature release on v0.10.5: offline `kaironctl` commands for moving to and from KubeVirt and for checking and scaffolding Machines, multi-VM OVF import, and Helm pod-scheduling values (all default off). There are no CRD schema changes and no behaviour changes that need upgrade steps. It has been verified by unit tests, CI, and a build, test and offline-command run on a Linux dev host; no install, upgrade or self-test of v0.10.6 on a cluster has been recorded (see [`TEST_REPORT.md`](TEST_REPORT.md)).

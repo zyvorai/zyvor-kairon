@@ -359,6 +359,9 @@ func (c *Controller) validateMachineCreate(r *http.Request, req *admission.Reque
 	if err := model.ValidateLifecycle(m.Spec.Lifecycle); err != nil {
 		return admission.Deny(err.Error())
 	}
+	if err := model.ValidateHealthCheck(m.Spec); err != nil {
+		return admission.Deny(err.Error())
+	}
 	if err := tenantfence.CheckCreate(m.Spec.Tenant, m.Metadata.Annotations); err != nil {
 		return admission.Deny(err.Error())
 	}
@@ -440,6 +443,9 @@ func (c *Controller) validateMachineResize(r *http.Request, req *admission.Reque
 		return admission.Deny(err.Error())
 	}
 	if err := model.ValidateLifecycle(newM.Spec.Lifecycle); err != nil {
+		return admission.Deny(err.Error())
+	}
+	if err := model.ValidateHealthCheck(newM.Spec); err != nil {
 		return admission.Deny(err.Error())
 	}
 	if err := tenantfence.CheckUpdate(oldM.Spec.Tenant, newM.Spec.Tenant, newM.Metadata.Annotations); err != nil {

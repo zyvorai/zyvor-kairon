@@ -306,6 +306,10 @@ type MachineSpec struct {
 	// TopologyAllocation is set by the scheduler with spec.nodeName.
 	TopologyAllocation *TopologyAllocation `json:"topologyAllocation,omitempty"`
 	GuestAgent         GuestAgentSpec      `json:"guestAgent,omitempty"`
+	// HealthCheck adds readiness and liveness probes and an opt-in
+	// auto-restart policy. See HealthCheckSpec and
+	// docs/guides/machine-health-probes.md.
+	HealthCheck *HealthCheckSpec `json:"healthCheck,omitempty"`
 	// Sandbox opts this Machine into FluxVM's own agent-sandbox track
 	// (BackendKind::FluxVm, its own in-tree lightweight hypervisor) --
 	// see SandboxSpec's own doc comment. Nil for every other Machine.
@@ -1175,6 +1179,8 @@ type MachineStatus struct {
 	ShutdownDeadline string `json:"shutdownDeadline,omitempty"`
 	// Lifecycle is kairon-node's activity record for spec.lifecycle.
 	Lifecycle *LifecycleStatus `json:"lifecycle,omitempty"`
+	// Health is kairon-node's spec.healthCheck probe record.
+	Health *HealthStatus `json:"health,omitempty"`
 	// ResourceUsage is this Machine's cgroup-derived resource usage as of
 	// the last *meaningful* status write (FluxVM's GET /v1/vms/{id}/stats).
 	// High-frequency samples go to Prometheus (kairon_machine_resource_usage)
