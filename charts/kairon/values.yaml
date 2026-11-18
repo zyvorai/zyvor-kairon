@@ -2,6 +2,21 @@
 # SPDX-License-Identifier: Apache-2.0
 
 controller:
+  # Standard pod knobs, all off by default (the render is unchanged until set).
+  # podAnnotations / podLabels are added to the pod template (the selector
+  # label app.kubernetes.io/name can't be overridden). A
+  # topologySpreadConstraints entry without a labelSelector gets this
+  # workload's own app.kubernetes.io/name selector. extraEnv / extraEnvFrom are
+  # appended to the main container's env / envFrom (standard EnvVar /
+  # EnvFromSource lists). terminationGracePeriodSeconds: null keeps the
+  # Kubernetes default (30).
+  podAnnotations: {}
+  podLabels: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+  terminationGracePeriodSeconds: null
+  extraEnv: []
+  extraEnvFrom: []
   image:
     repository: ghcr.io/zyvorai/kairon-controller
     tag: ""  # defaults to .Chart.AppVersion in templates
@@ -120,6 +135,14 @@ controller:
     #     - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: monitoring}}
     allowIngressFrom: []
 node:
+  # Standard pod knobs, all off by default; see controller.podAnnotations.
+  podAnnotations: {}
+  podLabels: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+  terminationGracePeriodSeconds: null
+  extraEnv: []
+  extraEnvFrom: []
   image:
     repository: ghcr.io/zyvorai/kairon-node
     tag: ""  # defaults to .Chart.AppVersion in templates
@@ -333,6 +356,14 @@ agentPlane:
     name: ""
     key: cosign.pub
 csiNode:
+  # Standard pod knobs, all off by default; see controller.podAnnotations.
+  podAnnotations: {}
+  podLabels: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+  terminationGracePeriodSeconds: null
+  extraEnv: []
+  extraEnvFrom: []
   # Kairon's own first-cut CSI node plugin (see internal/csinode,
   # docs/guides/machine-storage-csi.md): iSCSI or NVMe-oF, Filesystem or
   # Block mode; PersistentVolumes reference it statically unless
@@ -364,6 +395,14 @@ csiNode:
   nodeSelector:
     kairon.zyvor.dev/capable: "true"
 csiController:
+  # Standard pod knobs, all off by default; see controller.podAnnotations.
+  podAnnotations: {}
+  podLabels: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+  terminationGracePeriodSeconds: null
+  extraEnv: []
+  extraEnvFrom: []
   # Dynamic provisioning for csiNode's iSCSI and NVMe-oF backends (see
   # internal/csinode's ControllerServer, docs/guides/machine-storage-csi.md):
   # a StorageClass naming csi.kairon.zyvor.dev creates a real Linux LIO
@@ -657,6 +696,14 @@ otel:
   enabled: false
   endpoint: ""
 ui:
+  # Standard pod knobs, all off by default; see controller.podAnnotations.
+  podAnnotations: {}
+  podLabels: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+  terminationGracePeriodSeconds: null
+  extraEnv: []
+  extraEnvFrom: []
   # Web dashboard (cmd/kairon-ui). Off by default -- opt in once you have a
   # token ready, same posture as migration.enabled.
   enabled: false
