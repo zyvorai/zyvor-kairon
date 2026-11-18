@@ -70,7 +70,7 @@ spec:
 func runKVE(t *testing.T, files map[string]string, stdin string, args ...string) (out, errOut string, err error) {
 	t.Helper()
 	dir := t.TempDir()
-	var paths []string
+	paths := make([]string, 0, len(files)+len(args))
 	for name, body := range files {
 		p := filepath.Join(dir, name)
 		if werr := os.WriteFile(p, []byte(body), 0o600); werr != nil {
@@ -365,7 +365,7 @@ func TestExportKubevirtRoundTrip(t *testing.T) {
 			if got.Spec.Security != orig.Spec.Security {
 				t.Errorf("security %+v", got.Spec.Security)
 			}
-			if got.Spec.PowerState != orig.Spec.PowerState && !(orig.Spec.PowerState == "Running" && got.Spec.PowerState == "Running") {
+			if got.Spec.PowerState != orig.Spec.PowerState && (orig.Spec.PowerState != "Running" || got.Spec.PowerState != "Running") {
 				t.Errorf("powerState %q want %q", got.Spec.PowerState, orig.Spec.PowerState)
 			}
 			if orig.Spec.Image.Source != nil && (got.Spec.Image.Source == nil || got.Spec.Image.Source.OCI != orig.Spec.Image.Source.OCI) {
