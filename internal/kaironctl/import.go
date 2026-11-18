@@ -23,25 +23,48 @@ import (
 	"github.com/zyvorai/kairon/internal/model"
 )
 
-// ovfEnvelope is the subset of an OVF descriptor kaironctl reads. Tags
-// carry no namespace, so ovf:, rasd: and vmw: prefixes all match.
+// ovfSystem is one VirtualSystem. Tags carry no namespace, so ovf:, rasd:
+// and vmw: prefixes all match.
+type ovfSystem struct {
+	ID   string `xml:"id,attr"`
+	Name string `xml:"Name"`
+	OS   struct {
+		OSType      string `xml:"osType,attr"`
+		Description string `xml:"Description"`
+	} `xml:"OperatingSystemSection"`
+	Items   []ovfItem `xml:"VirtualHardwareSection>Item"`
+	Configs []struct {
+		Key   string `xml:"key,attr"`
+		Value string `xml:"value,attr"`
+	} `xml:"VirtualHardwareSection>Config"`
+	Props []ovfProp `xml:"ProductSection>Property"`
+}
+
+type ovfProp struct {
+	Key string `xml:"key,attr"`
+}
+
+// ovfCollection is a VirtualSystemCollection (a vApp); it may nest.
+type ovfCollection struct {
+	ID       string          `xml:"id,attr"`
+	Name     string          `xml:"Name"`
+	Startup  []ovfStartItem  `xml:"StartupSection>Item"`
+	Props    []ovfProp       `xml:"ProductSection>Property"`
+	Systems  []ovfSystem     `xml:"VirtualSystem"`
+	Children []ovfCollection `xml:"VirtualSystemCollection"`
+}
+
+type ovfStartItem struct {
+	ID    string `xml:"id,attr"`
+	Order string `xml:"order,attr"`
+}
+
+// ovfEnvelope is the subset of an OVF descriptor kaironctl reads.
 type ovfEnvelope struct {
-	XMLName    xml.Name  `xml:"Envelope"`
-	Collection *struct{} `xml:"VirtualSystemCollection"`
-	System     struct {
-		ID   string `xml:"id,attr"`
-		Name string `xml:"Name"`
-		OS   struct {
-			OSType      string `xml:"osType,attr"`
-			Description string `xml:"Description"`
-		} `xml:"OperatingSystemSection"`
-		Items   []ovfItem `xml:"VirtualHardwareSection>Item"`
-		Configs []struct {
-			Key   string `xml:"key,attr"`
-			Value string `xml:"value,attr"`
-		} `xml:"VirtualHardwareSection>Config"`
-	} `xml:"VirtualSystem"`
-	Disks []struct {
+	XMLName     xml.Name        `xml:"Envelope"`
+	Collections []ovfCollection `xml:"VirtualSystemCollection"`
+	Systems     []ovfSystem     `xml:"VirtualSystem"`
+	Disks       []struct {
 		ID string `xml:"diskId,attr"`
 	} `xml:"DiskSection>Disk"`
 }
@@ -50,6 +73,7 @@ type ovfItem struct {
 	ResourceType    string `xml:"ResourceType"`
 	VirtualQuantity string `xml:"VirtualQuantity"`
 	AllocationUnits string `xml:"AllocationUnits"`
+	HostResource    string `xml:"HostResource"`
 }
 
 // ovfInfo is what the import uses from an OVF.
@@ -63,22 +87,35 @@ type ovfInfo struct {
 	Disks     int
 }
 
+// parseOVF reads a single-VM OVF. A multi-VM OVF is an error here; use
+// parseOVFPackage for those.
 func parseOVF(data []byte) (ovfInfo, error) {
 	var env ovfEnvelope
 	if err := xml.Unmarshal(data, &env); err != nil {
 		return ovfInfo{}, fmt.Errorf("parse OVF: %w", err)
 	}
-	if env.Collection != nil {
-		return ovfInfo{}, errors.New("multi-VM OVF (VirtualSystemCollection) is not supported; export one VM per OVA")
+	if len(env.Collections) > 0 || len(env.Systems) > 1 {
+		return ovfInfo{}, errors.New("multi-VM OVF (VirtualSystemCollection or several VirtualSystem entries): use parseOVFPackage")
 	}
-	info := ovfInfo{Name: env.System.Name, Disks: len(env.Disks), OS: env.System.OS.OSType}
+	var sys ovfSystem
+	if len(env.Systems) == 1 {
+		sys = env.Systems[0]
+	}
+	info := systemInfo(sys)
+	info.Disks = len(env.Disks)
+	return info, nil
+}
+
+// systemInfo maps one VirtualSystem to an ovfInfo; Disks is left for the caller.
+func systemInfo(sys ovfSystem) ovfInfo {
+	info := ovfInfo{Name: sys.Name, OS: sys.OS.OSType}
 	if info.Name == "" {
-		info.Name = env.System.ID
+		info.Name = sys.ID
 	}
 	if info.OS == "" {
-		info.OS = env.System.OS.Description
+		info.OS = sys.OS.Description
 	}
-	for _, it := range env.System.Items {
+	for _, it := range sys.Items {
 		q, _ := strconv.ParseInt(strings.TrimSpace(it.VirtualQuantity), 10, 64)
 		switch strings.TrimSpace(it.ResourceType) {
 		case "3":
@@ -99,12 +136,12 @@ func parseOVF(data []byte) (ovfInfo, error) {
 			info.NICs++
 		}
 	}
-	for _, c := range env.System.Configs {
+	for _, c := range sys.Configs {
 		if c.Key == "firmware" {
 			info.Firmware = strings.ToLower(c.Value)
 		}
 	}
-	return info, nil
+	return info
 }
 
 // scanOVA streams an OVA once, hashing every byte and pulling out the OVF.
@@ -201,13 +238,22 @@ func cmdImport(ctx context.Context, kc *kube.Client, args []string) {
 		if err != nil {
 			fatal(err)
 		}
-		if info, err = parseOVF(ovf); err != nil {
+		infos, warns, err := parseOVFPackage(ovf)
+		if err != nil {
 			fatal(err)
 		}
 		if sum != "" && sum != d {
 			fatal(fmt.Errorf("--sha256 %s does not match the OVA (%s)", sum, d))
 		}
 		sum = d
+		if len(infos) > 1 {
+			importOVAMulti(ctx, infos, warns, multiImportOpts{
+				source: source, url: *url, namespace: *ns, name: *name,
+				noRepair: *noRepair, size: size, sum: d, set: set, specFn: specFn,
+			})
+			return
+		}
+		info = infos[0]
 		fmt.Fprintf(os.Stderr, "read %s: %d bytes, %s, OVF %q: %d vCPU, %d MiB, %d disk(s), %d NIC(s)\n",
 			source, size, sum, info.Name, info.VCPUs, info.MemoryMiB, info.Disks, info.NICs)
 	}
