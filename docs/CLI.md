@@ -485,6 +485,23 @@ kaironctl explain [RESOURCE[.FIELD...]] [-o text|json|yaml]
 
 `explain` prints the documented fields of a resource (kind, plural or short name, for example `machine`, `vm`, `machinemigrations`), optionally descending with a dotted path (`kaironctl explain machine.spec.resources`). It reads the CRD schemas embedded in the binary, so it needs no cluster access and documents the schema this build ships, not what a cluster currently serves. Without an argument it lists the known kinds. Resource names complete in the shell.
 
+### Preflight (offline manifest check)
+
+```text
+kaironctl preflight FILE... [-o table|json|yaml] [--strict] [--image-doctor]
+```
+
+`preflight` checks Machine manifests (YAML or JSON, several documents per file, a `v1 List`, `-` for stdin) before you apply them, and reports `SEVERITY`, `MACHINE`, `FIELD`, `MESSAGE` per finding (`-o json|yaml` adds the rule and the `FILE#N` source and a summary). It checks, in order: (1) the CRD schema embedded in the binary, the same one `explain` prints: unknown fields, wrong types, bad enum values, missing required fields; (2) the stateless Machine rules of the admission webhook, by calling the same Go functions (quantity parsing including NaN and overflow, image source and digest, disks, root image, cdroms, topology, placement, network MAC, dataplane, egress, extra interfaces, virtual network, lifecycle, tenant, elastic memory, accelerators, instance type references), plus two rules kairon-controller applies only at VM create (`secureBoot` needs the qemu backend, `tpm` needs qemu or cloud-hypervisor) and warnings when `maxCpu`/`maxMemory` give no hotplug headroom; (3) with `--image-doctor`, if `guestkit` is on `PATH` and a Machine's `spec.image.path` is a file on the machine running `kaironctl`, a read-only `guestkit doctor --json` whose boot score is shown as a note. If guestkit is not installed, one note is printed and nothing fails. Other Kairon kinds get the schema check only.
+
+Exit status is 0 when there are only warnings and notes, 1 on any error finding, and `--strict` makes warnings fail as well.
+
+What it is not: it is offline and has only been exercised by unit tests. It never contacts a cluster, so it does not know nodes, quotas, instance types, MachineImages or which images are present, and it cannot run the checks that need them (quota, instance type lookup, agent image verification, attestation annotations). With `backend` unset or `auto` the node default decides, so the backend rules only fire on an explicit backend. The schema check covers types, enums, required and unknown fields, not patterns or min/max. It is not a substitute for the admission webhook: a manifest that passes can still be refused by the cluster.
+
+```bash
+kaironctl preflight machine.yaml
+kaironctl import kubevirt vm.yaml | kaironctl preflight - --strict
+```
+
 Shell completion is dynamic: after `get`, `describe`, `delete`, `edit` it completes resource kinds and then object names from the cluster (honouring `-n` and `--context`), and Machine names after `start`, `stop`, `network flows` and similar. Failures complete nothing rather than printing errors. Example: `source <(kaironctl completion zsh)`.
 
 `create`/`scale`/`edit` cover the common flag-friendly fields only — richer fields still need `kubectl apply`/YAML.
