@@ -54,6 +54,12 @@ kaironctl selftest --profile quick   # boots a tiny CirrOS VM, see ../guides/sel
 - The dashboard serves HTTPS by default. `ui.tls.secretName` brings your own certificate;
   `ui.insecureHttp: true` is the explicit opt-out for use behind a TLS-terminating proxy.
 - The VNC console relay is TLS by default (`console.tls.enabled`).
+- Pod scheduling and environment knobs, all off by default: each of `controller`, `node`, `csiNode`, `csiController` and
+  `ui` accepts `podAnnotations`, `podLabels`, `topologySpreadConstraints` (an entry without a `labelSelector` gets the
+  workload's own `app.kubernetes.io/name` selector), `priorityClassName`, `terminationGracePeriodSeconds`, `extraEnv` and
+  `extraEnvFrom` (the last two go on the main container). `podDisruptionBudget` already existed for `controller` and `ui`.
+  The chart's NetworkPolicy is ingress-only, so there is no `extraEgress`. Checked with `helm template` only; not installed
+  on a cluster.
 
 Everything else (prerequisites, production profile, upgrade and rollback) is in
 [Getting started](../getting-started.md) and the [CLI reference](../CLI.md).
