@@ -59,6 +59,15 @@ func TestCloneBootDisk(t *testing.T) {
 	kc.HTTP = ks.Client()
 	a := &Agent{NodeName: "n1", Kube: kc, Flux: fluxvm.New(fs.URL, ""), ImageCacheDir: t.TempDir(), Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 
+	// Runs before the qemuImg restore above (cleanups are LIFO): never let a
+	// background copy outlive the test while it still reads the global.
+	t.Cleanup(func() {
+		a.cloneJobs.Range(func(_, v any) bool {
+			<-v.(*exportJob).done
+			return true
+		})
+	})
+
 	m := model.Machine{Metadata: model.ObjectMeta{Name: "copy", Namespace: "dev", Annotations: map[string]string{model.AnnotationCloneFrom: "base"}}}
 	ctx := context.Background()
 	if _, _, err := a.cloneBootDisk(ctx, m); err == nil || !strings.Contains(err.Error(), "halt it first") {
@@ -70,7 +79,9 @@ func TestCloneBootDisk(t *testing.T) {
 	var path string
 	var ready bool
 	var err error
-	for i := 0; i < 100 && !ready; i++ {
+	// Generous deadline: a loaded CI runner can take well over a second to
+	// fork the fake qemu-img.
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline) && !ready; {
 		if path, ready, err = a.cloneBootDisk(ctx, m); err != nil {
 			t.Fatal(err)
 		}
