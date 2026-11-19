@@ -48,7 +48,7 @@ jobs:
           go-version-file: go.mod
           cache: ${{ runner.environment == 'github-hosted' }}  # self-hosted: shared GOMODCACHE, cache restore/save takes 15-35 min
       # internal/kaironctl's TestInstallHelmCLIDryRun shells out to a helm binary.
-      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310  # v5.0.1
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e  # v5.1.0
       - name: Format check
         run: test -z "$(gofmt -l cmd internal)"
       - name: Vet
@@ -69,7 +69,7 @@ jobs:
           python3 -c 'import yaml' 2>/dev/null || python3 -m pip install --user -q pyyaml
           python3 scripts/validate.py
           python3 scripts/stability-check.py
-      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310  # v5.0.1
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e  # v5.1.0
       - name: Helm lint and render
         run: |
           helm lint charts/kairon
@@ -443,7 +443,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: ${{ runner.environment == 'github-hosted' }}  # self-hosted: shared GOMODCACHE, cache restore/save takes 15-35 min
-      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310  # v5.0.1
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e  # v5.1.0
       - name: Build CLI binaries and checksums
         run: |
           set -euo pipefail
