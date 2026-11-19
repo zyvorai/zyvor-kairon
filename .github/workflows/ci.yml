@@ -333,6 +333,52 @@ jobs:
           done
           echo 'helm render YAML: OK (pod scheduling knobs default off)'
 
+      - name: Helm render -- observability toggles
+        run: |
+          # Defaults: no monitor and no dashboard ConfigMap renders.
+          helm template kairon charts/kairon --namespace kairon-system --set ui.enabled=true --set ui.token=ci \
+            > ${{ runner.temp }}/kairon-obs-default.yaml
+          for k in PodMonitor ServiceMonitor grafana_dashboard; do
+            if grep -q "$k" ${{ runner.temp }}/kairon-obs-default.yaml; then
+              echo "observability object $k rendered with default values" >&2; exit 1; fi
+          done
+          echo 'helm render YAML: OK (observability default off)'
+          # Enabled but the prometheus-operator CRDs are absent from the cluster: nothing monitor-shaped.
+          helm template kairon charts/kairon --namespace kairon-system --set ui.enabled=true --set ui.token=ci \
+            --set metrics.serviceMonitor.enabled=true > ${{ runner.temp }}/kairon-obs-nocrd.yaml
+          if grep -qE 'kind: (PodMonitor|ServiceMonitor)' ${{ runner.temp }}/kairon-obs-nocrd.yaml; then
+            echo "monitors rendered although the CRDs are absent" >&2; exit 1; fi
+          echo 'helm render YAML: OK (monitors skipped without CRDs)'
+          # Enabled with the CRDs present.
+          helm template kairon charts/kairon --namespace kairon-system --set ui.enabled=true --set ui.token=ci \
+            --api-versions monitoring.coreos.com/v1/PodMonitor --api-versions monitoring.coreos.com/v1/ServiceMonitor \
+            --set metrics.serviceMonitor.enabled=true --set metrics.serviceMonitor.labels.release=prom \
+            --set metrics.grafanaDashboards.enabled=true --set metrics.grafanaDashboards.namespace=monitoring \
+            > ${{ runner.temp }}/kairon-obs-on.yaml
+          python3 - <<'PY'
+          import json, yaml
+          docs = [d for d in yaml.safe_load_all(open('${{ runner.temp }}/kairon-obs-on.yaml')) if d]
+          mons = {(d['kind'], d['metadata']['name']): d for d in docs if d['kind'] in ('PodMonitor', 'ServiceMonitor')}
+          assert set(mons) == {('PodMonitor', 'kairon-controller'), ('PodMonitor', 'kairon-node'), ('ServiceMonitor', 'kairon-ui')}, sorted(mons)
+          for (kind, name), d in mons.items():
+              assert d['apiVersion'] == 'monitoring.coreos.com/v1', name
+              assert d['metadata']['labels']['release'] == 'prom', name
+              assert d['spec']['selector']['matchLabels'] == {'app.kubernetes.io/name': name}, name
+              eps = d['spec'].get('podMetricsEndpoints') or d['spec']['endpoints']
+              assert eps[0]['path'] == '/metrics', name
+          assert mons[('PodMonitor', 'kairon-node')]['spec']['podMetricsEndpoints'][0]['port'] == 'health'
+          cms = [d for d in docs if d['kind'] == 'ConfigMap' and d['metadata'].get('labels', {}).get('grafana_dashboard') == '1']
+          assert len(cms) == 4, [c['metadata']['name'] for c in cms]
+          for c in cms:
+              assert c['metadata']['namespace'] == 'monitoring', c['metadata']
+              (fname, body), = c['data'].items()
+              d = json.loads(body)
+              assert d['uid'] and d['panels'], fname
+              assert fname.endswith('.json') and len(body) < 900000, fname
+          print('helm render YAML: OK (observability on: 3 monitors, 4 dashboards)')
+          PY
+          python3 scripts/check_dashboards.py
+
       - name: Helm render -- production profile
         run: |
           # values-production.yaml is the hardened install overlay (PR5).
