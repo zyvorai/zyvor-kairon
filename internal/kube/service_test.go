@@ -41,6 +41,15 @@ func TestDesiredExposeSlice(t *testing.T) {
 	if s.AddressType != "IPv6" || *s.Endpoints[0].Conditions.Ready {
 		t.Fatalf("stopped v6 %+v", s)
 	}
+	m.Status.Phase = "Running"
+	m.Status.Conditions = []model.Condition{{Type: "Ready", Status: "False", Reason: "ReadinessProbeFailed"}}
+	if s = DesiredExposeSlice(exposedSvc(), m); len(s.Endpoints) != 1 || *s.Endpoints[0].Conditions.Ready {
+		t.Fatalf("Ready=False Machine must not take traffic %+v", s)
+	}
+	m.Status.Conditions[0].Status = "True"
+	if s = DesiredExposeSlice(exposedSvc(), m); !*s.Endpoints[0].Conditions.Ready {
+		t.Fatalf("Ready=True Machine must take traffic %+v", s)
+	}
 	if s = DesiredExposeSlice(exposedSvc(), nil); len(s.Endpoints) != 0 {
 		t.Fatalf("missing machine %+v", s)
 	}

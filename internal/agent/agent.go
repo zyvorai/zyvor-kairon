@@ -37,12 +37,15 @@ import (
 var pciBDFPattern = regexp.MustCompile(`(?i)^(?:[0-9a-f]{4}:)?[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$`)
 
 type Agent struct {
-	NodeName       string
-	Kube           *kube.Client
-	Flux           *fluxvm.Client
-	DefaultBackend string
-	ImageRoot      string
-	VFIOAllowlist  map[string]struct{}
+	NodeName string
+	Kube     *kube.Client
+	Flux     *fluxvm.Client
+	// GuestAgentClient overrides the guest-agent calls spec.healthCheck
+	// probes make; nil uses Flux. Tests set a fake.
+	GuestAgentClient GuestAgentClient
+	DefaultBackend   string
+	ImageRoot        string
+	VFIOAllowlist    map[string]struct{}
 	// MdevParents limits which mediated device parents NodeTopology marks
 	// allocatable; nil allows all.
 	MdevParents   map[string]struct{}
@@ -126,6 +129,8 @@ type Agent struct {
 	// activity holds the last activity sample per runtime ID.
 	activity      sync.Map
 	activityPrune atomic.Int64
+	// healthProbed holds when each runtime's probes last ran.
+	healthProbed healthLast
 	// RegistryHTTP is the client spec.image.source.oci pulls use; nil
 	// means http.DefaultClient.
 	RegistryHTTP *http.Client
@@ -741,8 +746,13 @@ func (a *Agent) reconcileMachine(ctx context.Context, m model.Machine) error {
 		return err
 	}
 	status.AppliedServiceFabricMemberships = appliedServiceFabric
+	ready, readyReason, readyMsg := a.observeHealth(ctx, m, rec, &status, time.Now())
+	readyVal := readyStatus(status.Phase)
+	if status.Phase == "Running" && !ready {
+		readyVal = "False"
+	}
 	status.Conditions = model.SetCondition(status.Conditions, model.Condition{
-		Type: "Ready", Status: readyStatus(status.Phase), Reason: "FluxVMReconciled",
+		Type: "Ready", Status: readyVal, Reason: readyReason, Message: readyMsg,
 	})
 	return a.patchMachineStatusIfChanged(ctx, m, status)
 }

@@ -45,6 +45,7 @@ func OfflineMachineChecks(m model.Machine) []OfflineCheck {
 		{"cilium-attach", model.ValidateCiliumAttach(m.Spec.Network)},
 		{"virtual-network", model.ValidateMachineVirtualNetwork(m.Spec.Network)},
 		{"lifecycle", model.ValidateLifecycle(m.Spec.Lifecycle)},
+		{"health-check", model.ValidateHealthCheck(m.Spec)},
 		{"tenant", tenantfence.CheckCreate(m.Spec.Tenant, m.Metadata.Annotations)},
 		{"preempt-policy", preempt.ValidatePolicy(m.Metadata.Annotations[preempt.AnnPolicy])},
 		{"instance-type-ref", model.ValidateInstanceTypeRef(m.Spec)},

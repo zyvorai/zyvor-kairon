@@ -163,6 +163,7 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 	c.reconcileCiliumPolicySync(ctx)
 	c.reconcileExposedServices(ctx, machines)
 	c.reconcileLifecycle(ctx, machines, time.Now())
+	c.reconcileMachineHealth(ctx, machines, time.Now())
 	nodes, err := c.Kube.ListNodes(ctx)
 	if err != nil {
 		return err

@@ -176,7 +176,7 @@ func DesiredExposeSlice(svc Service, m *model.Machine) EndpointSlice {
 	if ip.To4() == nil {
 		s.AddressType = "IPv6"
 	}
-	ready := m.Status.Phase == "Running"
+	ready := model.MachineReady(*m)
 	s.Endpoints = []Endpoint{{Addresses: []string{ip.String()}, Conditions: EndpointConditions{Ready: &ready}, NodeName: m.Status.NodeName}}
 	return s
 }
