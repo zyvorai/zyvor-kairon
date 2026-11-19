@@ -1,0 +1,37 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: Apache-2.0
+
+# Argo CD Application that installs the Kairon chart with the observability
+# pack on. The health Lua for the Kairon CRs lives in argocd-cm-health.yaml
+# (a cluster-wide Argo CD setting, not part of an Application).
+#
+# Needs prometheus-operator CRDs for the monitors and a Grafana whose sidecar
+# watches ConfigMaps labelled grafana_dashboard=1 for the dashboards; both
+# render nothing when disabled.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kairon
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: ghcr.io/zyvorai/charts      # OCI Helm repo; Argo CD adds the chart name
+    chart: kairon
+    targetRevision: 0.10.6               # pin; metrics.serviceMonitor / grafanaDashboards need a release that ships them
+    helm:
+      valuesObject:
+        metrics:
+          prometheusRule: {enabled: true}
+          serviceMonitor:
+            enabled: true
+            labels: {release: kube-prometheus-stack}
+          grafanaDashboards:
+            enabled: true
+            namespace: monitoring
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kairon-system
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]

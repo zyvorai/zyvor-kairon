@@ -1,0 +1,33 @@
+{{- /*
+Grafana dashboards as ConfigMaps for the Grafana sidecar, off by default
+(metrics.grafanaDashboards.enabled). One ConfigMap per file in
+charts/kairon/dashboards/ (each stays far below the 1 MiB object limit).
+*/}}
+{{- $g := .Values.metrics.grafanaDashboards }}
+{{- if $g.enabled }}
+{{- $root := . }}
+{{- range $path, $_ := .Files.Glob "dashboards/*.json" }}
+{{- $name := trimSuffix ".json" (base $path) }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kairon-dashboard-{{ $name | trimPrefix "kairon-" }}
+  namespace: {{ default $root.Release.Namespace $g.namespace }}
+  labels:
+    {{ $g.label }}: {{ $g.labelValue | quote }}
+    app.kubernetes.io/name: kairon
+{{- if or $g.folder $g.annotations }}
+  annotations:
+{{- if $g.folder }}
+    {{ $g.folderAnnotation }}: {{ $g.folder | quote }}
+{{- end }}
+{{- with $g.annotations }}
+{{ toYaml . | indent 4 }}
+{{- end }}
+{{- end }}
+data:
+  {{ base $path }}: |-
+{{ $root.Files.Get $path | indent 4 }}
+{{- end }}
+{{- end }}
