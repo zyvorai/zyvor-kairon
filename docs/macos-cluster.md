@@ -3,7 +3,7 @@
 Kairon's controller and node agent run natively on Apple silicon, and `kairon-node` registers a Mac as a Kubernetes Node
 (see [macos.md](macos.md)). That turns a shelf of Macs into one scheduling pool: Kairon places `Machines` by unified memory,
 [FluxVM](https://github.com/zyvorai/zyvor-fluxvm) runs them on Virtualization.framework, and
-[Velora](https://github.com/zyvorai/zyvor-velora) serves private, OpenAI-compatible LLM endpoints on the same Macs.
+[Velora](https://github.com/zyvorai/velora) serves private, OpenAI-compatible LLM endpoints on the same Macs.
 
 ![Mac mini, Mac Studio, MacBook Pro](assets/macos/readme-macs.jpg)
 
