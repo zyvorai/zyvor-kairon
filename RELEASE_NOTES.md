@@ -1,6 +1,6 @@
 # Kairon Unreleased
 
-Observability and GitOps pack: chart values, dashboards and examples only. There are no Go, CRD or default-render changes; every new value is off by default and a default `helm template` is identical to v0.10.6. Verified by `helm lint`, `helm template`, JSON/YAML checks and a LuaJIT run of the Argo CD health scripts; the dashboards were not loaded into a real Grafana, the monitors and health checks were not applied to a real cluster, and nothing was installed or upgraded (see [`TEST_REPORT.md`](TEST_REPORT.md)).
+Two changes. Machine health probes (Go and CRD: `spec.healthCheck`, opt-in, unset by default). Observability and GitOps pack (chart values, dashboards and examples only, with no Go, CRD or default-render changes; every new value is off by default and a default `helm template` is identical to v0.10.6. Verified by `helm lint`, `helm template`, JSON/YAML checks and a LuaJIT run of the Argo CD health scripts; the dashboards were not loaded into a real Grafana, the monitors and health checks were not applied to a real cluster, and nothing was installed or upgraded (see [`TEST_REPORT.md`](TEST_REPORT.md))).
 
 **Added**
 
