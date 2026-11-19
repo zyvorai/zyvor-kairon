@@ -471,7 +471,7 @@ Kairon builds and runs natively on Apple silicon and can schedule Machines onto 
 
 ![Mac mini for home, Mac Studio for a team, MacBook Pro for development](docs/assets/macos/readme-macs.jpg)
 
-Every Mac becomes a Kubernetes Node: a [Mac mini](https://www.apple.com/in/mac-mini/) at home, a [Mac Studio](https://www.apple.com/in/mac-studio/) for a team, a [MacBook Pro](https://www.apple.com/in/macbook-pro/) that comes and goes. Kairon places Machines by allocatable unified memory, FluxVM runs them, and [Velora](https://github.com/zyvorai/zyvor-velora) serves private OpenAI-compatible LLM endpoints on the same hardware. A few Mac Studios become a quiet, low-power, on-premise inference cluster.
+Every Mac becomes a Kubernetes Node: a [Mac mini](https://www.apple.com/in/mac-mini/) at home, a [Mac Studio](https://www.apple.com/in/mac-studio/) for a team, a [MacBook Pro](https://www.apple.com/in/macbook-pro/) that comes and goes. Kairon places Machines by allocatable unified memory, FluxVM runs them, and [Velora](https://github.com/zyvorai/velora) serves private OpenAI-compatible LLM endpoints on the same hardware. A few Mac Studios become a quiet, low-power, on-premise inference cluster.
 
 ![A private LLM cluster made of Macs](docs/assets/macos/readme-home-cluster.jpg)
 
