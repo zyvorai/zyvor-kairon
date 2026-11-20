@@ -1,0 +1,106 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+name: mcp
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'internal/mcp/**'
+      - 'internal/kaironctl/**'
+      - 'internal/kube/**'
+      - 'cmd/kaironctl/**'
+      - 'scripts/test-mcp-sdk.py'
+      - '.hermes/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'server.json'
+      - '.github/workflows/mcp.yml'
+  pull_request:
+    paths:
+      - 'internal/mcp/**'
+      - 'internal/kaironctl/**'
+      - 'internal/kube/**'
+      - 'cmd/kaironctl/**'
+      - 'scripts/test-mcp-sdk.py'
+      - '.hermes/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'server.json'
+      - '.github/workflows/mcp.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: mcp-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  mcp-e2e:
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '"ubuntu-latest"' || '["self-hosted","Linux","X64","zyvor-build","docker"]') }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version-file: go.mod
+          cache: ${{ runner.environment == 'github-hosted' }}  # self-hosted: shared GOMODCACHE, cache restore/save takes 15-35 min
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7
+        with:
+          python-version: '3.12'
+      - name: MCP unit tests
+        run: go test -race ./internal/mcp/... && go test -race -run MCP ./internal/kaironctl/...
+      - name: Build kaironctl
+        run: go build -o bin/kaironctl ./cmd/kaironctl
+      - name: Raw JSON-RPC smoke
+        run: |
+          printf '%s\n' \
+            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
+            '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+            '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+            '{"jsonrpc":"2.0","id":3,"method":"bogus/method"}' \
+            | bin/kaironctl mcp serve > out.jsonl
+          python3 - <<'EOF'
+          import json
+          r = {m["id"]: m for m in map(json.loads, open("out.jsonl")) if "id" in m}
+          assert r[1]["result"]["protocolVersion"] == "2025-06-18", r[1]
+          assert r[1]["result"]["serverInfo"]["name"] == "kairon", r[1]
+          names = {t["name"] for t in r[2]["result"]["tools"]}
+          assert "list_machines" in names and "set_power_state" not in names, names
+          assert r[3]["error"]["code"] == -32601, r[3]
+          print("raw JSON-RPC smoke: PASS")
+          EOF
+      - name: Official MCP SDK end-to-end
+        run: |
+          python3 -m pip install --quiet --require-hashes -r scripts/requirements-mcp.txt
+          python3 scripts/test-mcp-sdk.py bin/kaironctl
+      - name: Validate Hermes example config
+        run: |
+          python3 -m pip install --quiet --require-hashes -r scripts/requirements-mcp.txt
+          python3 - <<'EOF'
+          import yaml
+          cfg = yaml.safe_load(open(".hermes/config.example.yaml"))
+          servers = cfg["mcp_servers"]
+          assert servers, "mcp_servers is empty"
+          for name, s in servers.items():
+              assert s.get("command"), f"{name}: missing command"
+              assert "mcp" in s.get("args", []) and "serve" in s.get("args", []), f"{name}: args must run 'mcp serve'"
+          print("hermes example config:", ", ".join(servers))
+          EOF
+
+  mcp-registry:
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '"ubuntu-latest"' || '["self-hosted","Linux","X64","zyvor-build","docker"]') }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - name: server.json validates against the registry schema
+        run: |
+          set -euo pipefail
+          curl -fsSL -o mcp-publisher.tar.gz \
+            https://github.com/modelcontextprotocol/registry/releases/download/v1.8.1/mcp-publisher_linux_amd64.tar.gz
+          echo "a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc  mcp-publisher.tar.gz" | sha256sum -c -
+          tar xzf mcp-publisher.tar.gz mcp-publisher
+          ./mcp-publisher validate server.json

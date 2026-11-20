@@ -1,0 +1,412 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+# Self-hosted routing: heavy trusted jobs run on the org `zyvor-build` runners
+# (shared Docker host, x86_64 only). The runs-on expression falls back to
+# ubuntu-latest for pull_request events, so fork PRs never reach self-hosted.
+
+# Publishes to ghcr.io/zyvorai/kairon-{controller,node,ui} on a version tag
+# push -- the piece ci.yml's own container job deliberately doesn't do (see
+# its comment). Before this workflow existed, nothing in this repository's
+# CI published anywhere; the images at ghcr.io/zyvorai/kairon-* were
+# produced by some out-of-repo process this repo couldn't vouch for. This
+# is now the one place that mints an "official" kairon-* image tag.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '"ubuntu-latest"' || '["self-hosted","Linux","X64","zyvor-build","docker"]') }}
+    permissions:
+      contents: read
+      packages: write
+      # Required for cosign's keyless signing below: GitHub mints a
+      # short-lived OIDC token for the job, which cosign exchanges for a
+      # Fulcio-issued signing certificate tied to this exact workflow/repo/
+      # ref -- no private key for this project to generate, store, or
+      # rotate.
+      id-token: write
+    strategy:
+      # One image's failure must not cancel the others mid-push.
+      fail-fast: false
+      matrix:
+        target: [controller, node, ui, csi-node, csi-controller, mcp]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4
+      # Per-job docker config dir: the self-hosted runners share one box, so
+      # a default ~/.docker/config.json would be shared (and overwritten or
+      # logged out) by concurrent jobs. The same value is set on the push step.
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550  # v4
+        env:
+          DOCKER_CONFIG: ${{ runner.temp }}/docker-config-${{ matrix.target }}
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: imjasonh/setup-crane@feee3b6bb0d4c68370f256a4502498c9227e5c6b  # v0.7
+        with:
+          version: v0.22.1
+      # cosign-installer@v3's own verification logic unconditionally
+      # expects a legacy detached .sig file, which cosign itself has fully
+      # stopped publishing (confirmed against v3.1.3 -- this workflow's
+      # previous explicit pin -- and v3.0.6, cosign-installer@v3's own
+      # default: neither ships cosign-linux-amd64.sig anymore, only the
+      # newer Sigstore-bundle .sigstore.json, so every download 404'd,
+      # curl exit 22 -- confirmed the first time this workflow ever
+      # actually ran, on v0.5.0's tag push). cosign-installer@v4's
+      # verification logic was updated for the bundle format; no explicit
+      # cosign-release override needed, its own default is a real,
+      # correctly-verifiable cosign release.
+      # Pinned to an exact tag, not a "@v4" moving major -- unlike @v3,
+      # this action doesn't publish a moving major-version tag at all
+      # (confirmed via the GitHub API: only exact vX.Y.Z tags exist).
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532  # v4.1.3
+        with:
+          # Per-job install dir: the default $HOME/.cosign is shared by every
+          # job on a self-hosted runner box, and concurrent installs raced
+          # ("cosign: Text file busy") between publish jobs.
+          install-dir: ${{ runner.temp }}/cosign-${{ matrix.target }}
+      # scan those exact bits, and only then `docker push` them -- not a
+      # second build-and-push that could, even if only in principle,
+      # produce something different from what was scanned.
+      - name: Build ${{ matrix.target }} image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          push: false
+          load: true
+          tags: |
+            ghcr.io/zyvorai/kairon-${{ matrix.target }}:${{ github.ref_name }}
+            ghcr.io/zyvorai/kairon-${{ matrix.target }}:latest
+      - name: Scan ${{ matrix.target }} image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          image-ref: ghcr.io/zyvorai/kairon-${{ matrix.target }}:${{ github.ref_name }}
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+      # Only reached if the scan above passed -- a vulnerable image is
+      # never pushed, matching the failurePolicy: Fail posture used
+      # elsewhere in this GA pass (fail the guarantee closed, not open).
+      #
+      # Pushed with crane from a `docker save` tarball, not `docker push`: the
+      # shared daemon also holds layers other repos pushed, and `docker push`
+      # tries cross-repository blob mounts from them, which GHCR can reject
+      # as `unauthenticated` for a token that cannot read the source repo.
+      # crane uploads the tarball's blobs straight to this repository and
+      # never consults the daemon's distribution metadata.
+      - name: Push ${{ matrix.target }} image
+        id: push
+        env:
+          DOCKER_CONFIG: ${{ runner.temp }}/docker-config-${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          repo="ghcr.io/zyvorai/kairon-${{ matrix.target }}"
+          tarball="${RUNNER_TEMP}/kairon-${{ matrix.target }}-image.tar"
+          # Same image the scan just checked, exported from the local daemon.
+          docker save -o "$tarball" "${repo}:${{ github.ref_name }}"
+          crane push "$tarball" "${repo}:${{ github.ref_name }}"
+          rm -f "$tarball"
+          # Sign/attest by digest, not tag -- a tag is mutable, a digest
+          # isn't. Read back what the registry holds for the pushed tag.
+          digest="$(crane digest "${repo}:${{ github.ref_name }}")"
+          case "$digest" in sha256:*) ;; *) echo "unexpected digest: $digest" >&2; exit 1 ;; esac
+          # `latest` is NOT moved here: it moves only in the promote-latest job,
+          # after signing, the chart and every other image have succeeded, so a
+          # half-finished release is never what `latest` points at.
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - name: Generate SBOM for ${{ matrix.target }}
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c  # v0.24.3
+        env:
+          DOCKER_CONFIG: ${{ runner.temp }}/docker-config-${{ matrix.target }}
+        with:
+          image: ghcr.io/zyvorai/kairon-${{ matrix.target }}@${{ steps.push.outputs.digest }}
+          format: spdx-json
+          output-file: sbom-${{ matrix.target }}.spdx.json
+          upload-artifact: false
+      - name: Sign image and attest SBOM for ${{ matrix.target }}
+        env:
+          DOCKER_CONFIG: ${{ runner.temp }}/docker-config-${{ matrix.target }}
+        run: |
+          image="ghcr.io/zyvorai/kairon-${{ matrix.target }}@${{ steps.push.outputs.digest }}"
+          cosign sign --yes "$image"
+          cosign attest --yes --type spdxjson --predicate "sbom-${{ matrix.target }}.spdx.json" "$image"
+      - name: Upload SBOM artifact for ${{ matrix.target }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: sbom-${{ matrix.target }}-${{ github.ref_name }}
+          path: sbom-${{ matrix.target }}.spdx.json
+      # Shared Docker daemon: drop only this job's tags, never a global prune.
+      - name: Remove ${{ matrix.target }} image tags
+        if: always()
+        run: |
+          docker image rm -f "ghcr.io/zyvorai/kairon-${{ matrix.target }}:${{ github.ref_name }}" "ghcr.io/zyvorai/kairon-${{ matrix.target }}:latest" || true
+          rm -rf "${RUNNER_TEMP}/docker-config-${{ matrix.target }}" "${RUNNER_TEMP}/kairon-${{ matrix.target }}-image.tar"
+
+  # CLI binaries, checksums, Helm OCI chart, and GitHub Release assets.
+  release-assets:
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '"ubuntu-latest"' || '["self-hosted","Linux","X64","zyvor-build","docker"]') }}
+    needs: publish
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version-file: go.mod
+          cache: ${{ runner.environment == 'github-hosted' }}  # self-hosted: shared GOMODCACHE, cache restore/save takes 15-35 min
+      # Per-job docker config dir: the self-hosted runners share one user, so
+      # a default ~/.docker/config.json is overwritten or logged out by
+      # concurrent jobs (helm push then fails with 403 denied). Same value on
+      # the push step below.
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550  # v4
+        env:
+          DOCKER_CONFIG: ${{ runner.temp }}/docker-config-assets
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e  # v5.1.0
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532  # v4.1.3
+        with:
+          install-dir: ${{ runner.temp }}/cosign-assets
+      - name: Tag matches VERSION and the chart (before anything is built)
+        run: |
+          set -euo pipefail
+          v="${GITHUB_REF_NAME#v}"
+          test "$(tr -d '[:space:]' < VERSION)" = "${GITHUB_REF_NAME}" || { echo "VERSION does not match tag ${GITHUB_REF_NAME}" >&2; exit 1; }
+          grep -q "^version: ${v}\$" charts/kairon/Chart.yaml || { echo "charts/kairon/Chart.yaml version is not ${v}: the CLI embeds this chart" >&2; exit 1; }
+          grep -q "^appVersion: \"${v}\"\$" charts/kairon/Chart.yaml || { echo "charts/kairon/Chart.yaml appVersion is not ${v}" >&2; exit 1; }
+      - name: Build CLI binaries
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          version="${GITHUB_REF_NAME}"
+          for os_arch in linux/amd64 linux/arm64; do
+            os="${os_arch%/*}"
+            arch="${os_arch#*/}"
+            for cmd in kaironctl kubectl-kairon; do
+              out="dist/${cmd}-${os}-${arch}"
+              CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath \
+                -ldflags "-s -w -X main.version=${version}" \
+                -o "$out" "./cmd/${cmd}"
+            done
+          done
+          (
+            cd dist
+            sha256sum kaironctl-* kubectl-kairon-* > SHA256SUMS
+          )
+      - name: Package kubectl-kairon archives and Krew manifest
+        run: |
+          set -euo pipefail
+          # Reads VERSION, which must equal the tag. Writes
+          # dist/krew/kairon_{darwin,linux}_{amd64,arm64}.tar.gz and a filled
+          # dist/krew/kairon.yaml (deploy/krew/kairon.yaml stays the template).
+          test "$(tr -d '[:space:]' < VERSION)" = "${GITHUB_REF_NAME}"
+          ./scripts/krew-package.sh
+      - name: Package version-pinned raw manifests
+        run: |
+          set -euo pipefail
+          # deploy/*.yaml reference :latest. A release ships copies pinned to this
+          # tag so the controller, node and UI cannot end up on different versions.
+          rm -rf dist/manifests && mkdir -p dist/manifests
+          for f in crd rbac controller node ui; do
+            sed "s#\(ghcr.io/zyvorai/kairon-[a-z-]*\):latest#\1:${GITHUB_REF_NAME}#g" "deploy/${f}.yaml" > "dist/manifests/${f}.yaml"
+          done
+          if grep -rn ':latest' dist/manifests; then echo "unpinned :latest image left in packaged manifests" >&2; exit 1; fi
+          grep -q "kairon-controller:${GITHUB_REF_NAME}" dist/manifests/controller.yaml
+          tar -C dist -czf "dist/kairon-manifests-${GITHUB_REF_NAME}.tgz" manifests
+      - name: Package and push Helm chart to OCI
+        env:
+          DOCKER_CONFIG: ${{ runner.temp }}/docker-config-assets
+          # helm keeps its own registry credentials file; do not rely on it
+          # discovering the docker-config login on a shared self-hosted runner
+          # (hosted runners worked, self-hosted got 403 denied from ghcr.io).
+          HELM_REGISTRY_CONFIG: ${{ runner.temp }}/helm-registry-assets/config.json
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p "$(dirname "$HELM_REGISTRY_CONFIG")"
+          printf '%s' "$GHCR_TOKEN" | helm registry login ghcr.io --username "$GHCR_USER" --password-stdin
+          trap 'rm -rf "$(dirname "$HELM_REGISTRY_CONFIG")"' EXIT
+          # Keep chart version aligned with the git tag.
+          sed -i "s/^version:.*/version: ${version}/" charts/kairon/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${version}\"/" charts/kairon/Chart.yaml
+          helm package charts/kairon -d dist
+          helm push "dist/kairon-${version}.tgz" oci://ghcr.io/zyvorai/charts
+      - name: Checksum every release asset
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          # Rewrite SHA256SUMS now that the Krew archives, manifest and chart
+          # exist, so one file covers everything attached to the release.
+          # Names are bare file names: `sha256sum -c --ignore-missing SHA256SUMS`
+          # works from a directory holding any subset of the downloads.
+          (
+            cd dist
+            sha256sum kaironctl-* kubectl-kairon-* "kairon-${version}.tgz" "kairon-manifests-${GITHUB_REF_NAME}.tgz" > SHA256SUMS
+            (cd krew && sha256sum kairon_*.tar.gz kairon.yaml) >> SHA256SUMS
+            test "$(wc -l < SHA256SUMS | tr -d ' ')" = "11"
+          )
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME}"
+          chart_version="${version#v}"
+          notes="$(cat <<EOF_NOTES
+          ## ${version}
+
+          ### Artifacts
+          - \`kaironctl\` / \`kubectl-kairon\` (linux amd64/arm64) + \`SHA256SUMS\` covering every asset below (chart, Krew archives and manifest included)
+          - Krew: \`kairon_{darwin,linux}_{amd64,arm64}.tar.gz\` + a checksummed \`kairon.yaml\` manifest
+          - Container images: \`ghcr.io/zyvorai/kairon-{controller,node,ui,csi-node,csi-controller,mcp}:${version}\` (cosign-signed, SBOM attested; \`kairon-mcp\` is the MCP Registry package)
+          - Helm chart (OCI): \`oci://ghcr.io/zyvorai/charts/kairon:${chart_version}\`
+          - Raw manifests pinned to this version: \`kairon-manifests-${version}.tgz\` (the \`deploy/*.yaml\` in the repo use \`:latest\`)
+
+          ### Upgrade / rollback
+          \`\`\`bash
+          # Helm never upgrades crds/: apply this release's CRDs first.
+          kubectl apply --server-side -f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/v${chart_version}/deploy/crd.yaml
+          # --reuse-values keeps your install's settings (webhook, namespace scoping, TLS...);
+          # without it Helm resets to chart defaults and drops production hardening.
+          helm upgrade kairon oci://ghcr.io/zyvorai/charts/kairon --version ${chart_version} -n kairon-system --reuse-values
+          helm rollback kairon -n kairon-system
+          \`\`\`
+
+          Compatibility evidence: see \`docs/COMPATIBILITY.md\` in this tag.
+          Production installs: \`-f values-production.yaml\`.
+          EOF_NOTES
+          )"
+          # Strip leading indentation from heredoc for GitHub.
+          notes="$(printf '%s\n' "$notes" | sed 's/^          //')"
+          # Tags with a hyphen (v1.2.3-rc1) are published as GitHub pre-releases.
+          extra=()
+          case "$version" in *-*) extra=(--prerelease) ;; esac
+          assets=(
+            dist/kaironctl-linux-amd64
+            dist/kaironctl-linux-arm64
+            dist/kubectl-kairon-linux-amd64
+            dist/kubectl-kairon-linux-arm64
+            dist/SHA256SUMS
+            dist/krew/kairon_darwin_arm64.tar.gz
+            dist/krew/kairon_darwin_amd64.tar.gz
+            dist/krew/kairon_linux_amd64.tar.gz
+            dist/krew/kairon_linux_arm64.tar.gz
+            dist/krew/kairon.yaml
+            "dist/kairon-${chart_version}.tgz"
+            "dist/kairon-manifests-${version}.tgz"
+          )
+          # Re-run safe: a release that already exists (a re-run of this job, or one
+          # created by hand) is not an error. Its assets are (re)uploaded with
+          # --clobber and its notes/title are left as they are, so a hand-written
+          # release body survives. Only a missing release is created.
+          if gh release view "$version" >/dev/null 2>&1; then
+            echo "::notice::release ${version} already exists; uploading assets with --clobber"
+            gh release upload "$version" "${assets[@]}" --clobber
+          else
+            gh release create "$version" \
+              "${extra[@]}" \
+              "${assets[@]}" \
+              --title "$version" \
+              --notes "$notes"
+          fi
+
+  # MCP Registry metadata only: the kairon-mcp image built above is what
+  # clients pull. Tag pushes only (the workflow only triggers on tags).
+  publish-mcp:
+    # Final releases only: a pre-release tag (v1.2.3-rc1) must not publish to the MCP
+    # Registry or become `latest`.
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '"ubuntu-latest"' || '["self-hosted","Linux","X64","zyvor-build","docker"]') }}
+    needs: publish
+    permissions:
+      contents: read
+      id-token: write   # GitHub OIDC login to the MCP Registry, no long-lived token
+    env:
+      MCP_PUBLISHER_VERSION: v1.8.1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - name: server.json matches the tag
+        run: |
+          set -euo pipefail
+          test "$(python3 -c 'import json;print(json.load(open("server.json"))["version"])')" = "${GITHUB_REF_NAME#v}"
+          grep -q "\"ghcr.io/zyvorai/kairon-mcp:${GITHUB_REF_NAME}\"" server.json
+      - name: Install mcp-publisher (pinned)
+        run: |
+          set -euo pipefail
+          curl -fsSL -o mcp-publisher.tar.gz \
+            "https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz"
+          echo "a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc  mcp-publisher.tar.gz" | sha256sum -c -
+          tar xzf mcp-publisher.tar.gz mcp-publisher
+      - run: ./mcp-publisher validate server.json
+      - run: ./mcp-publisher login github-oidc
+      - name: Publish to the MCP Registry (re-run safe)
+        run: |
+          set -uo pipefail
+          # The registry rejects a version it already holds. A re-run of the
+          # release after the registry step succeeded once must not fail on
+          # that; any other error still fails the job.
+          if out="$(./mcp-publisher publish server.json 2>&1)"; then
+            echo "$out"
+          elif echo "$out" | grep -q "cannot publish duplicate version"; then
+            echo "$out"
+            echo "::notice::server.json version already in the MCP Registry; nothing to publish"
+          else
+            echo "$out"
+            exit 1
+          fi
+
+  # Moves `latest` only once every image is signed and the chart, CLI and MCP
+  # registry entry have all been published. Tags the exact digest the version tag
+  # holds; a failure anywhere above leaves `latest` on the previous release.
+  promote-latest:
+    # Final releases only: a pre-release tag (v1.2.3-rc1) must not publish to the MCP
+    # Registry or become `latest`.
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '"ubuntu-latest"' || '["self-hosted","Linux","X64","zyvor-build","docker"]') }}
+    needs: [publish, release-assets, publish-mcp]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550  # v4
+        env:
+          DOCKER_CONFIG: ${{ runner.temp }}/docker-config-promote
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: imjasonh/setup-crane@feee3b6bb0d4c68370f256a4502498c9227e5c6b  # v0.7
+        with:
+          version: v0.22.1
+      - name: Move latest to this release
+        env:
+          DOCKER_CONFIG: ${{ runner.temp }}/docker-config-promote
+        run: |
+          set -euo pipefail
+          for target in controller node ui csi-node csi-controller mcp; do
+            repo="ghcr.io/zyvorai/kairon-${target}"
+            digest="$(crane digest "${repo}:${GITHUB_REF_NAME}")"
+            case "$digest" in sha256:*) ;; *) echo "unexpected digest for ${target}: $digest" >&2; exit 1 ;; esac
+            crane tag "${repo}@${digest}" latest
+            test "$(crane digest "${repo}:latest")" = "$digest"
+          done
+          rm -rf "${RUNNER_TEMP}/docker-config-promote"

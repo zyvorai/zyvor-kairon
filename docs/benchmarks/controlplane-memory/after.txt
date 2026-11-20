@@ -1,0 +1,48 @@
+goos: linux
+goarch: amd64
+pkg: github.com/zyvorai/kairon/internal/agentplane
+cpu: AMD EPYC 9V74 80-Core Processor
+BenchmarkFileLogRead/verify/100-9         	     308	    759056 ns/op	  391255 B/op	    2002 allocs/op
+BenchmarkFileLogRead/verify/100-9         	     333	    803471 ns/op	  391218 B/op	    2002 allocs/op
+BenchmarkFileLogRead/verify/100-9         	     321	    826192 ns/op	  391165 B/op	    2002 allocs/op
+BenchmarkFileLogRead/open/100-9           	     236	   1029046 ns/op	  391602 B/op	    2005 allocs/op
+BenchmarkFileLogRead/open/100-9           	     271	    828792 ns/op	  391561 B/op	    2005 allocs/op
+BenchmarkFileLogRead/open/100-9           	     309	    851700 ns/op	  391592 B/op	    2005 allocs/op
+BenchmarkFileLogRead/replay-one/100-9     	     290	    797325 ns/op	  391389 B/op	    2003 allocs/op
+BenchmarkFileLogRead/replay-one/100-9     	     279	    785771 ns/op	  391468 B/op	    2003 allocs/op
+BenchmarkFileLogRead/replay-one/100-9     	     285	    804153 ns/op	  391385 B/op	    2003 allocs/op
+BenchmarkFileLogRead/replay-all/100-9     	     300	    862684 ns/op	  440172 B/op	    2010 allocs/op
+BenchmarkFileLogRead/replay-all/100-9     	     290	    810530 ns/op	  440064 B/op	    2010 allocs/op
+BenchmarkFileLogRead/replay-all/100-9     	     303	    824258 ns/op	  440065 B/op	    2010 allocs/op
+BenchmarkFileLogRead/verify/10000-9       	       3	  77328399 ns/op	32752250 B/op	  200103 allocs/op
+BenchmarkFileLogRead/verify/10000-9       	       3	  75993701 ns/op	32753464 B/op	  200109 allocs/op
+BenchmarkFileLogRead/verify/10000-9       	       3	  77455108 ns/op	32760253 B/op	  200128 allocs/op
+BenchmarkFileLogRead/open/10000-9         	       3	  84277301 ns/op	32762538 B/op	  200138 allocs/op
+BenchmarkFileLogRead/open/10000-9         	       3	  82722913 ns/op	32761298 B/op	  200132 allocs/op
+BenchmarkFileLogRead/open/10000-9         	       3	  76130864 ns/op	32752669 B/op	  200107 allocs/op
+BenchmarkFileLogRead/replay-one/10000-9   	       3	  79320598 ns/op	32759352 B/op	  200125 allocs/op
+BenchmarkFileLogRead/replay-one/10000-9   	       3	  78402776 ns/op	32765776 B/op	  200140 allocs/op
+BenchmarkFileLogRead/replay-one/10000-9   	       3	  81669167 ns/op	32760405 B/op	  200129 allocs/op
+BenchmarkFileLogRead/replay-all/10000-9   	       3	  91877167 ns/op	41411805 B/op	  200156 allocs/op
+BenchmarkFileLogRead/replay-all/10000-9   	       3	  89945609 ns/op	41404362 B/op	  200137 allocs/op
+BenchmarkFileLogRead/replay-all/10000-9   	       3	 105742230 ns/op	41404304 B/op	  200137 allocs/op
+PASS
+ok  	github.com/zyvorai/kairon/internal/agentplane	10.281s
+goos: linux
+goarch: amd64
+pkg: github.com/zyvorai/kairon/internal/kube
+cpu: AMD EPYC 9V74 80-Core Processor
+BenchmarkClientListMachines-9   	   26197	     10169 ns/op	    6165 B/op	      73 allocs/op
+BenchmarkClientListMachines-9   	   24913	      9153 ns/op	    6160 B/op	      73 allocs/op
+BenchmarkClientListMachines-9   	   24444	     14409 ns/op	    6158 B/op	      73 allocs/op
+PASS
+ok  	github.com/zyvorai/kairon/internal/kube	1.592s
+goos: linux
+goarch: amd64
+pkg: github.com/zyvorai/kairon/internal/ratelimit
+cpu: AMD EPYC 9V74 80-Core Processor
+BenchmarkLimiterAllow-9   	 2338054	       106.4 ns/op	       0 B/op	       0 allocs/op
+BenchmarkLimiterAllow-9   	 2287377	       113.8 ns/op	       0 B/op	       0 allocs/op
+BenchmarkLimiterAllow-9   	 2558577	        91.50 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/zyvorai/kairon/internal/ratelimit	1.302s

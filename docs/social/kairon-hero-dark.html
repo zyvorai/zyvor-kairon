@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kairon hero card</title>
+<!--
+  1200x630 dark hero card: README hero and GitHub social preview.
+  Build: ./docs/social/build-hero-dark.sh  ->  kairon-hero-dark.jpg (2400x1260)
+-->
+<style>
+  :root { --blue:#0071e3; --signal:#2997ff; --cyan:#64d2ff; --green:#30d158; --amber:#ff9f0a; --red:#ff453a; --violet:#bf5af2;
+    --sans:'SF Pro Display','Helvetica Neue',Helvetica,Arial,sans-serif; --mono:'SF Mono',Menlo,Consolas,monospace; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; padding:0; }
+  body { width:1200px; height:630px; overflow:hidden; color:#f5f5f7; font-family:var(--sans); position:relative; background:#000; }
+  .aurora { position:absolute; inset:0;
+    background:radial-gradient(720px 460px at 80% 16%, rgba(41,151,255,.34), transparent 62%),
+               radial-gradient(600px 420px at 104% 98%, rgba(100,210,255,.16), transparent 60%),
+               radial-gradient(520px 380px at 6% 110%, rgba(0,113,227,.28), transparent 60%); }
+  .copy { position:absolute; left:60px; top:52px; width:560px; z-index:3; }
+  .brand { display:flex; align-items:center; gap:12px; font-family:var(--mono); font-size:14px; letter-spacing:.18em; text-transform:uppercase; color:#a1a1a6; }
+  .brand b { color:#fff; }
+  .word { margin:20px 0 0; font-size:112px; line-height:.95; font-weight:800; letter-spacing:-.05em; white-space:nowrap;
+    background:linear-gradient(92deg,#fff 0%,#e3f0ff 38%,var(--signal) 74%,var(--cyan) 100%); -webkit-background-clip:text; background-clip:text; color:transparent; padding-bottom:6px; }
+  .tag { margin:14px 0 0; font-size:31px; line-height:1.15; font-weight:700; letter-spacing:-.02em; }
+  .tag em { font-style:normal; color:var(--signal); }
+  .lede { margin:12px 0 0; font-size:18px; line-height:1.45; color:#b8b8bf; width:520px; text-shadow:0 1px 12px #000; }
+  .stats { margin-top:24px; display:flex; gap:32px; }
+  .stat b { display:block; font-size:34px; font-weight:800; letter-spacing:-.03em; color:#fff; }
+  .stat span { font-family:var(--mono); font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:#8e8e93; }
+  .pill { position:absolute; left:60px; bottom:40px; display:flex; gap:10px; z-index:3; }
+  .pill span { font-family:var(--mono); font-size:13.5px; font-weight:700; padding:7px 13px; border-radius:18px; border:1.5px solid rgba(255,255,255,.2); color:#e5e5ea; background:rgba(0,0,0,.6); }
+  .pill span.b { background:var(--blue); border-color:var(--blue); color:#fff; box-shadow:0 0 24px rgba(0,113,227,.55); }
+  .art { position:absolute; left:520px; top:0; width:680px; height:630px; z-index:2; }
+  .art svg { display:block; }
+  #labels { position:absolute; inset:0; z-index:4; pointer-events:none; }
+  .lbl { position:absolute; font-family:var(--mono); font-size:12.5px; color:#a1a1a6; text-align:center; transform:translate(-50%,-50%); white-space:nowrap; }
+  .lbl b { display:block; font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:#e5e5ea; }
+  .lbl span { display:block; margin-top:3px; }
+  .lbl.box { padding:7px 12px; border-radius:12px; background:rgba(8,10,14,.85); border:1px solid rgba(255,255,255,.14); }
+  .lbl.chip { padding:6px 11px; border-radius:13px; font-size:12.5px; font-weight:700; color:#cfe6ff; background:rgba(10,20,35,.85); border:1px solid rgba(41,151,255,.5); box-shadow:0 0 16px rgba(41,151,255,.2); }
+  .lbl.left { transform:translate(0,-50%); text-align:left; }
+  .lbl.right { transform:translate(-100%,-50%); text-align:right; }
+  .ok { color:var(--green) !important; } .warn { color:var(--amber) !important; } .bad { color:var(--red) !important; } .sig { color:var(--signal) !important; } .cy { color:var(--cyan) !important; } .vi { color:var(--violet) !important; }
+</style>
+</head>
+<body>
+<div class="aurora"></div>
+<div class="art"><svg id="art" width="680" height="630" viewBox="0 0 680 630" xmlns="http://www.w3.org/2000/svg"></svg></div>
+<div id="labels"></div>
+<div class="copy">
+  <div class="brand"><svg viewBox="0 0 64 64" width="30" height="30" aria-hidden="true"><defs><linearGradient id="zb" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ff5a15"/><stop offset="1" stop-color="#cc420a"/></linearGradient></defs><rect width="64" height="64" rx="15" fill="url(#zb)"/><path d="M18.5,20.5 45.5,20.5 18.5,43.5 45.5,43.5" fill="none" stroke="#fff" stroke-width="8.3" stroke-linecap="round" stroke-linejoin="round"/></svg><b>Zyvor</b><span>&middot;</span><span>VMs on Kubernetes</span></div>
+  <div class="word">Kairon</div>
+  <div class="tag">Real VMs on Kubernetes.<br><em>No pods pretending.</em></div>
+  <div class="lede">Kubernetes schedules real KVM virtual machines through a Machine CRD and FluxVM: no virt-launcher pod, no libvirt, eBPF on every VM edge.</div>
+  <div class="stats"><div class="stat"><b>0</b><span>pods per VM</span></div><div class="stat"><b>4</b><span>hypervisors</span></div><div class="stat"><b>14x</b><span>lighter idle CP</span></div></div>
+</div>
+<div class="pill"><span class="b">github.com/zyvorai/zyvor-kairon</span><span>Zyvor Production License</span></div>
+<script>
+var Z = (function () {
+  var NS = 'http://www.w3.org/2000/svg', svg = document.getElementById('art'), labels = document.getElementById('labels');
+  var seed = 20261004;
+  function rnd() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+  function el(tag, a, parent) { var n = document.createElementNS(NS, tag); for (var k in a) n.setAttribute(k, a[k]); (parent || svg).appendChild(n); return n; }
+  function g(attrs) { return el('g', attrs || {}); }
+  function label(x, y, inner, cls, style) { var d = document.createElement('div'); d.className = 'lbl ' + (cls || ''); d.style.left = (520 + x) + 'px'; d.style.top = y + 'px'; if (style) d.setAttribute('style', d.getAttribute('style') + ';' + style); d.innerHTML = inner; labels.appendChild(d); return d; }
+  return { NS: NS, svg: svg, W: 680, H: 630, rnd: rnd, el: el, g: g, label: label,
+    reseed: function (s) { seed = s; },
+    c: { blue: '#0071e3', signal: '#2997ff', cyan: '#64d2ff', green: '#30d158', amber: '#ff9f0a', red: '#ff453a', violet: '#bf5af2', teal: '#40c8e0', indigo: '#5e5ce6', pink: '#ff375f', white: '#f5f5f7', grey: '#8e8e93' } };
+})();
+(function () {
+// Kairon: a seven-spoke ship's helm whose rim is built from VM tiles, with eBPF edges glowing between neighbours.
+var C = Z.c, cx = 395, cy = 292, PI = Math.PI;
+var defs = Z.el('defs', {});
+defs.innerHTML = '<filter id="kn-gl" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>' +
+  '<filter id="kn-sf" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="14"/></filter>' +
+  '<radialGradient id="kn-halo"><stop offset="0" stop-color="#2997ff" stop-opacity=".5"/><stop offset=".6" stop-color="#0071e3" stop-opacity=".12"/><stop offset="1" stop-color="#0071e3" stop-opacity="0"/></radialGradient>' +
+  '<linearGradient id="kn-spoke" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#64d2ff" stop-opacity=".9"/><stop offset="1" stop-color="#0071e3" stop-opacity=".5"/></linearGradient>' +
+  '<radialGradient id="kn-hub"><stop offset="0" stop-color="#0c1a2e"/><stop offset="1" stop-color="#060b14"/></radialGradient>';
+function P(r, a) { return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; }
+function f(v) { return v.toFixed(1); }
+
+// faint compass rose texture
+Z.el('circle', { cx: cx, cy: cy, r: 270, fill: 'url(#kn-halo)', opacity: .55 });
+for (var i = 0; i < 72; i++) {
+  var a = i / 72 * 2 * PI, p0 = P(250, a), p1 = P(i % 6 ? 258 : 268, a);
+  Z.el('line', { x1: f(p0[0]), y1: f(p0[1]), x2: f(p1[0]), y2: f(p1[1]), stroke: 'rgba(120,185,255,.22)', 'stroke-width': 1 });
+}
+Z.el('circle', { cx: cx, cy: cy, r: 250, fill: 'none', stroke: 'rgba(120,185,255,.12)', 'stroke-dasharray': '1 5' });
+
+var NS = 7, Rin = 150, Rout = 192, Rh = 238;
+// spokes + handles
+for (var s = 0; s < NS; s++) {
+  var a = -PI / 2 + s * 2 * PI / NS, q0 = P(46, a), q1 = P(Rh - 18, a);
+  Z.el('line', { x1: f(q0[0]), y1: f(q0[1]), x2: f(q1[0]), y2: f(q1[1]), stroke: 'rgba(41,151,255,.35)', 'stroke-width': 9, 'stroke-linecap': 'round' });
+  Z.el('line', { x1: f(q0[0]), y1: f(q0[1]), x2: f(q1[0]), y2: f(q1[1]), stroke: C.signal, 'stroke-width': 2, opacity: .9 });
+  var g = Z.g({ transform: 'translate(' + f(P(Rh, a)[0]) + ',' + f(P(Rh, a)[1]) + ') rotate(' + f(a * 180 / PI) + ')' });
+  Z.el('path', { d: 'M-24,-3.5 L-8,-3.5 Q-4,-8 2,-8 Q8,-8 10,-5 Q18,-8 21,0 Q18,8 10,5 Q8,8 2,8 Q-4,8 -8,3.5 L-24,3.5 Z', fill: '#0b1626', stroke: C.cyan, 'stroke-width': 1.5, filter: 'url(#kn-gl)' }, g);
+  Z.el('line', { x1: 10, y1: -4.5, x2: 10, y2: 4.5, stroke: C.cyan, 'stroke-width': 1, opacity: .7 }, g);
+}
+
+// rim bands
+Z.el('circle', { cx: cx, cy: cy, r: Rout + 6, fill: 'none', stroke: 'rgba(100,210,255,.45)', 'stroke-width': 1.5 });
+Z.el('circle', { cx: cx, cy: cy, r: Rin - 6, fill: 'none', stroke: 'rgba(100,210,255,.3)', 'stroke-width': 1.2 });
+
+// VM tiles making up the rim
+var NT = 30, tiles = [], lit = { 2: 1, 6: 1, 7: 1, 11: 1, 15: 1, 16: 1, 20: 1, 24: 1, 27: 1 };
+for (var i = 0; i < NT; i++) {
+  var a = -PI / 2 + (i + 0.5) / NT * 2 * PI, c = P((Rin + Rout) / 2, a), on = !!lit[i];
+  tiles.push({ a: a, x: c[0], y: c[1], on: on });
+  var g = Z.g({ transform: 'translate(' + f(c[0]) + ',' + f(c[1]) + ') rotate(' + f(a * 180 / PI + 90) + ')' });
+  Z.el('rect', { x: -15, y: -15, width: 30, height: 30, rx: 5, fill: on ? 'rgba(41,151,255,.28)' : 'rgba(14,26,44,.9)', stroke: on ? C.cyan : 'rgba(100,170,255,.45)', 'stroke-width': on ? 1.6 : 1, filter: on ? 'url(#kn-gl)' : null }, g);
+  Z.el('rect', { x: -10, y: -10, width: 20, height: 12, rx: 2, fill: on ? 'rgba(100,210,255,.55)' : 'rgba(41,151,255,.14)' }, g);
+  Z.el('line', { x1: -10, y1: 7, x2: (on ? 10 : 2), y2: 7, stroke: on ? C.cyan : 'rgba(100,170,255,.35)', 'stroke-width': 2, 'stroke-linecap': 'round' }, g);
+}
+
+// eBPF edges: glowing short arcs between neighbouring tiles, outside the rim
+var R2 = Rout + 18;
+for (var i = 0; i < NT; i++) {
+  var t0 = tiles[i], t1 = tiles[(i + 1) % NT];
+  if (!(t0.on || t1.on)) continue;
+  var a0 = t0.a, a1 = t1.a, p0 = P(Rout + 3, a0), p1 = P(Rout + 3, a1), cq = P(R2 + 16, (a0 + a1) / 2);
+  var hot = t0.on && t1.on;
+  Z.el('path', { d: 'M' + f(p0[0]) + ',' + f(p0[1]) + ' Q' + f(cq[0]) + ',' + f(cq[1]) + ' ' + f(p1[0]) + ',' + f(p1[1]),
+    fill: 'none', stroke: hot ? C.cyan : C.signal, 'stroke-width': hot ? 2.2 : 1.4, opacity: hot ? 1 : .6, filter: 'url(#kn-gl)' });
+  Z.el('circle', { cx: f(p0[0]), cy: f(p0[1]), r: 1.8, fill: C.cyan });
+  Z.el('circle', { cx: f(p1[0]), cy: f(p1[1]), r: 1.8, fill: C.cyan });
+  var mid = P(Rout + 3 + (R2 + 16 - Rout - 3) / 2, (a0 + a1) / 2);
+  Z.el('circle', { cx: f(mid[0]), cy: f(mid[1]), r: hot ? 3.2 : 2, fill: '#fff', filter: 'url(#kn-gl)' });
+}
+
+// inner web: flows across the hub between lit tiles
+var pairs = [[2, 16], [7, 20], [11, 27]];
+pairs.forEach(function (pr) {
+  var A = tiles[pr[0]], B = tiles[pr[1]], pa = P(Rin - 8, A.a), pb = P(Rin - 8, B.a);
+  Z.el('path', { d: 'M' + f(pa[0]) + ',' + f(pa[1]) + ' Q' + cx + ',' + cy + ' ' + f(pb[0]) + ',' + f(pb[1]), fill: 'none', stroke: C.cyan, 'stroke-width': 1, opacity: .28, 'stroke-dasharray': '3 4' });
+});
+
+// hub
+Z.el('circle', { cx: cx, cy: cy, r: 80, fill: '#2997ff', opacity: .25, filter: 'url(#kn-sf)' });
+Z.el('circle', { cx: cx, cy: cy, r: 58, fill: 'url(#kn-hub)', stroke: C.signal, 'stroke-width': 2, filter: 'url(#kn-gl)' });
+Z.el('circle', { cx: cx, cy: cy, r: 50, fill: 'none', stroke: 'rgba(100,210,255,.35)', 'stroke-dasharray': '2 4' });
+Z.label(cx, cy, '<b>Machine</b><span>CRD &middot; KVM</span>');
+
+// sparks
+for (var i = 0; i < 40; i++) { var a = Z.rnd() * 2 * PI, r = 270 + Z.rnd() * 50, p = P(r, a); if (p[0] < 110 || p[0] > 650 || p[1] < 20 || p[1] > 600) continue; Z.el('circle', { cx: f(p[0]), cy: f(p[1]), r: (0.8 + Z.rnd() * 1.4).toFixed(1), fill: C.cyan, opacity: (0.15 + Z.rnd() * 0.45).toFixed(2) }); }
+
+Z.label(cx, 586, '<b>eBPF on every VM edge</b><span>zero pods per VM</span>');
+Z.label(570, 44, '4 hypervisors &middot; one CRD', 'chip');
+})();
+</script>
+</body>
+</html>

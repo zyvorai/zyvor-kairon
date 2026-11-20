@@ -1,0 +1,143 @@
+// Copyright 2026 Zyvor · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+import {themes as prismThemes} from 'prism-react-renderer';
+import type {Config} from '@docusaurus/types';
+import type * as Preset from '@docusaurus/preset-classic';
+
+const config: Config = {
+  title: 'Kairon',
+  tagline: 'Real VMs on Kubernetes — no pod per VM',
+  favicon: 'img/favicon.svg',
+
+  future: {
+    v4: true,
+  },
+
+  url: 'https://zyvorai.github.io',
+  baseUrl: '/zyvor-kairon/',
+
+  organizationName: 'zyvorai',
+  projectName: 'zyvor-kairon',
+
+  onBrokenLinks: 'warn',
+
+  markdown: {
+    format: 'md',
+    mermaid: true,
+    hooks: {
+      onBrokenMarkdownLinks: 'warn',
+    },
+  },
+
+  i18n: {
+    defaultLocale: 'en',
+    locales: ['en'],
+  },
+
+  themes: ['@docusaurus/theme-mermaid'],
+
+  staticDirectories: ['static', '../docs/ux'],
+
+  presets: [
+    [
+      'classic',
+      {
+        docs: {
+          path: '../docs',
+          routeBasePath: 'docs',
+          sidebarPath: './sidebars.ts',
+          editUrl: 'https://github.com/zyvorai/zyvor-kairon/tree/main/docs/',
+          exclude: ['**/assets/**'],
+        },
+        blog: false,
+        theme: {
+          customCss: ['./src/css/custom.css', './src/css/zv.css'],
+        },
+      } satisfies Preset.Options,
+    ],
+  ],
+
+  themeConfig: {
+    image: 'img/social-preview.png',
+    colorMode: {
+      defaultMode: 'dark',
+      respectPrefersColorScheme: false,
+    },
+    navbar: {
+      title: 'Kairon',
+      logo: {
+        alt: 'Kairon',
+        src: 'img/favicon.svg',
+      },
+      hideOnScroll: false,
+      items: [
+        {
+          type: 'docSidebar',
+          sidebarId: 'docsSidebar',
+          position: 'right',
+          label: 'Docs',
+        },
+        {to: '/deploy', label: 'Deploy', position: 'right'},
+        {to: '/gallery', label: 'Gallery', position: 'right'},
+        {to: '/support', label: 'Support', position: 'right'},
+        {
+          href: 'https://github.com/zyvorai/zyvor-kairon',
+          label: 'GitHub',
+          position: 'right',
+        },
+      ],
+    },
+    footer: {
+      style: 'dark',
+      links: [
+        {
+          title: 'Docs',
+          items: [
+            {label: 'Deploy', to: '/deploy'},
+            {label: 'Getting started', to: '/docs/getting-started'},
+            {label: 'What ships', to: '/docs/WHAT_SHIPS'},
+            {label: 'Status', to: '/docs/STATUS'},
+            {label: 'Compatibility', to: '/docs/COMPATIBILITY'},
+            {label: 'CLI', to: '/docs/CLI'},
+            {label: 'Architecture', to: '/docs/architecture'},
+            {label: 'Network Fabric', to: '/docs/network-fabric'},
+          ],
+        },
+        {
+          title: 'New in v0.10',
+          items: [
+            {label: 'Agent sessions', to: '/docs/guides/agent-sessions'},
+            {label: 'Agent sandboxes', to: '/docs/guides/agent-sandboxes'},
+            {label: 'Cross-cluster DR', to: '/docs/guides/cross-cluster-dr'},
+            {label: 'Mac Fabric', to: '/docs/guides/mac-fabric'},
+          ],
+        },
+        {
+          title: 'Project',
+          items: [
+            {label: 'GitHub', href: 'https://github.com/zyvorai/zyvor-kairon'},
+            {label: 'Support', to: '/support'},
+            {label: 'Release notes', href: 'https://github.com/zyvorai/zyvor-kairon/blob/main/RELEASE_NOTES.md'},
+            {label: 'Roadmap', href: 'https://github.com/zyvorai/zyvor-kairon/blob/main/ROADMAP.md'},
+            {label: 'License (Zyvor PL 1.0)', href: 'https://github.com/zyvorai/zyvor-kairon/blob/main/LICENSE'},
+          ],
+        },
+        {
+          title: 'Zyvor Enterprise',
+          items: [
+            {label: 'zyvor.dev', href: 'https://zyvor.dev'},
+            {label: 'sales@zyvor.dev', href: 'mailto:sales@zyvor.dev'},
+          ],
+        },
+      ],
+      copyright: `Copyright © ${new Date().getFullYear()} Zyvor. Source-available under the Zyvor Production License v1.0; production use needs a commercial license.`,
+    },
+    prism: {
+      theme: prismThemes.github,
+      darkTheme: prismThemes.dracula,
+    },
+  } satisfies Preset.ThemeConfig,
+};
+
+export default config;

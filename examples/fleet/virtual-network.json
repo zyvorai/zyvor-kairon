@@ -1,0 +1,19 @@
+{
+  "apiVersion": "fleet.kairon.zyvor.dev/v1alpha1",
+  "kind": "MachineVirtualNetwork",
+  "metadata": {
+    "name": "virtual-network",
+    "namespace": "default"
+  },
+  "spec": {
+    "cidr": "10.77.0.0/24",
+    "gateway": "10.77.0.1",
+    "bridge": "br-tenant-a",
+    "nodeSelector": {
+      "kairon.zyvor.dev/network-zone": "tenant-a"
+    },
+    "dnsServers": [
+      "10.77.0.1"
+    ]
+  }
+}

@@ -1,0 +1,245 @@
+// Copyright 2026 Zyvor · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+package consoleproxy
+
+import (
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/zyvorai/kairon/internal/fluxvm"
+)
+
+func TestFluxExtRoutesRelayToFixedUpstreamPaths(t *testing.T) {
+	var gotMethod, gotURI, gotBody string
+	fluxSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		gotMethod, gotURI, gotBody = r.Method, r.URL.RequestURI(), string(b)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer fluxSrv.Close()
+	s := &Server{Flux: fluxvm.New(fluxSrv.URL, ""), Token: "secret"}
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+
+	cases := []struct {
+		method, path, body, wantMethod, wantURI, wantBody string
+	}{
+		{"POST", "/fork-plan/vm-1", `{"count":3}`, "POST", "/v1/vms/vm-1/fork/plan", `{"count":3}`},
+		{"GET", "/host-memory", "", "GET", "/v1/host/memory", ""},
+		{"GET", "/events?limit=5&vm=vm-1", "", "GET", "/v1/events?limit=5&vm=vm-1", ""},
+		{"GET", "/branches", "", "GET", "/v1/branches", ""},
+		{"GET", "/branches/a/diff/b", "", "GET", "/v1/branches/a/diff/b", ""},
+		{"POST", "/vm-input/vm-1", `{"action":"click","x":10,"y":20}`, "POST", "/v1/vms/vm-1/input", `{"action":"click","x":10,"y":20}`},
+		{"GET", "/host-topology", "", "GET", "/v1/host/topology", ""},
+		{"GET", "/host-pressure", "", "GET", "/v1/host/pressure", ""},
+		{"POST", "/branches/b1/start", `{"count":2}`, "POST", "/v1/branches/b1/start", `{"count":2}`},
+		{"DELETE", "/branches/b1", "", "DELETE", "/v1/branches/b1", ""},
+		{"POST", "/branches/b1/start-plan", `{"count":1}`, "POST", "/v1/branches/b1/start/plan", `{"count":1}`},
+		{"GET", "/vm-egress/0fb95613-591e-44df-9f2d-759879c2b26c", "", "GET", "/v1/vms/0fb95613-591e-44df-9f2d-759879c2b26c/network/egress", ""},
+		{"PUT", "/vm-egress/vm-1", `{"mode":"allowlist","rules":[{"cidr":"10.0.0.0/8","proto":"tcp","port":5151}]}`, "PUT", "/v1/vms/vm-1/network/egress", `{"mode":"allowlist","rules":[{"cidr":"10.0.0.0/8","proto":"tcp","port":5151}]}`},
+		{"DELETE", "/vm-egress/vm-1", "", "DELETE", "/v1/vms/vm-1/network/egress", ""},
+		{"GET", "/vm-egress-observed/vm-1", "", "GET", "/v1/vms/vm-1/network/egress/observed", ""},
+		{"POST", "/vm-egress-suggest/vm-1?apply=true", "", "POST", "/v1/vms/vm-1/network/egress/suggest?apply=true", ""},
+		{"GET", "/egress-defaults", "", "GET", "/v1/network/egress/defaults", ""},
+		{"PUT", "/egress-defaults?apply_running=true", `{"mode":"open"}`, "PUT", "/v1/network/egress/defaults?apply_running=true", `{"mode":"open"}`},
+	}
+	for _, c := range cases {
+		req, _ := http.NewRequest(c.method, srv.URL+c.path, strings.NewReader(c.body))
+		req.Header.Set("Authorization", "Bearer secret")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s %s: expected 200, got %d", c.method, c.path, resp.StatusCode)
+		}
+		if gotMethod != c.wantMethod || gotURI != c.wantURI || gotBody != c.wantBody {
+			t.Fatalf("%s %s: upstream got %s %s %q, want %s %s %q", c.method, c.path,
+				gotMethod, gotURI, gotBody, c.wantMethod, c.wantURI, c.wantBody)
+		}
+	}
+}
+
+func TestFluxExtRoutesRequireToken(t *testing.T) {
+	s := &Server{Flux: fluxvm.New("http://127.0.0.1:1", ""), Token: "secret"}
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+	for _, p := range []string{"GET /host-memory", "GET /events", "GET /branches", "POST /fork-plan/x"} {
+		parts := strings.SplitN(p, " ", 2)
+		req, _ := http.NewRequest(parts[0], srv.URL+parts[1], nil)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("%s: expected 401, got %d", p, resp.StatusCode)
+		}
+	}
+}
+
+func TestRelayFluxSurfacesUpstreamErrorsAsBadGateway(t *testing.T) {
+	fluxSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "nope", http.StatusConflict)
+	}))
+	defer fluxSrv.Close()
+	s := &Server{Flux: fluxvm.New(fluxSrv.URL, ""), Token: "secret"}
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+	req, _ := http.NewRequest("GET", srv.URL+"/branches", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d", resp.StatusCode)
+	}
+}
+
+func TestEgressNftablesIsWrappedInJSON(t *testing.T) {
+	fluxSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/egress/nftables" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("table inet x {}\n"))
+	}))
+	defer fluxSrv.Close()
+	s := &Server{Flux: fluxvm.New(fluxSrv.URL, ""), Token: "secret"}
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+	req, _ := http.NewRequest("GET", srv.URL+"/egress-nftables", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	b, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(b), `"snippet":"table inet x {}\n"`) {
+		t.Fatalf("unexpected reply %d %s", resp.StatusCode, b)
+	}
+}
+
+func TestEventsStreamRequiresTokenAndProxiesUpstream(t *testing.T) {
+	var gotAuth string
+	fluxSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		if r.URL.Path != "/v1/events/stream" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"event\":\"vm.start\"}\n\n"))
+	}))
+	defer fluxSrv.Close()
+	s := &Server{Flux: fluxvm.New(fluxSrv.URL, "fluxtok"), Token: "secret"}
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/events/stream")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without a token, got %d", resp.StatusCode)
+	}
+	req, _ := http.NewRequest("GET", srv.URL+"/events/stream", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	b, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(b), "vm.start") || gotAuth != "Bearer fluxtok" {
+		t.Fatalf("stream %q, upstream auth %q", b, gotAuth)
+	}
+}
+
+func TestVMScreenshotStreamsPNGAndKeepsScreenHeaders(t *testing.T) {
+	var gotURI, gotAuth string
+	png := []byte("\x89PNG\r\n\x1a\nfake")
+	fluxSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotURI, gotAuth = r.URL.RequestURI(), r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("x-fluxvm-screen-width", "1280")
+		w.Header().Set("x-fluxvm-screen-blank", "false")
+		_, _ = w.Write(png)
+	}))
+	defer fluxSrv.Close()
+	s := &Server{Flux: fluxvm.New(fluxSrv.URL, "fluxtok"), Token: "secret"}
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/vm-screenshot/vm-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without a token, got %d", resp.StatusCode)
+	}
+	req, _ := http.NewRequest("GET", srv.URL+"/vm-screenshot/vm-1?max_width=640", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	b, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || string(b) != string(png) {
+		t.Fatalf("status %d body %q", resp.StatusCode, b)
+	}
+	if resp.Header.Get("Content-Type") != "image/png" || resp.Header.Get("x-fluxvm-screen-width") != "1280" {
+		t.Fatalf("headers lost: %v", resp.Header)
+	}
+	if gotURI != "/v1/vms/vm-1/screenshot?max_width=640" || gotAuth != "Bearer fluxtok" {
+		t.Fatalf("upstream %q auth %q", gotURI, gotAuth)
+	}
+}
+
+func TestVMEgressRejectsPathTricks(t *testing.T) {
+	fluxSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("upstream must not be reached, got %s", r.URL.RequestURI())
+	}))
+	defer fluxSrv.Close()
+	s := &Server{Flux: fluxvm.New(fluxSrv.URL, ""), Token: "secret"}
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+	for _, id := range []string{"a%2Fb", "a%3Fb", "a%20b", "..%2F..", strings.Repeat("a", 65)} {
+		req, _ := http.NewRequest("GET", srv.URL+"/vm-egress/"+id, nil)
+		req.Header.Set("Authorization", "Bearer secret")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("id %q: expected 400, got %d", id, resp.StatusCode)
+		}
+	}
+}
+
+func TestVMEgressRequiresBearer(t *testing.T) {
+	s := &Server{Flux: fluxvm.New("http://127.0.0.1:1", ""), Token: "secret"}
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+	resp, err := http.Get(srv.URL + "/vm-egress/vm-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", resp.StatusCode)
+	}
+}

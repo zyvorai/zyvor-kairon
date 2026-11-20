@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Zyvor favicon">
+  <defs>
+    <linearGradient id="bg" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff5a15"/>
+      <stop offset="1" stop-color="#cc420a"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="url(#bg)"/>
+  <path
+    d="M18.5,20.5 45.5,20.5 18.5,43.5 45.5,43.5"
+    fill="none"
+    stroke="#ffffff"
+    stroke-width="8.3"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

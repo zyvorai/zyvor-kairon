@@ -1,0 +1,50 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+[Unit]
+Description=kairon-ui - kairon web dashboard (Machines, Migrations, Snapshots, recovery)
+Documentation=https://github.com/zyvorai/zyvor-kairon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# HTTPS by default: kairon-ui.env may set KAIRON_UI_TLS_CERT/KAIRON_UI_TLS_KEY
+# (deploy-remote.sh installs a certificate there); with neither it generates a
+# self-signed one at startup. KAIRON_UI_INSECURE_HTTP=true opts out.
+ExecStart=/usr/bin/kairon-ui --listen=:18082 --web-dir=/etc/kairon/ui-web
+Restart=on-failure
+RestartSec=5s
+EnvironmentFile=/etc/kairon/kairon-ui.env
+
+User=kairon
+Group=kairon
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+LimitNOFILE=4096
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kairon-ui
+
+[Install]
+WantedBy=multi-user.target

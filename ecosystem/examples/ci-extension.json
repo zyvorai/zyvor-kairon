@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "kairon-github-actions",
+  "version": "0.1.0",
+  "category": "ci",
+  "maintainer": "Zyvor",
+  "repository": "https://github.com/zyvorai/zyvor-kairon",
+  "license": "LicenseRef-Zyvor-Production-1.0",
+  "interface": "kairon-ui-rest",
+  "capabilities": ["machine.create", "guest.exec", "machine.cleanup"],
+  "qualification": {"status": "unqualified", "scope": "single-machine-lifecycle"}
+}

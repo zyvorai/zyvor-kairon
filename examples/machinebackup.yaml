@@ -1,0 +1,23 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+# Back up an image-booted Machine's disks on its node, freezing guest
+# filesystems through the guest agent when it answers.
+apiVersion: kairon.zyvor.dev/v1
+kind: MachineBackup
+metadata:
+  name: web-nightly
+  namespace: default
+spec:
+  machineName: web
+  quiesce: auto
+---
+# Restore it in place; the disk copy starts once web has
+# spec.powerState: Halted.
+apiVersion: kairon.zyvor.dev/v1
+kind: MachineBackupRestore
+metadata:
+  name: web-nightly-restore
+  namespace: default
+spec:
+  backupName: web-nightly

@@ -1,0 +1,22 @@
+{
+  "apiVersion": "fleet.kairon.zyvor.dev/v1alpha1",
+  "kind": "MachineHAProfile",
+  "metadata": {
+    "name": "ha-profile",
+    "namespace": "kairon-system"
+  },
+  "spec": {
+    "selector": {
+      "ha": "enabled"
+    },
+    "nodes": {
+      "worker-1": {
+        "endpoint": "https://bmc.example.com",
+        "systemID": "system",
+        "secretName": "worker-1-bmc"
+      }
+    },
+    "maxRestarts": 3,
+    "failureGraceSeconds": 60
+  }
+}

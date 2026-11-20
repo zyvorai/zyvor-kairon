@@ -1,0 +1,30 @@
+.features {
+  padding: var(--zv-section-space) 0;
+  width: 100%;
+}
+
+.card {
+  display: block;
+  height: 100%;
+  padding: 2rem 1.75rem;
+  margin-bottom: 1.5rem;
+  border-radius: 16px;
+  border: 1px solid var(--ifm-color-emphasis-200);
+  background: var(--ifm-background-surface-color);
+  color: var(--ifm-font-color-base);
+  text-decoration: none;
+  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+  border-color: var(--ifm-color-primary);
+  transform: translateY(-2px);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.08);
+  color: var(--ifm-font-color-base);
+  text-decoration: none;
+}
+
+.card p {
+  margin-bottom: 0;
+  color: var(--ifm-color-emphasis-700);
+}

@@ -1,0 +1,33 @@
+# A training VM with one GPU and one NIC under the same PCIe root, its
+# vCPUs pinned and its memory bound to that root's NUMA node.
+# Needs: kairon-node with KAIRON_VFIO_ALLOWLIST naming both devices, a
+# FluxVM that reports host.numaBinding, and the node's pinnable CPUs label.
+# See docs/guides/machine-topology.md.
+apiVersion: kairon.zyvor.dev/v1
+kind: Machine
+metadata:
+  name: trainer
+  namespace: default
+spec:
+  image: {path: /var/lib/fluxvm/images/ubuntu-24.04.qcow2}
+  resources:
+    cpu: "16"
+    memory: 64Gi
+    cpuPinning: true
+    hugepages: true
+  topology:
+    policy: single-numa-node
+    hugepageSize: 1Gi
+  devices:
+    - name: gpu
+      class: gpu
+      vendor: nvidia
+      minMemory: 40Gi
+      alignment: [samePcieRoot]
+    - name: nic
+      class: nic
+      vendor: mellanox
+      virtualFunction: true
+      alignment: [samePcieRoot]
+  runtime: {backend: qemu}
+  powerState: Running

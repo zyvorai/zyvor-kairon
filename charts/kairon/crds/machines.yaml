@@ -1,0 +1,1735 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: machines.kairon.zyvor.dev
+spec:
+  group: kairon.zyvor.dev
+  scope: Namespaced
+  names:
+    plural: machines
+    singular: machine
+    kind: Machine
+    shortNames:
+    - km
+    - kvmachine
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    subresources: &subresources
+      status: {}
+    additionalPrinterColumns: &columns
+    - name: Node
+      type: string
+      jsonPath: .spec.nodeName
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    - name: CPU
+      type: string
+      jsonPath: .spec.resources.cpu
+    - name: Memory
+      type: string
+      jsonPath: .spec.resources.memory
+    - name: IP
+      type: string
+      jsonPath: .status.guestIP
+    - name: Message
+      type: string
+      jsonPath: .status.message
+    schema: &schema
+      openAPIV3Schema:
+        type: object
+        required:
+        - spec
+        properties:
+          spec:
+            type: object
+            x-kubernetes-validations:
+            - rule: "!has(self.topology) || !has(self.topology.policy) || self.topology.policy == 'none' || (has(self.resources) && has(self.resources.cpuPinning) && self.resources.cpuPinning)"
+              message: "spec.topology.policy other than none needs spec.resources.cpuPinning: true"
+            - rule: "!has(self.devices) || size(self.devices) == 0 || !has(self.runtime) || !has(self.runtime.backend) || self.runtime.backend in ['auto', 'qemu']"
+              message: "spec.devices needs the qemu backend"
+            - rule: "!has(oldSelf.nodeName) || oldSelf.nodeName == '' || (has(self.topology) == has(oldSelf.topology) && (!has(self.topology) || self.topology == oldSelf.topology) && has(self.devices) == has(oldSelf.devices) && (!has(self.devices) || self.devices == oldSelf.devices))"
+              message: "spec.topology and spec.devices cannot change after the Machine is scheduled"
+            - rule: "!has(self.resources) || !has(self.resources.elasticMemory) || ((!has(self.resources.hugepages) || !self.resources.hugepages) && (!has(self.devices) || size(self.devices) == 0) && (!has(self.deviceClaims) || size(self.deviceClaims) == 0))"
+              message: "spec.resources.elasticMemory cannot be combined with hugepages or passthrough devices"
+            - rule: "!has(self.resources) || !has(self.resources.elasticMemory) || !has(self.runtime) || !has(self.runtime.backend) || self.runtime.backend in ['auto', 'qemu']"
+              message: "spec.resources.elasticMemory needs the qemu backend"
+            - rule: "(has(self.resources) && has(self.resources.elasticMemory)) == (has(oldSelf.resources) && has(oldSelf.resources.elasticMemory))"
+              message: "spec.resources.elasticMemory cannot be added or removed after creation"
+            - rule: "!has(self.apple) || !has(self.runtime) || !has(self.runtime.backend) || self.runtime.backend in ['auto', 'vz']"
+              message: "spec.apple needs the vz backend"
+            properties:
+              nodeName:
+                type: string
+              instanceTypeName:
+                type: string
+                description: Names a MachineInstanceType (same namespace)
+                  kairon-controller resolves into spec.resources exactly
+                  once, the first time this is set and spec.resources is
+                  still empty -- see docs/guides/machine-instance-types.md.
+                  Either resources or instanceTypeName must resolve to a
+                  real cpu/memory shape; enforced by kairon-controller/
+                  kairon-node, not this schema, the same way spec.volumes
+                  can substitute for image entirely.
+              instanceTypeKind:
+                type: string
+                enum:
+                - MachineInstanceType
+                - MachineClusterInstanceType
+                description: Kind instanceTypeName refers to. Defaults to
+                  MachineInstanceType (same namespace).
+              preferenceName:
+                type: string
+                description: Names a MachinePreference (same namespace) or,
+                  with preferenceKind MachineClusterPreference, a
+                  cluster-scoped one. kairon-controller fills still-unset
+                  guest-OS fields from it once.
+              preferenceKind:
+                type: string
+                enum:
+                - MachinePreference
+                - MachineClusterPreference
+              image:
+                type: object
+                description: Either path (an already-present file/PVC-resolved
+                  disk) or source (a URL kairon-node downloads into its own
+                  cache -- see docs/guides/machine-image-import.md) must be
+                  set; enforced by kairon-node/the admission webhook, not
+                  this schema, the same way spec.volumes can substitute for
+                  image entirely.
+                properties:
+                  path:
+                    type: string
+                    minLength: 1
+                  digest:
+                    type: string
+                  source:
+                    type: object
+                    properties:
+                      httpURL:
+                        type: string
+                        minLength: 1
+                      oci:
+                        type: string
+                        minLength: 1
+                        description: containerDisk registry reference
+                          ([registry/]repository[:tag][@sha256:...]); pulled
+                          over HTTPS by the manifest digest in
+                          spec.image.digest. Mutually exclusive with httpURL.
+                      format:
+                        type: string
+                        enum: ["qcow2", "raw", "ova", "vmdk", "vhd", "vhdx"]
+                      repair:
+                        type: boolean
+                      insecureSkipTLSVerify:
+                        type: boolean
+                        description: Download httpURL without verifying the
+                          server certificate. The sha256 digest still
+                          guarantees the bytes.
+                  catalogName:
+                    type: string
+                    minLength: 1
+                  imageRef:
+                    type: string
+                    minLength: 1
+                    description: Names a cluster-scoped MachineImage (kind
+                      disk). kairon-controller copies its source and digest
+                      here once, before the Machine is scheduled. See
+                      docs/guides/machine-images.md.
+                  blank:
+                    type: boolean
+                    description: Boot an empty root disk of diskSize (an
+                      install from spec.cdroms). Excludes path, source,
+                      catalogName and imageRef.
+                  diskSize:
+                    type: string
+                    minLength: 1
+                    description: Grow the root disk to this size (e.g. 60Gi)
+                      at creation. Required with blank.
+                  io:
+                    type: object
+                    description: QEMU I/O options for the root disk (always virtio-blk). See docs/guides/machine-storage-nvmeof.md.
+                    properties:
+                      aio:
+                        type: string
+                        enum: [io_uring, native, threads]
+                      cache:
+                        type: string
+                        enum: [none, writeback, writethrough, directsync, unsafe]
+                      iothread:
+                        type: boolean
+                      queues:
+                        type: integer
+                        minimum: 1
+                        maximum: 64
+                      throttle:
+                        type: object
+                        description: IOPS and bytes/s limits, applied live. A *Total limit excludes its *Read/*Write pair; *TotalMax bursts for burstSeconds (default 1).
+                        properties:
+                          iopsTotal:
+                            type: integer
+                            format: int64
+                            minimum: 1
+                            maximum: 1000000000000000
+                          iopsRead:
+                            type: integer
+                            format: int64
+                            minimum: 1
+                            maximum: 1000000000000000
+                          iopsWrite:
+                            type: integer
+                            format: int64
+                            minimum: 1
+                            maximum: 1000000000000000
+                          bpsTotal:
+                            type: integer
+                            format: int64
+                            minimum: 1
+                            maximum: 1000000000000000
+                          bpsRead:
+                            type: integer
+                            format: int64
+                            minimum: 1
+                            maximum: 1000000000000000
+                          bpsWrite:
+                            type: integer
+                            format: int64
+                            minimum: 1
+                            maximum: 1000000000000000
+                          iopsTotalMax:
+                            type: integer
+                            format: int64
+                            minimum: 1
+                            maximum: 1000000000000000
+                          bpsTotalMax:
+                            type: integer
+                            format: int64
+                            minimum: 1
+                            maximum: 1000000000000000
+                          burstSeconds:
+                            type: integer
+                            minimum: 1
+                            maximum: 86400
+                        x-kubernetes-validations:
+                        - rule: "!has(self.iopsTotal) || (!has(self.iopsRead) && !has(self.iopsWrite))"
+                          message: "iopsTotal excludes iopsRead and iopsWrite"
+                        - rule: "!has(self.bpsTotal) || (!has(self.bpsRead) && !has(self.bpsWrite))"
+                          message: "bpsTotal excludes bpsRead and bpsWrite"
+                        - rule: "!has(self.iopsTotalMax) || (has(self.iopsTotal) && self.iopsTotalMax >= self.iopsTotal)"
+                          message: "iopsTotalMax needs iopsTotal and must not be below it"
+                        - rule: "!has(self.bpsTotalMax) || (has(self.bpsTotal) && self.bpsTotalMax >= self.bpsTotal)"
+                          message: "bpsTotalMax needs bpsTotal and must not be below it"
+                        - rule: "!has(self.burstSeconds) || has(self.iopsTotalMax) || has(self.bpsTotalMax)"
+                          message: "burstSeconds needs iopsTotalMax or bpsTotalMax"
+              resources:
+                type: object
+                properties:
+                  cpu:
+                    type: string
+                    minLength: 1
+                  memory:
+                    type: string
+                    minLength: 1
+                  maxCpu:
+                    type: string
+                  maxMemory:
+                    type: string
+                  hugepages:
+                    type: boolean
+                  numaNode:
+                    type: integer
+                    minimum: 0
+                  cpuSet:
+                    type: string
+                  cpuPinning:
+                    type: boolean
+                  allocatedCpuSet:
+                    type: array
+                    items:
+                      type: integer
+                      minimum: 0
+                  limits:
+                    type: object
+                    properties:
+                      cpuQuotaPercent:
+                        type: integer
+                        minimum: 1
+                      memoryMaxBytes:
+                        type: integer
+                        format: int64
+                        minimum: 1
+                      ioWeight:
+                        type: integer
+                        minimum: 1
+                        maximum: 10000
+                      pidsMax:
+                        type: integer
+                        format: int64
+                        minimum: 1
+                      cpuSetCpus:
+                        type: array
+                        items:
+                          type: integer
+                          minimum: 0
+                  elasticMemory:
+                    type: object
+                    description: Reclaimable memory. kairon-node inflates a
+                      virtio-balloon under host memory pressure, never below
+                      min. See docs/guides/machine-elastic-memory.md.
+                    required:
+                    - min
+                    properties:
+                      min:
+                        type: string
+                        minLength: 1
+                        description: Memory the guest always keeps (e.g. 1Gi);
+                          at most spec.resources.memory.
+                      freePageReporting:
+                        type: boolean
+                        description: Guest hands freed pages back to the host
+                          (guest kernel 5.8+). Defaults to true.
+              runtime:
+                type: object
+                properties:
+                  backend:
+                    type: string
+                    enum:
+                    - auto
+                    - qemu
+                    - cloud-hypervisor
+                    - firecracker
+                    - flux-vm
+                    - vz
+                    default: auto
+                  kernel:
+                    type: string
+              network:
+                type: object
+                properties:
+                  mode:
+                    type: string
+                    enum:
+                    - user
+                    - tap
+                    - macvtap
+                    default: user
+                  netns:
+                    type: boolean
+                    default: false
+                  bridge:
+                    type: string
+                  parent:
+                    type: string
+                  mac:
+                    type: string
+                  tapName:
+                    type: string
+                  macvtapMode:
+                    type: string
+                    enum:
+                    - bridge
+                    - vepa
+                    - private
+                    - passthru
+                  forwards:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - hostPort
+                      - guestPort
+                      properties:
+                        hostPort:
+                          type: integer
+                          minimum: 1
+                          maximum: 65535
+                        guestPort:
+                          type: integer
+                          minimum: 1
+                          maximum: 65535
+                        protocol:
+                          type: string
+                          enum:
+                          - tcp
+                          - udp
+                          default: tcp
+                  staticNetwork:
+                    type: boolean
+                    default: false
+                  podUID:
+                    type: string
+                  dataplaneRequired:
+                    type: boolean
+                    default: false
+                  dataplaneMode:
+                    type: string
+                    description: FluxVM sandbox dataplane mode (legacy|ebpf|cilium). Empty uses the host's sandbox.dataplane setting in fluxvm.toml; current FluxVM defaults an omitted setting to required native eBPF.
+                    enum:
+                    - legacy
+                    - ebpf
+                    - cilium
+                  ciliumAttach:
+                    type: boolean
+                    description: When true, kairon-controller reconciles a CiliumExternalWorkload so this Machine can join the cluster Cilium network. Requires mode=tap and netns=true.
+                    default: false
+                  ciliumNamespace:
+                    type: string
+                    description: Reserved for future namespaced attach hints (ExternalWorkload is cluster-scoped).
+                  ciliumLabels:
+                    type: object
+                    additionalProperties:
+                      type: string
+                    description: Extra labels applied to the CiliumExternalWorkload.
+                  antiSpoof:
+                    type: boolean
+                    default: false
+                    description: Drop frames whose source MAC or IP is not assigned to this Machine. Enforced by the FluxVM eBPF edge.
+                  learnIP:
+                    type: boolean
+                    default: false
+                    description: Learn guestIP from ARP, DHCP, or ND so agent-less guests still project an address.
+                  egress:
+                    type: object
+                    description: Outbound policy of the VM's QEMU process, the only policy that governs a user-mode (slirp) guest. Unset keeps the node default (FluxVM qemu_egress_*, else nothing leaves). Needs a FluxVM that knows the field; QEMU backend. Cilium rewrites service addresses to the backend before this filter runs, so name the backend or its CIDR.
+                    properties:
+                      mode:
+                        type: string
+                        description: loopback (nothing leaves), allowlist (rules), audit (allow all, record what an allowlist would drop), open. Empty means allowlist when rules are given, loopback otherwise.
+                        enum:
+                        - loopback
+                        - allowlist
+                        - audit
+                        - open
+                      rules:
+                        type: array
+                        maxItems: 256
+                        items:
+                          type: object
+                          required:
+                          - cidr
+                          properties:
+                            cidr:
+                              type: string
+                              description: IPv4 network or address, e.g. 10.0.0.0/8.
+                            proto:
+                              type: string
+                              enum:
+                              - any
+                              - tcp
+                              - udp
+                              default: any
+                            port:
+                              type: integer
+                              minimum: 1
+                              maximum: 65535
+                              description: Needs proto tcp or udp. Omit to allow every port.
+                            note:
+                              type: string
+                              maxLength: 200
+                  qos:
+                    type: object
+                    description: Per-Machine token bucket projected into the FluxVM eBPF edge.
+                    properties:
+                      ingressMbps:
+                        type: integer
+                        minimum: 1
+                      egressMbps:
+                        type: integer
+                        minimum: 1
+                      ingressPps:
+                        type: integer
+                        minimum: 1
+                      egressPps:
+                        type: integer
+                        minimum: 1
+                  extraInterfaces:
+                    type: array
+                    description: Bridged NICs hot-added to the running guest (mode tap only) and hot-removed when dropped. See docs/guides/machine-hotplug.md.
+                    maxItems: 3
+                    x-kubernetes-list-type: map
+                    x-kubernetes-list-map-keys: [name]
+                    items:
+                      type: object
+                      required: [name, bridge]
+                      properties:
+                        name:
+                          type: string
+                          pattern: '^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$'
+                        bridge:
+                          type: string
+                          minLength: 1
+                          maxLength: 15
+                        mac:
+                          type: string
+                          pattern: '^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$'
+                          description: Defaults to a MAC derived from the Machine UID and name.
+                  virtualNetwork:
+                    type: object
+                    description: Attach the primary NIC to a VirtualNetwork in this namespace
+                      (mode tap, no bridge, no netns). See docs/guides/virtual-networks.md.
+                    required: [name]
+                    properties:
+                      name:
+                        type: string
+                        minLength: 1
+                      ip:
+                        type: string
+                        description: Requested address; empty takes the lowest free one.
+                        x-kubernetes-validations:
+                        - rule: isIP(self) && ip(self).family() == 4
+                          message: ip must be an IPv4 address
+                      floatingIP:
+                        type: string
+                        description: Public IPv4 address translated 1:1 to the Machine.
+                        x-kubernetes-validations:
+                        - rule: isIP(self) && ip(self).family() == 4
+                          message: floatingIP must be an IPv4 address
+              cloudInit:
+                type: object
+                description: Operator-supplied guest customization forwarded to
+                  FluxVM's own cloud-init NoCloud seed image. Only applied when
+                  the FluxVM runtime is first created -- editing it on an existing
+                  Machine has no effect, same as network.forwards and resources.
+                properties:
+                  hostname:
+                    type: string
+                  user:
+                    type: string
+                  sshAuthorizedKeys:
+                    type: array
+                    items:
+                      type: string
+                  packages:
+                    type: array
+                    items:
+                      type: string
+                  runCmd:
+                    type: array
+                    items:
+                      type: string
+                  writeFiles:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - path
+                      - content
+                      properties:
+                        path:
+                          type: string
+                        content:
+                          type: string
+                        permissions:
+                          type: string
+              powerState:
+                type: string
+                enum:
+                - Running
+                - Stopped
+                - Paused
+                - Halted
+                - Hibernated
+                default: Running
+              tenant:
+                type: string
+                description: >-
+                  Optional tenant name (DNS-1123 label). With the admission
+                  webhook on, a set tenant cannot be renamed or cleared.
+                  Annotation kairon.zyvor.dev/tenant-fence=true makes it an
+                  east-west deny against other tenants' observed guest
+                  addresses in the same namespace; see
+                  docs/guides/tenant-fence.md. It is not a quota or RBAC
+                  boundary: Kubernetes Namespace still is.
+              ttlSeconds:
+                type: integer
+                format: int64
+                minimum: 0
+              lifecycle:
+                type: object
+                description: >-
+                  Opt-in lifetime and idle handling. kairon-controller deletes
+                  the Machine after maxLifetimeSeconds and applies idleAction
+                  after idleTimeoutSeconds without guest or relay activity.
+                properties:
+                  maxLifetimeSeconds:
+                    type: integer
+                    format: int64
+                    minimum: 0
+                  idleTimeoutSeconds:
+                    type: integer
+                    format: int64
+                    minimum: 0
+                  idleAction:
+                    type: string
+                    enum: ["", Pause, Hibernate, Halt, Stop, Delete]
+                  idleCPUMillicores:
+                    type: integer
+                    format: int64
+                    minimum: 0
+                  wakeOnConnect:
+                    type: boolean
+                  wakeTimeoutSeconds:
+                    type: integer
+                    format: int64
+                    minimum: 0
+              priority:
+                type: integer
+                format: int32
+              placement:
+                type: object
+                properties:
+                  architecture:
+                    type: string
+                  nodeSelector:
+                    type: object
+                    additionalProperties:
+                      type: string
+                  affinity:
+                    type: array
+                    items:
+                      type: object
+                      required: ["labelSelector", "topologyKey"]
+                      properties:
+                        labelSelector:
+                          type: object
+                          additionalProperties:
+                            type: string
+                        topologyKey:
+                          type: string
+                  antiAffinity:
+                    type: array
+                    items:
+                      type: object
+                      required: ["labelSelector", "topologyKey"]
+                      properties:
+                        labelSelector:
+                          type: object
+                          additionalProperties:
+                            type: string
+                        topologyKey:
+                          type: string
+                  preferredAffinity:
+                    type: array
+                    items:
+                      type: object
+                      required: ["weight", "labelSelector", "topologyKey"]
+                      properties:
+                        weight:
+                          type: integer
+                          format: int32
+                        labelSelector:
+                          type: object
+                          additionalProperties:
+                            type: string
+                        topologyKey:
+                          type: string
+                  preferredAntiAffinity:
+                    type: array
+                    items:
+                      type: object
+                      required: ["weight", "labelSelector", "topologyKey"]
+                      properties:
+                        weight:
+                          type: integer
+                          format: int32
+                        labelSelector:
+                          type: object
+                          additionalProperties:
+                            type: string
+                        topologyKey:
+                          type: string
+                  topologySpreadConstraints:
+                    type: array
+                    items:
+                      type: object
+                      required: ["topologyKey", "labelSelector"]
+                      properties:
+                        topologyKey:
+                          type: string
+                        labelSelector:
+                          type: object
+                          additionalProperties:
+                            type: string
+                        maxSkew:
+                          type: integer
+                          format: int32
+                          minimum: 0
+                        whenUnsatisfiable:
+                          type: string
+                          enum: ["DoNotSchedule", "ScheduleAnyway"]
+                  tolerations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key:
+                          type: string
+                        operator:
+                          type: string
+                          enum: ["Equal", "Exists"]
+                        value:
+                          type: string
+                        effect:
+                          type: string
+                          enum: ["NoSchedule", "PreferNoSchedule", "NoExecute"]
+              apple:
+                description: Apple silicon features for the vz backend (docs/guides/mac-fabric.md).
+                type: object
+                properties:
+                  minChipGeneration:
+                    type: integer
+                    minimum: 1
+                  minMacOSVersion:
+                    type: integer
+                    minimum: 11
+                  rosetta:
+                    type: boolean
+                  nestedVirtualization:
+                    type: boolean
+                  networks:
+                    description: MacNetworks in the Machine's namespace.
+                    type: array
+                    maxItems: 8
+                    items:
+                      type: string
+                      minLength: 1
+              security:
+                type: object
+                description: secureBoot needs the qemu backend; tpm needs
+                  the qemu or cloud-hypervisor backend. On any other backend
+                  the Machine is refused at creation time (not silently
+                  ignored), see docs/guides/machine-windows-guests.md.
+                properties:
+                  secureBoot:
+                    type: boolean
+                  tpm:
+                    type: boolean
+              volumes:
+                type: array
+                items:
+                  type: object
+                  required:
+                  - name
+                  x-kubernetes-validations:
+                  - rule: "has(self.claimName) || has(self.atlas)"
+                    message: "each volume needs claimName or atlas"
+                  properties:
+                    name:
+                      type: string
+                      minLength: 1
+                    claimName:
+                      type: string
+                      description: Existing PersistentVolumeClaim. With atlas (mode pvc) the controller fills this in once Atlas has created the PVC.
+                    atlas:
+                      type: object
+                      description: Provision this volume through the Atlas storage control plane before scheduling (requires kairon-controller --atlas-url). See docs/guides/machine-storage-atlas.md.
+                      required:
+                      - size
+                      properties:
+                        size:
+                          type: string
+                          pattern: '^[0-9]+(\.[0-9]+)?(Ki|Mi|Gi|Ti|K|k|M|G|T)?$'
+                        mode:
+                          type: string
+                          enum: [pvc, rbd]
+                          description: pvc (default) creates a PVC on a StorageClass; rbd creates a raw Ceph RBD image the node opens in place.
+                        policy:
+                          type: string
+                        storageClass:
+                          type: string
+                        backendID:
+                          type: string
+                        pool:
+                          type: string
+                        retain:
+                          type: boolean
+                          description: Keep the Atlas volume when the Machine is deleted.
+                    guestPath:
+                      type: string
+                      description: Guest mount path for volumes[1+] virtiofs shares (default /mnt/<name>). Ignored for volumes[0] boot disk.
+                    readOnly:
+                      type: boolean
+                      description: Mount volumes[1+] virtiofs share read-only.
+              cdroms:
+                type: array
+                description: Read-only install media (ISO) attached as SATA
+                  CD-ROMs from the first boot (qemu backend). Each entry names
+                  a MachineImage of kind iso (imageRef) or an http(s) source
+                  plus digest. After creation entries can only be removed, which ejects the medium (live when running). See
+                  docs/guides/machine-install-media.md.
+                maxItems: 4
+                x-kubernetes-list-type: map
+                x-kubernetes-list-map-keys: [name]
+                items:
+                  type: object
+                  required: [name]
+                  properties:
+                    name:
+                      type: string
+                      pattern: '^[a-z0-9][a-z0-9-]{0,31}$'
+                    imageRef:
+                      type: string
+                      minLength: 1
+                    digest:
+                      type: string
+                    source:
+                      type: object
+                      properties:
+                        httpURL:
+                          type: string
+                          minLength: 1
+                        format:
+                          type: string
+                          enum: ["raw"]
+                        insecureSkipTLSVerify:
+                          type: boolean
+              disks:
+                type: array
+                description: PVC-backed block disks hot-attached to the running guest (SCSI by default, serial = name; io.bus picks virtio-blk or vhost-user-blk) and detached when removed. Block mode attaches the device, Filesystem mode the disk.img inside it. See docs/guides/machine-hotplug.md.
+                maxItems: 16
+                x-kubernetes-list-type: map
+                x-kubernetes-list-map-keys: [name]
+                items:
+                  type: object
+                  required: [name, claimName]
+                  x-kubernetes-validations:
+                  - rule: "self.name != 'root'"
+                    message: "disk name 'root' is reserved for the boot disk"
+                  properties:
+                    name:
+                      type: string
+                      pattern: '^[a-z0-9][a-z0-9-]{0,31}$'
+                    claimName:
+                      type: string
+                      minLength: 1
+                    io:
+                      type: object
+                      description: QEMU disk I/O options. See docs/guides/machine-storage-nvmeof.md.
+                      properties:
+                        bus:
+                          type: string
+                          enum: [scsi, virtio-blk, vhost-user-blk]
+                        aio:
+                          type: string
+                          enum: [io_uring, native, threads]
+                        cache:
+                          type: string
+                          enum: [none, writeback, writethrough, directsync, unsafe]
+                        iothread:
+                          type: boolean
+                        queues:
+                          type: integer
+                          minimum: 1
+                          maximum: 64
+                        throttle:
+                          type: object
+                          description: IOPS and bytes/s limits, applied live. A *Total limit excludes its *Read/*Write pair; *TotalMax bursts for burstSeconds (default 1).
+                          properties:
+                            iopsTotal:
+                              type: integer
+                              format: int64
+                              minimum: 1
+                              maximum: 1000000000000000
+                            iopsRead:
+                              type: integer
+                              format: int64
+                              minimum: 1
+                              maximum: 1000000000000000
+                            iopsWrite:
+                              type: integer
+                              format: int64
+                              minimum: 1
+                              maximum: 1000000000000000
+                            bpsTotal:
+                              type: integer
+                              format: int64
+                              minimum: 1
+                              maximum: 1000000000000000
+                            bpsRead:
+                              type: integer
+                              format: int64
+                              minimum: 1
+                              maximum: 1000000000000000
+                            bpsWrite:
+                              type: integer
+                              format: int64
+                              minimum: 1
+                              maximum: 1000000000000000
+                            iopsTotalMax:
+                              type: integer
+                              format: int64
+                              minimum: 1
+                              maximum: 1000000000000000
+                            bpsTotalMax:
+                              type: integer
+                              format: int64
+                              minimum: 1
+                              maximum: 1000000000000000
+                            burstSeconds:
+                              type: integer
+                              minimum: 1
+                              maximum: 86400
+                          x-kubernetes-validations:
+                          - rule: "!has(self.iopsTotal) || (!has(self.iopsRead) && !has(self.iopsWrite))"
+                            message: "iopsTotal excludes iopsRead and iopsWrite"
+                          - rule: "!has(self.bpsTotal) || (!has(self.bpsRead) && !has(self.bpsWrite))"
+                            message: "bpsTotal excludes bpsRead and bpsWrite"
+                          - rule: "!has(self.iopsTotalMax) || (has(self.iopsTotal) && self.iopsTotalMax >= self.iopsTotal)"
+                            message: "iopsTotalMax needs iopsTotal and must not be below it"
+                          - rule: "!has(self.bpsTotalMax) || (has(self.bpsTotal) && self.bpsTotalMax >= self.bpsTotal)"
+                            message: "bpsTotalMax needs bpsTotal and must not be below it"
+                          - rule: "!has(self.burstSeconds) || has(self.iopsTotalMax) || has(self.bpsTotalMax)"
+                            message: "burstSeconds needs iopsTotalMax or bpsTotalMax"
+                      x-kubernetes-validations:
+                      - rule: "!has(self.aio) || self.aio != 'native' || (has(self.cache) && (self.cache == 'none' || self.cache == 'directsync'))"
+                        message: "aio native needs cache none or directsync"
+                      - rule: "!has(self.throttle) || !has(self.bus) || self.bus != 'vhost-user-blk'"
+                        message: "vhost-user-blk bypasses QEMU's block layer and cannot be throttled"
+              deviceClaims:
+                type: array
+                items:
+                  type: object
+                  required:
+                  - name
+                  properties:
+                    name:
+                      type: string
+                      minLength: 1
+              topology:
+                type: object
+                description: Place CPUs, memory and devices by host NUMA
+                  locality from the node's NodeTopology. See
+                  docs/guides/machine-topology.md.
+                properties:
+                  policy:
+                    type: string
+                    enum: [none, best-effort, restricted, single-numa-node]
+                  hugepageSize:
+                    type: string
+                    enum: ["2Mi", "1Gi"]
+              devices:
+                type: array
+                description: PCI devices picked from the node's NodeTopology
+                  and passed through with VFIO (qemu backend).
+                maxItems: 8
+                x-kubernetes-list-type: map
+                x-kubernetes-list-map-keys: [name]
+                items:
+                  type: object
+                  required: [name, class]
+                  x-kubernetes-validations:
+                    - rule: "!has(self.profile) || self.class in ['gpu', 'accelerator']"
+                      message: profile only applies to class gpu or accelerator
+                    - rule: "!has(self.profile) || !has(self.virtualFunction) || !self.virtualFunction"
+                      message: profile and virtualFunction are exclusive
+                  properties:
+                    name:
+                      type: string
+                      pattern: '^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$'
+                      maxLength: 32
+                    class:
+                      type: string
+                      enum: [gpu, nic, nvme, accelerator]
+                    vendor:
+                      type: string
+                      maxLength: 16
+                    model:
+                      type: string
+                      pattern: '^[0-9a-f]{4}$'
+                      maxLength: 4
+                    count:
+                      type: integer
+                      minimum: 1
+                      maximum: 16
+                    minMemory:
+                      type: string
+                      maxLength: 16
+                    virtualFunction:
+                      type: boolean
+                    profile:
+                      type: string
+                      description: A vGPU (mediated device) profile instead of a
+                        whole device - an mdev type ID such as nvidia-558 or the
+                        vendor's profile name such as "GRID A100-3-20C".
+                      pattern: '^[A-Za-z0-9][A-Za-z0-9 ._:-]{0,63}$'
+                      maxLength: 64
+                    alignment:
+                      type: array
+                      maxItems: 2
+                      items:
+                        type: string
+                        enum: [sameNuma, samePcieRoot]
+              accelerators:
+                type: array
+                description: MachineAcceleratorProfiles to expand into
+                  spec.devices before scheduling. See
+                  docs/guides/accelerator-profiles.md.
+                maxItems: 4
+                x-kubernetes-list-type: map
+                x-kubernetes-list-map-keys: [name]
+                items:
+                  type: object
+                  required: [name, profile]
+                  properties:
+                    name:
+                      type: string
+                      pattern: '^[a-z0-9]([a-z0-9-]{0,26}[a-z0-9])?$'
+                      maxLength: 28
+                    profile:
+                      type: string
+                      maxLength: 63
+              topologyAllocation:
+                type: object
+                description: Set by kairon-controller together with nodeName.
+                properties:
+                  numaNodes:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, cpus, memoryMiB]
+                      properties:
+                        id:
+                          type: integer
+                          minimum: 0
+                        cpus:
+                          type: string
+                        memoryMiB:
+                          type: integer
+                          format: int64
+                          minimum: 0
+                        hugepages:
+                          type: integer
+                          format: int64
+                          minimum: 0
+                  devices:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, bdf]
+                      properties:
+                        name:
+                          type: string
+                        bdf:
+                          type: string
+                        numaNode:
+                          type: integer
+                        pcieRoot:
+                          type: string
+                        parent:
+                          type: string
+                        profile:
+                          type: string
+                        uuid:
+                          type: string
+                        framebufferMiB:
+                          type: integer
+                          format: int64
+              guestAgent:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                  console:
+                    type: boolean
+              healthCheck:
+                type: object
+                description: >-
+                  Opt-in readiness and liveness probes. kairon-node runs them
+                  and sets the Ready condition; a Machine that is not Ready
+                  gets no traffic from kaironctl expose endpoints. With
+                  restartPolicy.enabled, kairon-controller restarts a Machine
+                  whose liveness probe keeps failing, with backoff and a
+                  maxRestarts cap. See docs/guides/machine-health-probes.md.
+                properties:
+                  readiness:
+                    description: Gates the Ready condition; never restarts.
+                    type: object
+                    required: [type]
+                    properties:
+                      type:
+                        type: string
+                        enum: [GuestAgent, TCP, Exec]
+                        description: >-
+                          GuestAgent answers a guest-agent request; TCP opens
+                          guestIP:port; Exec runs command in the guest (exit
+                          0 is healthy). GuestAgent and Exec need
+                          spec.guestAgent.enabled.
+                      port:
+                        type: integer
+                        format: int32
+                        minimum: 1
+                        maximum: 65535
+                        description: TCP port (TCP probes only).
+                      command:
+                        type: array
+                        items:
+                          type: string
+                        description: argv run in the guest, no shell (Exec probes only).
+                      initialDelaySeconds:
+                        type: integer
+                        format: int32
+                        minimum: 0
+                        description: Wait after the Machine starts Running before probing.
+                      periodSeconds:
+                        type: integer
+                        format: int32
+                        minimum: 0
+                        description: Seconds between probes (default 10).
+                      timeoutSeconds:
+                        type: integer
+                        format: int32
+                        minimum: 0
+                        maximum: 10
+                        description: Seconds one probe may take (default 2).
+                      failureThreshold:
+                        type: integer
+                        format: int32
+                        minimum: 0
+                        description: Consecutive failures before the probe is Failing (default 3).
+                      successThreshold:
+                        type: integer
+                        format: int32
+                        minimum: 0
+                        description: Consecutive successes before the probe is Passing (default 1; always 1 for liveness).
+                  liveness:
+                    description: >-
+                      Detects a hung guest. Failing marks the Machine not
+                      Ready and, with restartPolicy.enabled, restarts it.
+                    type: object
+                    required: [type]
+                    properties:
+                      type:
+                        type: string
+                        enum: [GuestAgent, TCP, Exec]
+                        description: >-
+                          GuestAgent answers a guest-agent request; TCP opens
+                          guestIP:port; Exec runs command in the guest (exit
+                          0 is healthy). GuestAgent and Exec need
+                          spec.guestAgent.enabled.
+                      port:
+                        type: integer
+                        format: int32
+                        minimum: 1
+                        maximum: 65535
+                        description: TCP port (TCP probes only).
+                      command:
+                        type: array
+                        items:
+                          type: string
+                        description: argv run in the guest, no shell (Exec probes only).
+                      initialDelaySeconds:
+                        type: integer
+                        format: int32
+                        minimum: 0
+                        description: Wait after the Machine starts Running before probing.
+                      periodSeconds:
+                        type: integer
+                        format: int32
+                        minimum: 0
+                        description: Seconds between probes (default 10).
+                      timeoutSeconds:
+                        type: integer
+                        format: int32
+                        minimum: 0
+                        maximum: 10
+                        description: Seconds one probe may take (default 2).
+                      failureThreshold:
+                        type: integer
+                        format: int32
+                        minimum: 0
+                        description: Consecutive failures before the probe is Failing (default 3).
+                      successThreshold:
+                        type: integer
+                        format: int32
+                        minimum: 0
+                        description: Consecutive successes before the probe is Passing (default 1; always 1 for liveness).
+                  restartPolicy:
+                    type: object
+                    description: Opt-in automatic restart on a failing liveness probe.
+                    properties:
+                      enabled:
+                        type: boolean
+                      maxRestarts:
+                        type: integer
+                        format: int32
+                        minimum: 0
+                        description: Cap on automatic restarts (default 3); none after it is reached.
+                      backoffSeconds:
+                        type: integer
+                        format: int64
+                        minimum: 0
+                        maximum: 3600
+                        description: Wait before the first retry (default 60, 10 to 3600); doubles per restart.
+                      resetAfterSeconds:
+                        type: integer
+                        format: int64
+                        minimum: 0
+                        description: Clear the restart count after liveness has passed this long since the last restart (default 3600).
+              sandbox:
+                type: object
+                properties:
+                  templateName:
+                    type: string
+                  httpProxyPorts:
+                    type: array
+                    items:
+                      type: integer
+                      minimum: 1
+                      maximum: 65535
+                  oci:
+                    type: object
+                    description: Run a container image as the sandbox (FluxVM container
+                      track, macOS hosts). Immutable after creation.
+                    required:
+                    - image
+                    properties:
+                      image:
+                        type: string
+                        minLength: 1
+                      platform:
+                        type: string
+                        enum: ["linux/arm64", "linux/amd64"]
+                      command:
+                        type: array
+                        items:
+                          type: string
+                      entrypoint:
+                        type: array
+                        items:
+                          type: string
+                      env:
+                        type: array
+                        items:
+                          type: string
+                      workdir:
+                        type: string
+                      user:
+                        type: string
+                      writableRoot:
+                        type: boolean
+                      exitPolicy:
+                        type: string
+                        enum: ["keep", "poweroff"]
+                      ports:
+                        type: array
+                        items:
+                          type: string
+                      restart:
+                        type: string
+                        enum: ["no", "on-failure", "always"]
+                      maxRestarts:
+                        type: integer
+                        format: int32
+                        minimum: 0
+                      healthCheck:
+                        type: object
+                        required:
+                        - command
+                        properties:
+                          command:
+                            type: array
+                            minItems: 1
+                            items:
+                              type: string
+                          intervalSeconds:
+                            type: integer
+                            minimum: 0
+                          timeoutSeconds:
+                            type: integer
+                            minimum: 0
+                          retries:
+                            type: integer
+                            minimum: 0
+                          startPeriodSeconds:
+                            type: integer
+                            minimum: 0
+                      offline:
+                        type: boolean
+                      allowHosts:
+                        type: array
+                        items:
+                          type: string
+                      profile:
+                        type: string
+              serviceFabric:
+                type: object
+                properties:
+                  services:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - name
+                      - port
+                      properties:
+                        name:
+                          type: string
+                          minLength: 1
+                        port:
+                          type: integer
+                          minimum: 1
+                          maximum: 65535
+                        weight:
+                          type: integer
+                          minimum: 1
+                          maximum: 65535
+          status:
+            type: object
+            properties:
+              phase:
+                type: string
+              nodeName:
+                type: string
+              runtimeID:
+                type: string
+              guestIP:
+                type: string
+              guestIPs:
+                type: array
+                items:
+                  type: string
+              container:
+                type: object
+                description: Container process state; set only for spec.sandbox.oci.
+                properties:
+                  exitCode:
+                    type: integer
+                    format: int32
+                  restarts:
+                    type: integer
+                    minimum: 0
+                  health:
+                    type: string
+                  initError:
+                    type: string
+              observedGeneration:
+                type: integer
+                format: int64
+              message:
+                type: string
+              appliedVCPUs:
+                type: integer
+              appliedMemoryMiB:
+                type: integer
+                format: int64
+              appliedDiskThrottles:
+                type: array
+                description: Disk limits kairon-node last set on the running VM (disk root or a spec.disks name).
+                items:
+                  type: object
+                  required:
+                  - disk
+                  properties:
+                    disk:
+                      type: string
+                    throttle:
+                      type: object
+                      properties:
+                        iopsTotal:
+                          type: integer
+                          format: int64
+                          minimum: 1
+                          maximum: 1000000000000000
+                        iopsRead:
+                          type: integer
+                          format: int64
+                          minimum: 1
+                          maximum: 1000000000000000
+                        iopsWrite:
+                          type: integer
+                          format: int64
+                          minimum: 1
+                          maximum: 1000000000000000
+                        bpsTotal:
+                          type: integer
+                          format: int64
+                          minimum: 1
+                          maximum: 1000000000000000
+                        bpsRead:
+                          type: integer
+                          format: int64
+                          minimum: 1
+                          maximum: 1000000000000000
+                        bpsWrite:
+                          type: integer
+                          format: int64
+                          minimum: 1
+                          maximum: 1000000000000000
+                        iopsTotalMax:
+                          type: integer
+                          format: int64
+                          minimum: 1
+                          maximum: 1000000000000000
+                        bpsTotalMax:
+                          type: integer
+                          format: int64
+                          minimum: 1
+                          maximum: 1000000000000000
+                        burstSeconds:
+                          type: integer
+                          minimum: 1
+                          maximum: 86400
+              appliedResourceLimits:
+                type: object
+                properties:
+                  cpuQuotaPercent:
+                    type: integer
+                  memoryMaxBytes:
+                    type: integer
+                    format: int64
+                  ioWeight:
+                    type: integer
+                  pidsMax:
+                    type: integer
+                    format: int64
+                  cpuSetCpus:
+                    type: array
+                    items:
+                      type: integer
+                      minimum: 0
+              appliedTopology:
+                type: object
+                properties:
+                  numaNodes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        hostNode:
+                          type: integer
+                        vcpus:
+                          type: string
+                        hostCpus:
+                          type: string
+                        memoryMiB:
+                          type: integer
+                          format: int64
+                        policy:
+                          type: string
+                  devices:
+                    type: array
+                    items:
+                      type: string
+                  observedAt:
+                    type: string
+                    format: date-time
+                  message:
+                    type: string
+              lastRestartRequest:
+                type: string
+                description: The kairon.zyvor.dev/restart-requested value kairon-node last acted on.
+              shutdownDeadline:
+                type: string
+                description: Set while a graceful stop waits for the guest to power off (RFC3339).
+              lifecycle:
+                type: object
+                properties:
+                  lastActivityTime:
+                    type: string
+                    description: Last guest activity kairon-node saw (RFC3339).
+              health:
+                type: object
+                description: kairon-node's spec.healthCheck probe record.
+                properties:
+                  readiness:
+                    type: object
+                    nullable: true
+                    properties:
+                      state:
+                        type: string
+                        enum: [Unknown, Passing, Failing]
+                      consecutiveFailures:
+                        type: integer
+                        format: int32
+                      consecutiveSuccesses:
+                        type: integer
+                        format: int32
+                      lastTransitionTime:
+                        type: string
+                      message:
+                        type: string
+                  liveness:
+                    type: object
+                    nullable: true
+                    properties:
+                      state:
+                        type: string
+                        enum: [Unknown, Passing, Failing]
+                      consecutiveFailures:
+                        type: integer
+                        format: int32
+                      consecutiveSuccesses:
+                        type: integer
+                        format: int32
+                      lastTransitionTime:
+                        type: string
+                      message:
+                        type: string
+                  runningSince:
+                    type: string
+                    description: When probing started counting for this run (RFC3339).
+                  restartMarker:
+                    type: string
+              hibernation:
+                type: object
+                properties:
+                  node:
+                    type: string
+                  runtimeID:
+                    type: string
+                  stateBytes:
+                    type: integer
+                    format: int64
+                  stateDir:
+                    type: string
+                  hibernatedAt:
+                    type: string
+                    format: date-time
+                  sharedStorage:
+                    type: boolean
+                  resumeNode:
+                    type: string
+                  message:
+                    type: string
+                  host:
+                    type: object
+                    properties:
+                      qemuVersion:
+                        type: string
+                      machineType:
+                        type: string
+                      cpuVendor:
+                        type: string
+                      cpuFlags:
+                        type: array
+                        items:
+                          type: string
+                      stateDir:
+                        type: string
+              memory:
+                type: object
+                properties:
+                  currentMiB:
+                    type: integer
+                    format: int64
+                  minMiB:
+                    type: integer
+                    format: int64
+                  balloonTargetMiB:
+                    type: integer
+                    format: int64
+                  balloonActualMiB:
+                    type: integer
+                    format: int64
+                  guestAvailableMiB:
+                    type: integer
+                    format: int64
+                  reason:
+                    type: string
+                  lastChangeTime:
+                    type: string
+                    format: date-time
+              resourceUsage:
+                type: object
+                properties:
+                  cpuPercent:
+                    type: number
+                  memoryBytes:
+                    type: integer
+                    format: int64
+                  diskReadBytes:
+                    type: integer
+                    format: int64
+                  diskWriteBytes:
+                    type: integer
+                    format: int64
+              volumeStagingPath:
+                type: string
+              volumePublishPath:
+                type: string
+              volumeHandle:
+                type: string
+              volumeDriver:
+                type: string
+              conditions:
+                type: array
+                items:
+                  type: object
+                  required:
+                  - type
+                  - status
+                  - lastTransitionTime
+                  properties:
+                    type:
+                      type: string
+                    status:
+                      type: string
+                    reason:
+                      type: string
+                    message:
+                      type: string
+                    lastTransitionTime:
+                      type: string
+                      format: date-time
+              # kairon-node's own ground truth of exactly which Service
+              # Fabric (service, port, guestIP) backends it has registered
+              # for this Machine -- FluxVM has no query for this, so
+              # reconcileServiceFabric diffs against this field (not
+              # against current spec) to prune a stale backend left behind
+              # by a guestIP change or a spec.serviceFabric.services edit,
+              # see internal/agent/network.go.
+              appliedServiceFabricMemberships:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    port:
+                      type: integer
+                    guestIP:
+                      type: string
+              attachedDisks:
+                type: array
+                items:
+                  type: string
+              diskVolumes:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    node:
+                      type: string
+                    driver:
+                      type: string
+                    volumeHandle:
+                      type: string
+                    stagingPath:
+                      type: string
+                    publishPath:
+                      type: string
+                    block:
+                      type: boolean
+              attachedInterfaces:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    bridge:
+                      type: string
+                    mac:
+                      type: string
+              network:
+                type: object
+                properties:
+                  guestIP:
+                    type: string
+                  guestIPs:
+                    type: array
+                    items:
+                      type: string
+                  tapName:
+                    type: string
+                  dataplane:
+                    type: object
+                    properties:
+                      attached:
+                        type: boolean
+                      mode:
+                        type: string
+                      schemaVersion:
+                        type: integer
+                      identity:
+                        type: integer
+                      policyFingerprint:
+                        type: string
+                      policySynced:
+                        type: boolean
+                      interface:
+                        type: string
+                  cilium:
+                    type: object
+                    properties:
+                      externalWorkload:
+                        type: string
+                      externalWorkloadUID:
+                        type: string
+                      identity:
+                        type: integer
+                      ipv4:
+                        type: string
+                      message:
+                        type: string
+                  edge:
+                    type: object
+                    description: VM-edge eBPF projection. Identity is stable across IP changes.
+                    properties:
+                      identity:
+                        type: integer
+                      guestIPSource:
+                        type: string
+                        enum:
+                        - agent
+                        - arp
+                        - dhcp
+                        - nd
+                      antiSpoof:
+                        type: boolean
+                      policyName:
+                        type: string
+                      conntrackRestored:
+                        type: integer
+                      blackholeWindowMs:
+                        type: integer
+                      specHash:
+                        type: string
+                        description: Short hash of the compiled edge document last sent to FluxVM.
+                      applied:
+                        type: boolean
+                        description: True when FluxVM accepted the document identified by specHash.
+                      applyError:
+                        type: string
+                  virtualNetwork:
+                    type: object
+                    description: The virtual network attachment the runtime was created with.
+                    properties:
+                      name:
+                        type: string
+                      vni:
+                        type: integer
+                      ip:
+                        type: string
+                      prefixLength:
+                        type: integer
+                      gateway:
+                        type: string
+                      mac:
+                        type: string
+                      floatingIP:
+                        type: string
+  - name: v1beta1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1beta1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema
+  - name: v1alpha1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1alpha1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema

@@ -1,0 +1,144 @@
+/* Copyright 2026 Zyvor · https://zyvor.dev
+   SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+   Design tokens. Ported from veyron's frontend (itself derived from netra):
+   one blue primary, "color is deviation", hairline borders, frosted chrome.
+   Dark is the default; <html data-theme="light|dark"> is set before first
+   paint by the inline boot script in index.html. */
+
+:root {
+  --font-text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+
+  --fs-body: 14px;
+  --fs-small: 12px;
+  --fs-h1: clamp(24px, 2.6vw, 34px);
+  --fs-h2: clamp(19px, 1.8vw, 24px);
+  --fs-h3: 16px;
+
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 22px;
+  --radius-pill: 980px;
+
+  --gutter: clamp(16px, 3vw, 48px);
+  --page-max: 1600px;
+  --nav-h: 44px;
+  --hit-min: 40px;
+
+  --ease: cubic-bezier(0.28, 0.11, 0.32, 1);
+  --dur: 0.24s;
+
+  --blue: #0071e3;
+  --blue-hover: #0077ed;
+  --zyvor-orange: #ff5a15;
+
+  /* per-section tone colors (nav groups, kickers, icons) */
+  --tone-sky: #2997ff;
+  --tone-violet: #af52de;
+  --tone-emerald: #30d158;
+  --tone-amber: #ff9f0a;
+  --tone-rose: #ff453a;
+  --tone-graphite: #8e8e93;
+}
+
+/* Zorvia-style accent tones: [data-tone] feeds heroes, chips and kickers. */
+[data-tone="sky"] { --tone-color: #0071e3; --tone-wash: rgba(0, 113, 227, 0.1); --tone-glow: rgba(0, 113, 227, 0.22); }
+[data-tone="violet"] { --tone-color: #7c3aed; --tone-wash: rgba(124, 58, 237, 0.1); --tone-glow: rgba(124, 58, 237, 0.2); }
+[data-tone="emerald"] { --tone-color: #248a3d; --tone-wash: rgba(36, 138, 61, 0.1); --tone-glow: rgba(36, 138, 61, 0.2); }
+[data-tone="amber"] { --tone-color: #bf7a00; --tone-wash: rgba(191, 122, 0, 0.1); --tone-glow: rgba(191, 122, 0, 0.2); }
+[data-tone="rose"] { --tone-color: #d70015; --tone-wash: rgba(215, 0, 21, 0.08); --tone-glow: rgba(215, 0, 21, 0.18); }
+[data-tone="orange"] { --tone-color: #ff5a15; --tone-wash: rgba(255, 90, 21, 0.1); --tone-glow: rgba(255, 90, 21, 0.2); }
+
+:root,
+:root[data-theme="light"],
+.force-light {
+  color-scheme: light;
+  --bg-page: #f5f5f7;
+  --bg-sub: #f5f5f7;
+  --bg-elevated: #ffffff;
+  --bg-elevated-2: #f5f5f7;
+  --nav-bg: rgba(251, 251, 253, 0.8);
+  --menu-bg: rgba(255, 255, 255, 0.94);
+  --scrim: rgba(0, 0, 0, 0.32);
+
+  --text: #1d1d1f;
+  --text-2: #6e6e73;
+  --text-3: #86868b;
+  --text-faint: #a1a1a6;
+
+  --border: #d2d2d7;
+  --hairline: rgba(0, 0, 0, 0.1);
+  --fill: rgba(0, 0, 0, 0.04);
+  --fill-hover: rgba(0, 0, 0, 0.06);
+  --row-sel: rgba(0, 113, 227, 0.08);
+
+  --accent: #0071e3;
+  --danger: #ff3b30;
+  --danger-bg: #fff1f0;
+  --ok: #1a7f37;
+  --ok-bg: #e8f8ec;
+  --warn: #8b3d00;
+  --warn-bg: #fff6ed;
+  --info: #0b57bf;
+  --info-bg: #eaf6fc;
+  --idle: #555;
+  --idle-bg: #eeeef0;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-3: 0 12px 40px rgba(0, 0, 0, 0.16);
+  --focus-ring: 0 0 0 4px rgba(0, 113, 227, 0.3);
+
+  --terminal-bg: #0d0d0f;
+  --hero-glow-a: rgba(0, 113, 227, 0.14);
+  --hero-glow-b: rgba(255, 90, 21, 0.1);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-page: #000000;
+  --bg-sub: #0b0b0c;
+  --bg-elevated: #1d1d1f;
+  --bg-elevated-2: #2c2c2e;
+  --nav-bg: rgba(22, 22, 23, 0.8);
+  --menu-bg: rgba(29, 29, 31, 0.94);
+  --scrim: rgba(0, 0, 0, 0.55);
+
+  --text: #f5f5f7;
+  --text-2: #a1a1a6;
+  --text-3: #86868b;
+  --text-faint: #6e6e73;
+
+  --border: rgba(255, 255, 255, 0.16);
+  --hairline: rgba(255, 255, 255, 0.12);
+  --fill: rgba(255, 255, 255, 0.06);
+  --fill-hover: rgba(255, 255, 255, 0.1);
+  --row-sel: rgba(41, 151, 255, 0.16);
+
+  --accent: #2997ff;
+  --danger: #ff453a;
+  --danger-bg: rgba(255, 69, 58, 0.14);
+  --ok: #30d158;
+  --ok-bg: rgba(48, 209, 88, 0.14);
+  --warn: #ff9f0a;
+  --warn-bg: rgba(255, 159, 10, 0.14);
+  --info: #64d2ff;
+  --info-bg: rgba(100, 210, 255, 0.14);
+  --idle: #a1a1a6;
+  --idle-bg: rgba(255, 255, 255, 0.08);
+
+  --shadow-1: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-3: 0 12px 40px rgba(0, 0, 0, 0.7);
+  --focus-ring: 0 0 0 4px rgba(41, 151, 255, 0.4);
+
+  --terminal-bg: #0a0a0b;
+  --hero-glow-a: rgba(41, 151, 255, 0.22);
+  --hero-glow-b: rgba(255, 90, 21, 0.14);
+}
+
+/* The sign-in screen is always light (add .force-light), like veyron's. */

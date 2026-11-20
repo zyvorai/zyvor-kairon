@@ -1,0 +1,43 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+# A boot disk pinned by digest, and an install ISO. The URLs and digests are
+# placeholders: replace them with your own image and `sha256sum` of the exact
+# file you serve. kairon-controller copies source and digest into any Machine
+# that references the image by `spec.image.imageRef`, once, before scheduling.
+# See docs/guides/machine-images.md.
+apiVersion: kairon.zyvor.dev/v1
+kind: MachineImage
+metadata:
+  name: ubuntu-24-04-v1
+spec:
+  displayName: Ubuntu 24.04 LTS cloud image
+  family: ubuntu-24.04
+  version: "1"
+  os: linux
+  kind: disk
+  source:
+    httpURL: https://images.example.com/ubuntu-24.04-v1.qcow2
+    format: qcow2
+  digest: sha256:c34b68f24b20767160e173a0b71688e6637571a3b3a6eaaee537943b61e807a6
+  defaults:
+    cpu: "2"
+    memory: 4Gi
+    diskSize: 20Gi
+---
+# Install media: kind iso must be a raw httpURL (no oci, no conversion).
+# Attach it with `spec.cdroms: [{name: install, imageRef: ubuntu-24-04-server-iso}]`
+# on a Machine with `spec.image.blank: true`. See docs/guides/machine-install-media.md.
+apiVersion: kairon.zyvor.dev/v1
+kind: MachineImage
+metadata:
+  name: ubuntu-24-04-server-iso
+spec:
+  displayName: Ubuntu 24.04 Server installer
+  family: ubuntu-24.04-server
+  version: "1"
+  os: linux
+  kind: iso
+  source:
+    httpURL: https://images.example.com/ubuntu-24.04-live-server-amd64.iso
+  digest: sha256:32d51d6f7da6b77df276628e9a642b2861efd3c173211eb10899145dcabacfe8

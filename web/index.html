@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <meta name="theme-color" content="#f5f5f7" />
+    <link rel="icon" href="/zyvor-favicon.svg" />
+    <title>Kairon · Zyvor</title>
+    <script>
+      // Set the theme before first paint (light by default) -- no flash.
+      (function () {
+        try {
+          var t = localStorage.getItem('kairon_theme') || 'light';
+          var dark = t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+        } catch (e) { document.documentElement.dataset.theme = 'light'; }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,30 @@
+{
+  "apiVersion": "fleet.kairon.zyvor.dev/v1alpha1",
+  "kind": "MachineImportPlan",
+  "metadata": {
+    "name": "import-campaign",
+    "namespace": "default"
+  },
+  "spec": {
+    "entries": [
+      {
+        "name": "imported-web",
+        "image": {
+          "source": {
+            "httpURL": "https://images.example.com/web.ova",
+            "format": "ova",
+            "repair": true
+          },
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "resources": {
+          "cpu": "2",
+          "memory": "4Gi"
+        },
+        "backend": "qemu"
+      }
+    ],
+    "maxConcurrent": 1,
+    "powerState": "Running"
+  }
+}

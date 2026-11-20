@@ -1,0 +1,109 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: machinesets.kairon.zyvor.dev
+spec:
+  group: kairon.zyvor.dev
+  scope: Namespaced
+  names:
+    plural: machinesets
+    singular: machineset
+    kind: MachineSet
+    shortNames:
+    - ms
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    subresources: &subresources
+      status: {}
+      scale:
+        specReplicasPath: .spec.replicas
+        statusReplicasPath: .status.replicas
+        labelSelectorPath: .status.selector
+    additionalPrinterColumns: &columns
+    - name: Replicas
+      type: integer
+      jsonPath: .spec.replicas
+    - name: Ready
+      type: integer
+      jsonPath: .status.readyReplicas
+    - name: Updated
+      type: integer
+      jsonPath: .status.updatedReplicas
+    - name: Strategy
+      type: string
+      jsonPath: .spec.strategy
+    schema: &schema
+      openAPIV3Schema:
+        type: object
+        required:
+        - spec
+        properties:
+          spec:
+            type: object
+            required:
+            - replicas
+            - template
+            properties:
+              replicas:
+                type: integer
+                minimum: 0
+              strategy:
+                type: string
+                enum: ["RollingUpdate", "Recreate"]
+              maxUnavailable:
+                type: string
+              template:
+                type: object
+                required:
+                - spec
+                properties:
+                  labels:
+                    type: object
+                    additionalProperties:
+                      type: string
+                  # spec is the exact same shape as a Machine's own
+                  # spec.spec -- deliberately not re-declared field by
+                  # field here (this project has no CRD-schema
+                  # cross-referencing mechanism, and duplicating the full
+                  # ~400-line Machine schema would only drift out of sync
+                  # with it over time). Validated by kairon-controller/
+                  # kairon-node the same way a plain Machine's own spec
+                  # already is, not by this CRD's own schema. See
+                  # machines.yaml (this directory) for the real shape.
+                  spec:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+          status:
+            type: object
+            properties:
+              replicas:
+                type: integer
+              readyReplicas:
+                type: integer
+              updatedReplicas:
+                type: integer
+              selector:
+                type: string
+              message:
+                type: string
+  - name: v1beta1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1beta1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema
+  - name: v1alpha1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1alpha1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema

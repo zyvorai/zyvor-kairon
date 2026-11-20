@@ -1,0 +1,16 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+apiVersion: kairon.zyvor.dev/v1
+kind: MachineMigration
+metadata:
+  name: move-demo-live
+  namespace: default
+spec:
+  machineName: demo
+  strategy: live
+  targetNode: worker-2
+  mode: pre-copy
+  bandwidthMbps: 800
+  maxDowntimeMs: 200
+  multifdChannels: 4

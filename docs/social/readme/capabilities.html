@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Kairon capabilities</title>
+<!-- SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+     1600x640. Rendered by ./build.sh to docs/assets/readme-capabilities.jpg.
+     Every item is a shipped feature listed in README.md / docs/WHAT_SHIPS.md. -->
+<link rel="stylesheet" href="card.css">
+<style>
+  body { height:640px; }
+  h1 { font-size:50px; }
+  .row { margin-top:28px; display:grid; grid-template-columns:repeat(4,1fr); gap:24px; }
+</style></head><body>
+<div class="bar"></div>
+<div class="wrap">
+  <div class="top"><img src="../zyvor-mark.svg" alt=""><b>Zyvor</b><span>&middot;</span><span>Kairon</span><span class="r">Capabilities at a glance</span></div>
+  <h1>Everything a VM platform needs. <em>Nothing per VM but the VM.</em></h1>
+  <div class="row">
+    <div class="card k"><span class="lane">RUN</span><h3>Machines, not Pods</h3>
+      <ul><li>QEMU, Cloud Hypervisor, Firecracker, FluxVM</li><li>Windows, NUMA, CPU pinning, GPU via DRA</li><li>MachinePools, claims and instant forks</li><li>OVA / VMDK import, OCI disk images</li></ul></div>
+    <div class="card a"><span class="lane">MOVE</span><h3>Migration that refuses to guess</h3>
+      <ul><li>Cold, evacuation and mTLS live migration</li><li>Encrypted migration data plane</li><li><code>NeedsRecovery</code>: no silent split-brain</li><li>Disruption budgets and policies</li></ul></div>
+    <div class="card v"><span class="lane">PROTECT</span><h3>Data and network</h3>
+      <ul><li>Snapshots and backups with guest freeze</li><li>CSI, block PVCs, Ceph RBD via Atlas</li><li>eBPF edge: DNS / SNI policy, rate limits</li><li>Flows, attributed drops, one-VM pcap</li></ul></div>
+    <div class="card o"><span class="lane">AUTOMATE</span><h3>Built for agents and GitOps</h3>
+      <ul><li>MCP server: sandboxes, forks, egress</li><li>Kubernetes API is the only truth</li><li>Helm OCI or <code>kaironctl install</code></li><li>Dashboard with SSO and VNC console</li></ul></div>
+  </div>
+  <div class="foot"><b>github.com/zyvorai/kairon</b><span class="r"><span class="dot"></span>Zyvor Production License &middot; Go stdlib controller and node</span></div>
+</div>
+</body></html>

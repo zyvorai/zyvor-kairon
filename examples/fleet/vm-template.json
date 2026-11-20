@@ -1,0 +1,35 @@
+{
+  "apiVersion": "fleet.kairon.zyvor.dev/v1alpha1",
+  "kind": "MachineTemplateVersion",
+  "metadata": {
+    "name": "vm-template",
+    "namespace": "default"
+  },
+  "spec": {
+    "version": "1.0.0",
+    "maxTTLSeconds": 86400,
+    "template": {
+      "labels": {
+        "team": "engineering"
+      },
+      "spec": {
+        "image": {
+          "source": {
+            "httpURL": "https://images.example.com/ubuntu.qcow2"
+          },
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "resources": {
+          "cpu": "2",
+          "memory": "2Gi"
+        },
+        "runtime": {
+          "backend": "qemu"
+        },
+        "network": {
+          "mode": "user"
+        }
+      }
+    }
+  }
+}

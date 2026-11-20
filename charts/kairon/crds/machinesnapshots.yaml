@@ -1,0 +1,104 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: machinesnapshots.kairon.zyvor.dev
+spec:
+  group: kairon.zyvor.dev
+  scope: Namespaced
+  names:
+    plural: machinesnapshots
+    singular: machinesnapshot
+    kind: MachineSnapshot
+    shortNames:
+    - kms
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    subresources: &subresources
+      status: {}
+    additionalPrinterColumns: &columns
+    - name: Machine
+      type: string
+      jsonPath: .spec.machineName
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    - name: Ready
+      type: boolean
+      jsonPath: .status.readyToUse
+    schema: &schema
+      openAPIV3Schema:
+        type: object
+        required:
+        - spec
+        properties:
+          spec:
+            type: object
+            required:
+            - machineName
+            properties:
+              machineName:
+                type: string
+                minLength: 1
+              volumeSnapshotClassName:
+                type: string
+              volumeNames:
+                type: array
+                description: Limit the snapshot to these spec.volumes[].name entries; empty means all.
+                items:
+                  type: string
+          status:
+            type: object
+            properties:
+              phase:
+                type: string
+              message:
+                type: string
+              readyToUse:
+                type: boolean
+              volumeSnapshots:
+                type: array
+                items:
+                  type: object
+                  required:
+                  - volumeName
+                  - volumeSnapshotName
+                  properties:
+                    volumeName:
+                      type: string
+                    volumeSnapshotName:
+                      type: string
+                    readyToUse:
+                      type: boolean
+                    atlasSnapshotID:
+                      type: string
+                    atlasJobID:
+                      type: string
+              sourceUID:
+                type: string
+                description: UID of the source Machine recorded with sourceSpec.
+              sourceSpec:
+                type: object
+                description: The Machine's spec when the snapshot started,
+                  used by MachineSnapshotRestore spec.machine.
+                x-kubernetes-preserve-unknown-fields: true
+  - name: v1beta1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1beta1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema
+  - name: v1alpha1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1alpha1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema

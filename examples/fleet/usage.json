@@ -1,0 +1,14 @@
+{
+  "apiVersion": "fleet.kairon.zyvor.dev/v1alpha1",
+  "kind": "MachineUsageLedger",
+  "metadata": {
+    "name": "usage",
+    "namespace": "default"
+  },
+  "spec": {
+    "selector": {
+      "team": "engineering"
+    },
+    "maxGapSeconds": 60
+  }
+}

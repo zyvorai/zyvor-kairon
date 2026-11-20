@@ -1,0 +1,56 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+# Keeps native Go fuzz targets warm in CI so regressions surface without
+# waiting on an OSS-Fuzz enrollment. Scorecard's Fuzzing check also detects
+# the Fuzz* functions under internal/model/.
+name: fuzz
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '40 6 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: read
+
+jobs:
+  go-fuzz:
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '"ubuntu-latest"' || '["self-hosted","Linux","X64","zyvor-build","docker"]') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version-file: go.mod
+          cache: ${{ runner.environment == 'github-hosted' }}  # self-hosted: shared GOMODCACHE, cache restore/save takes 15-35 min
+      - name: Fuzz model parsers
+        run: |
+          set -euo pipefail
+          # Bounded wall clock so PRs stay cheap; nightly schedule still helps.
+          fuzz_secs=20
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            fuzz_secs=60
+          fi
+          for target in FuzzParseVCPUs FuzzParseMemoryMiB FuzzParseCPUList FuzzParseIntOrPercent FuzzValidateVmNetworkPolicy; do
+            echo "==> go test -fuzz=${target} -fuzztime=${fuzz_secs}s"
+            go test ./internal/model/ -fuzz="${target}" -fuzztime="${fuzz_secs}s"
+          done
+      - name: Fuzz migration and edge parsers
+        run: |
+          set -euo pipefail
+          fuzz_secs=20
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            fuzz_secs=60
+          fi
+          for spec in "./internal/migration/ FuzzSessionValidate" "./internal/migration/ FuzzSessionJSON" "./internal/ebpfedge/ FuzzUnmarshalSnapshot" "./internal/ebpfedge/ FuzzCompileAndDecide"; do
+            read -r pkg target <<<"$spec"
+            echo "==> go test ${pkg} -fuzz=${target} -fuzztime=${fuzz_secs}s"
+            go test "${pkg}" -fuzz="${target}" -fuzztime="${fuzz_secs}s"
+          done

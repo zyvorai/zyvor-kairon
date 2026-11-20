@@ -1,0 +1,41 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+name: macos
+
+on:
+  pull_request:
+    paths:
+      - "internal/macnode/**"
+      - "internal/fluxvm/**"
+      - "cmd/kairon-node/**"
+      - "scripts/macos-e2e.sh"
+      - "deploy/macos/**"
+      - ".github/workflows/macos.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  darwin:
+    # macos-14 is no longer served: "The configuration 'macos-14-arm64-us-default' is not supported".
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version-file: go.mod
+          cache: ${{ runner.environment == 'github-hosted' }}  # self-hosted: shared GOMODCACHE, cache restore/save takes 15-35 min
+      - name: Vet and build everything for darwin/arm64
+        run: |
+          go vet ./...
+          go build ./...
+      - name: Tests (macOS-relevant packages)
+        run: go test ./internal/macnode/... ./internal/fluxvm/... ./internal/scheduler/... ./internal/kube/... ./internal/model/... ./cmd/...
+      # scripts/macos-e2e.sh boots a real VM through FluxVM's Apple backend, which needs Virtualization.framework
+      # (no nested virtualization on hosted runners). Run it on a physical Mac.

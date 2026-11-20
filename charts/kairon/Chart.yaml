@@ -1,0 +1,9 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+apiVersion: v2
+name: kairon
+description: Kubernetes-native VM orchestration backed by Zyvor FluxVM
+type: application
+version: 0.10.6
+appVersion: "0.10.6"

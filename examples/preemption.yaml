@@ -1,0 +1,31 @@
+apiVersion: kairon.zyvor.dev/v1
+kind: Machine
+metadata:
+  name: gpu-job
+  namespace: lab
+  annotations:
+    kairon.zyvor.dev/preempt: "true"
+spec:
+  priority: 10
+  powerState: Running
+  image:
+    path: /var/lib/fluxvm/images/gpu-job.qcow2
+  resources:
+    cpu: "4"
+    memory: 8Gi
+---
+apiVersion: kairon.zyvor.dev/v1
+kind: Machine
+metadata:
+  name: dev-box
+  namespace: lab
+  annotations:
+    kairon.zyvor.dev/preemption-policy: Halt
+spec:
+  priority: 0
+  powerState: Running
+  image:
+    path: /var/lib/fluxvm/images/dev-box.qcow2
+  resources:
+    cpu: "4"
+    memory: 8Gi

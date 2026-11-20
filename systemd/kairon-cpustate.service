@@ -1,0 +1,17 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+# Copies kubelet's root-only cpu_manager_state to a root:kairon 0640 file
+# kairon-node can read for pinnable-CPU discovery, so the agent itself
+# needs no extra capability. The rename keeps the copy atomic: a reader
+# never sees a missing or half-written file, which discovery would treat
+# as a refusal and clear the label.
+[Unit]
+Description=kairon - copy kubelet cpu_manager_state for kairon-node
+Documentation=https://github.com/zyvorai/zyvor-kairon
+ConditionPathExists=/var/lib/kubelet/cpu_manager_state
+
+[Service]
+Type=oneshot
+ExecStartPre=/usr/bin/install -d -m 0700 -o kairon -g kairon /var/lib/kairon-node
+ExecStart=/bin/sh -c 'install -m 0640 -o root -g kairon /var/lib/kubelet/cpu_manager_state /var/lib/kairon-node/.cpu_manager_state.tmp && mv -f /var/lib/kairon-node/.cpu_manager_state.tmp /var/lib/kairon-node/cpu_manager_state'

@@ -1,0 +1,24 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+apiVersion: kairon.zyvor.dev/v1
+kind: MachineSet
+metadata:
+  name: web
+  namespace: default
+spec:
+  replicas: 3
+  strategy: RollingUpdate
+  maxUnavailable: 1
+  template:
+    labels:
+      app: web
+    spec:
+      image:
+        path: /var/lib/fluxvm/images/ubuntu-24.04.qcow2
+      resources:
+        cpu: "2"
+        memory: 4Gi
+      runtime:
+        backend: qemu
+      powerState: Running

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Kairon ecosystem extension metadata v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "version", "category", "maintainer", "repository", "license", "interface", "capabilities", "qualification"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "id": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$", "maxLength": 63},
+    "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "category": {"enum": ["image", "storage", "backup", "migration", "security", "ci", "observability"]},
+    "maintainer": {"type": "string", "minLength": 1},
+    "repository": {"type": "string", "pattern": "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"},
+    "license": {"type": "string", "minLength": 1},
+    "interface": {"enum": ["kubernetes-crd", "kairon-ui-rest", "csi"]},
+    "capabilities": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"}},
+    "qualification": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "scope"],
+      "properties": {
+        "status": {"enum": ["unqualified", "tested"]},
+        "scope": {"const": "single-machine-lifecycle"},
+        "report": {"type": "string", "minLength": 1}
+      },
+      "allOf": [{"if": {"properties": {"status": {"const": "tested"}}}, "then": {"required": ["report"]}}]
+    }
+  }
+}

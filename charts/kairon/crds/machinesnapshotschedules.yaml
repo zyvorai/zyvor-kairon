@@ -1,0 +1,115 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: machinesnapshotschedules.kairon.zyvor.dev
+spec:
+  group: kairon.zyvor.dev
+  scope: Namespaced
+  names:
+    plural: machinesnapshotschedules
+    singular: machinesnapshotschedule
+    kind: MachineSnapshotSchedule
+    shortNames:
+    - mss
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    subresources: &subresources
+      status: {}
+    additionalPrinterColumns: &columns
+    - name: IntervalSeconds
+      type: integer
+      jsonPath: .spec.intervalSeconds
+    - name: DailyAt
+      type: string
+      jsonPath: .spec.dailyAt
+    - name: Suspend
+      type: boolean
+      jsonPath: .spec.suspend
+    - name: LastRun
+      type: string
+      jsonPath: .status.lastRunTime
+    - name: LastCount
+      type: integer
+      jsonPath: .status.lastRunSnapshotCount
+    - name: NextRun
+      type: string
+      jsonPath: .status.nextRunTime
+    - name: StartingDeadline
+      type: integer
+      jsonPath: .spec.startingDeadlineSeconds
+    schema: &schema
+      openAPIV3Schema:
+        type: object
+        required:
+        - spec
+        properties:
+          spec:
+            type: object
+            required:
+            - selector
+            x-kubernetes-validations:
+            - rule: "has(self.intervalSeconds) != has(self.dailyAt)"
+              message: "set exactly one of intervalSeconds or dailyAt"
+            properties:
+              selector:
+                type: object
+                additionalProperties:
+                  type: string
+              intervalSeconds:
+                type: integer
+                minimum: 60
+              dailyAt:
+                type: string
+                pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+              jitterSeconds:
+                type: integer
+                minimum: 0
+              maxAgeSeconds:
+                type: integer
+                minimum: 1
+              volumeSnapshotClassName:
+                type: string
+              suspend:
+                type: boolean
+              keepLast:
+                type: integer
+                minimum: 1
+              startingDeadlineSeconds:
+                type: integer
+                minimum: 1
+          status:
+            type: object
+            properties:
+              lastRunTime:
+                type: string
+                format: date-time
+              lastRunSnapshotCount:
+                type: integer
+              lastRunError:
+                type: string
+              nextRunTime:
+                type: string
+                format: date-time
+              lastHandledTriggerTime:
+                type: string
+  - name: v1beta1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1beta1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema
+  - name: v1alpha1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1alpha1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema

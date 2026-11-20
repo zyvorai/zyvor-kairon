@@ -1,0 +1,178 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+{{/*
+Off by default -- like migration.tlsSecretName/console.tls.secretName, this
+chart does not mint webhook.tlsSecretName's certificate or webhook.caBundle
+for you (see values.yaml's webhook section for why). Without both set,
+leave this whole file rendering nothing rather than standing up a
+ValidatingWebhookConfiguration pointing at a Service with no valid
+certificate behind it -- that would fail every Machine/MachineMigration
+write in the cluster per webhook.failurePolicy, not just leave the gap
+this closes unaddressed.
+*/}}
+{{ if and .Values.webhook.enabled .Values.webhook.tlsSecretName .Values.webhook.caBundle }}
+apiVersion: v1
+kind: Service
+metadata: {name: kairon-controller-webhook, namespace: {{ .Release.Namespace }}}
+spec:
+  selector: {app.kubernetes.io/name: kairon-controller}
+  ports:
+    - {port: 443, targetPort: webhook}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata: {name: kairon-controller-webhook}
+webhooks:
+  - name: machinequota.kairon.zyvor.dev
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: {{ .Values.webhook.failurePolicy }}
+    matchPolicy: Equivalent
+    clientConfig:
+      caBundle: {{ .Values.webhook.caBundle | quote }}
+      service:
+        name: kairon-controller-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-machine
+        port: 443
+    rules:
+      - apiGroups: ["kairon.zyvor.dev"]
+        apiVersions: ["v1"]
+        resources: ["machines"]
+        # UPDATE closes a real gap CREATE alone leaves open: a Machine
+        # that grows past quota via hotplug (see internal/controller/
+        # webhook.go's validateMachineResize) -- unlike CREATE, this has
+        # no reconcile-loop equivalent to backstop it, so it's only ever
+        # caught here, and only once webhook.enabled is true.
+        operations: ["CREATE", "UPDATE"]
+        scope: Namespaced
+  - name: machinedisruptionbudget.kairon.zyvor.dev
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: {{ .Values.webhook.failurePolicy }}
+    matchPolicy: Equivalent
+    clientConfig:
+      caBundle: {{ .Values.webhook.caBundle | quote }}
+      service:
+        name: kairon-controller-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-machinemigration
+        port: 443
+    rules:
+      - apiGroups: ["kairon.zyvor.dev"]
+        apiVersions: ["v1"]
+        resources: ["machinemigrations"]
+        operations: ["CREATE"]
+        scope: Namespaced
+  - name: machinenetworkpolicy.kairon.zyvor.dev
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: {{ .Values.webhook.failurePolicy }}
+    matchPolicy: Equivalent
+    clientConfig:
+      caBundle: {{ .Values.webhook.caBundle | quote }}
+      service:
+        name: kairon-controller-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-machinenetworkpolicy
+        port: 443
+    rules:
+      - apiGroups: ["kairon.zyvor.dev"]
+        apiVersions: ["v1"]
+        resources: ["machinenetworkpolicies"]
+        # UPDATE included, unlike machinemigration.kairon.zyvor.dev above:
+        # a MachineNetworkPolicy is routinely edited in place (`kubectl
+        # edit`), and internal/agent/network.go re-applies whatever spec.policy
+        # currently holds on every reconcile tick regardless of which
+        # operation last changed it -- see
+        # internal/controller/webhook.go's validateMachineNetworkPolicy.
+        operations: ["CREATE", "UPDATE"]
+        scope: Namespaced
+  - name: networksecuritygroup.kairon.zyvor.dev
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: {{ .Values.webhook.failurePolicy }}
+    matchPolicy: Equivalent
+    clientConfig:
+      caBundle: {{ .Values.webhook.caBundle | quote }}
+      service:
+        name: kairon-controller-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-networksecuritygroup
+        port: 443
+    rules:
+      - apiGroups: ["kairon.zyvor.dev"]
+        apiVersions: ["v1"]
+        resources: ["networksecuritygroups"]
+        operations: ["CREATE", "UPDATE"]
+        scope: Namespaced
+  - name: machinequotaobject.kairon.zyvor.dev
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: {{ .Values.webhook.failurePolicy }}
+    matchPolicy: Equivalent
+    clientConfig:
+      caBundle: {{ .Values.webhook.caBundle | quote }}
+      service:
+        name: kairon-controller-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-machinequota
+        port: 443
+    rules:
+      # Deliberately a *second*, differently-named webhook entry from
+      # machinequota.kairon.zyvor.dev above -- that one gates "machines"
+      # (a Machine that would violate an existing MachineQuota's limits);
+      # this one gates "machinequotas" itself (a MachineQuota whose own
+      # maxTotalCpu/maxTotalMemory isn't valid quantity syntax at all --
+      # see internal/controller/webhook.go's validateMachineQuotaObject).
+      - apiGroups: ["kairon.zyvor.dev"]
+        apiVersions: ["v1"]
+        resources: ["machinequotas"]
+        operations: ["CREATE", "UPDATE"]
+        scope: Namespaced
+  - name: agentsession.kairon.zyvor.dev
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: {{ .Values.webhook.failurePolicy }}
+    matchPolicy: Equivalent
+    clientConfig:
+      caBundle: {{ .Values.webhook.caBundle | quote }}
+      service:
+        name: kairon-controller-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-agentsession
+        port: 443
+    rules:
+      - apiGroups: ["kairon.zyvor.dev"]
+        apiVersions: ["v1"]
+        resources: ["agentsessions"]
+        operations: ["CREATE"]
+        scope: Namespaced
+{{ end }}
+
+{{ if and .Values.webhook.enabled .Values.webhook.tlsSecretName .Values.webhook.caBundle }}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata: {name: kairon-fleet-webhook}
+webhooks:
+  - name: fleet.kairon.zyvor.dev
+    admissionReviewVersions: [v1]
+    sideEffects: None
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    clientConfig:
+      caBundle: {{ .Values.webhook.caBundle | quote }}
+      service:
+        name: kairon-controller-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-fleet
+        port: 443
+    rules:
+      - apiGroups: [fleet.kairon.zyvor.dev]
+        apiVersions: [v1alpha1]
+        resources: ["*", "machineactionapprovals/status"]
+        operations: [CREATE, UPDATE]
+        scope: Namespaced
+{{ end }}

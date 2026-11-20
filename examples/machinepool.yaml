@@ -1,0 +1,36 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+# Four booted agent sandboxes kept warm. A MachineClaim takes one over in a
+# single reconcile tick; the pool boots a replacement behind it.
+apiVersion: kairon.zyvor.dev/v1
+kind: MachinePool
+metadata:
+  name: agents
+  namespace: default
+spec:
+  replicas: 4
+  template:
+    labels:
+      app: agent-sandbox
+    spec:
+      image:
+        path: /var/lib/fluxvm/images/ubuntu-24.04.qcow2
+      resources:
+        cpu: "2"
+        memory: 2Gi
+      runtime:
+        backend: qemu
+      powerState: Running
+---
+apiVersion: kairon.zyvor.dev/v1
+kind: MachineClaim
+metadata:
+  name: job-42
+  namespace: default
+spec:
+  poolName: agents
+  labels:
+    team: ml
+  ttlSeconds: 3600
+  reclaimPolicy: Delete

@@ -1,0 +1,22 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+# The referenced ResourceClaim must already exist in this namespace and have
+# status.allocation populated by a DRA driver. The node must separately allow
+# the resolved BDF through KAIRON_VFIO_ALLOWLIST.
+apiVersion: kairon.zyvor.dev/v1
+kind: Machine
+metadata:
+  name: gpu-worker
+  namespace: default
+spec:
+  image:
+    path: /var/lib/fluxvm/images/gpu-worker.qcow2
+  resources:
+    cpu: "8"
+    memory: 16Gi
+  runtime:
+    backend: qemu
+  powerState: Running
+  deviceClaims:
+    - name: gpu-claim

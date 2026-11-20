@@ -1,0 +1,35 @@
+# Machine with the VM-edge eBPF contract.
+# Identity is derived; anti-spoof and learnIP need dataplaneMode: ebpf.
+apiVersion: kairon.zyvor.dev/v1
+kind: Machine
+metadata:
+  name: web
+  namespace: demo
+spec:
+  network:
+    mode: tap
+    netns: true
+    dataplaneMode: ebpf
+    dataplaneRequired: true
+    antiSpoof: true
+    learnIP: true
+    qos:
+      egressMbps: 200
+      egressPps: 50000
+---
+apiVersion: kairon.zyvor.dev/v1
+kind: MachineNetworkPolicy
+metadata:
+  name: egress-443
+  namespace: demo
+spec:
+  machineName: web
+  policy:
+    defaultAllow: false
+    allowPorts:
+      - tcp/443
+    allowSNI:
+      - "*.vendor.com"
+    allowDNS:
+      - api.vendor.com
+    allowIcmp: true

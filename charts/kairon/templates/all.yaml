@@ -1,0 +1,1818 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+{{- if and .Values.webhook.enabled (or (not .Values.webhook.tlsSecretName) (not .Values.webhook.caBundle)) }}
+{{- fail "webhook.enabled=true needs webhook.tlsSecretName (a kubernetes.io/tls-style Secret with tls.crt/tls.key in the release namespace) and webhook.caBundle (base64 CA). Create them first (scripts/gen-webhook-tls-certs.sh, docs/guides/admission-webhook.md), or install with --set webhook.enabled=false." }}
+{{- end }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kairon-controller
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kairon-node
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: kairon-controller}
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+{{ if .Values.controller.nodeMaintenance.enabled }}
+  - apiGroups: [""]
+    # Node maintenance mode cordons and uncordons the node and writes its
+    # maintenance-state annotations (internal/controller/maintenance.go).
+    resources: ["nodes"]
+    verbs: ["patch"]
+{{ end }}
+  - apiGroups: [""]
+    # RecordEvent (internal/kube/client.go) posts a real core/v1 Event for
+    # a quota-blocked Machine from admitQuota's blocker branch
+    # (internal/controller/controller.go) -- so `kubectl describe
+    # machine`'s Events tab isn't silent, on top of the existing
+    # status.message patch. "create" only: kairon-controller never reads
+    # or deletes Events back.
+    resources: ["events"]
+    verbs: ["create"]
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machines", "machines/status", "machinemigrations", "machinemigrations/status", "machinesnapshots", "machinesnapshots/status", "machinenetworkpolicies", "machinenetworkpolicies/status", "networksecuritygroups", "networksecuritygroups/status", "machinequotas", "machinequotas/status", "machinesnapshotrestores", "machinesnapshotrestores/status", "machinesets", "machinesets/status", "machinepools", "machinepools/status", "machineclaims", "machineclaims/status", "migrationpolicies", "migrationpolicies/status", "machinebackups", "machinebackups/status", "machinebackuprestores", "machinebackuprestores/status", "virtualnetworks", "virtualnetworks/status", "macnetworks", "macnetworks/status", "agentsessions", "agentsessions/status"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: ["kairon.zyvor.dev"]
+    # Read-only: MachineInstanceType is pure reference data
+    # kairon-controller looks up to resolve spec.instanceTypeName, never
+    # writes -- see internal/controller/instancetype.go.
+    resources: ["machineinstancetypes", "machineclusterinstancetypes", "machinepreferences", "machineclusterpreferences", "machineimages", "nodetopologies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["kairon.zyvor.dev"]
+    # MachineAcceleratorProfiles are expanded into Machines' spec.devices
+    # and get a capacity status (internal/controller/accelerator.go).
+    resources: ["machineacceleratorprofiles", "machineacceleratorprofiles/status"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: ["kairon.zyvor.dev"]
+    # MachineSet is the only reason kairon-controller itself ever
+    # creates/deletes a Machine directly -- see
+    # internal/controller/machineset.go. Every other Machine lifecycle
+    # action (create via kaironctl/kairon-ui, delete via the same) stays
+    # exactly as it was; this only covers replicas a MachineSet owns.
+    resources: ["machines"]
+    verbs: ["create", "delete"]
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machinesnapshotschedules", "machinesnapshotschedules/status", "machinebackuppolicies", "machinebackuppolicies/status"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: ["kairon.zyvor.dev"]
+    # MachineSnapshotSchedule is the second reason kairon-controller itself
+    # creates an object directly (the first is Machine, above, for MachineSet
+    # replicas) -- see internal/controller/machinesnapshotschedule.go. The
+    # existing get/list/watch/patch rule on machinesnapshots above doesn't
+    # cover create; kairon-ui's own separate ClusterRole already grants it
+    # create for operator-initiated snapshots, but that's a different
+    # ServiceAccount.
+    #
+    # "delete" belongs in this same rule for a related reason:
+    # pruneScheduledSnapshots (also machinesnapshotschedule.go) deletes the
+    # oldest ready MachineSnapshots a schedule created once there are more
+    # than spec.keepLast of them. This grant was missing from the day
+    # keepLast shipped -- scripts/check_rbac_coverage.py (added alongside
+    # this fix) now catches this class of gap by cross-checking every
+    # internal/kube.Client call kairon-controller/kairon-node/kairon-ui
+    # actually make against what their own ClusterRole/Role really grants,
+    # the same way this one was found by hand.
+    resources: ["machinesnapshots"]
+    verbs: ["create", "delete"]
+  - apiGroups: ["kairon.zyvor.dev"]
+    # MachineBackupPolicy creates S3 MachineBackups and deletes the ones
+    # its retention no longer needs (internal/controller/machinebackuppolicy.go).
+    resources: ["machinebackups"]
+    verbs: ["create", "delete"]
+  - apiGroups: ["kairon.zyvor.dev"]
+    # A deleting MachinePool deletes the claims bound to its warm members
+    # (internal/controller/machinepool.go).
+    resources: ["machineclaims"]
+    verbs: ["delete"]
+  - apiGroups: ["kairon.zyvor.dev"]
+    # A MachineClaim's spec.egress becomes a MachineNetworkPolicy the
+    # controller creates on bind and deletes on release.
+    resources: ["machinenetworkpolicies"]
+    verbs: ["create", "delete"]
+  - apiGroups: ["kairon.zyvor.dev"]
+    # Tenant fence owns one NetworkSecurityGroup per opted-in
+    # namespace/tenant (internal/controller/tenantfence.go).
+    resources: ["networksecuritygroups"]
+    verbs: ["create", "delete"]
+{{ if .Values.controller.dr.enabled }}
+  - apiGroups: ["kairon.zyvor.dev"]
+    # MachineProtectionPlans (internal/controller/protection.go): the
+    # active site owns a dr-<plan> MachineBackupPolicy; failovers and DR
+    # tests create Machines and MachineBackupRestores, and a DR test
+    # deletes its copies when it ends.
+    resources: ["machineprotectionplans", "machineprotectionplans/status"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machinebackuppolicies", "machinebackuprestores"]
+    verbs: ["create", "delete"]
+  - apiGroups: ["externaldns.k8s.io"]
+    # network.dns: the active site publishes a dr-<plan> DNSEndpoint for
+    # external-dns and the standby deletes its own
+    # (internal/controller/protection_network.go).
+    resources: ["dnsendpoints"]
+    verbs: ["get", "create", "patch", "delete"]
+{{ end }}
+{{ if or .Values.controller.cordonEvacuation.enabled .Values.controller.memoryPressureEvacuation.enabled .Values.controller.nodeMaintenance.enabled (eq (toString .Values.controller.drs.mode) "automatic") }}
+  - apiGroups: ["kairon.zyvor.dev"]
+    # cordonEvacuation, memoryPressureEvacuation, nodeMaintenance and
+    # automatic DRS are the only reasons kairon-controller itself ever
+    # creates a MachineMigration -- see internal/controller/cordon.go,
+    # memoryevac.go, maintenance.go and drs.go. With all of them off, only
+    # kaironctl/kairon-ui do.
+    resources: ["machinemigrations"]
+    verbs: ["create"]
+{{ end }}
+  - apiGroups: ["kairon.zyvor.dev"]
+    # Read-only on the spec, deliberately no patch here: the admission
+    # webhook (webhook.yaml) and kaironctl evacuate both only ever list
+    # these to evaluate a MachineMigration create against, kairon-controller
+    # itself never writes spec.machinedisruptionbudgets.
+    resources: ["machinedisruptionbudgets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["kairon.zyvor.dev"]
+    # Separate rule, /status only: kairon-controller now reconciles real
+    # status (expectedMachines/currentHealthy/desiredHealthy/
+    # disruptionsAllowed) every tick, mirroring machinequotas/status --
+    # see internal/controller/disruption.go's
+    # reconcileDisruptionBudgetsStatus. Split from the read-only rule
+    # above rather than added to it, so this grant stays status-only, not
+    # also patch on spec.
+    resources: ["machinedisruptionbudgets/status"]
+    verbs: ["patch"]
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshots"]
+    verbs: ["get", "list", "watch", "create"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "create"]
+  - apiGroups: ["resource.k8s.io"]
+    # Read-only: backs the scheduler's DRA topology-awareness hint (see
+    # internal/controller/dra.go's buildDRAHints) -- kairon-controller only
+    # ever reads an allocation that already happened, it never allocates a
+    # device itself.
+    resources: ["resourceclaims", "resourceslices"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    # Lists the Services `kaironctl expose` labeled
+    # kairon.zyvor.dev/expose-machine; never creates or edits a Service.
+    resources: ["services"]
+    verbs: ["list"]
+  - apiGroups: ["discovery.k8s.io"]
+    # Keeps each exposed Service's EndpointSlice on its Machine's current
+    # guest IP (internal/controller/expose.go).
+    resources: ["endpointslices"]
+    verbs: ["get", "create", "update"]
+{{ if .Values.network.ciliumAttach.enabled }}
+  - apiGroups: ["cilium.io"]
+    # Opt-in: reconcile CiliumExternalWorkload for Machines with
+    # spec.network.ciliumAttach (raw REST; no Cilium Go SDK).
+    resources: ["ciliumexternalworkloads"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+{{ end }}
+{{ if .Values.network.ciliumPolicySync.enabled }}
+  - apiGroups: ["cilium.io"]
+    # Opt-in: sync MachineNetworkPolicy.spec.cilium.sync onto
+    # CiliumNetworkPolicy (raw REST; no Cilium Go SDK).
+    resources: ["ciliumnetworkpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+{{ end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: kairon-controller}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: kairon-controller}
+subjects:
+  - {kind: ServiceAccount, name: kairon-controller, namespace: {{ .Release.Namespace }}}
+---
+{{ if .Values.controller.leaderElection.enabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: kairon-controller-leader-election, namespace: {{ .Release.Namespace }}}
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: kairon-controller-leader-election, namespace: {{ .Release.Namespace }}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: kairon-controller-leader-election}
+subjects:
+  - {kind: ServiceAccount, name: kairon-controller, namespace: {{ .Release.Namespace }}}
+---
+{{ end }}
+{{ if .Values.controller.dr.enabled }}
+# MachineProtectionPlan peer credentials: a token and ca.crt for the peer
+# cluster's API, read from Secrets in this namespace only. The controller
+# also refuses any Secret not labelled kairon.zyvor.dev/dr-peer-credentials.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: kairon-controller-dr-peers, namespace: {{ .Release.Namespace }}}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: kairon-controller-dr-peers, namespace: {{ .Release.Namespace }}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: kairon-controller-dr-peers}
+subjects:
+  - {kind: ServiceAccount, name: kairon-controller, namespace: {{ .Release.Namespace }}}
+---
+{{ end }}
+# kaironctl adm log-verbosity writes this ConfigMap; components only read it.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: kairon-log-levels, namespace: {{ .Release.Namespace }}}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["kairon-log-levels"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: kairon-log-levels, namespace: {{ .Release.Namespace }}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: kairon-log-levels}
+subjects:
+  - {kind: ServiceAccount, name: kairon-controller, namespace: {{ .Release.Namespace }}}
+  - {kind: ServiceAccount, name: kairon-node, namespace: {{ .Release.Namespace }}}
+  - {kind: ServiceAccount, name: kairon-ui, namespace: {{ .Release.Namespace }}}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: kairon-node}
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    # patch: the confidential-capable label (internal/agent/attest.go).
+    verbs: ["get", "list", "patch"]
+  # The KaironMemoryPressure condition (internal/agent/memory.go).
+  - apiGroups: [""]
+    resources: ["nodes/status"]
+    verbs: ["patch"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims", "persistentvolumes"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    # Edge drop and anomaly Warning Events (internal/agent/edgeevents.go).
+    resources: ["events"]
+    verbs: ["create"]
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machines", "machines/status", "machinemigrations", "machinemigrations/status", "machinenetworkpolicies", "machinenetworkpolicies/status", "networksecuritygroups", "networksecuritygroups/status", "machinebackups", "machinebackups/status", "machinebackuprestores", "machinebackuprestores/status"]
+    verbs: ["get", "list", "watch", "patch"]
+  # MachineExport: kairon-node prepares the disk and reports status
+  # (internal/agent/export.go).
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machineexports"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machineexports/status"]
+    verbs: ["patch"]
+  # AgentSession: kairon-node creates the session in its FluxVM, mirrors it
+  # into status and removes its finalizer (internal/agent/agentsession.go).
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["agentsessions", "agentsessions/status"]
+    verbs: ["get", "list", "watch", "patch"]
+  # Read-only: internal/agent/hotplug.go's own resize-past-quota self-check
+  # (independent of webhook.enabled) needs to list MachineQuotas/Machines
+  # cluster-wide the same way the admission webhook's own equivalent check
+  # already does -- see internal/controller/quota.go's QuotaTrackersForNamespace,
+  # reused directly by both. Never writes a MachineQuota -- kairon-controller's
+  # own machinequotas/status patch grant is unaffected.
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machinequotas"]
+    verbs: ["get", "list"]
+  - apiGroups: ["resource.k8s.io"]
+    resources: ["resourceclaims"]
+    verbs: ["get"]
+  # VirtualNetwork IPAM read when a Machine is created and the per-node
+  # FluxVM sync (internal/agent/virtualnetwork.go). Never written.
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["virtualnetworks"]
+    verbs: ["get", "list"]
+  # The node's own hardware graph (internal/agent/topology.go).
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["nodetopologies", "nodetopologies/status"]
+    verbs: ["get", "create", "patch"]
+{{- if .Values.node.thirdPartyCSIDrivers }}
+  # attachRequired third-party drivers: kairon-node creates the
+  # VolumeAttachment kubelet would create for a Pod, and deletes it after
+  # NodeUnstage (internal/agent/csi_thirdparty.go).
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["csidrivers"]
+    verbs: ["get"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["volumeattachments"]
+    verbs: ["get", "create", "delete"]
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: kairon-node}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: kairon-node}
+subjects:
+  - {kind: ServiceAccount, name: kairon-node, namespace: {{ .Release.Namespace }}}
+---
+{{ if .Values.node.cbtBackup.enabled }}
+# CBT backups to S3 (MachineBackup spec.target): kairon-node reads the
+# credential and encryption-key Secrets a backup names, in the backup's own
+# namespace. RBAC cannot scope by label, so this is cluster-wide get;
+# kairon-node itself refuses any Secret not labelled
+# kairon.zyvor.dev/backup-credentials=true (internal/agent/cbt.go).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: kairon-node-backup-secrets}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: kairon-node-backup-secrets}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: kairon-node-backup-secrets}
+subjects:
+  - {kind: ServiceAccount, name: kairon-node, namespace: {{ .Release.Namespace }}}
+---
+{{ end }}
+{{ if .Values.node.csi.chap.enabled }}
+# Allowlisted CHAP Secrets only -- get in the release namespace, never
+# cluster-wide. Pairs with --csi-chap-secret-namespace on kairon-node.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: kairon-node-csi-chap, namespace: {{ .Release.Namespace }}}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: kairon-node-csi-chap, namespace: {{ .Release.Namespace }}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: kairon-node-csi-chap}
+subjects:
+  - {kind: ServiceAccount, name: kairon-node, namespace: {{ .Release.Namespace }}}
+---
+{{ end }}
+{{ if and .Values.node.thirdPartyCSIDrivers .Values.node.thirdPartyCSISecrets.enabled }}
+# Third-party CSI node-stage/publish Secrets: get in the release namespace
+# only. Pairs with --third-party-csi-secret-namespace on kairon-node.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: kairon-node-csi-thirdparty-secrets, namespace: {{ .Release.Namespace }}}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: kairon-node-csi-thirdparty-secrets, namespace: {{ .Release.Namespace }}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: kairon-node-csi-thirdparty-secrets}
+subjects:
+  - {kind: ServiceAccount, name: kairon-node, namespace: {{ .Release.Namespace }}}
+---
+{{ end }}
+{{ if .Values.node.livenessLease.enabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: kairon-node-liveness-lease, namespace: {{ .Release.Namespace }}}
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: kairon-node-liveness-lease, namespace: {{ .Release.Namespace }}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: kairon-node-liveness-lease}
+subjects:
+  - {kind: ServiceAccount, name: kairon-node, namespace: {{ .Release.Namespace }}}
+---
+# kaironctl (or anyone else) reading kairon-node's own liveness Leases at
+# fence-time needs this too -- a small, read-only ClusterRole an operator
+# binds to whichever identity runs `kaironctl fence` (kubectl's own RBAC
+# already gates who can run it at all; this only grants the extra "leases"
+# read this new cross-check needs on top of that).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: kairon-node-liveness-lease-reader}
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get"]
+---
+# Controller reads the same Leases for NodeUnreachable detection
+# (Ready + stale agent lease → unreachable).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: kairon-controller-liveness-lease-reader, namespace: {{ .Release.Namespace }}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: kairon-node-liveness-lease-reader}
+subjects:
+  - {kind: ServiceAccount, name: kairon-controller, namespace: {{ .Release.Namespace }}}
+---
+{{ end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: kairon-controller, namespace: {{ .Release.Namespace }}}
+spec:
+  replicas: {{ .Values.controller.replicaCount }}
+  selector: {matchLabels: {app.kubernetes.io/name: kairon-controller}}
+  template:
+    metadata:{{ include "kairon.podMeta" (dict "name" "kairon-controller" "v" .Values.controller) }}
+    spec:
+      serviceAccountName: kairon-controller{{ with include "kairon.podSpecExtras" (dict "name" "kairon-controller" "v" .Values.controller) }}{{ . | nindent 6 }}{{ end }}
+      containers:
+        - name: controller
+          image: "{{ .Values.controller.image.repository }}:{{ .Values.controller.image.tag | default (.Chart.AppVersion | trimPrefix "v" | printf "v%s") }}"
+          imagePullPolicy: {{ .Values.controller.image.pullPolicy }}
+          args:
+            - "--interval={{ .Values.controller.interval }}"
+            - "--health-addr=:{{ .Values.controller.healthPort }}"
+{{ if .Values.migration.maxConcurrentPerNode }}
+            - "--migration-max-concurrent-per-node={{ .Values.migration.maxConcurrentPerNode }}"
+{{ end }}
+{{ if .Values.migration.maxConcurrentCluster }}
+            - "--migration-max-concurrent-cluster={{ .Values.migration.maxConcurrentCluster }}"
+{{ end }}
+{{ if .Values.webhook.enabled }}
+            - "--webhook-addr=:{{ .Values.webhook.port }}"
+            - "--webhook-tls-cert=/etc/kairon/webhook-tls/tls.crt"
+            - "--webhook-tls-key=/etc/kairon/webhook-tls/tls.key"
+{{ end }}
+            - "--leader-elect={{ .Values.controller.leaderElection.enabled }}"
+            - "--cordon-evacuate={{ .Values.controller.cordonEvacuation.enabled }}"
+            - "--cordon-evacuate-strategy={{ .Values.controller.cordonEvacuation.strategy }}"
+            - "--cordon-evacuate-min-retry-interval={{ .Values.controller.cordonEvacuation.minRetryInterval }}"
+            - "--memory-pressure-evacuate={{ .Values.controller.memoryPressureEvacuation.enabled }}"
+            - "--memory-pressure-evacuate-strategy={{ .Values.controller.memoryPressureEvacuation.strategy }}"
+            - "--memory-pressure-evacuate-grace={{ .Values.controller.memoryPressureEvacuation.grace }}"
+            - "--memory-pressure-evacuate-min-retry-interval={{ .Values.controller.memoryPressureEvacuation.minRetryInterval }}"
+            - "--stale-evacuation={{ .Values.controller.staleEvacuation.enabled }}"
+            - "--stale-evacuation-max-per-tick={{ .Values.controller.staleEvacuation.maxPerTick }}"
+            - "--node-maintenance={{ .Values.controller.nodeMaintenance.enabled }}"
+            - "--node-maintenance-max-parallel={{ .Values.controller.nodeMaintenance.maxParallel }}"
+            - "--node-maintenance-min-retry-interval={{ .Values.controller.nodeMaintenance.minRetryInterval }}"
+            - "--drs-mode={{ .Values.controller.drs.mode }}"
+            - "--drs-interval={{ .Values.controller.drs.interval }}"
+            - "--drs-threshold-percent={{ .Values.controller.drs.thresholdPercent }}"
+            - "--drs-min-improvement-percent={{ .Values.controller.drs.minImprovementPercent }}"
+            - "--drs-max-moves={{ .Values.controller.drs.maxMoves }}"
+            - "--drs-strategy={{ .Values.controller.drs.strategy }}"
+            - "--drs-cooldown={{ .Values.controller.drs.cooldown }}"
+            - "--drs-signal={{ .Values.controller.drs.signal }}"
+            - "--drs-pressure-threshold-percent={{ .Values.controller.drs.pressureThresholdPercent }}"
+            - "--drs-pressure-max-age={{ .Values.controller.drs.pressureMaxAge }}"
+{{ if .Values.controller.dr.enabled }}
+            - "--dr-secret-namespace={{ .Release.Namespace }}"
+            - "--dr-test-bridges={{ .Values.controller.dr.testBridges | join "," }}"
+{{ end }}
+            - "--cilium-attach={{ .Values.network.ciliumAttach.enabled }}"
+            - "--cilium-policy-sync={{ .Values.network.ciliumPolicySync.enabled }}"
+{{ if .Values.node.livenessLease.enabled }}
+            - "--node-liveness-lease-namespace={{ .Release.Namespace }}"
+{{ end }}
+          env:
+{{ if .Values.fleet.enabled }}
+            - {name: KAIRON_FLEET_ENABLED, value: "true"}
+            - {name: KAIRON_FLEET_CONTROL_NAMESPACE, value: {{ .Release.Namespace | quote }}}
+            - {name: KAIRON_FLEET_PROMETHEUS_URL, value: {{ .Values.fleet.prometheusURL | quote }}}
+            - {name: KAIRON_FLEET_REDFISH_ORIGINS, value: {{ join "," .Values.fleet.redfishOrigins | quote }}}
+            - {name: KAIRON_FLEET_TEST_BRIDGES, value: {{ join "," .Values.fleet.isolatedTestBridges | quote }}}
+{{ end }}
+            - name: KAIRON_CONTROLLER_NAMESPACE
+              valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+{{ if .Values.otel.enabled }}
+            - name: KAIRON_OTEL_ENDPOINT
+              value: {{ .Values.otel.endpoint | quote }}
+            - name: KAIRON_OTEL_SERVICE_NAME
+              value: kairon-controller
+{{ end }}
+{{ if .Values.atlas.enabled }}
+            - name: KAIRON_ATLAS_URL
+              value: {{ required "atlas.url is required when atlas.enabled" .Values.atlas.url | quote }}
+            - name: KAIRON_ATLAS_TENANT
+              value: {{ .Values.atlas.tenantID | quote }}
+            - name: KAIRON_ATLAS_DEFAULT_POLICY
+              value: {{ .Values.atlas.defaultPolicy | quote }}
+            - name: KAIRON_ATLAS_BACKUP_BUCKET
+              value: {{ .Values.atlas.backupBucketID | quote }}
+{{ if .Values.atlas.tokenSecret.name }}
+            - name: KAIRON_ATLAS_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ .Values.atlas.tokenSecret.name | quote }}, key: {{ .Values.atlas.tokenSecret.key | quote }}}}
+{{ end }}
+{{ end }}
+{{ if .Values.agentPlane.cosignPublicKeySecret.name }}
+            - name: KAIRON_COSIGN_PUBLIC_KEY
+              valueFrom: {secretKeyRef: {name: {{ .Values.agentPlane.cosignPublicKeySecret.name | quote }}, key: {{ .Values.agentPlane.cosignPublicKeySecret.key | quote }}}}
+{{ end }}
+{{- with .Values.controller.extraEnv }}
+{{ toYaml . | indent 12 }}
+{{- end }}
+{{- with .Values.controller.extraEnvFrom }}
+          envFrom:
+{{ toYaml . | indent 12 }}
+{{- end }}
+          ports:
+            - {name: health, containerPort: {{ .Values.controller.healthPort }}}
+{{ if .Values.webhook.enabled }}
+            - {name: webhook, containerPort: {{ .Values.webhook.port }}}
+{{ end }}
+          readinessProbe: {httpGet: {path: /readyz, port: health}}
+          livenessProbe: {httpGet: {path: /healthz, port: health}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}, capabilities: {drop: ["ALL"]}}
+          resources:
+{{ toYaml .Values.controller.resources | indent 12 }}
+{{ if .Values.webhook.enabled }}
+          volumeMounts:
+            - {name: webhook-tls, mountPath: /etc/kairon/webhook-tls, readOnly: true}
+{{ end }}
+{{ if .Values.webhook.enabled }}
+      volumes:
+        - name: webhook-tls
+          secret: {secretName: {{ .Values.webhook.tlsSecretName | quote }}}
+{{ end }}
+{{ if .Values.console.enabled }}
+{{- $existingConsoleSecret := lookup "v1" "Secret" .Release.Namespace "kairon-console-token" }}
+{{- $consoleTokenValue := randAlphaNum 32 }}
+{{- if and $existingConsoleSecret $existingConsoleSecret.data (index $existingConsoleSecret.data "token") }}
+{{- $consoleTokenValue = index $existingConsoleSecret.data "token" | b64dec }}
+{{- end }}
+{{ if not .Values.console.existingSecret }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kairon-console-token
+  namespace: {{ .Release.Namespace }}
+type: Opaque
+stringData:
+  token: {{ $consoleTokenValue | quote }}
+{{ end }}
+{{ if and .Values.console.tls.enabled (not .Values.console.tls.secretName) }}
+{{- $existingTLS := lookup "v1" "Secret" .Release.Namespace "kairon-console-tls" }}
+{{- $tlsCrt := "" }}
+{{- $tlsKey := "" }}
+{{- $tlsCA := "" }}
+{{- if and $existingTLS $existingTLS.data (index $existingTLS.data "tls.crt") (index $existingTLS.data "tls.key") (index $existingTLS.data "ca.crt") }}
+{{- $tlsCrt = index $existingTLS.data "tls.crt" | b64dec }}
+{{- $tlsKey = index $existingTLS.data "tls.key" | b64dec }}
+{{- $tlsCA = index $existingTLS.data "ca.crt" | b64dec }}
+{{- else }}
+{{- $ca := genCA "kairon-console-ca" 3650 }}
+{{- $cert := genSignedCert "kairon-node" nil (list "kairon-node" "localhost") 3650 $ca }}
+{{- $tlsCrt = $cert.Cert }}
+{{- $tlsKey = $cert.Key }}
+{{- $tlsCA = $ca.Cert }}
+{{- end }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kairon-console-tls
+  namespace: {{ .Release.Namespace }}
+type: kubernetes.io/tls
+stringData:
+  tls.crt: |
+{{ $tlsCrt | indent 4 }}
+  tls.key: |
+{{ $tlsKey | indent 4 }}
+  ca.crt: |
+{{ $tlsCA | indent 4 }}
+{{ end }}
+{{ end }}
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: {name: kairon-node, namespace: {{ .Release.Namespace }}}
+spec:
+  selector: {matchLabels: {app.kubernetes.io/name: kairon-node}}
+  template:
+    metadata:{{ include "kairon.podMeta" (dict "name" "kairon-node" "v" .Values.node) }}
+    spec:
+      serviceAccountName: kairon-node{{ with include "kairon.podSpecExtras" (dict "name" "kairon-node" "v" .Values.node) }}{{ . | nindent 6 }}{{ end }}
+{{ if .Values.migration.enabled }}
+      securityContext:
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+{{ end }}
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      nodeSelector:
+{{ toYaml .Values.node.nodeSelector | indent 8 }}
+{{ if or .Values.node.cpuPinning.enabled (and .Values.migration.enabled .Values.migration.adapterHostPath .Values.migration.dataplaneTls) }}
+      initContainers:
+{{ end }}
+{{ if .Values.node.cpuPinning.enabled }}
+        # Native sidecar (restartPolicy: Always, Kubernetes 1.29+): kubelet's
+        # cpu_manager_state is root-only 0600 and replaced by rename, so a
+        # single-file hostPath would go stale. This root container reads it
+        # from a read-only mount of its directory and republishes it into a
+        # pod-private emptyDir; kairon-node itself stays non-root with no
+        # capabilities. The startup probe holds kairon-node back until the
+        # first copy exists, so discovery never starts on a missing file.
+        - name: cpu-state-copier
+          image: {{ .Values.node.cpuPinning.copierImage | quote }}
+          restartPolicy: Always
+          command:
+            - sh
+            - -c
+            - |
+              while true; do
+                if cp {{ .Values.node.cpuPinning.stateFile | quote }} /kairon-cpustate/.tmp 2>/dev/null; then
+                  chmod 0644 /kairon-cpustate/.tmp && mv -f /kairon-cpustate/.tmp /kairon-cpustate/cpu_manager_state
+                fi
+                sleep {{ .Values.node.cpuPinning.copyIntervalSeconds }}
+              done
+          startupProbe:
+            exec: {command: ["test", "-s", "/kairon-cpustate/cpu_manager_state"]}
+            periodSeconds: 2
+            failureThreshold: 150
+          volumeMounts:
+            - {name: kubelet-state-dir, mountPath: {{ dir .Values.node.cpuPinning.stateFile | quote }}, readOnly: true}
+            - {name: cpu-state, mountPath: /kairon-cpustate}
+          securityContext: {runAsUser: 0, runAsNonRoot: false, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+          resources:
+            requests: {cpu: 5m, memory: 8Mi}
+            limits: {cpu: 50m, memory: 32Mi}
+{{ end }}
+{{ if and .Values.migration.enabled .Values.migration.adapterHostPath .Values.migration.dataplaneTls }}
+        # kairon-migration-adapter-fluxvm runs as a bare-host systemd unit,
+        # not in this pod -- it has no access to either Secret volume
+        # below. Materialize the cert material it needs (for the QEMU
+        # migration data-plane TLS, distinct from this pod's own mTLS
+        # control-plane connection) onto the adapterHostPath volume, which
+        # the host-level adapter process reads directly.
+{{ if .Values.migration.dataplaneTlsSecretName }}
+        # dataplaneTlsSecretName set: pick out *this node's own* cert from
+        # the per-node bundle (see values.yaml's comment) via the Downward
+        # API -- never the shared control-plane cert. Fails the pod
+        # outright (exit 1, not a silent fallback) if this node's own
+        # three files aren't in the Secret, since presenting no data-plane
+        # identity at all is a much safer failure than presenting the
+        # wrong one.
+        - name: migration-adapter-tls
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              mkdir -p /adapter/tls
+              src="/etc/kairon/migration-dataplane-tls/${NODE_NAME}"
+              if [ ! -f "${src}-ca.crt" ] || [ ! -f "${src}-tls.crt" ] || [ ! -f "${src}-tls.key" ]; then
+                echo "FATAL: no per-node data-plane cert for node ${NODE_NAME} in migration.dataplaneTlsSecretName (expected ${NODE_NAME}-ca.crt/-tls.crt/-tls.key) -- refusing to fall back to a shared or wrong identity" >&2
+                exit 1
+              fi
+              cp "${src}-ca.crt" /adapter/tls/ca.crt
+              cp "${src}-tls.crt" /adapter/tls/tls.crt
+              cp "${src}-tls.key" /adapter/tls/tls.key
+          env:
+            - name: NODE_NAME
+              valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
+          volumeMounts:
+            - {name: migration-dataplane-tls, mountPath: /etc/kairon/migration-dataplane-tls, readOnly: true}
+            - {name: migration-adapter, mountPath: /adapter}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}, capabilities: {drop: ["ALL"]}}
+{{ else }}
+        # dataplaneTlsSecretName not set: fall back to staging the shared
+        # control-plane cert (tlsSecretName) onto the data plane too --
+        # weaker (every node can present the same identity there), but
+        # exactly this project's behavior before dataplaneTlsSecretName
+        # existed, so no existing deployment's `helm upgrade` changes
+        # behavior just by picking up this chart version.
+        - name: migration-adapter-tls
+          image: busybox:1.36
+          command: ["sh", "-c", "mkdir -p /adapter/tls && cp /etc/kairon/migration-tls/ca.crt /etc/kairon/migration-tls/tls.crt /etc/kairon/migration-tls/tls.key /adapter/tls/"]
+          volumeMounts:
+            - {name: migration-tls, mountPath: /etc/kairon/migration-tls, readOnly: true}
+            - {name: migration-adapter, mountPath: /adapter}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}, capabilities: {drop: ["ALL"]}}
+{{ end }}
+{{ end }}
+      containers:
+        - name: node
+          image: "{{ .Values.node.image.repository }}:{{ .Values.node.image.tag | default (.Chart.AppVersion | trimPrefix "v" | printf "v%s") }}"
+          imagePullPolicy: {{ .Values.node.image.pullPolicy }}
+          args:
+            - "--interval={{ .Values.node.interval }}"
+            - "--health-addr=:{{ .Values.node.healthPort }}"
+            - "--fluxvm-url={{ .Values.node.fluxvmURL }}"
+            - "--default-backend={{ .Values.node.defaultBackend }}"
+            - "--image-root={{ .Values.node.imageRoot }}"
+            - "--image-cache-dir={{ .Values.node.imageCacheDir }}"
+{{ if .Values.node.imageMaxDownloadBytes }}
+            - "--image-max-download-bytes={{ .Values.node.imageMaxDownloadBytes | int64 }}"
+{{ end }}
+            - "--vfio-allowlist={{ .Values.node.vfioAllowlist }}"
+            - "--mdev-parents={{ .Values.node.mdevParents }}"
+{{ if .Values.migration.enabled }}
+            - "--migration-addr=:{{ .Values.migration.port }}"
+            - "--migration-port={{ .Values.migration.port }}"
+            - "--migration-ca=/etc/kairon/migration-tls/ca.crt"
+            - "--migration-cert=/etc/kairon/migration-tls/tls.crt"
+            - "--migration-key=/etc/kairon/migration-tls/tls.key"
+            - "--migration-server-name={{ .Values.migration.tlsServerName }}"
+            - "--migration-state-dir={{ .Values.migration.stateDir }}"
+{{ if .Values.migration.adapterSocket }}
+            - "--migration-adapter-socket={{ .Values.migration.adapterSocket }}"
+{{ end }}
+{{ if .Values.migration.requireEncryptedDataPlane }}
+            - "--migration-require-encrypted"
+{{ end }}
+{{ if .Values.migration.heartbeatTTL }}
+            - "--migration-heartbeat-ttl={{ .Values.migration.heartbeatTTL }}"
+{{ end }}
+{{ end }}
+{{ if .Values.console.enabled }}
+            - "--console-addr=:{{ .Values.console.port }}"
+{{ if .Values.console.tls.enabled }}
+            - "--console-tls-cert=/etc/kairon/console-tls/tls.crt"
+            - "--console-tls-key=/etc/kairon/console-tls/tls.key"
+{{ end }}
+{{ end }}
+{{ if .Values.csiNode.enabled }}
+            - "--csi-socket=/kairon-csi/csi.sock"
+            - "--csi-staging-dir={{ .Values.node.csi.stagingDir }}"
+            - "--csi-publish-dir={{ .Values.node.csi.publishDir }}"
+{{ end }}
+{{ if .Values.node.thirdPartyCSIDrivers }}
+            - "--third-party-csi-drivers={{ range $name, $socket := .Values.node.thirdPartyCSIDrivers }}{{ $name }}={{ $socket }},{{ end }}"
+{{ if .Values.node.thirdPartyCSISecrets.enabled }}
+            - "--third-party-csi-secret-namespace={{ .Release.Namespace }}"
+{{ end }}
+{{ end }}
+{{ if .Values.node.atlasRBDPools }}
+            - "--atlas-rbd-pools={{ join "," .Values.node.atlasRBDPools }}"
+{{ end }}
+{{ if .Values.node.livenessLease.enabled }}
+            - "--liveness-lease-duration={{ .Values.node.livenessLease.duration }}"
+{{ end }}
+{{ if .Values.node.csi.chap.enabled }}
+            - "--csi-chap-secret-namespace={{ .Release.Namespace }}"
+{{ end }}
+            - "--network-default-deny={{ .Values.node.networkDefaultDeny }}"
+            - "--memory-reclaim={{ .Values.node.memoryReclaim.enabled }}"
+            - "--memory-low-watermark-mib={{ .Values.node.memoryReclaim.lowWatermarkMiB }}"
+            - "--memory-high-watermark-mib={{ .Values.node.memoryReclaim.highWatermarkMiB }}"
+            - "--memory-psi-some-avg10={{ .Values.node.memoryReclaim.psiSomeAvg10 }}"
+{{ if .Values.node.memoryReclaim.interval }}
+            - "--memory-reclaim-interval={{ .Values.node.memoryReclaim.interval }}"
+{{ end }}
+{{ if eq (toString (.Values.node.pressureReport).enabled) "false" }}
+            - "--pressure-report=false"
+{{ end }}
+{{ if (.Values.node.pressureReport).interval }}
+            - "--pressure-report-interval={{ .Values.node.pressureReport.interval }}"
+{{ end }}
+            - "--virtual-networks={{ .Values.node.virtualNetworks.enabled }}"
+            - "--vnet-uplink={{ .Values.node.virtualNetworks.uplink }}"
+            - "--vnet-node-ip={{ .Values.node.virtualNetworks.nodeIP }}"
+{{ if .Values.node.virtualNetworks.bgp.peers }}
+            - "--bgp-peers={{ .Values.node.virtualNetworks.bgp.peers }}"
+            - "--bgp-local-asn={{ required "node.virtualNetworks.bgp.localASN is required with bgp.peers" .Values.node.virtualNetworks.bgp.localASN }}"
+            - "--bgp-router-id={{ .Values.node.virtualNetworks.bgp.routerID }}"
+            - "--bgp-next-hop={{ .Values.node.virtualNetworks.bgp.nextHop }}"
+            - "--bgp-advertise-service-vips={{ .Values.node.virtualNetworks.bgp.advertiseServiceVIPs }}"
+            - "--bgp-advertise-prefixes={{ .Values.node.virtualNetworks.bgp.advertisePrefixes }}"
+{{ end }}
+{{ if .Values.node.cpuPinning.enabled }}
+            - "--reserved-cpus={{ required "node.cpuPinning.reservedCPUs is required when node.cpuPinning.enabled (kubelet's reserved CPU list, e.g. 0-1)" .Values.node.cpuPinning.reservedCPUs }}"
+            - "--cpu-manager-state=/kairon-cpustate/cpu_manager_state"
+{{ end }}
+          env:
+            - name: NODE_NAME
+              valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
+{{ if .Values.node.livenessLease.enabled }}
+            - name: KAIRON_NODE_NAMESPACE
+              valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+{{ end }}
+{{ if .Values.otel.enabled }}
+            - name: KAIRON_OTEL_ENDPOINT
+              value: {{ .Values.otel.endpoint | quote }}
+            - name: KAIRON_OTEL_SERVICE_NAME
+              value: kairon-node
+{{ end }}
+{{ if .Values.console.enabled }}
+            - name: KAIRON_NODE_CONSOLE_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ .Values.console.existingSecret | default "kairon-console-token" }}, key: {{ .Values.console.existingSecretKey | default "token" }}}}
+{{ end }}
+{{- with .Values.node.extraEnv }}
+{{ toYaml . | indent 12 }}
+{{- end }}
+{{- with .Values.node.extraEnvFrom }}
+          envFrom:
+{{ toYaml . | indent 12 }}
+{{- end }}
+          ports:
+            - {name: health, containerPort: {{ .Values.node.healthPort }}}
+{{ if .Values.migration.enabled }}
+            - {name: migration, containerPort: {{ .Values.migration.port }}, protocol: TCP}
+{{ end }}
+{{ if .Values.console.enabled }}
+            - {name: console, containerPort: {{ .Values.console.port }}, protocol: TCP}
+{{ end }}
+          readinessProbe: {httpGet: {path: /readyz, port: health}}
+          livenessProbe: {httpGet: {path: /healthz, port: health}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}, capabilities: {drop: ["ALL"]}}
+          resources:
+{{ toYaml .Values.node.resources | indent 12 }}
+{{ if or .Values.migration.enabled (and .Values.console.enabled .Values.console.tls.enabled) .Values.csiNode.enabled .Values.node.imageCacheDir .Values.node.thirdPartyCSIDrivers .Values.node.cpuPinning.enabled }}
+          volumeMounts:
+{{ if .Values.migration.enabled }}
+            - {name: migration-tls, mountPath: /etc/kairon/migration-tls, readOnly: true}
+            - {name: migration-state, mountPath: {{ .Values.migration.stateDir | quote }}}
+{{ if .Values.migration.adapterHostPath }}
+            - {name: migration-adapter, mountPath: {{ .Values.migration.adapterHostPath | quote }}}
+{{ end }}
+{{ end }}
+{{ if and .Values.console.enabled .Values.console.tls.enabled }}
+            - {name: console-tls, mountPath: /etc/kairon/console-tls, readOnly: true}
+{{ end }}
+{{ if .Values.csiNode.enabled }}
+            # Read-only: kairon-node only ever dials the socket file
+            # here, it never creates or mounts anything itself -- see
+            # internal/agent/csi.go. Shared with kairon-csi-node's own
+            # DaemonSet via the same hostPath.
+            - {name: csi-socket-dir, mountPath: /kairon-csi, readOnly: true}
+{{ end }}
+{{ if .Values.node.imageCacheDir }}
+            # Writable, unlike csi-socket-dir above: kairon-node itself
+            # downloads spec.image.source images here (see
+            # internal/agent/imageimport.go) -- mounted at the identical
+            # host path so the file lands where FluxVM (a separate
+            # process on the same host) will look for it when this
+            # Machine's spec.image.path is set to the cache path.
+            - {name: image-cache, mountPath: {{ .Values.node.imageCacheDir | quote }}}
+{{ end }}
+{{ if .Values.node.thirdPartyCSIDrivers }}
+            # Read-only, mounted at the identical host path: a third-party
+            # driver's socket path (node.thirdPartyCSIDrivers's own map
+            # values) is normally already under
+            # /var/lib/kubelet/plugins/<driver>/ -- mounting the whole
+            # plugins directory at its own real path means whatever socket
+            # path an operator configures there just works, with no
+            # per-driver volume/mount to template. See
+            # docs/guides/machine-storage-thirdparty-csi.md.
+            - {name: kubelet-plugins-dir, mountPath: /var/lib/kubelet/plugins, readOnly: true}
+{{ end }}
+{{ if .Values.node.cpuPinning.enabled }}
+            - {name: cpu-state, mountPath: /kairon-cpustate, readOnly: true}
+{{ end }}
+{{ end }}
+{{ if or .Values.migration.enabled (and .Values.console.enabled .Values.console.tls.enabled) .Values.csiNode.enabled .Values.node.imageCacheDir .Values.node.thirdPartyCSIDrivers .Values.node.cpuPinning.enabled }}
+      volumes:
+{{ if .Values.migration.enabled }}
+        - name: migration-tls
+          secret:
+            secretName: {{ .Values.migration.tlsSecretName }}
+            defaultMode: 0440
+{{ if and .Values.migration.dataplaneTls .Values.migration.dataplaneTlsSecretName }}
+        - name: migration-dataplane-tls
+          secret:
+            secretName: {{ .Values.migration.dataplaneTlsSecretName }}
+            defaultMode: 0440
+{{ end }}
+        - name: migration-state
+{{ if .Values.migration.stateHostPath }}
+          hostPath:
+            path: {{ .Values.migration.stateHostPath | quote }}
+            type: Directory
+{{- else }}
+          emptyDir: {}
+{{ end }}
+{{ if .Values.migration.adapterHostPath }}
+        - name: migration-adapter
+          hostPath:
+            path: {{ .Values.migration.adapterHostPath | quote }}
+            type: Directory
+{{ end }}
+{{ end }}
+{{ if and .Values.console.enabled .Values.console.tls.enabled }}
+        - name: console-tls
+          secret:
+            secretName: {{ .Values.console.tls.secretName | default "kairon-console-tls" }}
+            defaultMode: 0440
+{{ end }}
+{{ if .Values.csiNode.enabled }}
+        - name: csi-socket-dir
+          hostPath:
+            path: {{ .Values.node.csi.socketDir | quote }}
+            type: DirectoryOrCreate
+{{ end }}
+{{ if .Values.node.imageCacheDir }}
+        - name: image-cache
+          hostPath:
+            path: {{ .Values.node.imageCacheDir | quote }}
+            type: DirectoryOrCreate
+{{ end }}
+{{ if .Values.node.thirdPartyCSIDrivers }}
+        - name: kubelet-plugins-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins
+            type: Directory
+{{ end }}
+{{ if .Values.node.cpuPinning.enabled }}
+        - name: kubelet-state-dir
+          hostPath:
+            path: {{ dir .Values.node.cpuPinning.stateFile | quote }}
+            type: Directory
+        - name: cpu-state
+          emptyDir: {medium: Memory, sizeLimit: 1Mi}
+{{ end }}
+{{ end }}
+{{ if .Values.csiNode.enabled }}
+---
+# kairon-csi-node needs no Kubernetes API access at all: it's a pure
+# local gRPC server (see internal/csinode), and the registrar sidecar
+# only ever talks to kubelet's own local plugin-registration socket, not
+# the API server. automountServiceAccountToken is off below for exactly
+# that reason -- one less credential sitting in an already-privileged pod.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kairon-csi-node
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: {name: kairon-csi-node, namespace: {{ .Release.Namespace }}}
+spec:
+  selector: {matchLabels: {app.kubernetes.io/name: kairon-csi-node}}
+  template:
+    metadata:{{ include "kairon.podMeta" (dict "name" "kairon-csi-node" "v" .Values.csiNode) }}
+    spec:
+      serviceAccountName: kairon-csi-node{{ with include "kairon.podSpecExtras" (dict "name" "kairon-csi-node" "v" .Values.csiNode) }}{{ . | nindent 6 }}{{ end }}
+      automountServiceAccountToken: false
+      # iscsiadm needs direct L3 reachability to the iSCSI target's real
+      # IP -- the same reason kairon-node itself runs hostNetwork: true.
+      hostNetwork: true
+      nodeSelector:
+{{ toYaml .Values.csiNode.nodeSelector | indent 8 }}
+      containers:
+        # The upstream, Kubernetes-maintained sidecar that registers this
+        # plugin with kubelet -- see values.yaml's own comment on
+        # csiNode.registrar. Not privileged, needs no Kubernetes API
+        # access, and never touches iSCSI/mount state itself.
+        - name: node-driver-registrar
+          image: "{{ .Values.csiNode.registrar.image.repository }}:{{ .Values.csiNode.registrar.image.tag }}"
+          args:
+            - "--csi-address=/csi/csi.sock"
+            - "--kubelet-registration-path={{ .Values.node.csi.socketDir }}/csi.sock"
+          volumeMounts:
+            - {name: plugin-dir, mountPath: /csi}
+            - {name: registration-dir, mountPath: /registration}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+        - name: csi-node
+          image: "{{ .Values.csiNode.image.repository }}:{{ .Values.csiNode.image.tag | default (.Chart.AppVersion | trimPrefix "v" | printf "v%s") }}"
+          imagePullPolicy: {{ .Values.csiNode.image.pullPolicy }}
+          args:
+            - "--endpoint=unix:///csi/csi.sock"
+          env:
+            - name: KAIRON_NODE_NAME
+              valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
+{{- with .Values.csiNode.extraEnv }}
+{{ toYaml . | indent 12 }}
+{{- end }}
+{{- with .Values.csiNode.extraEnvFrom }}
+          envFrom:
+{{ toYaml . | indent 12 }}
+{{- end }}
+          # Privileged, not just a capabilities list: attaching an iSCSI
+          # target and mounting the resulting filesystem genuinely needs
+          # this. See SECURITY.md and
+          # docs/guides/machine-storage-csi.md's own note on this
+          # tradeoff -- it's why kairon-csi-node is the one Kairon-built
+          # image that runs this way.
+          securityContext:
+            privileged: true
+          resources:
+{{ toYaml .Values.csiNode.resources | indent 12 }}
+          volumeMounts:
+            - {name: plugin-dir, mountPath: /csi}
+            # Bidirectional: a mount kairon-csi-node creates here must be
+            # visible on the real host filesystem too, since FluxVM
+            # itself (a host-local process, not a container) reads a
+            # Machine's boot disk directly from this same host path --
+            # see internal/agent/csi.go and docs/guides/machine-storage-csi.md.
+            - {name: staging-dir, mountPath: {{ .Values.node.csi.stagingDir | quote }}, mountPropagation: Bidirectional}
+            - {name: publish-dir, mountPath: {{ .Values.node.csi.publishDir | quote }}, mountPropagation: Bidirectional}
+            - {name: dev-dir, mountPath: /dev}
+            - {name: modules-dir, mountPath: /lib/modules, readOnly: true}
+            # The NVMe-oF host NQN: /etc/nvme/hostnqn, else derived from the
+            # host's machine id, so it survives plugin restarts.
+            - {name: nvme-conf, mountPath: /etc/nvme, readOnly: true}
+            - {name: machine-id, mountPath: /etc/machine-id, readOnly: true}
+      volumes:
+        - name: plugin-dir
+          hostPath:
+            path: {{ .Values.node.csi.socketDir | quote }}
+            type: DirectoryOrCreate
+        - name: registration-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins_registry
+            type: Directory
+        - name: staging-dir
+          hostPath:
+            path: {{ .Values.node.csi.stagingDir | quote }}
+            type: DirectoryOrCreate
+        - name: publish-dir
+          hostPath:
+            path: {{ .Values.node.csi.publishDir | quote }}
+            type: DirectoryOrCreate
+        - name: dev-dir
+          hostPath: {path: /dev, type: Directory}
+        - name: modules-dir
+          hostPath: {path: /lib/modules, type: Directory}
+        - name: nvme-conf
+          hostPath: {path: /etc/nvme, type: DirectoryOrCreate}
+        - name: machine-id
+          hostPath: {path: /etc/machine-id, type: File}
+---
+# attachRequired: false regardless of whether csiController.enabled --
+# iSCSI volumes need no ControllerPublishVolume/ControllerUnpublishVolume
+# call (any node can log in to a target independently, unlike e.g. a
+# cloud block-storage API that must explicitly attach a disk to one
+# instance first); ControllerServer (controller.go) never implements
+# those two RPCs. See internal/csinode's package doc comment for the full
+# Node-service/Controller-service split.
+apiVersion: storage.k8s.io/v1
+kind: CSIDriver
+metadata: {name: csi.kairon.zyvor.dev}
+spec:
+  attachRequired: false
+  podInfoOnMount: false
+  volumeLifecycleModes: ["Persistent"]
+{{ end }}
+{{ if .Values.csiController.enabled }}
+---
+# kairon-csi-controller itself never talks to the Kubernetes API server
+# (see internal/csinode.ControllerServer's own doc comment) -- only the
+# external-provisioner sidecar does, watching PersistentVolumeClaims and
+# turning them into CreateVolume/DeleteVolume gRPC calls over the same
+# local Unix socket kairon-csi-controller listens on. This ClusterRole is
+# exactly what that upstream sidecar's own documented RBAC requires
+# (https://github.com/kubernetes-csi/external-provisioner) -- nothing
+# Kairon-specific.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kairon-csi-controller
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kairon-csi-controller
+rules:
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    # update: the csi-resizer sidecar's own documented RBAC
+    # (https://github.com/kubernetes-csi/external-resizer) -- it patches
+    # a PersistentVolume's capacity after ControllerExpandVolume succeeds.
+    verbs: ["get", "list", "watch", "create", "delete", "update"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "update"]
+  - apiGroups: [""]
+    # csi-resizer's own documented RBAC -- it patches
+    # FileSystemResizePending onto a PVC's conditions while a resize is in
+    # flight.
+    resources: ["persistentvolumeclaims/status"]
+    verbs: ["patch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["csinodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["list", "watch", "create", "update", "patch"]
+{{ if .Values.csiController.leaderElection.enabled }}
+  # The csi-provisioner sidecar's own Lease-based leader election --
+  # see csiController.leaderElection's own doc comment in values.yaml for
+  # why this lives on the sidecar, not a hand-rolled equivalent in
+  # kairon-csi-controller's own binary.
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update"]
+{{ end }}
+{{ if .Values.csiController.snapshotter.enabled }}
+  # The csi-snapshotter sidecar's own documented RBAC
+  # (https://github.com/kubernetes-csi/external-snapshotter) -- it
+  # reconciles VolumeSnapshotContent (not VolumeSnapshot itself, which the
+  # separate, cluster-wide snapshot-controller this chart doesn't install
+  # owns) into CreateSnapshot/DeleteSnapshot calls.
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshotclasses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshotcontents"]
+    verbs: ["create", "get", "list", "watch", "update", "delete", "patch"]
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshotcontents/status"]
+    verbs: ["update", "patch"]
+{{ end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kairon-csi-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kairon-csi-controller
+subjects:
+  - kind: ServiceAccount
+    name: kairon-csi-controller
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: kairon-csi-controller, namespace: {{ .Release.Namespace }}}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app.kubernetes.io/name: kairon-csi-controller}}
+  template:
+    metadata:{{ include "kairon.podMeta" (dict "name" "kairon-csi-controller" "v" .Values.csiController) }}
+    spec:
+      serviceAccountName: kairon-csi-controller{{ with include "kairon.podSpecExtras" (dict "name" "kairon-csi-controller" "v" .Values.csiController) }}{{ . | nindent 6 }}{{ end }}
+      # LIO's iSCSI portal must be reachable on the storage node's real
+      # interfaces, not a Pod-network address other nodes' initiators
+      # can't route to -- same reason csiNode's DaemonSet runs this way.
+      hostNetwork: true
+      nodeSelector:
+{{ toYaml .Values.csiController.nodeSelector | indent 8 }}
+      containers:
+        - name: csi-provisioner
+          image: "{{ .Values.csiController.provisioner.image.repository }}:{{ .Values.csiController.provisioner.image.tag }}"
+          args:
+            - "--csi-address=/csi/csi.sock"
+            - "--leader-election={{ .Values.csiController.leaderElection.enabled }}"
+          volumeMounts:
+            - {name: plugin-dir, mountPath: /csi}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+        - name: csi-resizer
+          image: "{{ .Values.csiController.resizer.image.repository }}:{{ .Values.csiController.resizer.image.tag }}"
+          args:
+            - "--csi-address=/csi/csi.sock"
+            - "--leader-election={{ .Values.csiController.leaderElection.enabled }}"
+          volumeMounts:
+            - {name: plugin-dir, mountPath: /csi}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+{{ if .Values.csiController.snapshotter.enabled }}
+        - name: csi-snapshotter
+          image: "{{ .Values.csiController.snapshotter.image.repository }}:{{ .Values.csiController.snapshotter.image.tag }}"
+          args:
+            - "--csi-address=/csi/csi.sock"
+            - "--leader-election={{ .Values.csiController.leaderElection.enabled }}"
+          volumeMounts:
+            - {name: plugin-dir, mountPath: /csi}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+{{ end }}
+        - name: csi-controller
+          image: "{{ .Values.csiController.image.repository }}:{{ .Values.csiController.image.tag | default (.Chart.AppVersion | trimPrefix "v" | printf "v%s") }}"
+          imagePullPolicy: {{ .Values.csiController.image.pullPolicy }}
+          args:
+            - "--endpoint=unix:///csi/csi.sock"
+            - "--portal={{ .Values.csiController.portal }}"
+            - "--volume-dir={{ .Values.csiController.volumeDir }}"
+{{- if .Values.csiController.nvmePortals }}
+            - "--nvme-portals={{ .Values.csiController.nvmePortals }}"
+{{- end }}
+{{- with .Values.csiController.extraEnv }}
+          env:
+{{ toYaml . | indent 12 }}
+{{- end }}
+{{- with .Values.csiController.extraEnvFrom }}
+          envFrom:
+{{ toYaml . | indent 12 }}
+{{- end }}
+          # Privileged: real Linux LIO/configfs target management
+          # (internal/csinode/lio.go) needs this, the same tradeoff
+          # csiNode's own container already makes for iSCSI initiation
+          # and mounting. See SECURITY.md.
+          securityContext:
+            privileged: true
+          resources:
+{{ toYaml .Values.csiController.resources | indent 12 }}
+          volumeMounts:
+            - {name: plugin-dir, mountPath: /csi}
+            - {name: volume-dir, mountPath: {{ .Values.csiController.volumeDir | quote }}}
+            - {name: target-configfs, mountPath: /sys/kernel/config}
+      volumes:
+        - name: plugin-dir
+          hostPath: {path: /var/lib/kairon/csi-controller-plugin, type: DirectoryOrCreate}
+        - name: volume-dir
+          hostPath:
+            path: {{ .Values.csiController.volumeDir | quote }}
+            type: DirectoryOrCreate
+        - name: target-configfs
+          hostPath: {path: /sys/kernel/config, type: Directory}
+{{ if .Values.csiController.storageClass.create }}
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata: {name: {{ .Values.csiController.storageClass.name | quote }}}
+provisioner: csi.kairon.zyvor.dev
+reclaimPolicy: {{ .Values.csiController.storageClass.reclaimPolicy }}
+volumeBindingMode: Immediate
+allowVolumeExpansion: {{ .Values.csiController.storageClass.allowVolumeExpansion }}
+{{- with .Values.csiController.storageClass.parameters }}
+parameters:
+{{ toYaml . | indent 2 }}
+{{- end }}
+{{ end }}
+{{ end }}
+{{ if .Values.ui.enabled }}
+{{- if and .Values.ui.insecureHttp .Values.ui.tls.secretName }}
+{{- fail "ui.insecureHttp and ui.tls.secretName are mutually exclusive: pick plain HTTP or a certificate" }}
+{{- end }}
+{{- $uiPortName := ternary "http" "https" (.Values.ui.insecureHttp | default false) }}
+{{- $uiScheme := ternary "HTTP" "HTTPS" (.Values.ui.insecureHttp | default false) }}
+{{- $usersConfigured := eq (include "kairon.ui.usersConfigured" .) "true" }}
+{{- $anyAuthConfigured := eq (include "kairon.ui.anyAuthConfigured" .) "true" }}
+{{/*
+Seed a single default "admin" account, with a random password Helm
+generates once and persists across upgrades, exactly when nothing else is
+configured -- turns "helm install kairon with no ui values set" from a
+required manual auth decision into a working, safe, per-operator login out
+of the box. Setting any explicit ui.token, ui.existingSecret, ui.auth.users,
+ui.auth.existingSecret, or ui.allowUnauthenticated value opts out of this
+entirely.
+*/}}
+{{- $seedDefaultAdmin := not $anyAuthConfigured }}
+{{- $existingSession := lookup "v1" "Secret" .Release.Namespace "kairon-ui-session" }}
+{{- $sessionSecretValue := randAlphaNum 32 }}
+{{- if and $existingSession $existingSession.data (index $existingSession.data "sessionSecret") }}
+{{- $sessionSecretValue = index $existingSession.data "sessionSecret" | b64dec }}
+{{- end }}
+{{- $defaultAdminPasswordValue := randAlphaNum 24 }}
+{{- if .Values.ui.auth.wellKnownDefault }}
+{{- /* Fresh installs only: a persisted password below always wins. */}}
+{{- $defaultAdminPasswordValue = "Admin@321" }}
+{{- end }}
+{{- if and $existingSession $existingSession.data (index $existingSession.data "defaultAdminPassword") }}
+{{- $defaultAdminPasswordValue = index $existingSession.data "defaultAdminPassword" | b64dec }}
+{{- end }}
+{{- if .Values.ui.auth.defaultAdminPassword }}
+{{- /* An operator-chosen value always wins over the generated/persisted one. */}}
+{{- $defaultAdminPasswordValue = .Values.ui.auth.defaultAdminPassword }}
+{{- end }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kairon-ui
+  namespace: {{ .Release.Namespace }}
+---
+# Always created, even for ui.replicaCount: 1 -- so scaling up later never
+# needs a separate chart change. Session revocation, login lockout, and
+# console tickets are mirrored here across replicas (see
+# internal/uiapi/sharedstate.go); with exactly one replica, kairon-ui
+# still writes to it but nothing ever needs to read a different replica's
+# entry back, so it's simply unused, not harmful. `data: {}` here only
+# means "this chart doesn't seed any entries" -- it renders identically on
+# every install/upgrade, so Helm's own diff against the previous release
+# never asks to reset live keys kairon-ui itself PATCHed in between
+# releases back to empty (the same reasoning that lets the
+# kairon-ui-token/kairon-ui-session Secrets above coexist with runtime
+# mutation, just without needing a `lookup` here since this template's
+# own output never changes release to release).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kairon-ui-shared-state
+  namespace: {{ .Release.Namespace }}
+data: {}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: kairon-ui-shared-state, namespace: {{ .Release.Namespace }}}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["kairon-ui-shared-state"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: kairon-ui-shared-state, namespace: {{ .Release.Namespace }}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: kairon-ui-shared-state}
+subjects:
+  - {kind: ServiceAccount, name: kairon-ui, namespace: {{ .Release.Namespace }}}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: kairon-ui}
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+  # Read-only: the Machine timeline (events) and the Pods/health views.
+  - apiGroups: [""]
+    resources: ["events", "pods"]
+    verbs: ["get", "list"]
+  # The dashboard self-test (internal/uiapi/selftest.go) creates and removes a
+  # test volume, and looks for a snapshot-capable StorageClass.
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "create", "delete"]
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshotclasses"]
+    verbs: ["get", "list"]
+  # Removes the CSI VolumeSnapshots a self-test snapshot created: a
+  # MachineSnapshot does not own them (internal/selftest, snapshot-restore).
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshots"]
+    verbs: ["get", "delete"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list"]
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machines"]
+    verbs: ["get", "list", "watch", "create", "delete", "patch"]
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machinemigrations"]
+    verbs: ["get", "list", "watch", "create", "patch"]
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machinesnapshots"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  # machinesnapshotrestores: the dashboard's Restores page (GET/POST
+  # /api/v1/restores, DELETE /api/v1/restores/{namespace}/{name} -- see
+  # internal/uiapi/restores.go). kairon-ui gets delete here (and now on
+  # machinesnapshots too, for the self-test's cleanup): internal/kube.Client has always had a
+  # DeleteMachineSnapshotRestore (kaironctl delete restore already used
+  # it), so this isn't a new mutation being introduced, just the
+  # dashboard's own RBAC catching up to a capability that already existed.
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machinesnapshotrestores"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  # Agent sessions (internal/uiapi/agentsessions.go): the verb relay reads
+  # them, a fork creates one child per new FluxVM session, the dashboard
+  # deletes them.
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["agentsessions"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  # The dashboard's Exports page and download proxy (internal/uiapi/exports.go).
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machineexports"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  # Read-only: the six CRDs kairon-ui's own dashboard/REST routes list (see
+  # internal/uiapi/fleet.go) -- GET /api/v1/quotas/disruption-budgets/
+  # machinesets/instancetypes/migration-policies/snapshot-schedules. This
+  # ClusterRole never granted get/list/watch on any of them, so every one
+  # of those routes has 403'd against a real apiserver since the day it
+  # shipped -- the fake httptest.Server every uiapi test runs against
+  # doesn't enforce RBAC at all, so nothing caught it. machinesets also
+  # needs delete (the dashboard's "Delete" row action,
+  # handleDeleteMachineSet) and patch (the "Scale" row action,
+  # handleScaleMachineSet), and machinesnapshotschedules needs patch (the
+  # suspend/resume toggle, handleSuspendMachineSnapshotSchedule) -- all
+  # already-shipped mutations that were equally broken.
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machinequotas", "machinedisruptionbudgets", "machineinstancetypes", "machineclusterinstancetypes", "machinepreferences", "machineclusterpreferences", "machineimages", "migrationpolicies", "machinepools", "machineclaims", "nodetopologies", "virtualnetworks", "macnetworks"]
+    verbs: ["get", "list", "watch"]
+  # The dashboard creates and deletes backups and creates restores
+  # (internal/uiapi/backups.go), same as `kaironctl backup`.
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machinebackups", "machinebackuprestores"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  # Backup Policies page (internal/uiapi/backup_actions.go).
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machinebackuppolicies"]
+    verbs: ["get", "list", "watch", "create", "delete", "patch"]
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machinesets"]
+    verbs: ["get", "list", "watch", "delete", "patch"]
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machinesnapshotschedules"]
+    verbs: ["get", "list", "watch", "patch"]
+  # Read-only: the dashboard's new MachineNetworkPolicy/NetworkSecurityGroup
+  # list pages (GET /api/v1/network-policies, /security-groups) -- see
+  # internal/uiapi/fleet.go's handleListNetworkPolicies/
+  # handleListSecurityGroups. List-only, matching every other newly-added
+  # dashboard route above except machinesets: kaironctl/kubectl remain how
+  # these get mutated.
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["machinenetworkpolicies", "networksecuritygroups"]
+    verbs: ["get", "list", "watch"]
+{{ if .Values.ui.auth.rbacConsoleCheck }}
+  - apiGroups: ["authorization.k8s.io"]
+    # ui.auth.rbacConsoleCheck's own SubjectAccessReview call -- see
+    # internal/uiapi/console.go's rbacAllowsConsole.
+    resources: ["subjectaccessreviews"]
+    verbs: ["create"]
+{{ end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: kairon-ui}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: kairon-ui}
+subjects:
+  - {kind: ServiceAccount, name: kairon-ui, namespace: {{ .Release.Namespace }}}
+---
+{{ if and $usersConfigured (not .Values.ui.auth.existingSecret) }}
+# Namespaced Role (not a ClusterRole, and scoped by resourceNames to just
+# this one Secret): kairon-ui's password-change/-reset endpoints
+# (internal/uiapi/auth.go's setOwnPassword/resetPassword) need to write an
+# updated account list back into the same kairon-ui-users Secret it read
+# KAIRON_UI_USERS_JSON from at startup, so a password change survives a
+# pod restart instead of reverting to whatever ui.auth.users was at
+# install time. Only granted when the chart itself owns that Secret (not
+# when ui.auth.existingSecret points at one an operator/external tool
+# manages) -- see persistUsers's doc comment.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: kairon-ui-users-secret, namespace: {{ .Release.Namespace }}}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["kairon-ui-users"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: kairon-ui-users-secret, namespace: {{ .Release.Namespace }}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: kairon-ui-users-secret}
+subjects:
+  - {kind: ServiceAccount, name: kairon-ui, namespace: {{ .Release.Namespace }}}
+---
+{{ end }}
+{{ if not .Values.ui.existingSecret }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kairon-ui-token
+  namespace: {{ .Release.Namespace }}
+type: Opaque
+stringData:
+  token: {{ .Values.ui.token | quote }}
+---
+{{ end }}
+{{ if and .Values.ui.oidc.enabled .Values.ui.oidc.clientSecret (not .Values.ui.oidc.existingSecret) }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kairon-ui-oidc
+  namespace: {{ .Release.Namespace }}
+type: Opaque
+stringData:
+  clientSecret: {{ .Values.ui.oidc.clientSecret | quote }}
+---
+{{ end }}
+{{ if not .Values.ui.auth.existingSessionSecret }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kairon-ui-session
+  namespace: {{ .Release.Namespace }}
+type: Opaque
+stringData:
+  sessionSecret: {{ $sessionSecretValue | quote }}
+{{ if $seedDefaultAdmin }}
+  defaultAdminPassword: {{ $defaultAdminPasswordValue | quote }}
+{{ end }}
+---
+{{ end }}
+{{ if and $usersConfigured (not .Values.ui.auth.existingSecret) }}
+{{/*
+kairon-ui can now PATCH this Secret at runtime (POST /api/v1/auth/password,
+POST /api/v1/users/{username}/password -- see internal/uiapi/auth.go's
+persistUsers) so a password change survives a pod restart. That means a
+plain `helm upgrade` must NOT reset users.json back to .Values.ui.auth.users
+every time, or it would silently undo any runtime change -- same
+lookup-based idempotency already used above for kairon-ui-session. Only the
+first install (the Secret doesn't exist yet) seeds from values; every
+later upgrade keeps whatever is already there.
+*/}}
+{{- $existingUsers := lookup "v1" "Secret" .Release.Namespace "kairon-ui-users" }}
+{{- $usersJSONValue := .Values.ui.auth.users | toJson }}
+{{- if and $existingUsers $existingUsers.data (index $existingUsers.data "users.json") }}
+{{- $usersJSONValue = index $existingUsers.data "users.json" | b64dec }}
+{{- end }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kairon-ui-users
+  namespace: {{ .Release.Namespace }}
+type: Opaque
+stringData:
+  users.json: {{ $usersJSONValue | quote }}
+---
+{{ end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: kairon-ui, namespace: {{ .Release.Namespace }}}
+spec:
+  replicas: {{ .Values.ui.replicaCount }}
+  selector: {matchLabels: {app.kubernetes.io/name: kairon-ui}}
+  template:
+    metadata:{{ include "kairon.podMeta" (dict "name" "kairon-ui" "v" .Values.ui) }}
+    spec:
+      serviceAccountName: kairon-ui{{ with include "kairon.podSpecExtras" (dict "name" "kairon-ui" "v" .Values.ui) }}{{ . | nindent 6 }}{{ end }}
+{{ if .Values.ui.imageStore.enabled }}
+      securityContext: {fsGroup: {{ .Values.ui.imageStore.fsGroup }}}
+{{ end }}
+      containers:
+        - name: ui
+          image: "{{ .Values.ui.image.repository }}:{{ .Values.ui.image.tag | default (.Chart.AppVersion | trimPrefix "v" | printf "v%s") }}"
+          imagePullPolicy: {{ .Values.ui.image.pullPolicy }}
+          args:
+            - "-listen=:{{ .Values.ui.service.port }}"
+            - "-allow-unauthenticated={{ .Values.ui.allowUnauthenticated }}"
+            - "-namespace-scoping-enabled={{ .Values.ui.auth.namespaceScoping.enabled }}"
+{{ if not (kindIs "invalid" .Values.ui.rateLimit.rps) }}
+            - "-rate-limit-rps={{ .Values.ui.rateLimit.rps }}"
+{{ end }}
+{{ if not (kindIs "invalid" .Values.ui.rateLimit.burst) }}
+            - "-rate-limit-burst={{ .Values.ui.rateLimit.burst | int }}"
+{{ end }}
+          env:
+            - name: KAIRON_UI_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ .Values.ui.existingSecret | default "kairon-ui-token" }}, key: {{ .Values.ui.existingSecretKey | default "token" }}}}
+            - name: KAIRON_UI_SESSION_SECRET
+              valueFrom: {secretKeyRef: {name: {{ .Values.ui.auth.existingSessionSecret | default "kairon-ui-session" }}, key: {{ .Values.ui.auth.existingSessionSecretKey | default "sessionSecret" }}}}
+            # Always set, not just when usersConfigured -- KAIRON_UI_NAMESPACE
+            # also scopes the shared-state ConfigMap below (used by every
+            # ui.enabled deployment, token-only auth included, once console
+            # is enabled -- see internal/uiapi/sharedstate.go), and setting it
+            # unconditionally is free (a downward-API fieldRef, no Secret).
+            - name: KAIRON_UI_NAMESPACE
+              valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+            # See the ConfigMap's own comment above (near the kairon-ui
+            # ServiceAccount) for why this is safe to always set, even for
+            # ui.replicaCount: 1.
+            - name: KAIRON_UI_SHARED_STATE_CONFIGMAP_NAME
+              value: kairon-ui-shared-state
+{{ if $usersConfigured }}
+            - name: KAIRON_UI_USERS_JSON
+              valueFrom: {secretKeyRef: {name: {{ .Values.ui.auth.existingSecret | default "kairon-ui-users" }}, key: {{ .Values.ui.auth.existingSecretKey | default "users.json" }}}}
+{{ if not .Values.ui.auth.existingSecret }}
+            - name: KAIRON_UI_USERS_SECRET_NAME
+              value: kairon-ui-users
+            - name: KAIRON_UI_USERS_SECRET_KEY
+              value: users.json
+{{ end }}
+{{ end }}
+{{ if and $seedDefaultAdmin (not .Values.ui.auth.existingSessionSecret) }}
+            - name: KAIRON_UI_DEFAULT_ADMIN_PASSWORD
+              valueFrom: {secretKeyRef: {name: kairon-ui-session, key: defaultAdminPassword}}
+{{ end }}
+{{ if .Values.ui.oidc.enabled }}
+            - name: KAIRON_UI_OIDC_ISSUER_URL
+              value: {{ .Values.ui.oidc.issuerURL | quote }}
+            - name: KAIRON_UI_OIDC_CLIENT_ID
+              value: {{ .Values.ui.oidc.clientID | quote }}
+            - name: KAIRON_UI_OIDC_REDIRECT_URL
+              value: {{ .Values.ui.oidc.redirectURL | quote }}
+            - name: KAIRON_UI_OIDC_USERNAME_CLAIM
+              value: {{ .Values.ui.oidc.usernameClaim | quote }}
+            - name: KAIRON_UI_OIDC_SCOPES
+              value: {{ .Values.ui.oidc.scopes | quote }}
+{{ if or .Values.ui.oidc.adminGroups .Values.ui.oidc.namespaceGroups }}
+            - name: KAIRON_UI_OIDC_GROUPS_CLAIM
+              value: {{ .Values.ui.oidc.groupsClaim | quote }}
+{{ if .Values.ui.oidc.adminGroups }}
+            - name: KAIRON_UI_OIDC_ADMIN_GROUPS
+              value: {{ .Values.ui.oidc.adminGroups | join "," | quote }}
+{{ end }}
+{{ if .Values.ui.oidc.namespaceGroups }}
+            - name: KAIRON_UI_OIDC_NAMESPACE_GROUPS
+              value: {{ .Values.ui.oidc.namespaceGroups | toJson | quote }}
+{{ end }}
+{{ end }}
+{{ if or .Values.ui.oidc.clientSecret .Values.ui.oidc.existingSecret }}
+            - name: KAIRON_UI_OIDC_CLIENT_SECRET
+              valueFrom: {secretKeyRef: {name: {{ .Values.ui.oidc.existingSecret | default "kairon-ui-oidc" }}, key: {{ .Values.ui.oidc.existingSecretKey | default "clientSecret" }}}}
+{{ end }}
+{{ end }}
+{{ if .Values.console.enabled }}
+            - name: KAIRON_NODE_CONSOLE_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ .Values.console.existingSecret | default "kairon-console-token" }}, key: {{ .Values.console.existingSecretKey | default "token" }}}}
+            - name: KAIRON_NODE_CONSOLE_PORT
+              value: {{ .Values.console.port | quote }}
+{{ if .Values.console.tls.enabled }}
+            - name: KAIRON_NODE_CONSOLE_CA
+              value: /etc/kairon/console-tls/ca.crt
+{{- $consoleServerName := .Values.console.tls.serverName }}
+{{- if and (not $consoleServerName) (not .Values.console.tls.secretName) }}
+{{- $consoleServerName = "kairon-node" }}
+{{- end }}
+{{ if $consoleServerName }}
+            - name: KAIRON_NODE_CONSOLE_SERVER_NAME
+              value: {{ $consoleServerName | quote }}
+{{ end }}
+{{ end }}
+{{ end }}
+{{ if .Values.ui.auth.rbacConsoleCheck }}
+            - name: KAIRON_UI_RBAC_CONSOLE_CHECK
+              value: "true"
+{{ end }}
+{{ if .Values.ui.auth.sandboxOperatorExec }}
+            - name: KAIRON_UI_SANDBOX_OPERATOR_EXEC
+              value: "true"
+{{ end }}
+{{ if (.Values.ui.agentSessions).previews }}
+            - name: KAIRON_UI_AGENT_SESSION_PREVIEWS
+              value: "true"
+{{ end }}
+{{ if .Values.ui.insecureHttp }}
+            - name: KAIRON_UI_INSECURE_HTTP
+              value: "true"
+{{ else if .Values.ui.tls.secretName }}
+            - name: KAIRON_UI_TLS_CERT
+              value: /etc/kairon/ui-tls/tls.crt
+            - name: KAIRON_UI_TLS_KEY
+              value: /etc/kairon/ui-tls/tls.key
+{{ else if .Values.ui.tls.sans }}
+            - name: KAIRON_UI_TLS_SANS
+              value: {{ .Values.ui.tls.sans | join "," | quote }}
+{{ end }}
+{{ if .Values.ui.rateLimit.trustedProxyHeader }}
+            - name: KAIRON_UI_TRUSTED_PROXY_HEADER
+              value: {{ .Values.ui.rateLimit.trustedProxyHeader | quote }}
+            - name: KAIRON_UI_TRUSTED_PROXY_CIDRS
+              value: {{ .Values.ui.rateLimit.trustedProxyCidrs | join "," | quote }}
+{{ end }}
+{{ if .Values.ui.atlas.url }}
+            - name: KAIRON_UI_ATLAS_URL
+              value: {{ .Values.ui.atlas.url | quote }}
+{{ if .Values.ui.atlas.tokenSecret }}
+            - name: KAIRON_UI_ATLAS_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ .Values.ui.atlas.tokenSecret | quote }}, key: token}}
+{{ end }}
+{{ if .Values.ui.atlas.consoleURL }}
+            - name: KAIRON_UI_ATLAS_CONSOLE_URL
+              value: {{ .Values.ui.atlas.consoleURL | quote }}
+{{ end }}
+{{ end }}
+{{ if .Values.ui.imageStore.enabled }}
+            - name: KAIRON_UI_IMAGE_STORE_DIR
+              value: /var/lib/kairon-ui/images
+            - name: KAIRON_UI_IMAGE_STORE_PUBLIC_URL
+              value: {{ .Values.ui.imageStore.publicURL | default (printf "%s://kairon-ui.%s.svc:%v" (lower $uiScheme) .Release.Namespace .Values.ui.service.port) | quote }}
+            - name: KAIRON_UI_IMAGE_STORE_MAX_BYTES
+              value: {{ .Values.ui.imageStore.maxBytes | int64 | quote }}
+{{ end }}
+{{- with .Values.ui.extraEnv }}
+{{ toYaml . | indent 12 }}
+{{- end }}
+{{- with .Values.ui.extraEnvFrom }}
+          envFrom:
+{{ toYaml . | indent 12 }}
+{{- end }}
+          ports: [{name: {{ $uiPortName }}, containerPort: {{ .Values.ui.service.port }}}]
+          readinessProbe: {httpGet: {path: /readyz, port: {{ $uiPortName }}, scheme: {{ $uiScheme }}}}
+          livenessProbe: {httpGet: {path: /healthz, port: {{ $uiPortName }}, scheme: {{ $uiScheme }}}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}, capabilities: {drop: ["ALL"]}}
+          resources:
+{{ toYaml .Values.ui.resources | indent 12 }}
+{{- $consoleTLS := and .Values.console.enabled .Values.console.tls.enabled }}
+{{- $uiTLS := and (not .Values.ui.insecureHttp) .Values.ui.tls.secretName }}
+{{ if or $consoleTLS .Values.ui.imageStore.enabled $uiTLS }}
+          volumeMounts:
+{{ if $consoleTLS }}
+            - {name: console-tls, mountPath: /etc/kairon/console-tls, readOnly: true}
+{{ end }}
+{{ if $uiTLS }}
+            - {name: ui-tls, mountPath: /etc/kairon/ui-tls, readOnly: true}
+{{ end }}
+{{ if .Values.ui.imageStore.enabled }}
+            - {name: image-store, mountPath: /var/lib/kairon-ui/images}
+{{ end }}
+      volumes:
+{{ if $consoleTLS }}
+        - name: console-tls
+          secret:
+            secretName: {{ .Values.console.tls.secretName | default "kairon-console-tls" }}
+            defaultMode: 0440
+{{ end }}
+{{ if $uiTLS }}
+        - name: ui-tls
+          secret:
+            secretName: {{ .Values.ui.tls.secretName }}
+            defaultMode: 0440
+{{ end }}
+{{ if .Values.ui.imageStore.enabled }}
+        - name: image-store
+          persistentVolumeClaim: {claimName: {{ .Values.ui.imageStore.existingClaim | default "kairon-ui-images" }}}
+{{ end }}
+{{ end }}
+{{ if and .Values.ui.imageStore.enabled (not .Values.ui.imageStore.existingClaim) }}
+{{ if gt (int .Values.ui.replicaCount) 1 }}
+{{ fail "ui.imageStore with more than one ui replica needs ui.imageStore.existingClaim pointing at a ReadWriteMany claim" }}
+{{ end }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: kairon-ui-images, namespace: {{ .Release.Namespace }}}
+spec:
+  accessModes: [ReadWriteOnce]
+{{ if .Values.ui.imageStore.storageClassName }}
+  storageClassName: {{ .Values.ui.imageStore.storageClassName | quote }}
+{{ end }}
+  resources: {requests: {storage: {{ .Values.ui.imageStore.size | quote }}}}
+{{ end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kairon-ui
+  namespace: {{ .Release.Namespace }}
+spec:
+  type: {{ .Values.ui.service.type }}
+  selector: {app.kubernetes.io/name: kairon-ui}
+  ports:
+    - {name: {{ $uiPortName }}, port: {{ .Values.ui.service.port }}, targetPort: {{ $uiPortName }}, appProtocol: {{ lower $uiScheme }}}
+{{ if .Values.ui.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kairon-ui
+  namespace: {{ .Release.Namespace }}
+{{- $ingAnn := .Values.ui.ingress.annotations | default dict }}
+{{ if $ingAnn }}
+  annotations:
+{{ toYaml $ingAnn | indent 4 }}
+{{ end }}
+spec:
+{{ if .Values.ui.ingress.className }}
+  ingressClassName: {{ .Values.ui.ingress.className }}
+{{ end }}
+{{ if .Values.ui.ingress.tls }}
+  tls:
+{{ toYaml .Values.ui.ingress.tls | indent 4 }}
+{{ end }}
+  rules:
+    - host: {{ .Values.ui.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: {name: kairon-ui, port: {name: {{ $uiPortName }}}}
+{{ end }}
+{{ if and .Values.ui.gateway.enabled (not .Values.ui.insecureHttp) }}
+{{- if not .Values.ui.gateway.parentRef.name }}{{ fail "ui.gateway.parentRef.name is required when ui.gateway.enabled" }}{{ end }}
+{{- if not .Values.ui.gateway.backendTLS.hostname }}{{ fail "ui.gateway.backendTLS.hostname is required (a SAN of the dashboard certificate)" }}{{ end }}
+{{- if not (or .Values.ui.gateway.backendTLS.caCertificateRefs .Values.ui.gateway.backendTLS.wellKnownCACertificates) }}{{ fail "ui.gateway.backendTLS needs caCertificateRefs or wellKnownCACertificates" }}{{ end }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: kairon-ui
+  namespace: {{ .Release.Namespace }}
+spec:
+  parentRefs:
+    - name: {{ .Values.ui.gateway.parentRef.name | quote }}
+{{- if .Values.ui.gateway.parentRef.namespace }}
+      namespace: {{ .Values.ui.gateway.parentRef.namespace | quote }}
+{{- end }}
+{{- if .Values.ui.gateway.parentRef.sectionName }}
+      sectionName: {{ .Values.ui.gateway.parentRef.sectionName | quote }}
+{{- end }}
+{{- if .Values.ui.gateway.hostnames }}
+  hostnames:
+{{ toYaml .Values.ui.gateway.hostnames | indent 4 }}
+{{- end }}
+  rules:
+    - backendRefs:
+        - {name: kairon-ui, port: {{ .Values.ui.service.port }}}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: kairon-ui
+  namespace: {{ .Release.Namespace }}
+spec:
+  targetRefs:
+    - {group: "", kind: Service, name: kairon-ui}
+  validation:
+    hostname: {{ .Values.ui.gateway.backendTLS.hostname | quote }}
+{{- if .Values.ui.gateway.backendTLS.caCertificateRefs }}
+    caCertificateRefs:
+{{ toYaml .Values.ui.gateway.backendTLS.caCertificateRefs | indent 6 }}
+{{- else }}
+    wellKnownCACertificates: {{ .Values.ui.gateway.backendTLS.wellKnownCACertificates | quote }}
+{{- end }}
+{{ end }}
+{{ end }}

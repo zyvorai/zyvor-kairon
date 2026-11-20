@@ -1,0 +1,26 @@
+{
+  "apiVersion": "fleet.kairon.zyvor.dev/v1alpha1",
+  "kind": "MachineRecoveryPlan",
+  "metadata": {
+    "name": "recovery",
+    "namespace": "default"
+  },
+  "spec": {
+    "steps": [
+      {
+        "machineName": "database",
+        "backupName": "database-backup"
+      },
+      {
+        "machineName": "api",
+        "backupName": "api-backup",
+        "dependsOn": [
+          "database"
+        ]
+      }
+    ],
+    "mode": "RestoreInPlace",
+    "maxDataAgeSeconds": 86400,
+    "start": false
+  }
+}

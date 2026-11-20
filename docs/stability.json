@@ -1,0 +1,21 @@
+{
+  "maxAgeDays": 14,
+  "features": [
+    {"id": "adaptive-migration", "name": "Adaptive live migration", "label": "experimental", "sections": ["Migration matrix"], "rowFilter": "adaptive|post-?copy|zstd", "guide": "docs/guides/migration-policies.md"},
+    {"id": "incremental-s3-backups", "name": "Incremental S3 backups", "label": "experimental", "sections": ["Incremental S3 backups"], "guide": "docs/guides/machine-backup-incremental.md"},
+    {"id": "node-maintenance-drs", "name": "Node maintenance and DRS", "label": "experimental", "sections": ["Node maintenance and DRS"], "readme": "Node maintenance and DRS", "guide": "docs/guides/node-maintenance-drs.md"},
+    {"id": "virtual-networks", "name": "Virtual networks", "label": "experimental", "sections": ["Virtual networks"], "readme": "Virtual networks", "guide": "docs/guides/virtual-networks.md"},
+    {"id": "elastic-memory", "name": "Elastic memory", "label": "experimental", "sections": ["Elastic memory"], "readme": "Elastic memory", "guide": "docs/guides/machine-elastic-memory.md"},
+    {"id": "hibernate", "name": "Hibernate", "label": "experimental", "sections": ["Hibernate"], "readme": "Hibernate", "guide": "docs/guides/machine-hibernate.md"},
+    {"id": "incident-bundles", "name": "Incident bundles", "label": "experimental", "sections": ["Incident bundles"], "readme": "Incident bundles", "guide": "docs/guides/machine-incident-bundle.md"},
+    {"id": "agent-sandboxes", "name": "Agent sandboxes", "label": "experimental", "sections": ["Agent sandboxes"], "readme": "Agent sandboxes", "guide": "docs/guides/agent-sandboxes.md"},
+    {"id": "nvmeof-storage", "name": "NVMe-oF storage", "label": "experimental", "sections": ["NVMe-oF storage"], "readme": "NVMe-oF storage", "guide": "docs/guides/machine-storage-nvmeof.md"},
+    {"id": "topology-placement", "name": "Topology-aware placement", "label": "experimental", "sections": ["Topology-aware placement"], "readme": "Topology-aware placement", "guide": "docs/guides/machine-topology.md"},
+    {"id": "vgpu-gpu-health", "name": "vGPU profiles and GPU health", "label": "experimental", "sections": ["GPU and vGPU"], "readme": "vGPU profiles and GPU health", "guide": "docs/guides/gpu-vgpu.md"},
+    {"id": "accelerator-profiles", "name": "Accelerator profiles", "label": "experimental", "sections": ["Accelerator profiles"], "readme": "Accelerator profiles", "guide": "docs/guides/accelerator-profiles.md"},
+    {"id": "cross-cluster-dr", "name": "Cross-cluster DR", "label": "experimental", "sections": ["Cross-cluster DR"], "readme": "Cross-cluster DR", "guide": "docs/guides/cross-cluster-dr.md"},
+    {"id": "mac-fabric", "name": "Mac Fabric", "label": "experimental", "sections": ["Mac Fabric"], "readme": "Mac Fabric", "guide": "docs/guides/mac-fabric.md"},
+    {"id": "agent-sessions", "name": "Agent sessions", "label": "experimental", "sections": ["Agent sessions"], "readme": "Agent sessions", "guide": "docs/guides/agent-sessions.md"},
+    {"id": "fleet-automation", "name": "Fleet automation", "label": "experimental", "sections": [], "readme": "Fleet automation", "guide": "docs/guides/enterprise-fleet.md"}
+  ]
+}

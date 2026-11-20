@@ -1,0 +1,20 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+apiVersion: kairon.zyvor.dev/v1
+kind: Machine
+metadata:
+  name: db-latency-sensitive
+  namespace: default
+spec:
+  image:
+    path: /var/lib/fluxvm/images/db.qcow2
+  resources:
+    cpu: "4"
+    memory: 8Gi
+    numaNode: 0
+    cpuSet: "0-3"
+    hugepages: true
+  runtime:
+    backend: qemu
+  powerState: Running

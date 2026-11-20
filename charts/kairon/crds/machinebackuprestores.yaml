@@ -1,0 +1,130 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: machinebackuprestores.kairon.zyvor.dev
+spec:
+  group: kairon.zyvor.dev
+  scope: Namespaced
+  names:
+    plural: machinebackuprestores
+    singular: machinebackuprestore
+    kind: MachineBackupRestore
+    shortNames:
+    - kmbr
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    subresources: &subresources
+      status: {}
+    additionalPrinterColumns: &columns
+    - name: Backup
+      type: string
+      jsonPath: .spec.backupName
+    - name: Machine
+      type: string
+      jsonPath: .status.machineName
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+    schema: &schema
+      openAPIV3Schema:
+        type: object
+        required:
+        - spec
+        properties:
+          spec:
+            type: object
+            required:
+            - backupName
+            x-kubernetes-validations:
+            - rule: self == oldSelf
+              message: a MachineBackupRestore is immutable; create a new one
+            properties:
+              backupName:
+                type: string
+                minLength: 1
+              machineName:
+                type: string
+              storageClassName:
+                type: string
+          status:
+            type: object
+            properties:
+              phase:
+                type: string
+              message:
+                type: string
+              nodeName:
+                type: string
+              machineName:
+                type: string
+              completionTime:
+                type: string
+                format: date-time
+              disk:
+                type: object
+                properties:
+                  phase:
+                    type: string
+                  message:
+                    type: string
+                  name:
+                    type: string
+                  sizeBytes:
+                    type: integer
+                  quiesced:
+                    type: boolean
+                  disks:
+                    type: array
+                    items:
+                      type: string
+                  jobID:
+                    type: string
+                  manifestKey:
+                    type: string
+                  syntheticBases:
+                    type: array
+                    items:
+                      type: string
+              volumes:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    volumeName:
+                      type: string
+                    phase:
+                      type: string
+                    message:
+                      type: string
+                    atlasJobID:
+                      type: string
+                    atlasBackupID:
+                      type: string
+                    atlasVolumeID:
+                      type: string
+                    claimName:
+                      type: string
+  - name: v1beta1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1beta1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema
+  - name: v1alpha1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1alpha1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema

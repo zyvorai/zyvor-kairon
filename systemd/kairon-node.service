@@ -1,0 +1,49 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+[Unit]
+Description=kairon-node - kairon per-node VM reconciliation agent
+Documentation=https://github.com/zyvorai/zyvor-kairon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/kairon-node --interval=3s --health-addr=:32302 --edge-baseline-file=/var/lib/kairon-node/edge-baseline.json
+Restart=on-failure
+RestartSec=5s
+EnvironmentFile=/etc/kairon/kairon-node.env
+
+User=kairon
+Group=kairon
+StateDirectory=kairon-node
+StateDirectoryMode=0700
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+LimitNOFILE=4096
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kairon-node
+
+[Install]
+WantedBy=multi-user.target

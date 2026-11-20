@@ -1,0 +1,72 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+# Real, FluxVM-backed Kairon migration adapter -- unlike
+# kairon-migration-adapter-stub.service (a test double that never moves
+# real VM memory), this unit fronts a live QEMU/FluxVM host and actually
+# performs the RAM/state transfer. Hardening block copied verbatim from
+# kairon-migration-adapter-stub.service; only Description/ExecStart differ.
+# ExecStart's flags are filled in by
+# scripts/multi-host-migration-test-deploy.sh (see
+# docs/runbook-multi-host-migration-test.md) -- do not hand-edit the
+# placeholders below and install this file directly.
+
+[Unit]
+Description=kairon-migration-adapter-fluxvm - real FluxVM-backed Kairon migration adapter (moves real VM memory)
+Documentation=https://github.com/zyvorai/zyvor-kairon
+After=network.target fluxvm.service
+Requires=fluxvm.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/kairon-migration-adapter-fluxvm \
+  --socket=/run/kairon/migration-adapter.sock \
+  --fluxvm-url=http://127.0.0.1:7788 \
+  --advertise-host=__ADVERTISE_HOST__ \
+  --bridge=virbr0 \
+  --migration-data-tls=true \
+  --migration-ca=/etc/kairon/migration/adapter-ca.pem \
+  --migration-cert=/etc/kairon/migration/adapter-cert.pem \
+  --migration-key=/etc/kairon/migration/adapter-key.pem
+Restart=on-failure
+RestartSec=5s
+
+# FLUXVM_TOKEN, if the local FluxVM API requires one, is read from this
+# env file (KAIRON_MIGRATION_ADAPTER_FLUXVM_TOKEN=... or FLUXVM_TOKEN=...
+# -- see cmd/kairon-migration-adapter-fluxvm/main.go's -fluxvm-token flag
+# default). Absent is fine for a FluxVM instance with no auth configured.
+EnvironmentFile=-/etc/kairon/kairon-migration-adapter-fluxvm.env
+
+User=kairon
+Group=kairon
+RuntimeDirectory=kairon
+RuntimeDirectoryMode=0750
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+LimitNOFILE=4096
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kairon-migration-adapter-fluxvm
+
+[Install]
+WantedBy=multi-user.target

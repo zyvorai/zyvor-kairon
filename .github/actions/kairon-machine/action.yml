@@ -1,0 +1,37 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+name: Kairon disposable machine
+description: Run a JSON argv inside a new Kairon VM and request UID-scoped cleanup
+inputs:
+  manifest:
+    description: Path to a Machine JSON manifest in the checked-out workspace
+    required: true
+  command:
+    description: JSON argv for QGA exec; never evaluated by the runner shell
+    required: true
+  namespace:
+    description: Kubernetes namespace already provisioned with appropriate quotas
+    default: default
+  boot-timeout:
+    description: Seconds to wait for current-generation Running and Ready
+    default: '180'
+  exec-timeout:
+    description: Guest command timeout in seconds, maximum 300
+    default: '120'
+  ttl:
+    description: Runtime TTL and orphan-sweeper deadline in seconds
+    default: '900'
+runs:
+  using: composite
+  steps:
+    - name: Run guest command and clean up
+      shell: bash
+      env:
+        KAIRON_ACTION_PATH: ${{ github.action_path }}
+        KAIRON_MANIFEST: ${{ inputs.manifest }}
+        KAIRON_COMMAND: ${{ inputs.command }}
+        KAIRON_NAMESPACE: ${{ inputs.namespace }}
+        KAIRON_BOOT_TIMEOUT: ${{ inputs.boot-timeout }}
+        KAIRON_EXEC_TIMEOUT: ${{ inputs.exec-timeout }}
+        KAIRON_TTL: ${{ inputs.ttl }}
+      run: python3 "$KAIRON_ACTION_PATH/run.py"

@@ -1,0 +1,47 @@
+Kairon is installed in namespace {{ .Release.Namespace }}.
+{{- if .Values.ui.enabled }}
+
+kairon-ui (dashboard): {{ .Values.ui.service.type }} port {{ .Values.ui.service.port }}, {{ if .Values.ui.insecureHttp }}plain HTTP (ui.insecureHttp: logins and tokens are clear text on the pod network){{ else }}HTTPS{{ end }}
+{{- if not .Values.ui.insecureHttp }}
+{{- if not .Values.ui.tls.secretName }}
+
+The dashboard generated a self-signed certificate at startup, so browsers warn
+and it changes on every restart. For a stable one set ui.tls.secretName to a
+kubernetes.io/tls Secret (for example from cert-manager).
+{{- end }}
+
+Reach it without an Ingress:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/kairon-ui {{ .Values.ui.service.port }}:{{ .Values.ui.service.port }}
+  open https://localhost:{{ .Values.ui.service.port }}
+{{- end }}
+{{- if ne (include "kairon.ui.anyAuthConfigured" .) "true" }}
+
+No ui.token / ui.auth.users / ui.allowUnauthenticated was set, so a default
+"admin" account was generated for you.
+{{- if .Values.ui.auth.defaultAdminPassword }} Its password is the
+ui.auth.defaultAdminPassword value you set -- treat a well-known value as a
+lab-only convenience and replace it with named ui.auth.users entries.
+{{- else if .Values.ui.auth.wellKnownDefault }} On a fresh install its password is
+the documented lab default, login "admin" / "Admin@321" -- change it (named
+ui.auth.users entries) before exposing this dashboard. An existing install
+keeps the password it already had. Retrieve the actual value with:
+{{- else }} Retrieve its password with:
+{{- end }}
+
+{{- if not .Values.ui.auth.defaultAdminPassword }}
+  kubectl -n {{ .Release.Namespace }} get secret kairon-ui-session -o jsonpath='{.data.defaultAdminPassword}' | base64 -d; echo
+{{- end }}
+
+Set ui.auth.users (see docs/getting-started.md) to replace this with real,
+named per-operator accounts -- generate each passwordHash with:
+
+  kairon-ui -hash-password 'the password'
+{{- end }}
+{{- end }}
+
+Check that it all works. This boots a tiny CirrOS VM, exercises power, network
+and more, prints a coloured log, then deletes the VM:
+
+  kaironctl selftest --profile quick
+  kaironctl selftest --list            # every check, and what it needs

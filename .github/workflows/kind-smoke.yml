@@ -1,0 +1,118 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+# Optional kind-based smoke: install CRDs + Helm chart into a throwaway
+# cluster. Does not require FluxVM; only checks objects apply cleanly.
+name: kind-smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: kind-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  kind:
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '"ubuntu-latest"' || '["self-hosted","Linux","X64","zyvor-build","docker"]') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      # The self-hosted runners share one Docker daemon. A run that was cancelled
+      # or failed before kind-action's cleanup leaves its kind node container
+      # behind, and the next run then fails with "node(s) already exist for a
+      # cluster with the name ...". Remove leftovers older than an hour (this
+      # run's own cluster is unique, below), and never touch a concurrent run's.
+      - name: Remove stale kind clusters from earlier runs
+        run: |
+          set -uo pipefail
+          docker ps -a --filter "name=kairon-ci" --format '{{.ID}} {{.CreatedAt}}' | while read -r id created; do
+            age=$(( $(date +%s) - $(date -d "${created% *}" +%s 2>/dev/null || date +%s) ))
+            if [ "$age" -gt 3600 ]; then docker rm -f "$id" >/dev/null 2>&1 || true; fi
+          done
+          true
+      - uses: helm/kind-action@ea822c7bf1874f08e5a491df991c228edffc3376  # v1.15.2
+        with:
+          cluster_name: kairon-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          wait: 120s
+          # The shared Docker daemon sometimes fails to kill the kind node on teardown
+          # ("tried to kill container, but did not receive an exit event"), which failed
+          # the whole job after every assertion had passed. The stale-cluster step above
+          # removes anything left behind.
+          ignore_failed_clean: true
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e  # v5.1.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version-file: go.mod
+          cache: ${{ runner.environment == 'github-hosted' }}  # self-hosted: shared GOMODCACHE, cache restore/save takes 15-35 min
+      - name: Apply CRDs
+        # The shared Docker host can be busy enough that the kind API server drops
+        # connections right after the cluster is reported up ("failed to download
+        # openapi: ... EOF"). Wait for the node, then retry the apply a few times.
+        run: |
+          set -euo pipefail
+          kubectl wait --for=condition=Ready node --all --timeout=180s
+          for attempt in 1 2 3 4 5; do
+            if kubectl apply --server-side -f deploy/crd.yaml; then break; fi
+            if [ "$attempt" = 5 ]; then echo "CRD apply failed after $attempt attempts" >&2; exit 1; fi
+            echo "apply attempt $attempt failed; retrying in 15s" >&2
+            sleep 15
+          done
+          kubectl get crd | grep kairon.zyvor.dev
+      - name: Helm install
+        run: |
+          set -euo pipefail
+          helm lint charts/kairon
+          # CRDs already applied from deploy/crd.yaml — skip chart CRDs to
+          # avoid server-side apply ownership conflicts on .spec.versions.
+          helm install kairon charts/kairon -n kairon-system --create-namespace \
+            --skip-crds \
+            --dry-run=client
+          helm install kairon charts/kairon -n kairon-system --create-namespace \
+            --skip-crds \
+            --set controller.image.pullPolicy=IfNotPresent \
+            --set node.image.pullPolicy=IfNotPresent \
+            --set controller.replicaCount=1
+          kubectl -n kairon-system get deploy,ds,sa | tee ${{ runner.temp }}/kairon-kind.txt
+          grep -q kairon-controller ${{ runner.temp }}/kairon-kind.txt
+          grep -q kairon-node ${{ runner.temp }}/kairon-kind.txt
+          echo "kind-smoke: OK"
+      - name: Helm production overlay dry-run
+        run: |
+          set -euo pipefail
+          helm upgrade --install kairon-prod charts/kairon -n kairon-prod --create-namespace \
+            --skip-crds \
+            -f charts/kairon/values-production.yaml \
+            --set webhook.tlsSecretName=ci-webhook-tls \
+            --set webhook.caBundle=Y2ktY2EtYnVuZGxl \
+            --set migration.dataplaneTlsSecretName=ci-mig \
+            --dry-run=client
+          echo "kind production dry-run: OK"
+      - name: Self-test (control plane only)
+        # kind has no FluxVM, so --no-vm: nothing may be created. The
+        # controller and node pods are not expected to be Ready here (the
+        # images are not pulled), so the exit status is not asserted; the
+        # report's shape and "created nothing" are.
+        run: |
+          set -euo pipefail
+          go build -o "$RUNNER_TEMP/kaironctl" ./cmd/kaironctl
+          kubectl label node --all kairon.zyvor.dev/capable=true --overwrite
+          "$RUNNER_TEMP/kaironctl" selftest --list | tee "$RUNNER_TEMP/scenarios.txt"
+          grep -q '^boot ' "$RUNNER_TEMP/scenarios.txt"
+          set +e
+          "$RUNNER_TEMP/kaironctl" selftest --no-vm --profile quick -o json > "$RUNNER_TEMP/selftest.json"
+          rc=$?
+          set -e
+          echo "kaironctl selftest exit status: $rc"
+          jq . "$RUNNER_TEMP/selftest.json"
+          # control-plane ran; every VM scenario was skipped, none failed to start
+          test "$(jq -r '.results[] | select(.id=="control-plane") | .id' "$RUNNER_TEMP/selftest.json")" = "control-plane"
+          test "$(jq '[.results[] | select(.id!="control-plane" and .status!="skip")] | length' "$RUNNER_TEMP/selftest.json")" = "0"
+          # and the run created no Machine
+          test -z "$(kubectl get machines.kairon.zyvor.dev -A --no-headers 2>/dev/null)"
+          echo "kind selftest: OK"

@@ -1,0 +1,24 @@
+# Hermes Agent MCP config for Kairon and FluxVM.
+# Merge into ~/.hermes/config.yaml, fill in the tokens, then /reload-mcp.
+# See docs/mcp.md (FluxVM) and docs/guides/hermes-mcp.md (Kairon).
+mcp_servers:
+  kairon:
+    command: kaironctl
+    args: ["mcp", "serve"] # add "--allow-write" for power, snapshot and capture tools
+    env:
+      KAIRON_KUBE_URL: "https://127.0.0.1:6443"
+      KAIRON_KUBE_TOKEN: ""
+      KAIRON_UI_URL: "https://127.0.0.1:18082"
+      # The dashboard serves HTTPS; trust its certificate (a self-signed one
+      # works) instead of disabling verification.
+      KAIRON_UI_CA: ""
+      KAIRON_UI_TOKEN: ""
+    timeout: 120
+
+  fluxvm:
+    command: fluxctl
+    args: ["mcp", "serve"] # add "--allow-write" for VM power and capture tools
+    env:
+      FLUXVM_URL: "http://127.0.0.1:7788"
+      FLUXVM_TOKEN: ""
+    timeout: 120

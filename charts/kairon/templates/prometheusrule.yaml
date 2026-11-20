@@ -1,0 +1,17 @@
+{{/*
+Named kairon-alerts, not kairon-migrations -- alerts.yaml now also
+carries the kairon-health group (reconcile/apiserver/webhook), not just
+migration-lifecycle alerts. Renamed from kairon-migrations: on
+`helm upgrade` from an older release, the old-named PrometheusRule object
+is orphaned (Helm creates the new name rather than renaming in place) --
+`kubectl delete prometheusrule kairon-migrations -n <namespace>` cleans it
+up, see RELEASE_NOTES.md.
+*/}}
+{{ if .Values.metrics.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata: {name: kairon-alerts, namespace: {{ .Release.Namespace }}}
+spec:
+  groups:
+    {{- (.Files.Get "alerts.yaml" | fromYaml).groups | toYaml | nindent 4 }}
+{{ end }}

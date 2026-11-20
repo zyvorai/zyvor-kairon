@@ -1,0 +1,17 @@
+{
+  "name": "@zyvor/kairon",
+  "version": "0.1.0",
+  "description": "Dependency-free Kubernetes and guest-operation clients for Kairon",
+  "license": "LicenseRef-Zyvor-Production-1.0",
+  "type": "module",
+  "engines": {"node": ">=22"},
+  "exports": {".": {"types": "./dist/index.d.ts", "import": "./dist/index.js"}},
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {"typescript": "7.0.2"}
+}

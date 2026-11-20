@@ -1,0 +1,123 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: machineclaims.kairon.zyvor.dev
+spec:
+  group: kairon.zyvor.dev
+  scope: Namespaced
+  names:
+    plural: machineclaims
+    singular: machineclaim
+    kind: MachineClaim
+    shortNames:
+    - mclaim
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    subresources: &subresources
+      status: {}
+    additionalPrinterColumns: &columns
+    - name: Pool
+      type: string
+      jsonPath: .spec.poolName
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    - name: Machine
+      type: string
+      jsonPath: .status.machineName
+    - name: Bind-ms
+      type: integer
+      jsonPath: .status.bindMillis
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+    schema: &schema
+      openAPIV3Schema:
+        type: object
+        required:
+        - spec
+        properties:
+          spec:
+            type: object
+            required:
+            - poolName
+            properties:
+              poolName:
+                type: string
+                minLength: 1
+                x-kubernetes-validations:
+                - rule: self == oldSelf
+                  message: poolName is immutable
+              labels:
+                type: object
+                additionalProperties:
+                  type: string
+              reclaimPolicy:
+                type: string
+                enum: ["Delete", "Retain"]
+              ttlSeconds:
+                type: integer
+                minimum: 1
+              egress:
+                type: object
+                description: Egress allowlist for the bound Machine, enforced
+                  through a default-deny MachineNetworkPolicy the controller
+                  owns for the claim's lifetime.
+                properties:
+                  allowCidrs: {type: array, items: {type: string}}
+                  allowPorts: {type: array, items: {type: string}}
+                  allowFqdns: {type: array, items: {type: string}}
+                  allowDNS: {type: array, items: {type: string}}
+                  allowSNI: {type: array, items: {type: string}}
+                  allowIcmp: {type: boolean}
+          status:
+            type: object
+            properties:
+              phase:
+                type: string
+                enum: ["Pending", "Bound", "Lost"]
+              machineName:
+                type: string
+              boundAt:
+                type: string
+                format: date-time
+              bindMillis:
+                type: integer
+              egressPolicy:
+                type: string
+              usage:
+                type: object
+                properties:
+                  activeSeconds:
+                    type: integer
+                  suspendedSeconds:
+                    type: integer
+                  vcpuSeconds:
+                    type: number
+                  memoryGiBSeconds:
+                    type: number
+                  lastAccrued:
+                    type: string
+              message:
+                type: string
+  - name: v1beta1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1beta1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema
+  - name: v1alpha1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1alpha1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema

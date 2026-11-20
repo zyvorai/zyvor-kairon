@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Kairon architecture</title>
+<!-- SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+     1600x700. Rendered by ./build.sh to docs/assets/readme-architecture.jpg.
+     Mirrors the component table in README.md and ARCHITECTURE.md. -->
+<link rel="stylesheet" href="card.css">
+<style>
+  body { height:700px; }
+  .clients { margin-top:26px; display:flex; gap:12px; justify-content:center; }
+  .clients span { font-family:var(--mono); font-size:18px; font-weight:600; padding:7px 16px; border-radius:20px; background:#fff; border:2px solid var(--line); }
+  .api { margin:18px auto 0; width:900px; text-align:center; background:var(--ink); color:#f5f5f7; border-radius:16px; padding:14px 20px; }
+  .api b { font-size:26px; } .api div { margin-top:4px; font-family:var(--mono); font-size:16px; color:#a1a1a6; }
+  .pipe { height:22px; width:3px; background:var(--signal); margin:0 auto; opacity:.6; }
+  .row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:24px; }
+  .card h3 { margin-top:10px; font-family:var(--mono); font-size:23px; }
+  .card .port { font-family:var(--mono); font-size:15px; font-weight:700; color:var(--c); }
+</style></head><body>
+<div class="bar"></div>
+<div class="wrap">
+  <div class="top"><img src="../zyvor-mark.svg" alt=""><b>Zyvor</b><span>&middot;</span><span>Kairon</span><span class="r">How it fits together</span></div>
+  <h1>Two Go binaries and your KVM hosts. <em>That's the platform.</em></h1>
+  <div class="clients"><span>kubectl</span><span>GitOps</span><span>kaironctl</span><span>kairon-ui</span><span>MCP agents</span></div>
+  <div class="pipe"></div>
+  <div class="api"><b>Kubernetes API</b><div>Machine &middot; MachineMigration &middot; MachineSnapshot &middot; MachinePool &middot; MachineNetworkPolicy</div></div>
+  <div class="pipe"></div>
+  <div class="row">
+    <div class="card k"><span class="port">:32301 &middot; :8443 webhook</span><h3>kairon-controller</h3><p>Placement on real allocatable, migration state machine, fencing, snapshots, quotas and budgets.</p></div>
+    <div class="card a"><span class="port">:9443 mTLS peer &middot; :8090 console</span><h3>kairon-node</h3><p>One per host: FluxVM lifecycle, disks and NICs, eBPF policy, live-migration peer.</p></div>
+    <div class="card o"><span class="port">127.0.0.1:7788</span><h3>FluxVM &rarr; KVM</h3><p>QEMU, Cloud Hypervisor, Firecracker or FluxVM, with a TC/eBPF edge on every VM tap.</p></div>
+  </div>
+  <div class="foot"><b>github.com/zyvorai/kairon &middot; ARCHITECTURE.md</b><span class="r"><span class="dot"></span>Go standard library only (controller, node)</span></div>
+</div>
+</body></html>

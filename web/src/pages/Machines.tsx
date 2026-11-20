@@ -1,0 +1,519 @@
+// Copyright 2026 Zyvor · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { api, apiJSON, getConfig, isAdmin } from '../api';
+import { Machine } from '../types';
+import { formatBytes } from '../lib/phase';
+import { formatBalloon } from '../lib/capacity';
+import { parseHash } from '../lib/route';
+import { useLiveChanges } from '../lib/live';
+import { PowerAction, undoFor } from '../lib/undo';
+import { Plus } from 'lucide-react';
+import ResourceTable, { Column } from '../components/ResourceTable';
+import Inspector, { KV } from '../components/Inspector';
+import MachineOps from '../components/MachineOps';
+import MachineTimeline from '../components/MachineTimeline';
+import MachineMetrics from '../components/MachineMetrics';
+import MachineActions from '../components/MachineActions';
+import MachinePlacement from '../components/MachinePlacement';
+import Sheet from '../components/Sheet';
+import { EmptyState, Status } from '../components/ui';
+import { useToast } from '../components/Toast';
+import Console from './Console';
+import Exec from './Exec';
+import AgentFiles from './AgentFiles';
+import Logs from './Logs';
+import NetworkPanel from './NetworkPanel';
+import { allNamespaces, currentNamespace } from '../lib/namespace';
+import EmptyHint from '../components/EmptyHint';
+// Lazy-loaded: @xterm/xterm alone adds ~300kB to the bundle, not worth
+// shipping to every visitor when only a Machine with
+// spec.guestAgent.console even shows this button.
+const TextConsole = lazy(() => import('./TextConsole'));
+
+// QEMU is the only backend FluxVM gives a VNC display to at all (Cloud
+// Hypervisor/Firecracker have no display device) -- an empty/"auto"
+// backend defaults to qemu server-side, so both count as eligible too.
+function consoleEligible(m: Machine): boolean {
+  const backend = m.spec.runtime?.backend;
+  return m.status?.phase === 'Running' && (!backend || backend === 'qemu' || backend === 'auto');
+}
+
+// textConsoleEligible mirrors internal/uiapi/console.go's own
+// spec.guestAgent.console check -- unlike consoleEligible above, this
+// works on every backend, since FluxVM's own vsock console channel isn't
+// tied to a QEMU-specific display device.
+function textConsoleEligible(m: Machine): boolean {
+  return m.status?.phase === 'Running' && !!m.spec.guestAgent?.console;
+}
+
+// execEligible mirrors internal/uiapi/exec.go's own server-side checks
+// that don't depend on the caller's identity (Running + guestAgent
+// enabled) -- the admin-only check is applied separately via isAdmin(),
+// since that's a property of who's looking at this page, not of the
+// Machine. Unlike the VNC console, exec works for every backend: it rides
+// FluxVM's real qemu-guest-agent channel, not a QEMU-specific display
+// device.
+function execEligible(m: Machine): boolean {
+  return m.status?.phase === 'Running' && !!m.spec.guestAgent?.enabled;
+}
+
+// logsEligible mirrors internal/uiapi/logs.go's own server-side check:
+// a runtime just needs to have existed (Running or Paused), not
+// currently Running specifically -- a Paused Machine's log file is still
+// there on the node.
+function logsEligible(m: Machine): boolean {
+  return m.status?.phase === 'Running' || m.status?.phase === 'Paused';
+}
+
+interface CreateForm {
+  name: string;
+  image: string;
+  cpu: string;
+  memory: string;
+  backend: string;
+  network: string;
+  netns: boolean;
+  hostname: string;
+  sshAuthorizedKey: string;
+  forward: string;
+}
+
+const EMPTY_FORM: CreateForm = {
+  name: '',
+  image: '',
+  cpu: '2',
+  memory: '2Gi',
+  backend: 'qemu',
+  network: 'user',
+  netns: false,
+  hostname: '',
+  sshAuthorizedKey: '',
+  forward: '',
+};
+
+// A Machine is addressed by "namespace/name": with the all-namespaces view the
+// same name can exist in several namespaces.
+const nsOf = (m: Machine) => m.metadata.namespace || currentNamespace();
+const refOf = (m: Machine) => `${nsOf(m)}/${m.metadata.name}`;
+const splitRef = (ref: string) => {
+  const i = ref.indexOf('/');
+  return { ns: ref.slice(0, i), name: ref.slice(i + 1) };
+};
+const toRef = (target: string) => (target.includes('/') ? target : `${currentNamespace()}/${target}`);
+
+export default function Machines({ onMigrate, onSnapshot }: { onMigrate: (machine: string) => void; onSnapshot: (machine: string) => void }) {
+  const [items, setItems] = useState<Machine[]>([]);
+  const [form, setForm] = useState<CreateForm>(EMPTY_FORM);
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [consoleFor, setConsoleFor] = useState<string | null>(null);
+  const [textConsoleFor, setTextConsoleFor] = useState<string | null>(null);
+  const [execFor, setExecFor] = useState<string | null>(null);
+  const [agentFilesFor, setAgentFilesFor] = useState<string | null>(null);
+  const [logsFor, setLogsFor] = useState<string | null>(null);
+  const [networkFor, setNetworkFor] = useState<string | null>(null);
+  // priorityEdits holds an in-progress, not-yet-saved priority value per
+  // Machine name -- keyed separately from `items` so a value the operator
+  // is mid-typing never gets clobbered by the 5s poll in `refresh` (see
+  // the useEffect below), the same reason `form`/create isn't derived
+  // from `items` either.
+  const [priorityEdits, setPriorityEdits] = useState<Record<string, string>>({});
+  // consoleEnabled also gates exec: both ride the exact same kairon-ui ->
+  // kairon-node relay (internal/consoleproxy), so a deployment either has
+  // that relay configured or it doesn't -- see internal/uiapi/exec.go's
+  // own doc comment.
+  const [consoleEnabled, setConsoleEnabled] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [selected, setSelected] = useState<string | null>(() => {
+    const t = parseHash(window.location.hash).target;
+    return t ? toRef(t) : null;
+  });
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const toast = useToast();
+
+  // Palette "New machine" and #/machines/<ns>/<name> deep links.
+  useEffect(() => {
+    const onNew = () => setCreating(true);
+    const onHash = () => {
+      const t = parseHash(window.location.hash).target;
+      if (t) setSelected(toRef(t));
+    };
+    window.addEventListener('kairon:new-machine', onNew);
+    window.addEventListener('hashchange', onHash);
+    return () => {
+      window.removeEventListener('kairon:new-machine', onNew);
+      window.removeEventListener('hashchange', onHash);
+    };
+  }, []);
+
+  const refresh = () =>
+    api<Machine[]>('/api/v1/machines').then((r) => setItems(r ?? [])).catch((e) => setMsg(String(e)));
+
+  // Live stream: a Machine change triggers a (debounced) refetch, so the
+  // table updates in about a second; polling then only backstops it.
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const live = useLiveChanges((c) => {
+    if (c.kind !== 'Machine') return;
+    clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(refresh, 250);
+  });
+  useEffect(() => () => clearTimeout(refreshTimer.current), []);
+
+  useEffect(() => {
+    refresh();
+    const t = setInterval(refresh, live ? 30000 : 5000);
+    return () => clearInterval(t);
+  }, [live]);
+
+  useEffect(() => {
+    getConfig()
+      .then((cfg) => setConsoleEnabled(cfg.consoleEnabled))
+      .catch(() => setConsoleEnabled(false));
+  }, []);
+
+  async function create(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setMsg('');
+    try {
+      const { hostname, sshAuthorizedKey, forward, ...base } = form;
+      const body: Record<string, unknown> = { ...base };
+      if (hostname) body.hostname = hostname;
+      if (sshAuthorizedKey) body.sshAuthorizedKeys = [sshAuthorizedKey];
+      if (forward) {
+        const [hostPort, guestPort] = forward.split(':').map((p) => Number(p.trim()));
+        if (!hostPort || !guestPort) throw new Error('Port forward must be hostPort:guestPort, e.g. 2222:22');
+        body.forwards = [{ hostPort, guestPort }];
+      }
+      await apiJSON('/api/v1/machines', 'POST', body);
+      setForm(EMPTY_FORM);
+      setCreating(false);
+      toast(`Machine ${form.name} created`);
+      await refresh();
+    } catch (err) {
+      setMsg(String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Selection survives the 5s poll, but drops machines that no longer exist.
+  const checkedItems = items.filter((x) => checked.has(refOf(x)));
+
+  async function bulkPower(action: 'start' | 'stop') {
+    // Only act on machines the action applies to: start skips Running/Paused,
+    // stop skips everything not Running.
+    const targets = checkedItems.filter((x) =>
+      action === 'stop' ? x.status?.phase === 'Running' : x.status?.phase !== 'Running' && x.status?.phase !== 'Paused',
+    );
+    if (targets.length === 0) {
+      toast(`None of the selected machines can be ${action === 'stop' ? 'stopped' : 'started'}`, 'err');
+      return;
+    }
+    if (action === 'stop' && !confirm(`Stop ${targets.length} machine${targets.length === 1 ? '' : 's'}? Guests are shut down.`)) return;
+    setMsg('');
+    const failed: string[] = [];
+    for (const x of targets) {
+      try {
+        await api(`/api/v1/machines/${encodeURIComponent(nsOf(x))}/${encodeURIComponent(x.metadata.name)}/${action}`, { method: 'POST' });
+      } catch {
+        failed.push(x.metadata.name);
+      }
+    }
+    const done = targets.length - failed.length;
+    const verb = action === 'stop' ? 'Stopped' : 'Started';
+    if (failed.length === 0) toast(`${verb} ${done} machine${done === 1 ? '' : 's'}`);
+    else toast(`${verb} ${done}; failed: ${failed.join(', ')}`, 'err');
+    setChecked(new Set(failed.map((n) => refOf(targets.find((t) => t.metadata.name === n)!))));
+    await refresh();
+  }
+
+  async function power(ref: string, action: PowerAction, isUndo = false) {
+    const { ns, name } = splitRef(ref);
+    // Stop and halt interrupt a running guest: ask first, like delete does.
+    if (!isUndo && action === 'stop' && !confirm(`Stop machine "${name}"? The guest is shut down.`)) return;
+    if (action === 'halt' && !confirm(`Halt machine "${name}"? The guest is powered off without a clean shutdown.`)) return;
+    setMsg('');
+    try {
+      await api(`/api/v1/machines/${encodeURIComponent(ns)}/${encodeURIComponent(name)}/${action}`, { method: 'POST' });
+      const done = { start: 'Started', stop: 'Stopped', pause: 'Paused', resume: 'Resumed', halt: 'Halted', hibernate: 'Hibernated' }[action];
+      const back = isUndo ? undefined : undoFor(action);
+      toast(`${done} ${name}`, 'ok', back ? () => void power(ref, back, true) : undefined);
+      await refresh();
+    } catch (err) {
+      setMsg(String(err));
+      toast(`${action} ${name} failed`, 'err');
+    }
+  }
+
+  // setPriority patches spec.priority via the same single-field pattern
+  // `power` above uses for spec.powerState -- kairon-ui's own counterpart
+  // to `kaironctl edit machine NAME --priority N` (see
+  // docs/guides/machine-placement.md's "Scheduling priority" section),
+  // which until now was kaironctl/kubectl-only.
+  async function setPriority(ref: string) {
+    const { ns, name } = splitRef(ref);
+    const raw = priorityEdits[ref];
+    const priority = Number(raw);
+    if (raw === undefined || raw.trim() === '' || !Number.isInteger(priority)) {
+      setMsg('Priority must be a whole number');
+      return;
+    }
+    setMsg('');
+    try {
+      await apiJSON(`/api/v1/machines/${encodeURIComponent(ns)}/${encodeURIComponent(name)}/priority`, 'POST', { priority });
+      setPriorityEdits((prev) => {
+        const next = { ...prev };
+        delete next[ref];
+        return next;
+      });
+      await refresh();
+    } catch (err) {
+      setMsg(String(err));
+    }
+  }
+
+  async function remove(ref: string) {
+    const { ns, name } = splitRef(ref);
+    if (!confirm(`Delete machine "${name}"? This deletes the underlying VM runtime too.`)) return;
+    setMsg('');
+    try {
+      await api(`/api/v1/machines/${encodeURIComponent(ns)}/${encodeURIComponent(name)}`, { method: 'DELETE' });
+      await refresh();
+    } catch (err) {
+      setMsg(String(err));
+    }
+  }
+
+  const selectedMachine = items.find((m) => refOf(m) === selected);
+  const columns: Column<Machine>[] = [
+    ...(allNamespaces()
+      ? [{ header: 'Namespace', render: (m: Machine) => m.metadata.namespace || '-', sortValue: (m: Machine) => m.metadata.namespace || '' }]
+      : []),
+    { header: 'Name', render: (m) => <b>{m.metadata.name}</b>, sortValue: (m) => m.metadata.name },
+    { header: 'Node', render: (m) => m.spec.nodeName || m.status?.nodeName || '-', sortValue: (m) => m.spec.nodeName || m.status?.nodeName || '' },
+    { header: 'Phase', render: (m) => <Status phase={m.status?.phase} />, sortValue: (m) => m.status?.phase || 'Unknown' },
+    {
+      header: 'CPU',
+      render: (m) => (
+        <>
+          {m.spec.resources.cpu}
+          {m.status?.resourceUsage?.cpuPercent !== undefined && <span className="usageHint"> ({m.status.resourceUsage.cpuPercent.toFixed(0)}%)</span>}
+        </>
+      ),
+      csv: (m) => m.spec.resources.cpu,
+    },
+    {
+      header: 'Memory',
+      render: (m) => (
+        <>
+          {m.spec.resources.memory}
+          {m.status?.resourceUsage?.memoryBytes !== undefined && <span className="usageHint"> ({formatBytes(m.status.resourceUsage.memoryBytes)})</span>}
+        </>
+      ),
+      csv: (m) => m.spec.resources.memory,
+    },
+    { header: 'IP', render: (m) => m.status?.guestIP || '-', sortValue: (m) => m.status?.guestIP || '' },
+    {
+      header: '',
+      render: (m) => (
+        <div className="rowactions" onClick={(e) => e.stopPropagation()}>
+          {m.status?.phase === 'Running' ? (
+            <button className="sm" onClick={() => power(refOf(m), 'stop')}>Stop</button>
+          ) : m.status?.phase === 'Paused' ? (
+            <button className="sm" onClick={() => power(refOf(m), 'resume')}>Resume</button>
+          ) : (
+            <button className="sm" onClick={() => power(refOf(m), 'start')}>Start</button>
+          )}
+          <button className="sm ghost" onClick={() => setSelected(refOf(m))}>Details</button>
+        </div>
+      ),
+    },
+  ];
+
+  const m = selectedMachine;
+  return (
+    <div>
+      <div className="toolbar" style={{ justifyContent: 'space-between' }}>
+        <span className="usageHint">{items.length} machine{items.length === 1 ? '' : 's'}</span>
+        <button className="primary" onClick={() => setCreating(true)}>
+          <Plus size={14} style={{ verticalAlign: -2 }} /> New machine
+        </button>
+      </div>
+      {checkedItems.length > 0 && (
+        <div className="toolbar" role="region" aria-label="Bulk actions">
+          <span className="usageHint">{checkedItems.length} selected</span>
+          <button className="sm" onClick={() => bulkPower('start')}>Start</button>
+          <button className="sm" onClick={() => bulkPower('stop')}>Stop</button>
+          <button className="sm ghost" onClick={() => setChecked(new Set())}>Clear</button>
+        </div>
+      )}
+      {msg && <p className="msg error">{msg}</p>}
+      {items.length === 0 && !msg ? (
+        <div className="card">
+          <EmptyState title="No machines yet">Create one to get started — pick an image path on the node and a size.</EmptyState>
+        </div>
+      ) : (
+        <ResourceTable
+          items={items}
+          columns={columns}
+          keyFn={refOf}
+          emptyText={<EmptyHint what="machines" command="kaironctl create NAME --image PATH" />}
+          onRowClick={(x) => setSelected(refOf(x))}
+          selectedKey={selected ?? undefined}
+          csvName="kairon-machines"
+          checked={checked}
+          onCheckedChange={setChecked}
+        />
+      )}
+
+      {creating && (
+        <Sheet title="New machine" onClose={() => setCreating(false)}>
+          <form onSubmit={create}>
+            <div className="formgrid">
+              <label>
+                Name
+                <input required autoFocus value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              </label>
+              <label>
+                Image path
+                <input required value={form.image} onChange={(e) => setForm({ ...form, image: e.target.value })} placeholder="/var/lib/fluxvm/images/db.qcow2" />
+              </label>
+              <label>
+                CPU
+                <input value={form.cpu} onChange={(e) => setForm({ ...form, cpu: e.target.value })} />
+              </label>
+              <label>
+                Memory
+                <input value={form.memory} onChange={(e) => setForm({ ...form, memory: e.target.value })} />
+              </label>
+              <label>
+                Backend
+                <select value={form.backend} onChange={(e) => setForm({ ...form, backend: e.target.value })}>
+                  <option value="qemu">qemu</option>
+                  <option value="cloud-hypervisor">cloud-hypervisor</option>
+                  <option value="firecracker">firecracker</option>
+                  <option value="flux-vm">flux-vm</option>
+                  <option value="auto">auto</option>
+                </select>
+              </label>
+              <label>
+                Network
+                <select value={form.network} onChange={(e) => setForm({ ...form, network: e.target.value })}>
+                  <option value="user">user</option>
+                  <option value="tap">tap</option>
+                  <option value="macvtap">macvtap</option>
+                </select>
+              </label>
+              <div className="check">
+                <input type="checkbox" id="netns" checked={form.netns} onChange={(e) => setForm({ ...form, netns: e.target.checked })} />
+                <label htmlFor="netns">Per-VM network namespace</label>
+              </div>
+              <label>
+                Port forward (host:guest)
+                <input value={form.forward} onChange={(e) => setForm({ ...form, forward: e.target.value })} placeholder="2222:22 (network=user only)" />
+              </label>
+              <label>
+                Hostname
+                <input value={form.hostname} onChange={(e) => setForm({ ...form, hostname: e.target.value })} placeholder="set via cloud-init" />
+              </label>
+              <label className="full">
+                SSH public key
+                <input value={form.sshAuthorizedKey} onChange={(e) => setForm({ ...form, sshAuthorizedKey: e.target.value })} placeholder="ssh-ed25519 AAAA... (authorized via cloud-init)" />
+              </label>
+            </div>
+            <div className="formactions">
+              <button className="primary" type="submit" disabled={busy}>
+                {busy ? 'Creating...' : 'Create machine'}
+              </button>
+              <button type="button" onClick={() => setCreating(false)}>Cancel</button>
+              {msg && <span className="msg error">{msg}</span>}
+            </div>
+          </form>
+        </Sheet>
+      )}
+
+      {m && (
+        <Inspector
+          title={m.metadata.name}
+          subtitle={`${m.metadata.namespace} · ${m.spec.nodeName || m.status?.nodeName || 'unscheduled'}`}
+          status={<Status phase={m.status?.phase} />}
+          onClose={() => setSelected(null)}
+          actions={
+            <>
+              {m.status?.phase === 'Running' && <button onClick={() => power(refOf(m), 'pause')}>Pause</button>}
+              {m.status?.phase === 'Paused' && <button onClick={() => power(refOf(m), 'resume')}>Resume</button>}
+              {m.status?.phase === 'Running' && <button onClick={() => power(refOf(m), 'halt')}>Halt</button>}
+              {m.status?.phase === 'Running' && <button onClick={() => power(refOf(m), 'hibernate')}>Hibernate</button>}
+              {m.status?.phase === 'Halted' && <button onClick={() => power(refOf(m), 'start')}>Resume</button>}
+              {m.status?.phase === 'Hibernated' && <button onClick={() => power(refOf(m), 'start')}>Resume</button>}
+              {nsOf(m) === currentNamespace() && <button onClick={() => onMigrate(m.metadata.name)}>Migrate</button>}
+              {nsOf(m) === currentNamespace() && <button onClick={() => onSnapshot(m.metadata.name)}>Snapshot</button>}
+              <button className="danger" onClick={() => remove(refOf(m))}>Delete</button>
+            </>
+          }
+        >
+          <h4>Overview</h4>
+          <KV
+            rows={[
+              ['Phase', m.status?.phase || 'Unknown'],
+              ['Guest IP', m.status?.guestIP],
+              ['CPU', m.spec.resources.cpu],
+              ['Memory', m.spec.resources.memory],
+              ['Elastic memory', m.spec.resources.elasticMemory ? (m.status?.memory ? `${formatBalloon(m.status.memory)}${m.status.memory.reason ? ` (${m.status.memory.reason})` : ''}` : `min ${m.spec.resources.elasticMemory.min}`) : undefined],
+              ['Image', m.spec.image?.path],
+              ['Backend', m.spec.runtime?.backend],
+              ['Network', m.spec.network?.mode],
+              ['Created', m.metadata.creationTimestamp],
+            ]}
+          />
+          <MachineMetrics namespace={nsOf(m)} name={m.metadata.name} />
+          <MachineTimeline namespace={nsOf(m)} name={m.metadata.name} phase={m.status?.phase} />
+          {(!m.status?.phase || m.status.phase === 'Pending') && m.spec.resources.cpu && m.spec.resources.memory && (
+            <MachinePlacement cpu={m.spec.resources.cpu} memory={m.spec.resources.memory} />
+          )}
+          <h4>Scheduling priority</h4>
+          <div className="rowactions" style={{ justifyContent: 'flex-start', padding: '8px 0' }}>
+            <input
+              type="number"
+              step={1}
+              className="priorityInput"
+              value={priorityEdits[refOf(m)] ?? String(m.spec.priority ?? 0)}
+              onChange={(e) => setPriorityEdits((prev) => ({ ...prev, [refOf(m)]: e.target.value }))}
+            />
+            {priorityEdits[refOf(m)] !== undefined && priorityEdits[refOf(m)] !== String(m.spec.priority ?? 0) && (
+              <button className="sm" onClick={() => setPriority(refOf(m))}>Set</button>
+            )}
+          </div>
+          <MachineActions namespace={nsOf(m)} name={m.metadata.name} running={m.status?.phase === 'Running'} onChanged={refresh} />
+          <h4>Tools</h4>
+          <div className="rowactions" style={{ justifyContent: 'flex-start', padding: '8px 0' }}>
+            {consoleEnabled && consoleEligible(m) && <button onClick={() => setConsoleFor(refOf(m))}>Console</button>}
+            {consoleEnabled && textConsoleEligible(m) && <button onClick={() => setTextConsoleFor(refOf(m))}>Text console</button>}
+            {consoleEnabled && isAdmin() && execEligible(m) && <button onClick={() => setExecFor(refOf(m))}>Exec</button>}
+            {consoleEnabled && isAdmin() && textConsoleEligible(m) && <button onClick={() => setAgentFilesFor(refOf(m))}>Files</button>}
+            {consoleEnabled && logsEligible(m) && <button onClick={() => setLogsFor(refOf(m))}>Logs</button>}
+            {consoleEnabled && logsEligible(m) && <button onClick={() => setNetworkFor(refOf(m))}>Network</button>}
+            {!consoleEnabled && <span className="usageHint">Console relay is not enabled on this deployment.</span>}
+          </div>
+          {consoleEnabled && m.status?.phase && m.status.phase !== 'Pending' && (
+            <MachineOps namespace={nsOf(m)} name={m.metadata.name} />
+          )}
+        </Inspector>
+      )}
+
+      {consoleFor && <Console namespace={splitRef(consoleFor).ns} name={splitRef(consoleFor).name} onClose={() => setConsoleFor(null)} />}
+      {textConsoleFor && (
+        <Suspense fallback={<div className="consoleOverlay" />}>
+          <TextConsole namespace={splitRef(textConsoleFor).ns} name={splitRef(textConsoleFor).name} onClose={() => setTextConsoleFor(null)} />
+        </Suspense>
+      )}
+      {execFor && <Exec namespace={splitRef(execFor).ns} name={splitRef(execFor).name} onClose={() => setExecFor(null)} />}
+      {agentFilesFor && <AgentFiles namespace={splitRef(agentFilesFor).ns} name={splitRef(agentFilesFor).name} onClose={() => setAgentFilesFor(null)} />}
+      {logsFor && <Logs namespace={splitRef(logsFor).ns} name={splitRef(logsFor).name} onClose={() => setLogsFor(null)} />}
+      {networkFor && <NetworkPanel namespace={splitRef(networkFor).ns} name={splitRef(networkFor).name} onClose={() => setNetworkFor(null)} />}
+    </div>
+  );
+}

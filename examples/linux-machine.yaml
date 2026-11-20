@@ -1,0 +1,22 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+apiVersion: kairon.zyvor.dev/v1
+kind: Machine
+metadata:
+  name: ubuntu-dev
+  namespace: default
+spec:
+  image:
+    path: /var/lib/fluxvm/images/ubuntu-24.04.qcow2
+  resources:
+    cpu: "2"
+    memory: 2Gi
+  runtime:
+    backend: qemu
+  network:
+    mode: tap
+    netns: true
+  placement:
+    architecture: amd64
+  powerState: Running

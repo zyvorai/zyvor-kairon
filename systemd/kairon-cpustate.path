@@ -1,0 +1,13 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+[Unit]
+Description=kairon - watch kubelet cpu_manager_state for kairon-node
+Documentation=https://github.com/zyvorai/zyvor-kairon
+
+[Path]
+PathChanged=/var/lib/kubelet/cpu_manager_state
+Unit=kairon-cpustate.service
+
+[Install]
+WantedBy=multi-user.target

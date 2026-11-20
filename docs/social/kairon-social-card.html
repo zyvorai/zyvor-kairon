@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kairon social card</title>
+<style>
+:root { --ink:#1d1d1f; --soft:#6e6e73; --hair:#d2d2d7; --blue:#0071e3; --blue2:#2997ff; --deep:#0066cc; --wash:#f5f5f7; --navy:#0a4fa8; --orange:#ff6a2a;
+  --sans:'Helvetica Neue',Helvetica,Arial,sans-serif; --mono:'SF Mono',Menlo,Consolas,monospace; }
+* { box-sizing:border-box; }
+html,body { margin:0; padding:0; }
+body { width:1600px; height:900px; overflow:hidden; color:var(--ink); font-family:var(--sans); position:relative;
+  background:radial-gradient(1200px 700px at 90% 38%, rgba(0,113,227,.10), rgba(0,113,227,.035) 55%, rgba(0,113,227,0) 100%), linear-gradient(180deg,#fff 0%,var(--wash) 100%); }
+.bar { display:none; }
+.wrap { position:absolute; left:72px; right:64px; top:48px; bottom:40px; display:flex; flex-direction:column; }
+.top { display:flex; align-items:center; gap:14px; font-family:var(--mono); font-size:20px; letter-spacing:.14em; text-transform:uppercase; color:var(--soft); }
+.top img { height:40px; }
+.top b { color:var(--deep); letter-spacing:.1em; }
+.top .r { margin-left:auto; letter-spacing:.08em; }
+h1 { margin:26px 0 0; font-size:68px; line-height:1.06; letter-spacing:-.025em; font-weight:700; max-width:1440px; }
+h1 em { font-style:normal; background:linear-gradient(90deg,var(--blue),var(--blue2)); -webkit-background-clip:text; background-clip:text; color:transparent; }
+.sub { margin:16px 0 0; font-size:27px; line-height:1.36; color:var(--soft); max-width:1320px; }
+.flow { margin-top:34px; display:grid; grid-template-columns:repeat(5,1fr); gap:34px; }
+.step { position:relative; background:#fff; border:1.5px solid var(--hair); border-radius:16px; padding:18px 20px 18px 24px; min-height:222px; box-shadow:0 10px 24px rgba(0,0,0,.06); }
+.step::before { content:""; position:absolute; left:0; top:18px; bottom:18px; width:6px; background:var(--c); border-radius:0 4px 4px 0; }
+.step:not(:last-child)::after { content:""; position:absolute; right:-31px; top:50%; width:0; height:0; margin-top:-11px;
+  border-left:16px solid #b0b0b5; border-top:11px solid transparent; border-bottom:11px solid transparent; }
+.lane { display:inline-block; font-family:var(--mono); font-size:15px; font-weight:700; letter-spacing:.12em; color:#fff; background:var(--c); padding:3px 10px; border-radius:11px; }
+.n { float:right; width:34px; height:34px; border-radius:50%; background:#f0f0f3; color:var(--ink); font-weight:700; font-size:19px; line-height:34px; text-align:center; }
+.step h3 { margin:14px 0 8px; font-size:27px; line-height:1.14; letter-spacing:-.01em; }
+.step p { margin:0; font-size:20.5px; line-height:1.34; color:var(--soft); }
+.k { --c:var(--blue); } .a { --c:var(--ink); } .c { --c:var(--blue2); } .o { --c:var(--navy); } .o2 { --c:#6e6e73; }
+.attr { margin-top:22px; display:flex; align-items:center; gap:16px; background:#1d1d1f; border:1px solid rgba(255,255,255,.08); color:#f5f5f7; border-radius:12px; padding:13px 22px; font-family:var(--mono); font-size:22px; white-space:nowrap; }
+.attr .tag { color:var(--blue2); font-weight:700; letter-spacing:.1em; font-size:16px; }
+.attr .dot { display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--orange); }
+.attr .why { margin-left:auto; color:#a1a1a6; font-size:15px; letter-spacing:.06em; text-transform:uppercase; }
+.chips { margin-top:auto; padding-top:22px; display:flex; flex-wrap:wrap; gap:10px; }
+.chip { font-size:20px; font-weight:700; padding:5px 14px; border-radius:20px; background:var(--blue); color:#fff; letter-spacing:.02em; border:2px solid var(--blue); }
+.chip.g { background:#e8f2fd; color:var(--deep); border:2px solid #b9d7f7; }
+.foot { margin-top:18px; padding-top:14px; border-top:1px solid var(--hair); display:flex; align-items:center; font-family:var(--mono); font-size:22px; color:var(--soft); }
+.foot b { color:var(--ink); }
+.foot .r { margin-left:auto; }
+</style>
+</head>
+<body>
+<div class="bar"></div>
+<div class="wrap">
+  <div class="top"><img src="zyvor-mark.svg" alt=""><b>Zyvor</b><span>&middot;</span><span>Kairon</span><span class="r">Kubernetes-native VMs</span></div>
+  <h1>Real VMs. <em>Real Kubernetes.</em></h1>
+  <p class="sub">A VM is not a Pod: kairon-controller places Machines, kairon-node runs them on FluxVM — Kubernetes stays the only source of truth.</p>
+  <div class="flow">
+    <div class="step k"><span class="lane">DECLARE</span><span class="n">1</span>
+      <h3>Machine CRD</h3><p>Desired CPU, memory, disks and backend — GitOps-friendly Kubernetes API.</p></div>
+    <div class="step a"><span class="lane">PLACE</span><span class="n">2</span>
+      <h3>Controller</h3><p>Capacity-aware scheduling, migration FSM, fencing and admission webhook.</p></div>
+    <div class="step c"><span class="lane">RUN</span><span class="n">3</span>
+      <h3>Node agent</h3><p>kairon-node drives FluxVM REST → QEMU, Cloud HV, Firecracker or FluxVM.</p></div>
+    <div class="step o"><span class="lane">NETWORK</span><span class="n">4</span>
+      <h3>eBPF edge</h3><p>MachineNetworkPolicy, flows and drops — not just launcher Pod NetworkPolicy.</p></div>
+    <div class="step o2"><span class="lane">RECOVER</span><span class="n">5</span>
+      <h3>Honest ops</h3><p>NeedsRecovery on ambiguous commits — no silent split-brain hopes.</p></div>
+  </div>
+  <div class="attr"><span class="tag">MACHINE</span><span class="dot"></span><span>demo · worker-2 · qemu · routable</span><span class="why">Illustrative</span></div>
+  <div class="chips">
+    <span class="chip">Helm OCI</span>
+    <span class="chip">Live migration</span>
+    <span class="chip g">MachineSnapshot</span>
+    <span class="chip g">kaironctl</span>
+    <span class="chip g">Zyvor Production License</span>
+  </div>
+  <div class="foot"><span><b>zyvor.dev/docs/kairon</b></span><span class="r">v0.10.2 &middot; Zyvor Production License &middot; x86_64 &amp; arm64</span></div>
+</div>
+</body>
+</html>

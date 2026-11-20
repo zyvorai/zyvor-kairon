@@ -1,0 +1,37 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - unconvert
+    - gocritic
+    - misspell
+    - bodyclose
+    - prealloc
+    - dupl
+  exclusions:
+    rules:
+      # Per-test-case duplication (copying a similar test's setup into a
+      # new, independently-readable test function) is idiomatic Go
+      # testing style, not code smell -- sharing brittle helpers across
+      # unrelated test cases would trade that isolation for marginal
+      # line savings. Production code keeps dupl fully enabled (zero
+      # tolerance).
+      - path: _test\.go
+        linters:
+          - dupl
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

@@ -1,0 +1,1077 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+controller:
+  # Standard pod knobs, all off by default (the render is unchanged until set).
+  # podAnnotations / podLabels are added to the pod template (the selector
+  # label app.kubernetes.io/name can't be overridden). A
+  # topologySpreadConstraints entry without a labelSelector gets this
+  # workload's own app.kubernetes.io/name selector. extraEnv / extraEnvFrom are
+  # appended to the main container's env / envFrom (standard EnvVar /
+  # EnvFromSource lists). terminationGracePeriodSeconds: null keeps the
+  # Kubernetes default (30).
+  podAnnotations: {}
+  podLabels: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+  terminationGracePeriodSeconds: null
+  extraEnv: []
+  extraEnvFrom: []
+  image:
+    repository: ghcr.io/zyvorai/kairon-controller
+    tag: ""  # defaults to .Chart.AppVersion in templates
+    pullPolicy: IfNotPresent
+  interval: 5s
+  # /healthz /readyz port. Change if it collides with something else
+  # already running on a node sharing this container's network namespace
+  # (found the hard way once already -- see console.port below).
+  healthPort: 32301
+  # A single reconciler is lightweight by design (see internal/controller:
+  # no in-memory cache, every tick re-lists from the API) -- raising
+  # replicaCount is about HA, not throughput; there's no data yet on this
+  # reconcile loop's real per-replica breaking point (see ROADMAP.md).
+  replicaCount: 1
+  leaderElection:
+    # Coordinates multiple replicas via a coordination.k8s.io/v1 Lease
+    # (see internal/leaderelection) so only the elected leader reconciles
+    # -- required once replicaCount > 1 (two un-coordinated reconcilers
+    # would race on the same Machines/MachineMigrations), but on by
+    # default even at replicaCount: 1 since it's a no-op single-writer
+    # race there and this way scaling up later never means flipping a
+    # flag on a config an operator forgot existed. The admission webhook
+    # and health/metrics server are unaffected -- they're stateless
+    # per-request reads, served from every replica regardless.
+    enabled: true
+  cordonEvacuation:
+    # Automatically creates a MachineMigration for every Machine on a Node
+    # whose spec.unschedulable transitions to true -- kaironctl evacuate
+    # NODE, automatically, mirroring KubeVirt's LiveMigrateIfPossible
+    # eviction strategy. Off by default: unlike leaderElection above, this
+    # is never a no-op -- see internal/controller/cordon.go's own doc
+    # comment. Requires the controller ServiceAccount to be granted
+    # "create" on machinemigrations, added automatically below when
+    # enabled.
+    enabled: false
+    strategy: cold # cold|auto -- never live, see CordonEvacuation's own doc comment
+    minRetryInterval: 2m
+  memoryPressureEvacuation:
+    # Migrates Machines off a Node whose KaironMemoryPressure condition
+    # (kairon-node: host memory stays under pressure with every
+    # elastic-memory Machine ballooned to its minimum) stays True for
+    # grace -- one Machine per node at a time, lowest priority and
+    # largest first, respecting MachineDisruptionBudgets. Off by default.
+    # See docs/guides/machine-elastic-memory.md.
+    enabled: false
+    strategy: live # live|auto|cold
+    grace: 2m
+    minRetryInterval: 5m
+  staleEvacuation:
+    # Fences Machines annotated kairon.zyvor.dev/evacuate=true off a
+    # NotReady Node an operator attested dead with
+    # `kaironctl node fence NODE --reason ...` (the
+    # kairon.zyvor.dev/node-fenced annotation), so the scheduler places
+    # them again -- kaironctl fence, automatically. Never migrates. Off by
+    # default; see docs/guides/machine-fencing.md.
+    enabled: false
+    maxPerTick: 10
+  nodeMaintenance:
+    # Acts only on Nodes an operator annotates
+    # kairon.zyvor.dev/maintenance=true (`kaironctl node maintenance enter
+    # NODE`): cordon, migrate the node's Machines away, park the ones no
+    # other node can take per kairon.zyvor.dev/maintenance-fallback, and
+    # undo it on exit. Grants the controller "patch" on nodes and "create"
+    # on machinemigrations. See docs/guides/node-maintenance-drs.md.
+    enabled: true
+    maxParallel: 2
+    minRetryInterval: 2m
+  drs:
+    # Rebalances Machines across nodes by reserved CPU and memory, or by
+    # measured pressure (signal: pressure).
+    # off | recommend (Events and metrics only) | automatic (creates
+    # MachineMigrations, one round at a time). See
+    # docs/guides/node-maintenance-drs.md.
+    mode: "off"
+    interval: 5m
+    thresholdPercent: 20
+    minImprovementPercent: 5
+    maxMoves: 1
+    strategy: live # live|auto|cold
+    cooldown: 1h
+    # reserved balances reserved CPU and memory; pressure moves Machines
+    # off nodes whose host PSI (published by kairon-node on each Node's
+    # kairon.zyvor.dev/pressure annotation) reaches
+    # pressureThresholdPercent, onto nodes below half of it.
+    signal: reserved
+    pressureThresholdPercent: 25
+    pressureMaxAge: 2m
+  dr:
+    # Runs MachineProtectionPlans: replicate Machines to a peer cluster,
+    # fail over and back, DR tests. Grants the controller create/delete on
+    # machinebackuppolicies, machinebackuprestores and
+    # machineprotectionplans, and get on Secrets labelled
+    # kairon.zyvor.dev/dr-peer-credentials=true in the release namespace.
+    # See docs/guides/cross-cluster-dr.md.
+    enabled: false
+    # Isolated host bridges (no uplink) DR tests may attach copies to.
+    testBridges: []
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {cpu: 250m, memory: 128Mi}
+  podDisruptionBudget:
+    # Only affects voluntary eviction (e.g. `kubectl drain`) of the single
+    # kairon-controller replica -- essentially no downside, so on by
+    # default (see templates/pdb.yaml).
+    enabled: true
+  networkPolicy:
+    # Off by default: restricts ingress to kairon-controller's health/metrics
+    # port (and the webhook port, if webhook.enabled) to same-namespace pods
+    # plus allowIngressFrom below. Get allowIngressFrom wrong (e.g. Prometheus
+    # lives in another namespace) and scraping breaks silently -- see
+    # templates/networkpolicy.yaml.
+    enabled: false
+    # Each entry is a full NetworkPolicyPeer (namespaceSelector and/or
+    # podSelector), e.g.:
+    #   allowIngressFrom:
+    #     - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: monitoring}}
+    allowIngressFrom: []
+node:
+  # Standard pod knobs, all off by default; see controller.podAnnotations.
+  podAnnotations: {}
+  podLabels: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+  terminationGracePeriodSeconds: null
+  extraEnv: []
+  extraEnvFrom: []
+  image:
+    repository: ghcr.io/zyvorai/kairon-node
+    tag: ""  # defaults to .Chart.AppVersion in templates
+    pullPolicy: IfNotPresent
+  # Safety resync interval. Hot-path reconcile is watch-driven (label-
+  # scoped Machines / migrations for this node); this ticker is only the
+  # periodic full resync. Was 3s when every tick listed the whole cluster.
+  interval: 5m
+  # /healthz /readyz port -- runs with hostNetwork: true (see below), so
+  # this shares the node's real port space, not just this container's.
+  # Confirmed against a real host: the default console.port (8090)
+  # collided with an unrelated Docker container already using it there.
+  healthPort: 32302
+  # One kairon-node per capable node (DaemonSet); same lightweight,
+  # cache-free reconcile design as the controller.
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {cpu: 250m, memory: 128Mi}
+  fluxvmURL: http://127.0.0.1:7788
+  defaultBackend: qemu
+  imageRoot: /var/lib/fluxvm/images
+  # Directory kairon-node downloads/caches spec.image.source images into,
+  # keyed by digest -- see docs/guides/machine-image-import.md. Off by
+  # default (empty): a Machine setting spec.image.source is refused with
+  # a clear error rather than silently failing; spec.image.path and
+  # spec.volumes are entirely unaffected either way.
+  # The directory must be writable by UID 65532 (kairon-node runs non-root and
+  # fsGroup does not apply to hostPath): `install -d -o 65532 -g 65532 DIR`.
+  imageCacheDir: ""
+  # Maximum bytes kairon-node reads for one spec.image.source download or OCI
+  # containerDisk pull (kairon-node -image-max-download-bytes). 0 keeps the
+  # binary's default of 256 GiB. See docs/guides/machine-image-import.md#size-limit.
+  imageMaxDownloadBytes: 0
+  # Comma-separated PCI BDFs, e.g. 0000:65:00.0. Empty is fail-closed for DeviceClaims.
+  vfioAllowlist: ""
+  # Mediated device (vGPU) parents the scheduler may create instances on:
+  # comma-separated PCI BDFs or names (e.g. mbochs). Empty allows every
+  # parent FluxVM reports.
+  mdevParents: ""
+  nodeSelector:
+    kairon.zyvor.dev/capable: "true"
+  # csi: how kairon-node reaches kairon-csi-node's local Unix socket to
+  # resolve a network-block (CSI-backed) Machine boot disk -- see
+  # csiNode below. Ignored entirely (and safe to leave at these defaults)
+  # unless csiNode.enabled is also true.
+  csi:
+    socketDir: /var/lib/kubelet/plugins/csi.kairon.zyvor.dev
+    stagingDir: /var/lib/kairon/csi/staging
+    publishDir: /var/lib/kairon/csi/publish
+    # chap: opt-in CHAP on kairon-node's own CSI consumption path.
+    # Off by default -- enabling grants kairon-node `get` on Secrets in
+    # the release namespace only (never cluster-wide) and passes
+    # --csi-chap-secret-namespace so a PV's nodeStageSecretRef is
+    # resolved for iSCSI login. Secrets must live in that namespace.
+    chap:
+      enabled: false
+  # thirdPartyCSIDrivers: an explicit, operator-configured map of CSI
+  # driver name -> its own Unix socket path kairon-node may dial directly
+  # as a generic CSI client for a Machine boot disk -- see
+  # docs/guides/machine-storage-thirdparty-csi.md. Drivers whose CSIDriver
+  # says attachRequired get a VolumeAttachment (handled by the driver's
+  # external-attacher); setting this grants kairon-node get on csidrivers
+  # and get/create/delete on volumeattachments. Empty (the default) means
+  # only Kairon's own driver can be used, exactly as before this existed.
+  # Example:
+  #   thirdPartyCSIDrivers:
+  #     rbd.csi.ceph.com: /var/lib/kubelet/plugins/rbd.csi.ceph.com/csi.sock
+  thirdPartyCSIDrivers: {}
+  # thirdPartyCSISecrets: let third-party PVs' nodeStageSecretRef /
+  # nodePublishSecretRef resolve, from Secrets in the release namespace only
+  # (grants kairon-node get on Secrets there).
+  thirdPartyCSISecrets:
+    enabled: false
+  # cbtBackup: let kairon-node read the S3 credential and encryption-key
+  # Secrets that MachineBackups with spec.target name. Grants cluster-wide
+  # get on Secrets; kairon-node only reads Secrets labelled
+  # kairon.zyvor.dev/backup-credentials=true.
+  cbtBackup:
+    enabled: false
+  # atlasRBDPools: Ceph pools kairon-node may boot Atlas atlas.mode=rbd
+  # volumes from, opened in place by FluxVM (storage=ceph-rbd-in-place)
+  # with the Ceph credentials in FluxVM's own [storage] config. Empty
+  # refuses rbd mode. See docs/guides/machine-storage-atlas.md.
+  atlasRBDPools: []
+  # livenessLease: opt-in, off by default -- when enabled, kairon-node
+  # renews its own coordination.k8s.io/v1 Lease (kairon-node-<nodeName>,
+  # namespaced Role/RoleBinding auto-created alongside this) once per
+  # reconcile tick, and kaironctl fence cross-checks it against Node Ready
+  # before proceeding: a still-fresh Lease despite the node showing
+  # NotReady means kairon-node's own reconcile loop may still be alive,
+  # and fence refuses rather than risk abandoning a still-managed Machine.
+  # See docs/guides/machine-fencing.md. When enabled, kairon-controller
+  # also feeds the same Leases into NodeUnreachable detection (Ready +
+  # stale → AgentLivenessStale). Disabled means exactly
+  # kairon-node's behavior before this existed -- no Lease writes, no
+  # extra RBAC.
+  livenessLease:
+    enabled: false
+    # Seconds; 0 uses nodeliveness.DefaultLeaseDuration (60s).
+    duration: 0s
+  # networkDefaultDeny: opt-in, off by default -- when enabled,
+  # kairon-node pushes DefaultAllow: false onto every Machine on that node
+  # not currently matched by any MachineNetworkPolicy/NetworkSecurityGroup
+  # -derived policy, instead of silently leaving it on FluxVM's native
+  # defaultAllow: true. Global, not per-namespace -- these CRDs' selectors
+  # are pure L3/L4 CIDR/port matching with zero namespace-awareness, so
+  # enabling this cuts VM-to-VM connectivity cluster-wide (including
+  # same-namespace traffic) for any Machine with no matching policy yet,
+  # not just cross-namespace traffic. Disruptive on an existing cluster
+  # with no policies written first -- see docs/guides/network-policy.md.
+  networkDefaultDeny: false
+  # cpuPinning: opt-in pinnable-CPU discovery -- kairon-node publishes
+  # kairon.zyvor.dev/pinnable-cpus from online CPUs minus reservedCPUs and
+  # kubelet's exclusive assignments. Needs kubelet's static CPU manager
+  # policy and Kubernetes 1.29+ (native sidecars). When enabled, a small
+  # root sidecar mounts the state file's directory (normally
+  # /var/lib/kubelet) read-only and copies the root-only state file into a
+  # pod-private emptyDir every copyIntervalSeconds; kairon-node stays
+  # non-root. See docs/guides/machine-cpu-pinning.md.
+  cpuPinning:
+    enabled: false
+    # kubelet's reserved CPU list (--reserved-cpus), e.g. "0-1". Required.
+    reservedCPUs: ""
+    stateFile: /var/lib/kubelet/cpu_manager_state
+    copyIntervalSeconds: 10
+    copierImage: busybox:1.36
+  # memoryReclaim: kairon-node balloons spec.resources.elasticMemory
+  # Machines toward their minimum under host memory pressure and sets the
+  # KaironMemoryPressure Node condition (the scheduler then skips the node)
+  # when nothing is left to reclaim. 0 keeps a default: low watermark 10%
+  # and high watermark 20% of MemTotal, PSI some avg10 10.
+  # See docs/guides/machine-elastic-memory.md.
+  memoryReclaim:
+    enabled: true
+    lowWatermarkMiB: 0
+    highWatermarkMiB: 0
+    psiSomeAvg10: 0
+    # Time between reclaim passes as a Go duration (--memory-reclaim-interval).
+    # Empty keeps the binary's default of 10s.
+    interval: ""
+  # pressureReport: kairon-node publishes the host's and each local Machine's
+  # PSI on its Node's kairon.zyvor.dev/pressure annotation, which
+  # controller.drs.signal=pressure plans from (needs a FluxVM with
+  # GET /v1/host/pressure; an older one logs one warning and publishes
+  # nothing). enabled: false renders --pressure-report=false. interval is a Go
+  # duration (--pressure-report-interval); empty keeps the default of 30s.
+  # See docs/guides/node-maintenance-drs.md#pressure-signal.
+  pressureReport:
+    enabled: true
+    interval: ""
+  # VirtualNetwork dataplane (docs/guides/virtual-networks.md). kairon-node
+  # applies every VirtualNetwork with a Machine on this node to the local
+  # FluxVM. uplink is the host interface carrying egress SNAT and floating
+  # IPs (empty keeps networks internal); nodeIP is the Geneve underlay
+  # address (empty takes the Node's InternalIP).
+  virtualNetworks:
+    enabled: true
+    uplink: ""
+    nodeIP: ""
+    # Announce-only BGP speaker for floating IPs (and optionally Service
+    # Fabric VIPs). Off unless peers are set, e.g. "10.0.0.1=64512".
+    bgp:
+      peers: ""
+      localASN: 0
+      routerID: ""
+      nextHop: ""
+      advertiseServiceVIPs: false
+      advertisePrefixes: ""
+
+# Cilium cluster-network integration (all off by default). Requires a
+# cluster CNI that exposes cilium.io ExternalWorkload / CiliumNetworkPolicy.
+# FluxVM dataplane mode (path 1) is configured on the node in
+# /etc/fluxvm.toml (`sandbox.dataplane.mode = "cilium"`), not here —
+# network.ciliumDataplane is documentation-only for operators.
+network:
+  ciliumDataplane: false
+  ciliumAttach:
+    # Reconcile CiliumExternalWorkload for Machines with
+    # spec.network.ciliumAttach (mode=tap, netns=true). Grants controller
+    # RBAC on cilium.io/v2 ciliumexternalworkloads when enabled.
+    enabled: false
+  ciliumPolicySync:
+    # Sync MachineNetworkPolicy with spec.cilium.sync=true onto a real
+    # namespaced CiliumNetworkPolicy. Grants controller RBAC on
+    # ciliumnetworkpolicies when enabled.
+    enabled: false
+atlas:
+  # Provision spec.volumes[].atlas through the Atlas storage gateway
+  # (docs/guides/machine-storage-atlas.md). The controller creates the
+  # volume (PVC or raw Ceph RBD image), waits for its job, and only then
+  # schedules the Machine.
+  enabled: false
+  # Atlas REST base URL, e.g. http://atlas.atlas-system.svc:5110
+  url: ""
+  tenantID: kairon
+  # Atlas policy intent used when a volume doesn't set atlas.policy.
+  defaultPolicy: ""
+  # Atlas S3 bucket id for MachineBackup spec.atlas when it names none
+  # (docs/guides/machine-backup.md).
+  backupBucketID: ""
+  # Existing Secret holding the Atlas JWT; leave name empty when Atlas
+  # runs with ATLAS_AUTH_REQUIRED=0.
+  tokenSecret:
+    name: ""
+    key: token
+agentPlane:
+  # Existing Secret holding the cosign public key (cosign.pub PEM). When
+  # set, the admission webhook verifies the image signature of every
+  # kairon.zyvor.dev/agent-pool Machine (docs/guides/agent-plane.md).
+  cosignPublicKeySecret:
+    name: ""
+    key: cosign.pub
+csiNode:
+  # Standard pod knobs, all off by default; see controller.podAnnotations.
+  podAnnotations: {}
+  podLabels: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+  terminationGracePeriodSeconds: null
+  extraEnv: []
+  extraEnvFrom: []
+  # Kairon's own first-cut CSI node plugin (see internal/csinode,
+  # docs/guides/machine-storage-csi.md): iSCSI or NVMe-oF, Filesystem or
+  # Block mode; PersistentVolumes reference it statically unless
+  # csiController provisions them. Off by
+  # default; enabling it is what lets a Machine's spec.volumes[0]
+  # reference a network-block (CSI-backed) PersistentVolume instead of
+  # only hostPath/local ones. This is the one place Kairon's own images
+  # aren't built from the minimal distroless base every other component
+  # uses (a real iSCSI initiator and filesystem tooling need a real OS
+  # around them) and the one Kairon-built container that runs privileged
+  # -- both inherent to actually attaching/mounting network block devices
+  # from a container, see SECURITY.md.
+  enabled: false
+  image:
+    repository: ghcr.io/zyvorai/kairon-csi-node
+    tag: ""  # defaults to .Chart.AppVersion in templates
+    pullPolicy: IfNotPresent
+  # The upstream, Kubernetes-maintained sidecar that registers this
+  # plugin with kubelet -- not something Kairon implements itself; every
+  # real CSI driver in the ecosystem deploys this exact sidecar the same
+  # way. See https://github.com/kubernetes-csi/node-driver-registrar.
+  registrar:
+    image:
+      repository: registry.k8s.io/sig-storage/csi-node-driver-registrar
+      tag: v2.18.0
+  resources:
+    requests: {cpu: 25m, memory: 32Mi}
+    limits: {cpu: 200m, memory: 128Mi}
+  nodeSelector:
+    kairon.zyvor.dev/capable: "true"
+csiController:
+  # Standard pod knobs, all off by default; see controller.podAnnotations.
+  podAnnotations: {}
+  podLabels: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+  terminationGracePeriodSeconds: null
+  extraEnv: []
+  extraEnvFrom: []
+  # Dynamic provisioning for csiNode's iSCSI and NVMe-oF backends (see
+  # internal/csinode's ControllerServer, docs/guides/machine-storage-csi.md):
+  # a StorageClass naming csi.kairon.zyvor.dev creates a real Linux LIO
+  # backstore/target/LUN per PersistentVolumeClaim instead of an admin
+  # hand-writing a static PersistentVolume. Off by default, and only
+  # meaningful once csiNode.enabled is also true (dynamic provisioning
+  # without the Node plugin to actually stage/mount the result is
+  # pointless). Single replica, pinned via nodeSelector to whichever node
+  # is this cluster's storage node -- still true today (see "Real limits"
+  # in docs/guides/machine-storage-csi.md); leaderElection below is
+  # defense-in-depth for a future multi-storage-node cut, not a sign more
+  # than one replica is supported now. Requires the host's target_core_mod
+  # kernel module already loaded (this chart doesn't modprobe it for you,
+  # same posture as webhook/console TLS material -- see SECURITY.md) and
+  # hostNetwork so portal below is actually reachable on that node's real
+  # interfaces, not a Pod-network address other nodes' iSCSI initiators
+  # can't route to.
+  enabled: false
+  image:
+    repository: ghcr.io/zyvorai/kairon-csi-controller
+    tag: ""  # defaults to .Chart.AppVersion in templates
+    pullPolicy: IfNotPresent
+  # host:port initiators dial to reach volumes this Controller
+  # provisions -- the storage node's own real, cluster-reachable IP (or a
+  # stable VIP in front of it). Required when enabled is true; there is
+  # deliberately no default, the same "we don't guess your network
+  # topology" posture migration.tlsServerName/console.tls already take.
+  portal: ""
+  # NVMe-oF portals (see docs/guides/machine-storage-nvmeof.md): a
+  # comma-separated list of tcp:IP:PORT and rdma:IP:PORT addresses the
+  # kernel NVMe target (nvmet, driven through configfs, no nvme-cli)
+  # exports volumes on. Several of one transport are several paths to every
+  # volume; nodes connect all of them and native NVMe multipath (ANA) merges
+  # them. Empty leaves NVMe-oF off and every volume on iSCSI. Needs the
+  # nvmet plus nvmet_tcp / nvmet_rdma modules loaded on the storage node.
+  nvmePortals: ""
+  # Local directory on the storage node each dynamically provisioned
+  # volume's backing sparse file is created under.
+  volumeDir: /var/lib/kairon/csi-volumes
+  # The upstream, Kubernetes-maintained sidecar that watches
+  # PersistentVolumeClaims naming this driver's StorageClass and turns
+  # them into CreateVolume/DeleteVolume calls -- not something Kairon
+  # implements itself, the same convention csiNode.registrar already
+  # follows for the Node-registration side. See
+  # https://github.com/kubernetes-csi/external-provisioner.
+  provisioner:
+    image:
+      repository: registry.k8s.io/sig-storage/csi-provisioner
+      tag: v5.1.0
+  # The upstream sidecar that watches a growing PersistentVolumeClaim
+  # (spec.resources.requests.storage increased past what the bound
+  # PersistentVolume already reports) and turns it into
+  # ControllerExpandVolume -- same "not something Kairon implements
+  # itself" convention as provisioner above. See
+  # https://github.com/kubernetes-csi/external-resizer.
+  resizer:
+    image:
+      repository: registry.k8s.io/sig-storage/csi-resizer
+      tag: v1.12.0
+  # The upstream sidecar that watches VolumeSnapshotContent objects (the
+  # snapshot.storage.k8s.io CRDs, plus the separate, cluster-wide
+  # snapshot-controller that turns a VolumeSnapshot into one -- neither
+  # installed by this chart, the same "bring your own
+  # external-snapshotter stack" posture every CSI driver takes) and turns
+  # them into CreateSnapshot/DeleteSnapshot -- same "not something Kairon
+  # implements itself" convention as provisioner/resizer above. Off by
+  # default and separately gated from csiController.enabled itself: unlike
+  # provisioner/resizer (which only need the always-present core/storage
+  # APIs), this sidecar fails to start at all if the snapshot.storage.k8s.io
+  # CRDs aren't already installed, so it's a deliberate second opt-in, not
+  # bundled in automatically. See
+  # https://github.com/kubernetes-csi/external-snapshotter.
+  snapshotter:
+    enabled: false
+    image:
+      repository: registry.k8s.io/sig-storage/csi-snapshotter
+      tag: v8.2.0
+  # The provisioner sidecar's own Lease-based leader election
+  # (coordination.k8s.io/v1, its own bundled client-go logic) -- not
+  # something kairon-csi-controller's own binary needs to reimplement the
+  # way kairon-controller's internal/leaderelection had to: that binary
+  # already talks to the Kubernetes API for reconciliation regardless, so
+  # hand-rolling Lease coordination there to avoid a full client-go
+  # dependency was a real trade-off; kairon-csi-controller has no
+  # Kubernetes API dependency today (see cmd/kairon-csi-controller's
+  # package doc) and shouldn't gain one just for this when the sidecar
+  # it's already deployed alongside solves it for free. Only meaningful
+  # once more than one replica exists, which today's single-storage-node
+  # pinning doesn't support (see "Real limits" in
+  # docs/guides/machine-storage-csi.md) -- on by default anyway, the same
+  # "no-op single-writer race at one replica, never a flag an operator has
+  # to remember to flip later" reasoning controller.leaderElection.enabled
+  # already documents.
+  leaderElection:
+    enabled: true
+  resources:
+    requests: {cpu: 25m, memory: 32Mi}
+    limits: {cpu: 200m, memory: 128Mi}
+  # Pins the single Controller replica to this cluster's one storage
+  # node -- required when enabled is true. Matched against a label the
+  # operator applies themselves (this chart doesn't invent or apply one
+  # for you), e.g. `kubectl label node <name> kairon.zyvor.dev/storage-node=true`.
+  nodeSelector: {}
+  # Creates a StorageClass named kairon-iscsi naming csi.kairon.zyvor.dev
+  # as its provisioner, so a PVC can request dynamic provisioning with no
+  # further setup beyond enabling this. Off by default even when
+  # csiController.enabled is true, in case an operator wants to hand-write
+  # their own StorageClass (e.g. a non-default reclaimPolicy) instead.
+  storageClass:
+    create: false
+    name: kairon-iscsi
+    reclaimPolicy: Delete
+    # ControllerExpandVolume/NodeExpandVolume are both implemented (grow
+    # the sparse backing file, the LIO backstore, then the guest
+    # filesystem) -- see internal/csinode/controller.go and node.go.
+    # Shrinking is never supported (the CSI spec itself doesn't have a
+    # shrink verb; ext4/xfs online shrink isn't reliable enough to build
+    # on regardless).
+    allowVolumeExpansion: true
+    # StorageClass parameters, e.g. {transport: nvme-tcp} (or nvme-rdma) to
+    # provision NVMe-oF volumes; the default is iSCSI. A PVC with
+    # volumeMode: Block gets the raw device on either transport.
+    parameters: {}
+migration:
+  # Secure peer preparation is opt-in until a Kairon migration adapter is installed.
+  enabled: false
+  port: 9443
+  tlsSecretName: kairon-migration-tls
+  # DNS SAN expected in the shared cluster migration certificate.
+  tlsServerName: kairon-node
+  stateDir: /var/run/kairon/migrations
+  # Empty uses emptyDir. For node-reboot/pod-replacement durability, pre-create a
+  # writable host directory for UID 65532 and set this path.
+  stateHostPath: ""
+  # Optional local Kairon migration adapter. Current FluxVM does not expose this
+  # contract, so leave empty unless an adapter is installed on every VM node.
+  adapterSocket: ""
+  # Block a live migration whose destination reports an unencrypted data plane
+  # (kairon-node --migration-require-encrypted) instead of only alerting: the
+  # prepared target is aborted before guest memory moves and the Machine parks
+  # in Blocked. Off by default. Turn it on only once every node reports
+  # status.dataPlaneEncrypted=true; the adapter's own -migration-data-tls is
+  # still configured outside Helm (see dataplaneTls below and
+  # docs/runbook-migration-failures.md#unencrypted-migration-data-plane).
+  requireEncryptedDataPlane: false
+  # How long a destination-side Prepared migration session may go without a
+  # heartbeat from its source before kairon-node self-aborts it
+  # (--migration-heartbeat-ttl, a Go duration such as 15m). Empty (the default)
+  # is off. Keep it well above several multiples of node.interval, which is
+  # also the source's heartbeat period (default 5m). See
+  # docs/runbook-migration-failures.md#abandoned-pre-commit-sessions-destination-side-opt-in.
+  heartbeatTTL: ""
+  adapterHostPath: ""
+  # Authenticate/encrypt the QEMU migration data stream (not just the
+  # control-plane RPCs, which always use mTLS) via TLS. Opt-in: enable only
+  # once every node's kairon-migration-adapter-fluxvm and FluxVM binary is
+  # upgraded to support it (see ROADMAP v0.4). Requires adapterHostPath, so
+  # the host-level adapter systemd unit can read the same cert material this
+  # chart already gives kairon-node via tlsSecretName.
+  #
+  # IMPORTANT: this Helm value only controls whether cert material is
+  # *staged* onto adapterHostPath -- the actual -migration-data-tls
+  # enforcement flag lives in each node's kairon-migration-adapter-fluxvm
+  # systemd unit ExecStart, entirely outside Helm's control. Flipping this
+  # alone does NOT turn encryption on cluster-wide. Before flipping it (or
+  # the systemd units), verify every currently-active live migration already
+  # reports status.dataPlaneEncrypted=true (also exposed as the
+  # kairon_migration_dataplane_encrypted metric) -- see
+  # docs/runbook-migration-failures.md#unencrypted-migration-data-plane.
+  dataplaneTls: false
+  # Optional: a Secret (NOT chart-managed, same posture as tlsSecretName)
+  # bundling a REAL PER-NODE data-plane cert for every node in the fleet --
+  # keys named "<nodeName>-ca.crt"/"<nodeName>-tls.crt"/"<nodeName>-tls.key"
+  # for each one. scripts/gen-migration-mtls-certs.sh generates both the
+  # certs and a ready-to-apply Secret manifest in this exact shape. Each
+  # kairon-node pod's init container picks out *only its own* node's three
+  # files (via the Downward API's spec.nodeName) before staging them onto
+  # adapterHostPath -- unlike tlsSecretName's cluster-membership cert
+  # (deliberately shared, see its own comment above), a real per-node cert
+  # here means one node presenting another node's identity on the data
+  # plane is cryptographically impossible, not just discouraged.
+  #
+  # Left empty (the default), dataplaneTls falls back to staging
+  # tlsSecretName's own shared cert onto the data plane too -- weaker
+  # (every node can present the same identity there), but exactly today's
+  # behavior, so no existing deployment's `helm upgrade` needs to change
+  # anything to keep working. Set this once you're ready to move to real
+  # per-node data-plane identity -- see docs/guides/machine-migration-tls.md.
+  dataplaneTlsSecretName: ""
+  # Admission quota: caps concurrent non-terminal migrations touching one
+  # node, and optionally cluster-wide. Rejected into the existing Blocked
+  # phase, same mechanism as an unschedulable target. 0 = unlimited (today's
+  # behavior). This is the "rate limiting" control for migration storms
+  # (e.g. a bulk `kaironctl evacuate` draining many Machines from one node
+  # at once). A capacity-Blocked migration is transient (unlike a real
+  # misconfiguration) but nothing auto-retries it yet -- re-trigger it via
+  # `kaironctl evacuate`/recreating the MachineMigration (which already
+  # generates a fresh, timestamped name each time).
+  maxConcurrentPerNode: 0
+  maxConcurrentCluster: 0
+console:
+  # Graphical VNC console relay (browser -> kairon-ui -> kairon-node ->
+  # the VM's local QEMU VNC socket). Off by default -- opt in once
+  # ui.enabled is also true, same posture as migration.enabled. See
+  # SECURITY.md's "VNC console" section for the trust model before
+  # enabling this on a shared cluster.
+  enabled: false
+  # Port kairon-node's console relay listens on and kairon-ui connects to.
+  # kairon-node runs with hostNetwork: true, so this is a real node-wide
+  # port, not just this container's -- change it if 8090 collides with
+  # something else already running on your nodes (this default did, on a
+  # real host, with an unrelated Docker container).
+  port: 8090
+  # existingSecret: a pre-created Secret with a "token" key instead of the
+  # one the chart generates and persists automatically (same
+  # lookup+randAlphaNum pattern as kairon-ui-session).
+  existingSecret: ""
+  existingSecretKey: "token"
+  tls:
+    # One-way TLS on the kairon-ui -> kairon-node console hop, ON by default
+    # (the hop carries the shared console token and the VM's console, exec
+    # and file data, so it is not left in clear text unless you say so).
+    # Not mutual TLS: the shared console token above already authenticates
+    # kairon-ui to kairon-node, so kairon-node only needs a server
+    # certificate. Set false only for a hop you already protect another way
+    # (a mesh, an encrypted node network); it is then plaintext HTTP.
+    enabled: true
+    # secretName: a pre-created Secret with tls.crt/tls.key (kairon-node's
+    # server certificate and key) and ca.crt (the CA kairon-ui verifies it
+    # against). Empty makes the chart generate one (kairon-console-tls: a
+    # private CA and a server certificate for the name kairon-node), keep it
+    # across upgrades, and have kairon-ui verify that fixed name, so it works
+    # for every node whatever its address.
+    secretName: ""
+    # serverName: the name kairon-ui verifies the node certificate against.
+    # Empty means "kairon-node" with the generated Secret, and the address
+    # being dialled (so the certificate needs the node IPs) with your own.
+    serverName: ""
+webhook:
+  # Validating admission webhooks closing the gaps documented on
+  # MachineQuota/MachineDisruptionBudget: without this, a namespace can
+  # always create a Machine object even over quota (it just stays Pending,
+  # see internal/controller/quota.go), and a MachineMigration created
+  # directly through the API bypasses any MachineDisruptionBudget entirely
+  # (see internal/controller/disruption.go). Also rejects a
+  # MachineNetworkPolicy/NetworkSecurityGroup whose spec.policy has a CIDR
+  # or port-rule syntax FluxVM's own eBPF dataplane will never accept --
+  # see model.ValidateVmNetworkPolicy's doc comment for why that used to
+  # be a permanent, silently-retried Error status instead of an immediate
+  # `kubectl apply` rejection. Also rejects a Machine/MachineQuota whose
+  # free-form CPU/memory quantity strings (spec.resources.cpu/memory/
+  # maxCpu/maxMemory, spec.maxTotalCpu/maxTotalMemory) aren't valid
+  # quantities at all -- see validateResourceQuantities/
+  # validateMachineQuotaObject in internal/controller/webhook.go. Also
+  # rejects a Machine whose spec.network.mac isn't a syntactically valid
+  # Ethernet address -- see validateNetworkMAC in the same file. Off by
+  # default -- like
+  # migration.tlsSecretName/console.tls.secretName above, this chart does
+  # not mint a serving certificate for you; the webhook can't come up
+  # without one, so leaving it off is the only safe default.
+  enabled: false
+  # A pre-created Secret with tls.crt/tls.key -- kairon-controller's
+  # webhook HTTPS serving certificate. Required when enabled is true.
+  tlsSecretName: ""
+  # The CA that signed tlsSecretName's certificate, base64-encoded PEM --
+  # goes into the ValidatingWebhookConfiguration's caBundle so the API
+  # server can verify kairon-controller's cert when calling the webhook.
+  # Get this wrong (or let it expire without rotating) and every Machine/
+  # MachineMigration write in the cluster starts failing per failurePolicy
+  # below -- there is deliberately no default.
+  caBundle: ""
+  port: 8443
+  # Fail closes the actual bypass (a webhook outage blocks all Machine/
+  # MachineMigration/MachineNetworkPolicy/NetworkSecurityGroup/
+  # MachineQuota writes cluster-wide); Ignore trades that guarantee for
+  # availability -- enforcement becomes best-effort, same as before this
+  # webhook existed.
+  failurePolicy: Fail
+metrics:
+  # Wrap charts/kairon/alerts.yaml as a real PrometheusRule custom resource,
+  # for clusters running prometheus-operator. Off by default since not every
+  # cluster has the PrometheusRule CRD installed; otherwise, copy
+  # alerts.yaml's rule group into your own Prometheus rule_files config.
+  prometheusRule:
+    enabled: false
+  # prometheus-operator scrape config (see docs/guides/observability.md).
+  # Off by default. Renders a PodMonitor for kairon-controller and
+  # kairon-node (their /metrics is on the "health" container port; neither
+  # has a Service) and, with ui.enabled, a ServiceMonitor for kairon-ui.
+  # Each object is skipped, with no error, when its CRD is absent from the
+  # cluster (.Capabilities.APIVersions) -- set requireCRD: false to render
+  # them anyway, e.g. for `helm template` without --api-versions.
+  serviceMonitor:
+    enabled: false
+    requireCRD: true
+    interval: 30s
+    scrapeTimeout: ""
+    # Extra labels on the monitors, e.g. {release: kube-prometheus-stack}
+    # when your Prometheus selects monitors by label.
+    labels: {}
+    controller:
+      enabled: true
+    node:
+      enabled: true
+    ui:
+      enabled: true
+      # kairon-ui serves HTTPS by default with a self-signed certificate
+      # unless ui.insecureHttp is true; the scrape then skips verification.
+      insecureSkipVerify: true
+  # Grafana dashboards (charts/kairon/dashboards/*.json) as ConfigMaps that
+  # the Grafana sidecar (grafana-sc-dashboard) loads by label. Off by default.
+  grafanaDashboards:
+    enabled: false
+    # Sidecar label: Grafana's chart default is `grafana_dashboard: "1"`.
+    label: grafana_dashboard
+    labelValue: "1"
+    # Namespace for the ConfigMaps; empty = the release namespace. Set it to
+    # Grafana's namespace if the sidecar does not search all namespaces.
+    namespace: ""
+    # Grafana folder, via the sidecar's folderAnnotation (default
+    # `grafana_folder`); empty = no annotation.
+    folder: Kairon
+    folderAnnotation: grafana_folder
+    annotations: {}
+# otel: opt-in OTLP/HTTP JSON reconcile spans (internal/oteltrace). Off by
+# default -- when enabled, set endpoint to your collector's /v1/traces URL
+# (e.g. http://otel-collector:4318/v1/traces). Tiny exporter, not the full
+# OpenTelemetry Go SDK. See docs/guides/observability.md.
+otel:
+  enabled: false
+  endpoint: ""
+ui:
+  # Standard pod knobs, all off by default; see controller.podAnnotations.
+  podAnnotations: {}
+  podLabels: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+  terminationGracePeriodSeconds: null
+  extraEnv: []
+  extraEnvFrom: []
+  # Web dashboard (cmd/kairon-ui). Off by default -- opt in once you have a
+  # token ready, same posture as migration.enabled.
+  enabled: false
+  # More than 1 is safe once ui.auth.users (or the seeded default admin) is
+  # in use: session revocation, login lockout, and console tickets all
+  # propagate across replicas via a shared kairon-ui-shared-state
+  # ConfigMap this chart always creates alongside kairon-ui, and password
+  # changes propagate via the existing kairon-ui-users Secret every
+  # replica already shares -- see internal/uiapi/sharedstate.go and
+  # docs/guides/kairon-ui-ha.md. Propagation lands within ~15s, not
+  # instantly, and a login-lockout threshold is evaluated per-replica, not
+  # as one cluster-wide counter -- real, documented first-cut limits, not
+  # bugs.
+  replicaCount: 1
+  # Content-addressed store for images uploaded with `kaironctl image
+  # upload`; nodes download them by digest via spec.image.source.httpURL
+  # (needs node.imageCacheDir). See docs/guides/machine-image-import.md.
+  # Read-only Zyvor Atlas storage views (Storage page: cluster health, pools,
+  # alerts, kairon-owned volumes, backups). The Atlas token never reaches the
+  # browser; kairon-ui proxies an allowlist of GETs. Empty url = disabled.
+  atlas:
+    url: ""            # e.g. http://atlas.atlas-system:5110
+    tokenSecret: ""    # Secret with key "token" (a viewer-role Atlas JWT)
+    consoleURL: ""     # browser URL of the Atlas console ("Open in Atlas" link)
+  imageStore:
+    enabled: false
+    # Base URL kairon-node downloads from; default
+    # https://kairon-ui.<namespace>.svc:<ui.service.port> (http:// with
+    # ui.insecureHttp). With a self-signed certificate uploaded images are
+    # marked insecureSkipTLSVerify; the sha256 still guarantees the bytes.
+    # kairon-node runs
+    # with hostNetwork, so set a node-reachable address if cluster DNS is
+    # not resolvable from the host.
+    publicURL: ""
+    size: 50Gi
+    storageClassName: ""
+    # Use a pre-created claim (required for ui.replicaCount > 1: ReadWriteMany).
+    existingClaim: ""
+    maxBytes: 68719476736  # 64Gi per upload
+    fsGroup: 65532
+  image:
+    repository: ghcr.io/zyvorai/kairon-ui
+    tag: ""  # defaults to .Chart.AppVersion in templates
+    pullPolicy: IfNotPresent
+  # Static bearer token every /api/v1/... request must present. Required
+  # unless allowUnauthenticated is set -- kairon-ui can create/delete
+  # Machines and force migration recovery actions, so it refuses to start
+  # wide open by accident (both here, via {{ fail }}, and independently in
+  # the Go binary itself -- see cmd/kairon-ui/main.go).
+  token: ""
+  # Reference a pre-created Secret instead of ui.token, so the token never
+  # has to pass through `helm --set`/stored release values (which land in
+  # `helm get values` output and shell history) -- same escape hatch
+  # operators already need for migration.tlsSecretName. When set, ui.token
+  # above is ignored and this chart does not create a Secret at all.
+  existingSecret: ""
+  # Key within existingSecret holding the token. Ignored unless
+  # existingSecret is set.
+  existingSecretKey: "token"
+  # Local development only. Never set this in a real cluster.
+  allowUnauthenticated: false
+  auth:
+    # Real per-operator username/password login (docs/getting-started.md),
+    # alongside -- not instead of -- the legacy shared ui.token above.
+    # Generate each entry's passwordHash with: kairon-ui -hash-password 'the password'
+    # Set admin: true on an entry to let that account reset another
+    # operator's password via POST /api/v1/users/{username}/password
+    # (every operator can always change their own via
+    # POST /api/v1/auth/password). Set namespaces: [...] on a non-admin
+    # entry to restrict it to those namespaces once
+    # namespaceScoping.enabled (above) is true -- ignored entirely
+    # otherwise, and ignored for an admin: true entry (always
+    # unrestricted). Example:
+    #   users:
+    #     - {username: alice, passwordHash: "$2a$...", admin: true}
+    #     - {username: bob, passwordHash: "$2a$...", namespaces: [team-bob]}
+    # These only SEED the kairon-ui-users Secret: once it exists, upgrades keep
+    # its contents and changes here are ignored (edit the Secret, or use
+    # existingSecret). See docs/guides/kairon-ui-dashboard.md.
+    # When empty (the default) and nothing above is set either, the chart
+    # seeds one default "admin" account instead, with a random password it
+    # generates once (see NOTES.txt after install/upgrade) -- so a fresh
+    # `helm install` with no ui.* values still gets a real, safe login. That
+    # seeded account can sign in and use the dashboard like any other, but
+    # (unlike a named ui.auth.users entry) can't change its own password
+    # in place -- graduate to a named ui.auth.users entry for that.
+    users: []
+    # defaultAdminPassword: choose the password of the seeded "admin"
+    # account (only used when the chart seeds one -- i.e. no ui.token,
+    # ui.existingSecret, ui.auth.users, ui.auth.existingSecret or
+    # ui.allowUnauthenticated is set). Empty (the default) keeps today's
+    # behavior: a random 24-character password generated once and kept in
+    # the kairon-ui-session Secret. Setting a well-known value such as
+    # "Admin@321" is convenient for labs and trivially guessable anywhere
+    # else -- pass it with --set from a secret store rather than committing it.
+    defaultAdminPassword: ""
+    # wellKnownDefault: on a FRESH install that seeds the default admin and has
+    # no defaultAdminPassword set, use the documented lab default
+    # "Admin@321" (login: admin / Admin@321) instead of a random password, so
+    # a new dashboard is usable straight away; the sign-in page then shows a
+    # "change it before exposing this dashboard" hint. It never replaces an
+    # existing kairon-ui-session password on upgrade, and values-production.yaml
+    # turns it off (random password). Set false anywhere the dashboard is
+    # reachable by anyone you do not trust.
+    wellKnownDefault: true
+    # existingSecret: a pre-created Secret with a users.json key (a JSON
+    # array of {username, passwordHash, admin}) instead of ui.auth.users
+    # above. When set, kairon-ui treats it as externally managed and never
+    # writes a password change back into it -- POST /api/v1/auth/password
+    # and POST /api/v1/users/{username}/password are refused (501).
+    existingSecret: ""
+    existingSecretKey: "users.json"
+    # existingSessionSecret: a pre-created Secret holding the session-token
+    # signing key, instead of the one the chart generates and persists
+    # automatically. The chart-generated one is already the same single
+    # Secret object every kairon-ui replica's Deployment reads from
+    # (idempotent across `helm upgrade` via a `lookup`), so ui.replicaCount
+    # > 1 does NOT require this -- it's only an escape hatch for an
+    # externally-managed signing key.
+    existingSessionSecret: ""
+    existingSessionSecretKey: "sessionSecret"
+    # rbacConsoleCheck, when true, additionally requires a real Kubernetes
+    # SubjectAccessReview (verb "get" on the machines/console subresource)
+    # to open a Machine's console -- layered alongside, never instead of,
+    # the kairon.zyvor.dev/console-allowed-users annotation allowlist.
+    # Off by default: unchanged, annotation-only behavior. Only meaningful
+    # for an oidc-authenticated identity whose claims are also mapped into
+    # kube-apiserver's own OIDC config -- a local ui.auth.users[] account
+    # has no real Kubernetes User to check RBAC against, so it's denied
+    # outright when this is true. See docs/guides/kairon-ui-console-rbac.md.
+    rbacConsoleCheck: false
+    # sandboxOperatorExec, when true, lets a non-admin operator who may
+    # open a Machine's console also exec, transfer files and use the
+    # sandbox HTTP proxy -- but only on Machines labelled
+    # kairon.zyvor.dev/sandbox=true. Off by default: guest exec stays
+    # admin-only. See docs/guides/agent-sandboxes.md.
+    sandboxOperatorExec: false
+    namespaceScoping:
+      # enabled turns on per-namespace authorization for kairon-ui's own
+      # HTTP layer: once true, a non-admin session-token operator (a
+      # ui.auth.users[] account or an OIDC session) may only
+      # see and act on a namespace listed in their own
+      # ui.auth.users[].namespaces entry or reachable via
+      # ui.oidc.namespaceGroups below; every other namespace gets a 403.
+      # A request with no named identity -- the legacy shared ui.token --
+      # is refused with a 403 ("namespace scoping requires a named
+      # session"), /api/v1/overview is filtered to the caller's grants,
+      # and node routes need an administrator.
+      # Off by default -- today, kairon-ui's own ClusterRole is
+      # cluster-scoped and this HTTP layer has no namespace authorization
+      # axis at all, only admin-vs-not (ui.auth.users[].admin), so every
+      # authenticated operator already sees and mutates every namespace's
+      # Machines/quotas/policies. Flipping this on for an existing
+      # deployment without also setting namespaces/namespaceGroups below
+      # moves every non-admin operator from "sees every namespace" to
+      # "sees none" -- fail-closed, not a silent no-op, so review those
+      # fields together with this one. GET /api/v1/overview still
+      # aggregates cluster-wide regardless of this setting, and Node
+      # (which isn't a namespaced kairon object) isn't scoped by it
+      # either -- both documented, honest first-cut limits, not bugs.
+      enabled: false
+  rateLimit:
+    # rps and burst set kairon-ui's per-client-address limit on every route
+    # (-rate-limit-rps / -rate-limit-burst). null (the default) renders no flag, so
+    # the binary's defaults apply (20 requests/second sustained, burst 40).
+    # rps: 0 disables rate limiting entirely; the per-username login
+    # lockout is separate and unaffected.
+    rps: null
+    burst: null
+    # trustedProxyHeader, when set alongside trustedProxyCidrs, is the
+    # header (e.g. "X-Forwarded-For") kairon-ui reads the real client
+    # address from for rate limiting, instead of the immediate TCP peer.
+    # Empty (the default) is unchanged prior behavior -- always key by
+    # the direct connection's own address. Set this when kairon-ui sits
+    # behind a Service/Ingress/load balancer: without it, every real
+    # client collapses into that one proxy's address, so one noisy
+    # client throttles everyone. The address used is the rightmost entry of
+    # the header that is not inside trustedProxyCidrs (v0.10.4; earlier
+    # versions took the leftmost, which clients could forge), so
+    # trustedProxyCidrs must list every proxy hop in front of kairon-ui.
+    # See docs/guides/kairon-ui-dashboard.md#rate-limiting-and-login-lockout.
+    trustedProxyHeader: ""
+    # trustedProxyCidrs bounds which immediate peer addresses
+    # trustedProxyHeader is ever trusted from -- required alongside it.
+    # Set this to your Ingress controller's/load balancer's own pod or
+    # node CIDR (e.g. the cluster's Pod network). Without this check,
+    # trustedProxyHeader alone would let any direct client spoof an
+    # arbitrary address in that header and evade rate limiting, or
+    # collapse its bucket onto an unrelated real client's.
+    trustedProxyCidrs: []
+  oidc:
+    # "Sign in with SSO" against an external OpenID Connect identity
+    # provider (Authorization Code + PKCE), alongside -- not instead of --
+    # ui.auth.users/ui.token above. Off by default. Breaks this project's
+    # Go-stdlib-only design guarantee deliberately (real JWT/JWK
+    # verification isn't something to hand-roll) -- see README.md's "Why
+    # Kairon exists" and docs/guides/kairon-ui-oidc.md.
+    enabled: false
+    # issuerURL: the provider's issuer, e.g. https://accounts.example.com
+    # -- kairon-ui discovers the rest (authorization/token/jwks endpoints)
+    # from {issuerURL}/.well-known/openid-configuration at startup, and
+    # refuses to start if that fails.
+    issuerURL: ""
+    clientID: ""
+    # clientSecret: may be left empty for a public client relying on PKCE
+    # alone (a normal, common OIDC pattern) -- set clientSecret or
+    # existingSecret, never both.
+    clientSecret: ""
+    existingSecret: ""
+    existingSecretKey: "clientSecret"
+    # redirectURL: the full, externally-reachable callback URL, e.g.
+    # https://kairon.example.com/api/v1/auth/oidc/callback -- must be
+    # registered with the identity provider as an allowed redirect URI.
+    # kairon-ui can't safely infer its own external HTTPS URL (proxies,
+    # ingress hostnames vary), so this is always explicit, never guessed.
+    redirectURL: ""
+    # usernameClaim: which ID token claim becomes the kairon-ui session's
+    # username -- the same username space ui.auth.users already occupies,
+    # so audit log attribution stays consistent regardless of login
+    # method.
+    usernameClaim: "email"
+    scopes: "openid,profile,email"
+    # groupsClaim/adminGroups: map IdP group membership to admin
+    # capability. Both empty (the default) means an OIDC-authenticated
+    # session is always a normal, non-admin operator identity regardless
+    # of what groups the IdP reports -- exactly Kairon's original OIDC
+    # behavior. Set adminGroups (and, if your IdP doesn't call it
+    # "groups", groupsClaim) to grant admin to any session whose ID
+    # token's groups claim contains one of these names -- re-checked
+    # fresh on every request against current config, not baked into the
+    # session token, so changing this list takes effect on a caller's
+    # very next request without them needing to log in again. See
+    # docs/guides/kairon-ui-oidc.md.
+    groupsClaim: "groups"
+    adminGroups: []
+    # namespaceGroups: map IdP group membership to the namespaces a
+    # member may act on, consulted only once ui.auth.namespaceScoping.
+    # enabled (above) is true -- ignored entirely otherwise. Mirrors
+    # adminGroups' own freshness property (re-checked fresh on every
+    # request, not baked into the session token) and groupsClaim above.
+    # A group not listed here grants no namespaces on its own -- combine
+    # with adminGroups for a group that should bypass scoping entirely.
+    # Example:
+    #   namespaceGroups:
+    #     - {group: team-bob, namespaces: [team-bob, shared]}
+    namespaceGroups: []
+  service:
+    type: ClusterIP
+    # Configurable (default 18082, deliberately not the commonly-used 8082).
+    # Also the container's actual internal listen port (-listen=:port) --
+    # one value drives both, since a dashboard-with-one-backend has no
+    # real reason to decouple them.
+    port: 18082
+  # TLS. The dashboard serves HTTPS by default: it carries logins and bearer
+  # tokens, so plain HTTP is something you opt into, not out of.
+  tls:
+    # Name of a pre-created kubernetes.io/tls Secret (keys tls.crt and
+    # tls.key), for example one issued by cert-manager. kairon-ui reloads it
+    # when it changes. Empty makes every pod generate a self-signed
+    # certificate at startup, which browsers warn about and which changes on
+    # every restart -- fine for evaluation, not for production.
+    secretName: ""
+    # Extra DNS names or IPs for that generated certificate (for example the
+    # hostname users reach the dashboard on). Ignored with secretName.
+    sans: []
+  # Serve plain HTTP instead. Only for a mesh or sidecar that terminates TLS
+  # in front of the pod and speaks HTTP to it; logins and tokens are then
+  # clear text on the pod network. Cannot be combined with tls.secretName.
+  insecureHttp: false
+  agentSessions:
+    # previews serves AgentSession preview URLs unauthenticated at
+    # /preview/<namespace>/<name>/<token>/ (the 256-bit token is the
+    # credential). Pages run in a sandboxed opaque origin and cannot set
+    # cookies. Off by default. See docs/guides/agent-sessions.md.
+    previews: false
+  ingress:
+    enabled: false
+    className: ""
+    host: ""
+    annotations: {}
+    # The pod speaks HTTPS, so the controller must too. Envoy-based controllers
+    # do not read Ingress: use ui.gateway below. For an Ingress controller set
+    # its backend-protocol annotation in annotations (for example
+    # projectcontour.io/upstream-protocol.tls on the Service for Contour, or
+    # traefik.ingress.kubernetes.io/service.serversscheme: https).
+    # Terminate TLS at the Ingress for browsers, in the standard Ingress
+    # shape: [{hosts: [dash.example.com], secretName: dash-tls}]
+    tls: []
+  # Gateway API route for Envoy Gateway (or any Gateway API implementation):
+  # an HTTPRoute to the dashboard plus a BackendTLSPolicy so the proxy speaks
+  # HTTPS to the pod. Needs the Gateway API CRDs (v1.4+ for BackendTLSPolicy v1)
+  # and an existing Gateway. Not rendered when insecureHttp is true.
+  gateway:
+    enabled: false
+    # The Gateway the route attaches to.
+    parentRef:
+      name: ""
+      namespace: ""
+      sectionName: ""
+    hostnames: []
+    # How the proxy verifies the pod's certificate. hostname must be a name or
+    # IP SAN of that certificate (ui.tls.sans). Give either caCertificateRefs
+    # (ConfigMaps holding ca.crt) or wellKnownCACertificates: System.
+    backendTLS:
+      hostname: ""
+      caCertificateRefs: []
+      wellKnownCACertificates: ""
+  # A single REST backend serving a small SPA -- lighter than controller/node.
+  resources:
+    requests: {cpu: 25m, memory: 32Mi}
+    limits: {cpu: 200m, memory: 128Mi}
+  podDisruptionBudget:
+    # See controller.podDisruptionBudget above -- same reasoning, same
+    # essentially-no-downside default.
+    enabled: true
+  networkPolicy:
+    # See controller.networkPolicy above. Restricts ingress to kairon-ui's
+    # service port to same-namespace pods plus allowIngressFrom -- if
+    # ui.ingress is enabled and your ingress controller lives in a
+    # different namespace, it needs an entry here too, or requests will be
+    # silently dropped.
+    enabled: false
+    allowIngressFrom: []
+
+# Enterprise automation is opt-in. Enable the validating webhook with Fail
+# policy before granting any tenant create privileges for fleet resources.
+fleet:
+  enabled: false
+  prometheusURL: ""
+  redfishOrigins: []
+  redfishSecretNames: []
+  isolatedTestBridges: []

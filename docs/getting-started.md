@@ -1,0 +1,374 @@
+---
+sidebar_position: 2
+title: Getting started
+---
+
+# Getting started
+
+## Prerequisites
+
+- Kubernetes cluster and Kairon-capable nodes (label each VM node `kairon.zyvor.dev/capable=true`).
+- KVM and a reachable FluxVM service on each VM node (default `127.0.0.1:7788`).
+- VM image paths available below `--image-root`.
+- CSI snapshot stack for `MachineSnapshot`.
+- Kubernetes DRA plus administrator-approved BDFs for VFIO.
+- For the **production profile**, create these before installing (details in [Evaluation vs production](#evaluation-vs-production)):
+  the admission-webhook TLS Secret and its CA bundle (`webhook.tlsSecretName`, `webhook.caBundle`), the live-migration
+  TLS Secret `kairon-migration-tls`, and (optionally, per-node data-plane identity) the data-plane Secret named by
+  `migration.dataplaneTlsSecretName`. When **upgrading**, apply the target release's CRDs first (`kaironctl upgrade` does).
+
+## Fastest path
+
+Pick the row that matches what you have. Every path ends the same way: a tiny
+CirrOS VM boots and the result is a PASS / FAIL / SKIP table.
+
+| You have | Run | Time |
+|---|---|---|
+| A Kubernetes cluster and `kubectl` | on each node: `sudo install -d -o 65532 -g 65532 /var/lib/kairon-node/image-cache`; then `kaironctl install --set node.imageCacheDir=/var/lib/kairon-node/image-cache`, `kubectl label node NODE kairon.zyvor.dev/capable=true`, `kaironctl selftest --profile quick` (the self-test downloads its CirrOS image into the node image cache; `kairon-node` runs as UID 65532 and Kubernetes `fsGroup` does not apply to hostPath, so the directory must be owned by it) | minutes |
+| One Linux host with k3s and SSH access | `./scripts/deploy-remote.sh user@host --remote-build --with-controller --with-ui --with-console --self-test=quick` | the first compile is the long part |
+| A laptop with little disk | the same command: `--remote-build` copies a small source tarball and compiles on the host, so nothing is built locally | |
+
+```mermaid
+flowchart LR
+  you["Your machine<br/>needs ssh and tar, no Go or Node"] -->|"source tarball, --remote-build"| host
+  subgraph host["Target host: Linux + k3s + FluxVM"]
+    build["Go + Node toolchain<br/>cached in ~/.cache/kairon-build"] --> bins["kairon-node, kairon-controller,<br/>kairon-ui, kaironctl"]
+    bins --> units["systemd units<br/>+ HTTPS certs in /etc/kairon"]
+    units --> st["kaironctl selftest<br/>boots CirrOS, checks power,<br/>network, hotplug, snapshot"]
+  end
+  st --> res["PASS / FAIL / SKIP<br/>script exit code"]
+  units --> dash["https://HOST:PORT dashboard<br/>Self-test page"]
+```
+
+What the useful flags do:
+
+| Flag | Effect |
+|---|---|
+| `--remote-build` | Compile on the host (Go, and Node for the dashboard, are cached and checksum-verified); this machine builds nothing |
+| `--self-test[=quick\|standard\|full]` | Run `kaironctl selftest` on the host afterwards; its result is the script's exit code |
+| `--image-cache-dir=PATH` | Where kairon-node caches downloaded images (the self-test needs one); with an AppArmor-confined FluxVM, it must be a path the profile allows (the lab's profile permits only `/var/lib/kairon-node/image-cache/**`), and a systemd unit needs it in `ReadWritePaths=` |
+| `--with-controller --with-ui --with-console` | Also install the controller, the HTTPS dashboard and the TLS-protected VNC relay |
+| `--console-insecure-http` | Opt out of TLS on the console relay hop (HTTPS is the default) |
+| `--dry-run` | Print the resolved plan; no SSH, no build, no writes |
+
+Everything the install exposes is HTTPS by default: the dashboard serves TLS
+(self-signed until you give it `ui.tls.secretName`) and the console relay is
+TLS-pinned. Plain HTTP is always an explicitly named opt-out.
+
+## Install
+
+Preferred: `kaironctl` embeds the Helm chart, so no separate `helm` binary or chart checkout is required.
+
+```bash
+kaironctl install
+kubectl label node worker-1 kairon.zyvor.dev/capable=true
+kubectl label node worker-2 kairon.zyvor.dev/capable=true
+kaironctl status
+kaironctl doctor     # health checks with a hint for every problem
+kaironctl selftest   # boots a tiny CirrOS VM and checks that it all works
+```
+
+See [Self-test](guides/selftest.md) for what it checks and how to read the result.
+
+### Evaluation vs production
+
+Default chart values are an **evaluation** profile (webhook and namespace isolation off; image tags default to `v` plus `.Chart.AppVersion`). For a hardened install, use the production overlay (`kaironctl install --profile production`, or with Helm directly). It turns on:
+
+| Setting | What it does | What you must provide |
+|---|---|---|
+| `webhook.enabled: true` | Validating admission webhook for Machines and MachineMigrations (`failurePolicy: Fail`). The chart creates the `kairon-controller-webhook` Service and the `ValidatingWebhookConfiguration`; it does **not** mint the certificate | `webhook.tlsSecretName` (a `kubernetes.io/tls` Secret in the release namespace) and `webhook.caBundle` (base64 CA). The install stops with a message without both |
+| `migration.enabled: true` | The mTLS live-migration peer on every `kairon-node` | Secret `kairon-migration-tls` (`ca.crt`, `tls.crt`, `tls.key`); the certificate needs `serverAuth` and `clientAuth` and the DNS SAN `kairon-node` (`migration.tlsServerName`). `kairon-node` pods stay in `ContainerCreating` without it |
+| `migration.dataplaneTls: true` | Stages data-plane certificate material for a host-level migration adapter | Only has an effect when `migration.adapterHostPath` is also set; the chart does not install the adapter. Optionally `migration.dataplaneTlsSecretName` for a real per-node identity (below) |
+| `node.networkDefaultDeny: true`, `ui.auth.namespaceScoping.enabled: true` | Network default-deny and namespace-scoped dashboard authorization | nothing |
+| `ui.auth.wellKnownDefault: false` | The dashboard's `admin` password is random, not the lab default | read it from the `kairon-ui-session` Secret after install |
+
+Before installing the production profile, create what it needs:
+
+```bash
+kubectl create namespace kairon-system --dry-run=client -o yaml | kubectl apply -f -
+# 1. Admission webhook certificate and CA. The script writes ca.pem, cert.pem, key.pem,
+#    kairon-webhook-tls.secret.yaml (the ready-made Secret) and ca-bundle.b64 (the webhook.caBundle value).
+#    Its CA is self-signed and valid 30 days (CERT_DAYS); use cert-manager or your own CA in production.
+#    The certificate names the Service kairon-controller-webhook in kairon-system; for another
+#    release namespace pass it as the third argument (see docs/guides/admission-webhook.md).
+scripts/gen-webhook-tls-certs.sh ./webhook-certs     # see docs/guides/admission-webhook.md
+kubectl apply -f ./webhook-certs/kairon-webhook-tls.secret.yaml
+# 2. Live-migration mTLS Secret. kairon-node pods stay in ContainerCreating without it
+#    (migration.enabled is on in the production profile; the Secret name is migration.tlsSecretName).
+scripts/gen-migration-mtls-certs.sh ./migration-certs NODE_NAME=NODE_IP ...     # use the real Kubernetes node names
+kubectl -n kairon-system create secret generic kairon-migration-tls \
+  --from-file=ca.crt=./migration-certs/control-plane/ca.pem \
+  --from-file=tls.crt=./migration-certs/control-plane/cert.pem \
+  --from-file=tls.key=./migration-certs/control-plane/key.pem
+# 3. Optional: a real per-node data-plane identity (only used with migration.adapterHostPath).
+#    The script also wrote data-plane/kairon-migration-dataplane-tls.secret.yaml, one Secret holding
+#    every node's <node>-ca.crt/-tls.crt/-tls.key. It is generated for namespace kairon-system.
+kubectl apply -f ./migration-certs/data-plane/kairon-migration-dataplane-tls.secret.yaml
+#    then add: --set migration.adapterHostPath=HOST_DIR_THE_ADAPTER_READS \
+#              --set migration.dataplaneTlsSecretName=kairon-migration-dataplane-tls
+```
+
+Then pass the webhook values:
+
+```bash
+kaironctl install --profile production \
+  --set webhook.tlsSecretName=kairon-webhook-tls --set webhook.caBundle="$(cat ./webhook-certs/ca-bundle.b64)"
+# or
+helm install kairon charts/kairon -n kairon-system --create-namespace \
+  -f charts/kairon/values-production.yaml \
+  --set webhook.tlsSecretName=kairon-webhook-tls --set webhook.caBundle="$(cat ./webhook-certs/ca-bundle.b64)"
+```
+
+If a per-node data-plane Secret is set but lacks a node's three files, that node's pod fails its init container on purpose rather than falling back to a shared identity. With `dataplaneTlsSecretName` empty, the shared `kairon-migration-tls` certificate is staged instead (weaker: every node can present the same identity). The migration data plane is only encrypted end to end once each node's host-level adapter is also configured for TLS; see [migration TLS](guides/machine-migration-tls.md) and the [runbook](runbook-migration-failures.md#unencrypted-migration-data-plane).
+
+See [`charts/kairon/values-production.yaml`](../charts/kairon/values-production.yaml) and [`docs/COMPATIBILITY.md`](COMPATIBILITY.md). The webhook and the production profile have been exercised by unit tests and chart rendering only, not on a real cluster ([`TEST_REPORT.md`](../TEST_REPORT.md)).
+
+### Install from the published chart (GHCR)
+
+Tagged releases publish the Helm chart and the images to GitHub Container Registry, so no repository checkout is needed:
+
+```bash
+# Evaluation profile (chart defaults): nothing to prepare first.
+helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \
+  --version 0.10.6 -n kairon-system --create-namespace
+
+# Production profile: create the Secrets from "Evaluation vs production" first.
+helm upgrade --install kairon oci://ghcr.io/zyvorai/charts/kairon \
+  --version 0.10.6 -n kairon-system --create-namespace \
+  -f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/v0.10.6/charts/kairon/values-production.yaml \
+  --set webhook.tlsSecretName=kairon-webhook-tls --set webhook.caBundle="$(cat ./webhook-certs/ca-bundle.b64)"
+```
+
+- Without the `-f` overlay and the two `--set webhook.*` values you get the evaluation profile. The production overlay on its own (as in earlier versions of this page) stops with `webhook.enabled=true needs webhook.tlsSecretName ...`.
+- CI lints and renders the production overlay with all three of `--set webhook.tlsSecretName=...`, `--set webhook.caBundle=...` and `--set migration.dataplaneTlsSecretName=...` (placeholders; `.github/workflows/ci.yml`, step "Helm render -- production profile"). The first two are required for the webhook to render. `migration.dataplaneTlsSecretName` is optional: leave it empty and the data plane stages the shared `kairon-migration-tls` certificate (only relevant when `migration.adapterHostPath` is set); set it to a Secret holding `<nodeName>-ca.crt`/`-tls.crt`/`-tls.key` per node for per-node identities (see [migration TLS](guides/machine-migration-tls.md)).
+- `kaironctl` installs the same published chart without Helm: `kaironctl install --chart oci://ghcr.io/zyvorai/charts/kairon --version 0.10.6 --profile production`.
+- Helm applies `crds/` only on first install. When upgrading, apply the CRDs from the same tag first (`kubectl apply --server-side -f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/v0.10.6/deploy/crd.yaml`); see [CRD versioning](guides/crd-versioning.md#upgrading-an-existing-cluster).
+- Fetch the matching `kaironctl` from the release: `https://github.com/zyvorai/zyvor-kairon/releases/download/v0.10.6/kaironctl-linux-amd64` (check it against the release's `SHA256SUMS`). The `kubectl kairon` plugin is on the same page; Kairon is not in the public Krew index, see [CLI](CLI.md#install-via-krew).
+
+Later, `kaironctl upgrade` keeps the values you installed with (`--reset-values` returns to chart defaults), `kaironctl upgrade --check` compares your release with the latest one without changing anything, `kaironctl config set KEY=VALUE` changes a single value, and `kaironctl history` / `kaironctl rollback` list and restore revisions. Add `--context NAME` or `--kubeconfig PATH` to target a specific cluster. See [CLI](CLI.md).
+
+Raw manifests still work. The files under `deploy/` reference `:latest`; for a real install use the version-pinned `kairon-manifests-vX.Y.Z.tgz` attached to each release (or replace `:latest` with the release tag yourself), so the controller, node and dashboard run the same version:
+
+```bash
+kubectl apply -f deploy/crd.yaml
+kubectl apply -f deploy/rbac.yaml
+kubectl apply -f deploy/controller.yaml
+kubectl apply -f deploy/node.yaml
+```
+
+## Upgrade, rollback and node drains
+
+```bash
+# 1. CRDs first: Helm never upgrades crds/ (kaironctl upgrade does this for you).
+kubectl apply --server-side -f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/vX.Y.Z/deploy/crd.yaml
+# 2. Keep your install's settings. Without --reuse-values (or the same -f/--set flags),
+#    Helm resets to chart defaults and silently drops production hardening
+#    (webhook, namespace isolation, migration TLS).
+helm upgrade kairon oci://ghcr.io/zyvorai/charts/kairon --version X.Y.Z -n kairon-system --reuse-values
+# or: kaironctl upgrade   (keeps your values, applies the CRDs, reports what changed)
+kaironctl upgrade --check   # first: compares the installed chart, this kaironctl's chart and the latest release; changes nothing
+```
+
+`--reuse-values` reuses the previous release's computed values verbatim, so defaults the new chart changed are not picked up; with Helm 3.14 or later `--reset-then-reuse-values` (the new chart's defaults, then your earlier overrides) is what `kaironctl upgrade` uses and is usually the better choice. Check the result afterwards with `kaironctl version --server` and `kaironctl doctor`.
+
+- **Upgrading from v0.10.3 to v0.10.4:** there are no CRD schema changes in this release (the chart's `crds/` and `deploy/crd.yaml` are identical to v0.10.3), but apply them anyway as above. Behaviour changes to check first (details in the [release notes](../RELEASE_NOTES.md)):
+  - a qcow2 boot image whose header names a backing file is refused for images resolved through `spec.image.source` (`httpURL`, `oci`, an uploaded or catalog image); flatten it with `qemu-img convert -O qcow2 backed.qcow2 flat.qcow2`;
+  - `NaN`, `Inf` and out-of-range CPU/memory quantities (more than 2^20 vCPUs or 2^40 MiB) are rejected by the scheduler's parser and by the Machine admission webhook, so a Machine that relied on such a value reading as "no request" must be given a real quantity;
+  - a `ui.auth.users` entry whose username starts with `oidc:` stops `kairon-ui` at startup; rename it **before** upgrading (a seeded `kairon-ui-users` Secret keeps its old contents across upgrades, so edit the Secret, see [the dashboard guide](guides/kairon-ui-dashboard.md#adding-or-changing-operators-after-install));
+  - with `ui.rateLimit.trustedProxyHeader` set, the client address is now the rightmost `X-Forwarded-For` entry **not** inside `ui.rateLimit.trustedProxyCidrs`; list every proxy hop in front of `kairon-ui` there, otherwise the last proxy's address becomes every client's key and all clients share one bucket;
+  - `kairon-node` has a new flag `-image-max-download-bytes` (env `KAIRON_IMAGE_MAX_DOWNLOAD_BYTES`, default 256 GiB) that caps `httpURL` downloads and OCI containerDisk pulls. The chart has no value for it yet, so on a Helm install the default applies unless you add the environment variable to the `kairon-node` DaemonSet yourself (for example `kubectl -n kairon-system set env ds/kairon-node KAIRON_IMAGE_MAX_DOWNLOAD_BYTES=<bytes>`; re-check it after each `helm upgrade`, which was not tested here). On a systemd install put it in `/etc/kairon/kairon-node.env`.
+- **Upgrading from v0.10.2:** a v0.10.2 install needed `--set controller.image.tag=v0.10.2` (and the same for `node`, `ui`, and `csiNode`/`csiController` if enabled). Those overrides are kept by `--reuse-values` and by `kaironctl upgrade`, so the new chart would keep running the old images. Clear them in the same upgrade, for example `kaironctl upgrade --version 0.10.6 --chart oci://ghcr.io/zyvorai/charts/kairon --set controller.image.tag= --set node.image.tag= --set ui.image.tag=` (empty means `v` plus the chart's `appVersion`), then check `kaironctl version --server`. Dashboard OIDC sessions issued by v0.10.2 stop working once; users sign in again. If the node image cache is enabled, check that its directory is owned by UID 65532.
+- **Rollback:** `kaironctl rollback [REVISION]` or `helm rollback kairon -n kairon-system` reverts the workloads but **not** the CRDs, and
+  not objects already stored at a newer API version; roll back across a CRD version change only after
+  reading [CRD versioning](guides/crd-versioning.md). Use `helm upgrade --atomic` to have a failed
+  upgrade roll itself back.
+- **Draining a node:** the controller and dashboard PodDisruptionBudgets use `maxUnavailable: 0`
+  on purpose (never evict the only replica unnoticed), so `kubectl drain` waits on them. For a
+  planned drain either scale the Deployment up first, or set
+  `controller.podDisruptionBudget.enabled=false` / `ui.podDisruptionBudget.enabled=false` for the
+  maintenance window.
+
+## Create a Machine
+
+```bash
+kubectl apply -f examples/linux-machine.yaml
+kubectl get machines -A -w
+```
+
+Or via `kaironctl`, with an SSH key and port forward set at creation (both
+only take effect at creation -- see [guides/machine-network.md](guides/machine-network.md)):
+
+```bash
+kaironctl create demo --image /var/lib/fluxvm/images/ubuntu-24.04.qcow2 \
+  --ssh-key "$(cat ~/.ssh/id_ed25519.pub)" --forward=2222:22
+ssh -p 2222 <node-ip>
+```
+
+## Cold migrate
+
+```bash
+kaironctl migrate demo --strategy cold --target-node worker-2
+```
+
+## Enable the secure live-migration peer
+
+Use the Helm chart and provide `kairon-migration-tls` with `ca.crt`, `tls.crt`, and `tls.key`, then enable `migration.enabled=true`. The chart credential must have `serverAuth` + `clientAuth` EKUs and DNS SAN `kairon-node` unless `migration.tlsServerName` is changed.
+
+A real live transfer additionally requires a Kairon migration adapter on each node (`cmd/kairon-migration-adapter-fluxvm`; not installed automatically today -- see [`runbook-multi-host-migration-test.md`](runbook-multi-host-migration-test.md)). Without one configured, an explicit live request is safely blocked before source transfer.
+
+```bash
+kaironctl migrate demo --strategy live --target-node worker-2 --mode pre-copy
+```
+
+## Snapshot
+
+```bash
+kaironctl snapshot database --name database-before-upgrade --class csi-snapclass
+kaironctl get snapshots
+```
+
+## Deploy the web dashboard
+
+```bash
+helm upgrade --install kairon ./charts/kairon -n kairon-system --set ui.enabled=true
+kubectl -n kairon-system port-forward svc/kairon-ui 18082:18082
+```
+
+The `helm upgrade --install` examples in this section and the next assume the chart defaults. On an install that already has other settings (the production profile, for example) add `--reuse-values`, or use `kaironctl config set ui.enabled=true`, which keeps everything else.
+
+The dashboard serves **HTTPS** by default. With nothing configured each pod
+generates a self-signed certificate at startup, so your browser warns once and
+the certificate changes on every restart: fine to evaluate. For a stable
+certificate set `ui.tls.secretName` to a `kubernetes.io/tls` Secret (for
+example from cert-manager), or `ui.tls.sans` to add the names it should cover.
+Plain HTTP is an explicit opt-out (`ui.insecureHttp: true`, only behind a
+proxy that terminates TLS); see the [dashboard guide](guides/kairon-ui-dashboard.md#https).
+
+No `ui.*` auth values needed: with nothing else configured, a fresh install
+seeds a default `admin` account with the documented lab password
+**`Admin@321`** (change it before exposing the dashboard; the production
+profile generates a random one instead). Confirm or retrieve the actual
+password any time with:
+
+```bash
+kubectl -n kairon-system get secret kairon-ui-session -o jsonpath='{.data.defaultAdminPassword}' | base64 -d; echo
+```
+
+Open `https://127.0.0.1:18082` (accept the self-signed certificate warning) and sign in as `admin` with that password. Or skip the port-forward: `kaironctl ui` opens the dashboard through the API server.
+
+| Page | What it shows |
+|---|---|
+| **Overview** | Fleet tiles by phase, a prominent warning whenever anything is parked in `NeedsRecovery` |
+| **Machines** | Table with filter box and row selection (bulk Start/Stop) + create form (mirrors `kaironctl create`) + Start / Stop / Console / Migrate / Snapshot / Delete; the nav namespace selector switches namespace or lists every namespace |
+| **Migrations** | List with phase badges, a "New Migration" form, an "Evacuate Node" action, `status.dataPlaneEncrypted` badge, a "Cancel migration" action while `Starting`/`Running`, and the recovery workflow |
+| **Snapshots** | List + create form |
+| **Nodes** | Real Kubernetes `Node` list — `Ready`, `spec.unschedulable`, taints, addresses, plus per-node Machines/CPU/Memory usage rollup; read-only |
+| **Storage** | Read-only Atlas volumes, pools, backups and health; needs `ui.atlas.*` ([Atlas storage](guides/machine-storage-atlas.md#dashboard-storage-page)) |
+| **Pools & claims**, **Backups**, **Images** | Warm [MachinePools](guides/machine-pools.md) and claims, [machine backups](guides/machine-backup.md) and restores, uploaded images |
+| **Machine sets**, **Restores**, **Snapshot schedules**, **Quotas**, **Policies** and more | The remaining resource pages; the full list is in the [dashboard guide](guides/kairon-ui-dashboard.md) |
+| **Account** | Change your own password; an admin account can reset another operator's |
+
+For real, named per-operator accounts instead of the single generated admin,
+set `ui.auth.users` -- generate each password's hash first:
+
+```bash
+kairon-ui -hash-password 'a real password'   # prints a bcrypt hash; pipe from a file/heredoc, don't type a real password on the command line
+```
+
+```bash
+helm upgrade --install kairon ./charts/kairon -n kairon-system \
+  --set ui.enabled=true \
+  --set ui.auth.users[0].username=alice \
+  --set ui.auth.users[0].passwordHash='$2a$10$...'
+```
+
+Usernames may not start with `oidc:` (reserved for OIDC session subjects): `kairon-ui` refuses to start with such an entry and would not let it log in. The seeded `admin` account and the default login are unchanged. `ui.auth.users` only seeds the accounts on the first install that sets it; later upgrades keep the stored `kairon-ui-users` Secret, so to add or change operators afterwards edit that Secret ([how](guides/kairon-ui-dashboard.md#adding-or-changing-operators-after-install)).
+
+The legacy single shared token (`ui.token`, or `ui.allowUnauthenticated=true`
+for local development) still works unchanged for existing deployments, and
+is accepted alongside `ui.auth.users` if both are set.
+
+Repeated failed logins against one username are rate-limited (5 failures
+locks that username out for 5 minutes, `429` with `Retry-After`) -- tracked
+per requested username, including unknown ones, so the lockout itself
+can't be used to enumerate valid accounts.
+
+### VNC console
+
+```bash
+helm upgrade --install kairon ./charts/kairon -n kairon-system --set ui.enabled=true --set console.enabled=true
+```
+
+Adds a "Console" button per Machine in the dashboard -- a real graphical
+VNC session in the browser, for QEMU-backend Machines only (the button
+hides itself for ineligible Machines, or entirely when `console.enabled`
+is off). Read [SECURITY.md](https://github.com/zyvorai/zyvor-kairon/blob/main/SECURITY.md)'s "VNC console" section first:
+FluxVM's own VNC socket has no auth of its own, so this feature's security
+rests on kairon-ui's operator auth, a single-use connection ticket bound
+to the requesting username (every session is audit-logged), and a shared
+token between kairon-ui and every kairon-node -- appropriate for a trusted
+operator team, not a hostile-network or multi-tenant deployment. That last
+hop runs over one-way TLS by default (the chart generates a private CA and
+certificate; `console.tls.secretName` brings your own, and
+`console.tls.enabled: false` or `deploy-remote.sh --console-insecure-http`
+opts out) -- see `console.tls.*` in `values.yaml`.
+
+**Prerequisite confirmed against a real deployment**: FluxVM creates
+`vnc.sock` root-owned with no `other` write bit, and `kairon-node` runs as
+an unprivileged, deliberately capability-less user -- without OS-level
+access to that socket, the console fails with a clear 502
+(`dial vnc socket: ... permission denied`), not a silent hang. Grant
+`kairon-node`'s user read/write access to FluxVM's per-VM socket files
+(a POSIX ACL, or a shared group between the FluxVM and kairon-node service
+users) before expecting `console.enabled` to actually work end-to-end.
+
+Bare-metal alternative:
+
+```bash
+scripts/deploy-remote.sh sus@80.79.5.173 --with-controller --with-ui --with-console
+```
+
+Installs `kairon-ui` as a systemd service alongside `kairon-node`/`kairon-controller`; a dashboard token is auto-generated and printed once at the end of the run. Building `web/dist` needs `npm` on the machine that builds it -- your own by default, or the host itself with `--remote-build`, in which case nothing is built locally. `--with-console` (optionally `--console-port=N`, otherwise auto-picked if the default collides) generates the shared console token and wires it into both services' systemd env files. That hop is TLS by default (`--console-tls` is kept only for old scripts; `--console-insecure-http` opts out) -- with no `--console-tls-cert`/`-key`/`-ca`, a private CA and server certificate are generated locally and installed on the remote host automatically (SAN list is a best-effort guess at the host's own addresses; if kairon-ui's console button fails with a TLS error afterward, regenerate with explicit `--console-tls-cert`/`-key`/`-ca` covering the right one), or pass those three yourself to bring your own.
+
+**Redeploy caveats (confirmed on `80.79.5.173`):**
+
+- Existing `/etc/kairon/kairon-node.env` and `kairon-ui.env` are **left untouched**. `--with-console` / `--ui-token` / `--kube-*` do not rewrite them — add matching `KAIRON_NODE_CONSOLE_TOKEN` (and `KAIRON_NODE_CONSOLE_PORT=8090` on the UI side) by hand, then `systemctl restart kairon-node kairon-ui`. Without that shared token, dashboard **Network** / diagnostics / VNC return `501 diagnostics are not enabled`.
+- Health ports default to controller `:32301`, node `:32302`, UI `:18082` (change with `--ui-port=N`, `KAIRON_UI_LISTEN`, or the chart's `ui.service.port`). Do not use `:8080` for kairon; it belongs to `krytond` on this host. If a default is busy, the script picks a random free port, or you can pin `--controller-port=N` / `--node-port=N`.
+- A port held by the kairon service being redeployed counts as free, so a redeploy keeps the same ports without stopping the services first.
+- `--reserved-cpus=LIST` sets `KAIRON_RESERVED_CPUS` in the node env file; adding `--cpu-pinning` (which requires reserved CPUs) turns on `pinnable-cpus` discovery by also installing `kairon-cpustate.path`, which copies kubelet's root-only `cpu_manager_state` to where kairon-node can read it. `--no-cpu-pinning` undoes both. See [CPU pinning](guides/machine-cpu-pinning.md#turning-on-discovery).
+- Opt-in controller features read env keys from `/etc/kairon/kairon-controller.env`, for example `KAIRON_STALE_EVACUATION=true` and `KAIRON_NODE_LIVENESS_LEASE_NAMESPACE=kairon-system` for [stale evacuation](guides/machine-fencing.md#automatic-still-attested---stale-evacuation); restart `kairon-controller` after editing.
+
+- kairon-node keeps its per-Machine traffic baseline in `/var/lib/kairon-node/edge-baseline.json` (systemd `StateDirectory`), so a restart keeps the warm-up.
+- Network **flows / stats / drop-reasons** need FluxVM's eBPF dataplane (`mode: tap`, `netns: true`, `dataplaneMode: ebpf`). A Machine on `network.mode: user` can still return `network-effective`, but flow/drop/stats relays typically 502.
+
+## Network Fabric (eBPF edge)
+
+Recommended production dataplane (FluxVM TC/eBPF — Kairon declares policy, FluxVM owns BPF):
+
+```yaml
+spec:
+  network:
+    mode: tap
+    netns: true
+    dataplaneMode: ebpf
+    dataplaneRequired: true
+```
+
+```bash
+kubectl apply -f examples/network-fabric-machine.yaml
+kaironctl network status web
+kaironctl network flows web --limit 20
+kaironctl network drop-reasons web
+```
+
+On a cluster that already runs Cilium as the CNI, three **additional** opt-in paths exist (all off by default):
+
+| Path | What you set |
+|---|---|
+| FluxVM cilium dataplane | `/etc/fluxvm.toml` `sandbox.dataplane.mode = "cilium"` and/or `spec.network.dataplaneMode: cilium` |
+| Cluster network attach | Helm `network.ciliumAttach.enabled=true` plus `spec.network.ciliumAttach: true` (`mode: tap`, `netns: true`) |
+| Policy visible to Hubble | Helm `network.ciliumPolicySync.enabled=true` plus `spec.cilium.sync: true` on a `MachineNetworkPolicy` |
+
+- Tutorial: [tutorials/network-fabric.md](tutorials/network-fabric.md)
+- User guides: [guides/machine-network.md](guides/machine-network.md), [guides/network-policy.md](guides/network-policy.md)
+- Reference: [network-fabric.md](network-fabric.md)

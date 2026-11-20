@@ -1,0 +1,34 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+#
+# Extra permissions for a kairon-node running on a Mac. A Mac has no kubelet, so kairon-node creates and heartbeats its
+# own Node object (internal/macnode). Apply this next to deploy/rbac.yaml; Linux nodes do not need it.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kairon-node-macos
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "create", "patch"]
+  - apiGroups: [""]
+    resources: ["nodes/status"]
+    verbs: ["patch"]
+  # MacNetworks this Mac belongs to, written into FluxVM's overlay.json (internal/macnode/overlay.go). The keys are
+  # derived on the Mac and never stored in the API.
+  - apiGroups: ["kairon.zyvor.dev"]
+    resources: ["macnetworks"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kairon-node-macos
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kairon-node-macos
+subjects:
+  - kind: ServiceAccount
+    name: kairon-node
+    namespace: kairon-system

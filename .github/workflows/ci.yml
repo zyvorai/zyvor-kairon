@@ -1,0 +1,541 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+# Self-hosted routing: heavy trusted jobs run on the org `zyvor-build` runners
+# (shared Docker host, x86_64 only). The runs-on expression falls back to
+# ubuntu-latest for pull_request events, so fork PRs never reach self-hosted.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '"ubuntu-latest"' || '["self-hosted","Linux","X64","zyvor-build","docker"]') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version-file: go.mod
+          cache: ${{ runner.environment == 'github-hosted' }}  # self-hosted: shared GOMODCACHE, cache restore/save takes 15-35 min
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a  # v9
+        with:
+          version: v2.14
+      - name: Vulnerability scan
+        run: |
+          # kaironctl links helm.sh/helm/v3, which pulls containerd and oras
+          # for OCI chart pulls. Those CVEs are not in the controller/node/ui
+          # images, and several have no upstream fix, so they are scanned
+          # separately from this gate. See docs/DEPENDENCIES.md.
+          go list ./... | grep -Ev '/(internal/kaironctl|cmd/kaironctl|cmd/kubectl-kairon)($|/)' | xargs go run golang.org/x/vuln/cmd/govulncheck@latest
+
+  test:
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '"ubuntu-latest"' || '["self-hosted","Linux","X64","zyvor-build","docker"]') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version-file: go.mod
+          cache: ${{ runner.environment == 'github-hosted' }}  # self-hosted: shared GOMODCACHE, cache restore/save takes 15-35 min
+      # internal/kaironctl's TestInstallHelmCLIDryRun shells out to a helm binary.
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e  # v5.1.0
+      - name: Format check
+        run: test -z "$(gofmt -l cmd internal)"
+      - name: Vet
+        run: go vet ./...
+      - name: Test with race detector
+        run: make test-race
+      - name: Coverage
+        run: make cover-check
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        if: always()
+        with:
+          name: coverage
+          path: coverage.out
+      - name: Build and smoke test
+        run: make build smoke
+      - name: Validate manifests and repository
+        run: |
+          python3 -c 'import yaml' 2>/dev/null || python3 -m pip install --user -q pyyaml
+          python3 scripts/validate.py
+          python3 scripts/stability-check.py
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e  # v5.1.0
+      - name: Helm lint and render
+        run: |
+          helm lint charts/kairon
+          helm template kairon charts/kairon --namespace kairon-system > ${{ runner.temp }}/kairon.yaml
+          helm template kairon charts/kairon --namespace kairon-system --set migration.enabled=true > ${{ runner.temp }}/kairon-migration.yaml
+          python3 - <<'PY'
+          import yaml
+          for path in ['${{ runner.temp }}/kairon.yaml', '${{ runner.temp }}/kairon-migration.yaml']:
+              with open(path) as f:
+                  docs = [d for d in yaml.safe_load_all(f) if d]
+              assert docs, path
+          enabled = [d for d in yaml.safe_load_all(open('${{ runner.temp }}/kairon-migration.yaml')) if d]
+          ds = next(d for d in enabled if d.get('kind') == 'DaemonSet')
+          container = ds['spec']['template']['spec']['containers'][0]
+          assert any(str(arg).startswith('--migration-ca=') for arg in container['args'])
+          assert any(port.get('name') == 'migration' for port in container['ports'])
+          print('helm render YAML: OK (migration disabled + enabled)')
+          PY
+      - name: RBAC coverage check
+        run: python3 scripts/check_rbac_coverage.py
+      - name: Helm render -- kairon-ui
+        run: |
+          # No ui.* auth configured: the chart now seeds a default admin
+          # account (random password, generated once) instead of refusing
+          # to render or coming up unauthenticated.
+          helm template kairon charts/kairon --namespace kairon-system --set ui.enabled=true > ${{ runner.temp }}/kairon-ui-default.yaml
+          python3 - <<'PY'
+          import yaml
+          docs = [d for d in yaml.safe_load_all(open('${{ runner.temp }}/kairon-ui-default.yaml')) if d]
+          kinds = {d['kind'] for d in docs if d.get('metadata', {}).get('name') == 'kairon-ui'}
+          for want in ['ServiceAccount', 'ClusterRole', 'ClusterRoleBinding', 'Deployment', 'Service']:
+              assert want in kinds, f"missing kairon-ui {want}"
+          session_secret = next(d for d in docs if d.get('kind') == 'Secret' and d['metadata']['name'] == 'kairon-ui-session')
+          assert 'defaultAdminPassword' in session_secret['stringData'], "expected a generated default admin password"
+          assert 'sessionSecret' in session_secret['stringData']
+          deployment = next(d for d in docs if d.get('kind') == 'Deployment' and d['metadata']['name'] == 'kairon-ui')
+          env_names = {e['name'] for e in deployment['spec']['template']['spec']['containers'][0]['env']}
+          assert 'KAIRON_UI_DEFAULT_ADMIN_PASSWORD' in env_names
+          assert 'KAIRON_UI_USERS_JSON' not in env_names
+          print('helm render YAML: OK (kairon-ui default admin seeding)')
+          PY
+
+          # ui.auth.users configured: real accounts wired in, default admin
+          # seeding stops entirely.
+          # shellcheck disable=SC2016  # bcrypt hash must stay single-quoted
+          helm template kairon charts/kairon --namespace kairon-system --set ui.enabled=true \
+            --set ui.auth.users[0].username=alice --set-string ui.auth.users[0].passwordHash='$2a$10$abcdefghijklmnopqrstuv' > ${{ runner.temp }}/kairon-ui-users.yaml
+          python3 - <<'PY'
+          import yaml
+          docs = [d for d in yaml.safe_load_all(open('${{ runner.temp }}/kairon-ui-users.yaml')) if d]
+          users_secret = next(d for d in docs if d.get('kind') == 'Secret' and d['metadata']['name'] == 'kairon-ui-users')
+          assert 'alice' in users_secret['stringData']['users.json']
+          deployment = next(d for d in docs if d.get('kind') == 'Deployment' and d['metadata']['name'] == 'kairon-ui')
+          env_names = {e['name'] for e in deployment['spec']['template']['spec']['containers'][0]['env']}
+          assert 'KAIRON_UI_USERS_JSON' in env_names
+          assert 'KAIRON_UI_DEFAULT_ADMIN_PASSWORD' not in env_names
+          session_secret = next(d for d in docs if d.get('kind') == 'Secret' and d['metadata']['name'] == 'kairon-ui-session')
+          assert 'defaultAdminPassword' not in session_secret['stringData']
+          print('helm render YAML: OK (kairon-ui configured users)')
+          PY
+
+          # Legacy shared token still works unchanged.
+          helm template kairon charts/kairon --namespace kairon-system --set ui.enabled=true --set ui.token=ci-test-token > ${{ runner.temp }}/kairon-ui-token.yaml
+          python3 - <<'PY'
+          import yaml
+          docs = [d for d in yaml.safe_load_all(open('${{ runner.temp }}/kairon-ui-token.yaml')) if d]
+          secret = next(d for d in docs if d.get('kind') == 'Secret' and d['metadata']['name'] == 'kairon-ui-token')
+          assert secret['stringData']['token'] == 'ci-test-token'
+          print('helm render YAML: OK (kairon-ui legacy token)')
+          PY
+
+      - name: Helm render -- kairon-ui serves HTTPS by default
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import subprocess, yaml
+
+          def render(*args):
+              out = subprocess.run(
+                  ["helm", "template", "kairon", "charts/kairon", "--namespace", "kairon-system", "--set", "ui.enabled=true", *args],
+                  capture_output=True, text=True,
+              )
+              return out
+
+          def ui(docs):
+              dep = next(d for d in docs if d.get("kind") == "Deployment" and d["metadata"]["name"] == "kairon-ui")
+              c = dep["spec"]["template"]["spec"]["containers"][0]
+              env = {e["name"]: e.get("value") for e in c["env"]}
+              svc = next(d for d in docs if d.get("kind") == "Service" and d["metadata"]["name"] == "kairon-ui")
+              return c, env, svc
+
+          # Default: HTTPS probes, an https port and no opt-out in the environment.
+          out = render()
+          assert out.returncode == 0, out.stderr
+          c, env, svc = ui([d for d in yaml.safe_load_all(out.stdout) if d])
+          assert c["ports"][0]["name"] == "https", c["ports"]
+          for probe in ("readinessProbe", "livenessProbe"):
+              assert c[probe]["httpGet"]["scheme"] == "HTTPS", (probe, c[probe])
+          assert "KAIRON_UI_INSECURE_HTTP" not in env
+          assert svc["spec"]["ports"][0]["name"] == "https"
+
+          # A certificate Secret is mounted and wired in.
+          c, env, _ = ui([d for d in yaml.safe_load_all(render("--set", "ui.tls.secretName=dash-tls").stdout) if d])
+          assert env["KAIRON_UI_TLS_CERT"] == "/etc/kairon/ui-tls/tls.crt"
+          assert env["KAIRON_UI_TLS_KEY"] == "/etc/kairon/ui-tls/tls.key"
+
+          # The opt-out is explicit and switches probes and port name together.
+          c, env, _ = ui([d for d in yaml.safe_load_all(render("--set", "ui.insecureHttp=true").stdout) if d])
+          assert env["KAIRON_UI_INSECURE_HTTP"] == "true"
+          assert c["readinessProbe"]["httpGet"]["scheme"] == "HTTP" and c["ports"][0]["name"] == "http"
+
+          # A certificate and the opt-out contradict each other: the render must fail.
+          bad = render("--set", "ui.insecureHttp=true", "--set", "ui.tls.secretName=dash-tls")
+          assert bad.returncode != 0 and "mutually exclusive" in bad.stderr, bad.stderr
+
+          # Ingress is controller-agnostic: no controller-specific annotation is injected.
+          ing = [d for d in yaml.safe_load_all(render("--set", "ui.ingress.enabled=true", "--set", "ui.ingress.host=d.example.com").stdout) if d]
+          ingress = next(d for d in ing if d.get("kind") == "Ingress")
+          assert "nginx" not in str(ingress["metadata"].get("annotations", {}))
+
+          # Gateway API (Envoy Gateway): an HTTPRoute to the dashboard and a BackendTLSPolicy for the HTTPS pod.
+          gw = ["--set", "ui.gateway.enabled=true", "--set", "ui.gateway.parentRef.name=eg",
+                "--set", "ui.gateway.backendTLS.hostname=kairon-ui", "--set", "ui.gateway.backendTLS.wellKnownCACertificates=System"]
+          docs = [d for d in yaml.safe_load_all(render(*gw).stdout) if d]
+          route = next(d for d in docs if d.get("kind") == "HTTPRoute")
+          assert route["spec"]["parentRefs"][0]["name"] == "eg"
+          assert route["spec"]["rules"][0]["backendRefs"][0]["name"] == "kairon-ui"
+          pol = next(d for d in docs if d.get("kind") == "BackendTLSPolicy")
+          assert pol["spec"]["targetRefs"][0]["name"] == "kairon-ui"
+          assert pol["spec"]["validation"]["hostname"] == "kairon-ui"
+          # Required inputs are enforced, and the HTTP opt-out renders neither object.
+          assert render("--set", "ui.gateway.enabled=true").returncode != 0
+          off = [d.get("kind") for d in yaml.safe_load_all(render(*gw, "--set", "ui.insecureHttp=true").stdout) if d]
+          assert "HTTPRoute" not in off and "BackendTLSPolicy" not in off
+          print("helm render YAML: OK (kairon-ui HTTPS by default)")
+          PY
+
+      - name: Helm render -- console relay TLS by default
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import subprocess, yaml
+
+          def render(*args):
+              return subprocess.run(
+                  ["helm", "template", "kairon", "charts/kairon", "--namespace", "kairon-system",
+                   "--set", "ui.enabled=true", "--set", "console.enabled=true", *args],
+                  capture_output=True, text=True,
+              )
+
+          def parts(out):
+              docs = [d for d in yaml.safe_load_all(out.stdout) if d]
+              node = next(d for d in docs if d["kind"] == "DaemonSet" and d["metadata"]["name"] == "kairon-node")
+              ui = next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] == "kairon-ui")
+              args = node["spec"]["template"]["spec"]["containers"][0]["args"]
+              env = {e["name"]: e.get("value") for e in ui["spec"]["template"]["spec"]["containers"][0]["env"]}
+              secrets = {d["metadata"]["name"]: d for d in docs if d.get("kind") == "Secret"}
+              return args, env, secrets
+
+          # Default: TLS on, a generated Secret with a CA, the name pinned.
+          out = render()
+          assert out.returncode == 0, out.stderr
+          args, env, secrets = parts(out)
+          assert "--console-tls-cert=/etc/kairon/console-tls/tls.crt" in args, args
+          assert env["KAIRON_NODE_CONSOLE_CA"] == "/etc/kairon/console-tls/ca.crt"
+          assert env["KAIRON_NODE_CONSOLE_SERVER_NAME"] == "kairon-node"
+          assert set(secrets["kairon-console-tls"]["stringData"]) == {"tls.crt", "tls.key", "ca.crt"}
+
+          # Your own Secret: nothing generated, name left to the dialled host.
+          args, env, secrets = parts(render("--set", "console.tls.secretName=mine"))
+          assert "kairon-console-tls" not in secrets
+          assert "KAIRON_NODE_CONSOLE_SERVER_NAME" not in env
+
+          # The opt-out is explicit and removes every TLS wire.
+          args, env, secrets = parts(render("--set", "console.tls.enabled=false"))
+          assert not any("console-tls" in a for a in args)
+          assert "KAIRON_NODE_CONSOLE_CA" not in env and "kairon-console-tls" not in secrets
+          print("helm render YAML: OK (console relay TLS by default)")
+          PY
+
+      - name: Helm render -- Cilium flags
+        run: |
+          helm template kairon charts/kairon --namespace kairon-system \
+            --set network.ciliumAttach.enabled=true \
+            --set network.ciliumPolicySync.enabled=true > ${{ runner.temp }}/kairon-cilium.yaml
+          python3 - <<'PY'
+          import yaml
+          docs = [d for d in yaml.safe_load_all(open('${{ runner.temp }}/kairon-cilium.yaml')) if d]
+          role = next(d for d in docs if d.get('kind') == 'ClusterRole' and d['metadata']['name'] == 'kairon-controller')
+          resources = set()
+          for rule in role.get('rules', []):
+              if 'cilium.io' in rule.get('apiGroups', []):
+                  resources.update(rule.get('resources', []))
+          assert 'ciliumexternalworkloads' in resources, resources
+          assert 'ciliumnetworkpolicies' in resources, resources
+          deploy = next(d for d in docs if d.get('kind') == 'Deployment' and d['metadata']['name'] == 'kairon-controller')
+          args = deploy['spec']['template']['spec']['containers'][0]['args']
+          assert '--cilium-attach=true' in args, args
+          assert '--cilium-policy-sync=true' in args, args
+          print('helm render YAML: OK (cilium attach + policy sync)')
+          PY
+          # Flags off (chart default): no cilium.io rules.
+          helm template kairon charts/kairon --namespace kairon-system > ${{ runner.temp }}/kairon-nocilium.yaml
+          python3 - <<'PY'
+          import yaml
+          docs = [d for d in yaml.safe_load_all(open('${{ runner.temp }}/kairon-nocilium.yaml')) if d]
+          role = next(d for d in docs if d.get('kind') == 'ClusterRole' and d['metadata']['name'] == 'kairon-controller')
+          for rule in role.get('rules', []):
+              assert 'cilium.io' not in rule.get('apiGroups', []), rule
+          print('helm render YAML: OK (cilium flags default off)')
+          PY
+
+      - name: Helm render -- pod scheduling knobs
+        run: |
+          cat > ${{ runner.temp }}/pod-knobs.yaml <<'EOF'
+          controller: &k
+            podAnnotations: {team: infra}
+            podLabels: {tier: x, app.kubernetes.io/name: ignored}
+            priorityClassName: pc
+            terminationGracePeriodSeconds: 90
+            topologySpreadConstraints:
+              - {maxSkew: 1, topologyKey: topology.kubernetes.io/zone, whenUnsatisfiable: ScheduleAnyway}
+              - {maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: ScheduleAnyway, labelSelector: {matchLabels: {custom: sel}}}
+            extraEnv: [{name: EXTRA_ENV, value: "1"}]
+            extraEnvFrom: [{secretRef: {name: extra-sec}}]
+          node: *k
+          csiNode: *k
+          csiController: *k
+          ui: *k
+          EOF
+          helm template kairon charts/kairon --namespace kairon-system -f ${{ runner.temp }}/pod-knobs.yaml \
+            --set ui.enabled=true --set ui.token=ci --set csiNode.enabled=true --set csiController.enabled=true \
+            > ${{ runner.temp }}/kairon-pod-knobs.yaml
+          python3 - <<'PY'
+          import yaml
+          docs = [d for d in yaml.safe_load_all(open('${{ runner.temp }}/kairon-pod-knobs.yaml')) if d]
+          wl = [d for d in docs if d.get('kind') in ('Deployment', 'DaemonSet')]
+          assert len(wl) == 5, [d['metadata']['name'] for d in wl]
+          for d in wl:
+              name = d['metadata']['name']
+              tpl = d['spec']['template']
+              sp = tpl['spec']
+              assert tpl['metadata']['annotations'] == {'team': 'infra'}, name
+              assert tpl['metadata']['labels'] == {'app.kubernetes.io/name': name, 'tier': 'x'}, (name, tpl['metadata'])
+              assert d['spec']['selector']['matchLabels'] == {'app.kubernetes.io/name': name}, name
+              assert sp['priorityClassName'] == 'pc' and sp['terminationGracePeriodSeconds'] == 90, name
+              tsc = sp['topologySpreadConstraints']
+              assert tsc[0]['labelSelector'] == {'matchLabels': {'app.kubernetes.io/name': name}}, (name, tsc)
+              assert tsc[1]['labelSelector'] == {'matchLabels': {'custom': 'sel'}}, (name, tsc)
+              main = next(c for c in sp['containers'] if c['name'] in ('controller', 'node', 'csi-node', 'csi-controller', 'ui'))
+              assert {'name': 'EXTRA_ENV', 'value': '1'} in main['env'], name
+              assert main['envFrom'] == [{'secretRef': {'name': 'extra-sec'}}], name
+          print('helm render YAML: OK (pod scheduling knobs set)')
+          PY
+          # Defaults: none of the knobs render.
+          helm template kairon charts/kairon --namespace kairon-system --set ui.enabled=true --set ui.token=ci \
+            --set csiNode.enabled=true --set csiController.enabled=true > ${{ runner.temp }}/kairon-no-pod-knobs.yaml
+          for k in topologySpreadConstraints priorityClassName terminationGracePeriodSeconds envFrom; do
+            if grep -qE "^ +$k" ${{ runner.temp }}/kairon-no-pod-knobs.yaml; then
+              echo "pod knob $k rendered with default values" >&2; exit 1; fi
+          done
+          echo 'helm render YAML: OK (pod scheduling knobs default off)'
+
+      - name: Helm render -- observability toggles
+        run: |
+          # Defaults: no monitor and no dashboard ConfigMap renders.
+          helm template kairon charts/kairon --namespace kairon-system --set ui.enabled=true --set ui.token=ci \
+            > ${{ runner.temp }}/kairon-obs-default.yaml
+          for k in PodMonitor ServiceMonitor grafana_dashboard; do
+            if grep -q "$k" ${{ runner.temp }}/kairon-obs-default.yaml; then
+              echo "observability object $k rendered with default values" >&2; exit 1; fi
+          done
+          echo 'helm render YAML: OK (observability default off)'
+          # Enabled but the prometheus-operator CRDs are absent from the cluster: nothing monitor-shaped.
+          helm template kairon charts/kairon --namespace kairon-system --set ui.enabled=true --set ui.token=ci \
+            --set metrics.serviceMonitor.enabled=true > ${{ runner.temp }}/kairon-obs-nocrd.yaml
+          if grep -qE 'kind: (PodMonitor|ServiceMonitor)' ${{ runner.temp }}/kairon-obs-nocrd.yaml; then
+            echo "monitors rendered although the CRDs are absent" >&2; exit 1; fi
+          echo 'helm render YAML: OK (monitors skipped without CRDs)'
+          # Enabled with the CRDs present.
+          helm template kairon charts/kairon --namespace kairon-system --set ui.enabled=true --set ui.token=ci \
+            --api-versions monitoring.coreos.com/v1/PodMonitor --api-versions monitoring.coreos.com/v1/ServiceMonitor \
+            --set metrics.serviceMonitor.enabled=true --set metrics.serviceMonitor.labels.release=prom \
+            --set metrics.grafanaDashboards.enabled=true --set metrics.grafanaDashboards.namespace=monitoring \
+            > ${{ runner.temp }}/kairon-obs-on.yaml
+          python3 - <<'PY'
+          import json, yaml
+          docs = [d for d in yaml.safe_load_all(open('${{ runner.temp }}/kairon-obs-on.yaml')) if d]
+          mons = {(d['kind'], d['metadata']['name']): d for d in docs if d['kind'] in ('PodMonitor', 'ServiceMonitor')}
+          assert set(mons) == {('PodMonitor', 'kairon-controller'), ('PodMonitor', 'kairon-node'), ('ServiceMonitor', 'kairon-ui')}, sorted(mons)
+          for (kind, name), d in mons.items():
+              assert d['apiVersion'] == 'monitoring.coreos.com/v1', name
+              assert d['metadata']['labels']['release'] == 'prom', name
+              assert d['spec']['selector']['matchLabels'] == {'app.kubernetes.io/name': name}, name
+              eps = d['spec'].get('podMetricsEndpoints') or d['spec']['endpoints']
+              assert eps[0]['path'] == '/metrics', name
+          assert mons[('PodMonitor', 'kairon-node')]['spec']['podMetricsEndpoints'][0]['port'] == 'health'
+          cms = [d for d in docs if d['kind'] == 'ConfigMap' and d['metadata'].get('labels', {}).get('grafana_dashboard') == '1']
+          assert len(cms) == 4, [c['metadata']['name'] for c in cms]
+          for c in cms:
+              assert c['metadata']['namespace'] == 'monitoring', c['metadata']
+              (fname, body), = c['data'].items()
+              d = json.loads(body)
+              assert d['uid'] and d['panels'], fname
+              assert fname.endswith('.json') and len(body) < 900000, fname
+          print('helm render YAML: OK (observability on: 3 monitors, 4 dashboards)')
+          PY
+          python3 scripts/check_dashboards.py
+
+      - name: Helm render -- production profile
+        run: |
+          # values-production.yaml is the hardened install overlay (PR5).
+          # Webhook ValidatingWebhookConfiguration only renders when both
+          # tlsSecretName and caBundle are set — inject CI placeholders so
+          # the full production surface is exercised.
+          helm lint charts/kairon -f charts/kairon/values-production.yaml \
+            --set webhook.tlsSecretName=ci-webhook-tls \
+            --set webhook.caBundle=Y2ktY2EtYnVuZGxl \
+            --set migration.dataplaneTlsSecretName=ci-migration-dataplane
+          helm template kairon charts/kairon --namespace kairon-system \
+            -f charts/kairon/values-production.yaml \
+            --set webhook.tlsSecretName=ci-webhook-tls \
+            --set webhook.caBundle=Y2ktY2EtYnVuZGxl \
+            --set migration.dataplaneTlsSecretName=ci-migration-dataplane \
+            > ${{ runner.temp }}/kairon-production.yaml
+          python3 - <<'PY'
+          import yaml
+          docs = [d for d in yaml.safe_load_all(open('${{ runner.temp }}/kairon-production.yaml')) if d]
+          chart = yaml.safe_load(open('charts/kairon/Chart.yaml'))
+          app = str(chart['appVersion']).strip('"')
+          ctrl = next(d for d in docs if d.get('kind') == 'Deployment' and d['metadata']['name'] == 'kairon-controller')
+          node_ds = next(d for d in docs if d.get('kind') == 'DaemonSet' and d['metadata']['name'] == 'kairon-node')
+          ctrl_img = ctrl['spec']['template']['spec']['containers'][0]['image']
+          node_img = node_ds['spec']['template']['spec']['containers'][0]['image']
+          # Release images are tagged v<version>; the chart defaults to 'v' + appVersion.
+          assert ctrl_img.endswith(':v' + app), (ctrl_img, app)
+          assert node_img.endswith(':v' + app), (node_img, app)
+          ctrl_args = ctrl['spec']['template']['spec']['containers'][0]['args']
+          assert any(str(a).startswith('--webhook-addr=') for a in ctrl_args), ctrl_args
+          node_args = node_ds['spec']['template']['spec']['containers'][0]['args']
+          assert '--network-default-deny=true' in node_args, node_args
+          assert any(str(a).startswith('--interval=5m') for a in node_args), node_args
+          vwh = [d for d in docs if d.get('kind') == 'ValidatingWebhookConfiguration']
+          assert vwh, 'expected ValidatingWebhookConfiguration with production webhook certs'
+          # dataplaneTlsSecretName set: migration secret volume present
+          vols = node_ds['spec']['template']['spec'].get('volumes') or []
+          assert any(v.get('secret', {}).get('secretName') == 'ci-migration-dataplane' for v in vols), vols
+          print('helm render YAML: OK (values-production.yaml)')
+          PY
+
+      - name: v0.6 foundations package tests
+        run: |
+          # Explicit coverage for PR1–PR3 packages (also covered by make
+          # test-race above; kept here so a targeted regression is obvious
+          # in the job log).
+          go test -race -count=1 \
+            ./internal/model/ \
+            ./internal/agent/ \
+            ./internal/kube/ \
+            ./internal/scheduler/ \
+            ./internal/controller/
+
+  # Dry-run of release.yml release-assets: CLI binaries + checksums +
+  # Helm package. Does not push OCI or create a GitHub Release.
+  release-assets:
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '"ubuntu-latest"' || '["self-hosted","Linux","X64","zyvor-build","docker"]') }}
+    needs: [test, lint]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version-file: go.mod
+          cache: ${{ runner.environment == 'github-hosted' }}  # self-hosted: shared GOMODCACHE, cache restore/save takes 15-35 min
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e  # v5.1.0
+      - name: Build CLI binaries and checksums
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          version="ci-${GITHUB_SHA::12}"
+          for os_arch in linux/amd64 linux/arm64; do
+            os="${os_arch%/*}"
+            arch="${os_arch#*/}"
+            for cmd in kaironctl kubectl-kairon; do
+              out="dist/${cmd}-${os}-${arch}"
+              CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath \
+                -ldflags "-s -w -X main.version=${version}" \
+                -o "$out" "./cmd/${cmd}"
+            done
+          done
+          (
+            cd dist
+            sha256sum kaironctl-* kubectl-kairon-* > SHA256SUMS
+            test -s SHA256SUMS
+            test "$(wc -l < SHA256SUMS | tr -d ' ')" = "4"
+          )
+      - name: Package Helm chart
+        run: |
+          set -euo pipefail
+          version="0.0.0-ci.${GITHUB_SHA::12}"
+          cp charts/kairon/Chart.yaml "${RUNNER_TEMP}/Chart.yaml.bak"
+          sed -i "s/^version:.*/version: ${version}/" charts/kairon/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${version}\"/" charts/kairon/Chart.yaml
+          helm package charts/kairon -d dist
+          test -f "dist/kairon-${version}.tgz"
+          # Production overlay must still lint against the packaged chart.
+          helm lint "dist/kairon-${version}.tgz" -f charts/kairon/values-production.yaml
+          mv "${RUNNER_TEMP}/Chart.yaml.bak" charts/kairon/Chart.yaml
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: release-assets-ci
+          path: |
+            dist/kaironctl-*
+            dist/kubectl-kairon-*
+            dist/SHA256SUMS
+            dist/kairon-*.tgz
+
+  web:
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '"ubuntu-latest"' || '["self-hosted","Linux","X64","zyvor-build","docker"]') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7
+        with: {node-version: '22', cache: npm, cache-dependency-path: web/package.json}
+      - run: npm --prefix web ci
+      - run: npm --prefix web run typecheck
+      - run: npm --prefix web test
+      - run: npm --prefix web run build
+
+  website:
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '"ubuntu-latest"' || '["self-hosted","Linux","X64","zyvor-build","docker"]') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7
+        with: {node-version: '22', cache: npm, cache-dependency-path: website/package-lock.json}
+      - run: npm --prefix website ci
+      - run: npm --prefix website run build
+
+  # Builds all three images on every push/PR and scans each with Trivy, but
+  # never pushes anywhere -- see .github/workflows/release.yml for the
+  # tag-triggered workflow that actually publishes to ghcr.io. Kept
+  # separate deliberately: this job is the fast, always-on correctness/
+  # security gate; release.yml only needs to run once per release.
+  container:
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '"ubuntu-latest"' || '["self-hosted","Linux","X64","zyvor-build","docker"]') }}
+    needs: [test, lint, web]
+    strategy:
+      matrix:
+        target: [controller, node, ui, csi-node, csi-controller, mcp]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4
+      - name: Build ${{ matrix.target }} image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          push: false
+          load: true
+          tags: kairon-${{ matrix.target }}:ci-${{ github.run_id }}
+      - name: Scan ${{ matrix.target }} image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          image-ref: kairon-${{ matrix.target }}:ci-${{ github.run_id }}
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+      # Shared Docker daemon: drop only this job's image, never a global prune.
+      - name: Remove ${{ matrix.target }} image
+        if: always()
+        run: docker image rm -f "kairon-${{ matrix.target }}:ci-${{ github.run_id }}" || true

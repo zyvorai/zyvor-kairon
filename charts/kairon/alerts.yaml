@@ -1,0 +1,225 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+#
+# Example Prometheus alert rules for Kairon's metrics (see internal/metrics,
+# exposed at /metrics on kairon-controller's health port, kairon-node's
+# health port, and kairon-ui's own listen port). This is a plain, documented
+# rules file -- not wired into the Helm chart automatically, since not
+# every cluster runs prometheus-operator. If yours does,
+# charts/kairon/templates/prometheusrule.yaml (gated behind
+# `metrics.prometheusRule.enabled`) wraps this same rule group as a real
+# PrometheusRule custom resource; otherwise, copy this group into your own
+# Prometheus rule_files config.
+#
+# kairon-health below deliberately writes plain PromQL with no job/instance
+# filter baked in -- which component(s) a firing alert actually came from
+# depends on your own scrape config's job/instance labels (kairon-controller
+# and kairon-node both expose kairon_reconcile_*/kairon_apiserver_* under
+# the same metric names on their own separate targets), same as any
+# multi-target Prometheus rule. Add a job=~"..." selector if you want to
+# split these per component.
+groups:
+  - name: kairon-migrations
+    rules:
+      - alert: KaironMigrationNeedsRecoveryStuck
+        expr: kairon_migration_phase_age_seconds{phase="NeedsRecovery"} > 900
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "MachineMigration {{ $labels.namespace }}/{{ $labels.name }} has needed operator recovery for over 15 minutes"
+          description: >-
+            This migration's commit outcome was ambiguous and Kairon has
+            deliberately stopped reconciling it, by design, until an
+            operator resolves it via `kaironctl recover`.
+          runbook: "docs/runbook-migration-failures.md"
+
+      - alert: KaironMigrationFailureRateHigh
+        expr: increase(kairon_migration_completed_total{result="failed"}[30m]) > 3
+        labels:
+          severity: warn
+        annotations:
+          summary: "More than 3 MachineMigrations failed in the last 30 minutes"
+          runbook: "docs/runbook-migration-failures.md"
+
+      - alert: KaironMigrationStuckInFlight
+        expr: kairon_migration_phase_age_seconds{phase=~"Starting|Running|Cutover|Adopting"} > 1800
+        for: 5m
+        labels:
+          severity: warn
+        annotations:
+          summary: "MachineMigration {{ $labels.namespace }}/{{ $labels.name }} has been in phase {{ $labels.phase }} for over 30 minutes"
+          description: >-
+            If phase is Starting or Running, this is safely cancellable:
+            `kaironctl cancel-migration {{ $labels.name }} -n {{ $labels.namespace }}`
+            aborts the in-flight transfer before the destination commits and
+            leaves the source runtime untouched. Once past Cutover/Adopting,
+            cancel is a no-op -- investigate the target node instead.
+          runbook: "docs/runbook-migration-failures.md"
+
+      - alert: KaironMigrationDataPlaneUnencrypted
+        expr: kairon_migration_dataplane_encrypted{phase=~"Starting|Running"} == 0
+        labels:
+          severity: info
+        annotations:
+          summary: "Live migration data-plane TLS is off for an in-flight migration"
+          description: >-
+            The QEMU RAM/state stream for {{ $labels.namespace }}/{{ $labels.name }}
+            is crossing the network in cleartext. See
+            docs/runbook-migration-failures.md#unencrypted-migration-data-plane.
+          runbook: "docs/runbook-migration-failures.md#unencrypted-migration-data-plane"
+
+  # Cross-component operational health -- previously this project had no
+  # alerting at all for kairon-controller/kairon-node being unhealthy or
+  # wedged, or for apiserver connectivity problems; every alert until now
+  # was migration-specific. See internal/metrics's package doc for what
+  # each component's Recorder exposes.
+  - name: kairon-health
+    rules:
+      - alert: KaironReconcileErrorRateHigh
+        expr: increase(kairon_reconcile_errors_total[15m]) > 5
+        labels:
+          severity: warn
+        annotations:
+          summary: "A Kairon reconcile loop (kairon-controller or kairon-node) has failed more than 5 times in 15 minutes"
+          description: >-
+            kairon_reconcile_errors_total counts a reconcile tick that
+            returned an error -- check that component's logs
+            ("reconcile failed"/"agent stopped") for the actual cause.
+            Occasional errors (a transient apiserver hiccup) are normal;
+            a sustained rate usually means the apiserver is unreachable,
+            RBAC changed under it, or a bug is panicking mid-reconcile.
+
+      - alert: KaironReconcileItemErrorRateHigh
+        expr: increase(kairon_reconcile_item_errors_total[15m]) > 5
+        labels:
+          severity: warn
+        annotations:
+          summary: "A Kairon-managed resource has failed its own reconcile step more than 5 times in 15 minutes"
+          description: >-
+            kairon_reconcile_item_errors_total counts a single
+            Machine/MachineMigration/MachineSnapshot/MachineSnapshotRestore
+            failing its own reconcile step, labeled by kind -- distinct
+            from KaironReconcileErrorRateHigh, which only fires on a whole
+            tick failing outright (e.g. a List call itself failing).
+            Most per-item failures never trip that alert at all, since
+            they're caught and status-patched without failing the tick.
+            Check that component's "... reconcile failed" log line
+            (which does carry the specific namespace/name) for the cause.
+
+      - alert: KaironAPIServerErrorRateHigh
+        expr: increase(kairon_apiserver_request_duration_seconds_count{outcome="error"}[15m]) > 10
+        labels:
+          severity: warn
+        annotations:
+          summary: "More than 10 Kubernetes apiserver requests from a Kairon component failed in 15 minutes"
+          description: >-
+            kairon_apiserver_request_duration_seconds is recorded by
+            every component's internal/kube.Client (kairon-controller,
+            kairon-node, kairon-ui) for every apiserver call it makes.
+            A sustained error rate points at apiserver availability, a
+            revoked/expired ServiceAccount token, or an RBAC change that
+            broke a component's own permissions.
+
+      - alert: KaironWebhookDenyRateHigh
+        expr: increase(kairon_webhook_decisions_total{decision="deny"}[15m]) > 20
+        labels:
+          severity: info
+        annotations:
+          summary: "The admission webhook has denied more than 20 requests in 15 minutes"
+          description: >-
+            Only fires when webhook.enabled is true. A denial is
+            expected, working-as-intended behavior for an over-quota
+            Machine create/resize or a disruption-budget-violating
+            migration -- but a sudden spike usually means a MachineQuota/
+            MachineDisruptionBudget was set too strictly (or a bug is
+            generating Machines faster than expected), not that anything
+            is broken. severity: info, not warn/page, because "the
+            webhook is working" and "the webhook is blocking too much"
+            look identical in this metric alone.
+
+  # A namespace approaching a MachineQuota limit previously had no
+  # proactive signal at all -- an operator only found out once a Machine
+  # was already left Pending with a "MachineQuota ... reached" message
+  # (or, with webhook.enabled, an outright denied create/resize). This
+  # group closes that: it fires *before* the limit is actually hit, using
+  # kairon_quota_resource (internal/metrics, kairon-controller only --
+  # see ObserveQuotas).
+  - name: kairon-quotas
+    rules:
+      - alert: KaironQuotaNearLimit
+        expr: (kairon_quota_resource{type="used"} / on(namespace, quota, resource) kairon_quota_resource{type="hard"}) >= 0.9
+        for: 10m
+        labels:
+          severity: warn
+        annotations:
+          summary: "MachineQuota {{ $labels.namespace }}/{{ $labels.quota }} has been at or above 90% of its {{ $labels.resource }} limit for 10 minutes"
+          description: >-
+            kairon_quota_resource only reports a type="hard" series for a
+            dimension (machines/cpu_cores/memory_mib) the MachineQuota
+            actually caps, so this never fires for an uncapped dimension.
+            Once the limit is reached, new Machine scheduling in this
+            namespace starts landing Pending (or, with webhook.enabled,
+            being denied outright) with a "MachineQuota ... reached"
+            message -- raise the MachineQuota's limit, or free capacity,
+            before that happens.
+          runbook: "docs/guides/machine-quotas.md"
+
+  # A MachineDisruptionBudget sitting at 0 disruptions allowed previously
+  # had no proactive signal either -- an operator only found out once a
+  # `kaironctl evacuate` (or, with webhook.enabled, a MachineMigration
+  # create) was already refused with a "0 disruptions allowed" message.
+  # This group closes that the same way kairon-quotas closes it for
+  # MachineQuota, using kairon_disruption_budget_status (internal/metrics,
+  # kairon-controller only -- see ObserveDisruptionBudgets). Unlike
+  # KaironQuotaNearLimit, this fires at exhaustion (disruptions_allowed
+  # == 0) rather than approaching it -- disruptions_allowed is a small
+  # integer count with no fixed "hard limit" to take a ratio against, so
+  # "sustained at 0" is the meaningful threshold, not a percentage.
+  - name: kairon-disruption-budgets
+    rules:
+      - alert: KaironDisruptionBudgetExhausted
+        expr: kairon_disruption_budget_status{field="disruptions_allowed"} == 0
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "MachineDisruptionBudget {{ $labels.namespace }}/{{ $labels.budget }} has had 0 disruptions allowed for 10 minutes"
+          description: >-
+            Every Machine matching this budget's selector is currently
+            protected -- `kaironctl evacuate` (and, with webhook.enabled,
+            a new MachineMigration) against a matching Machine will be
+            refused with a "0 disruptions allowed" message until enough
+            Machines are healthy again. severity: info, not warn/page,
+            because this is often working-as-intended (e.g. mid rolling
+            node drain) rather than a problem to fix.
+          runbook: "docs/guides/machine-disruption-budgets.md"
+
+  # A MachineSet rollout that stalls partway (e.g. a template with a boot
+  # failure severe enough to never reach Running, see docs/guides/machine-sets.md's
+  # own "real limits" section) previously had no proactive signal either --
+  # an operator only found out by polling `kaironctl get machinesets` (or
+  # `kubectl get machinesets`) and noticing READY never catches up to
+  # REPLICAS. This group closes that the same way kairon-quotas/
+  # kairon-disruption-budgets close their own gaps, using
+  # kairon_machineset_status (internal/metrics, kairon-controller only --
+  # see ObserveMachineSets).
+  - name: kairon-machinesets
+    rules:
+      - alert: KaironMachineSetRolloutStuck
+        expr: kairon_machineset_status{field="ready_replicas"} < on(namespace, machineset) kairon_machineset_status{field="replicas"}
+        for: 30m
+        labels:
+          severity: warn
+        annotations:
+          summary: "MachineSet {{ $labels.namespace }}/{{ $labels.machineset }} has had fewer ready replicas than desired for over 30 minutes"
+          description: >-
+            readyReplicas counts current-template replicas whose
+            status.phase is Running -- a sustained gap against replicas
+            usually means a replacement replica is stuck short of Running
+            (a boot failure, an unschedulable template, or a stalled
+            RollingUpdate withholding further progress on purpose until
+            this one comes up), not a transient blip. Check
+            `kubectl get machines -l kairon.zyvor.dev/machineset=<name>`
+            for the specific replica(s) not reaching Running.
+          runbook: "docs/guides/machine-sets.md"

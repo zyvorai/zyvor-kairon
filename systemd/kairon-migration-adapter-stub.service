@@ -1,0 +1,47 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+[Unit]
+Description=kairon-migration-adapter-stub - TEST DOUBLE for the Kairon migration adapter contract (simulates transfers, does not move real VM memory)
+Documentation=https://github.com/zyvorai/zyvor-kairon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/kairon-migration-adapter-stub --socket=/run/kairon/migration-adapter.sock
+Restart=on-failure
+RestartSec=5s
+
+User=kairon
+Group=kairon
+RuntimeDirectory=kairon
+RuntimeDirectoryMode=0750
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+LimitNOFILE=4096
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kairon-migration-adapter-stub
+
+[Install]
+WantedBy=multi-user.target

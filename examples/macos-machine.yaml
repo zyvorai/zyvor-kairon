@@ -1,0 +1,32 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+#
+# A Machine that runs on a Mac through FluxVM's Apple Virtualization.framework backend ("vz").
+# The image must be a raw ARM64 disk. The Mac node carries the kairon.zyvor.dev/vm-only taint, so Machines tolerate it.
+apiVersion: kairon.zyvor.dev/v1
+kind: Machine
+metadata:
+  name: mac-debian
+  namespace: default
+spec:
+  image:
+    path: /Users/you/Library/Application Support/FluxVM/images/debian-13-arm64.raw
+  resources:
+    cpu: "2"
+    memory: 2Gi
+  runtime:
+    backend: vz
+  powerState: Running
+  cloudInit:
+    hostname: mac-debian
+    user: velora
+    sshAuthorizedKeys:
+      - ssh-ed25519 AAAA... you@mac
+  placement:
+    architecture: arm64
+    nodeSelector:
+      kairon.zyvor.dev/backend.vz: "true"
+    tolerations:
+      - key: kairon.zyvor.dev/vm-only
+        operator: Exists
+        effect: NoSchedule

@@ -1,0 +1,244 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+# Argo CD health checks for Kairon custom resources.
+#
+# Merge into your argocd-cm (this is a strategic-merge patch, not a full
+# ConfigMap), e.g.:
+#   kubectl -n argocd patch configmap argocd-cm --type merge --patch-file argocd-cm-health.yaml
+# or paste the keys into the argocd-cm of your Argo CD install (Helm:
+# configs.cm in the argo-cd chart values). Keys follow Argo CD's
+# resource.customizations.health.<group>_<kind> convention.
+#
+# Phase values come from the Go sources and CRD docs of this repo, not from a
+# running cluster; see examples/gitops/README.md. Argo CD health statuses used:
+# Healthy, Progressing, Degraded, Suspended (and Missing is Argo CD's own).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-cm
+    app.kubernetes.io/part-of: argocd
+data:
+  resource.customizations.health.kairon.zyvor.dev_Machine: |
+    local hs = {}
+    if obj.status == nil or obj.status.phase == nil or obj.status.phase == "" then
+      hs.status = "Progressing"
+      hs.message = "Waiting for status.phase"
+      return hs
+    end
+    local phase = obj.status.phase
+    local healthy = {["Running"] = true}
+    local degraded = {["Failed"] = true, ["Blocked"] = true}
+    local suspended = {["Stopped"] = true, ["Paused"] = true, ["Hibernated"] = true, ["Halted"] = true}
+    hs.message = obj.status.message or phase
+    if obj.status.conditions ~= nil then
+      for _, c in ipairs(obj.status.conditions) do
+        if c.type == "NodeUnreachable" and c.status == "True" then
+          hs.status = "Degraded"
+          hs.message = "NodeUnreachable: " .. (c.message or c.reason or "node not Ready")
+          return hs
+        end
+      end
+    end
+    if degraded[phase] then
+      hs.status = "Degraded"
+    elseif healthy[phase] then
+      hs.status = "Healthy"
+    elseif suspended[phase] then
+      hs.status = "Suspended"
+    else
+      hs.status = "Progressing"
+    end
+    return hs
+  resource.customizations.health.kairon.zyvor.dev_MachineMigration: |
+    local hs = {}
+    if obj.status == nil or obj.status.phase == nil or obj.status.phase == "" then
+      hs.status = "Progressing"
+      hs.message = "Waiting for status.phase"
+      return hs
+    end
+    local phase = obj.status.phase
+    local healthy = {["Succeeded"] = true}
+    local degraded = {["Failed"] = true, ["Cancelled"] = true, ["NeedsRecovery"] = true}
+    local suspended = {}
+    hs.message = obj.status.message or phase
+    if degraded[phase] then
+      hs.status = "Degraded"
+    elseif healthy[phase] then
+      hs.status = "Healthy"
+    elseif suspended[phase] then
+      hs.status = "Suspended"
+    else
+      hs.status = "Progressing"
+    end
+    return hs
+  resource.customizations.health.kairon.zyvor.dev_MachineSnapshot: |
+    local hs = {}
+    if obj.status == nil then
+      hs.status = "Progressing"
+      hs.message = "Waiting for status"
+      return hs
+    end
+    hs.message = obj.status.message or obj.status.phase or ""
+    if obj.status.phase == "Failed" then
+      hs.status = "Degraded"
+    elseif obj.status.readyToUse == true or obj.status.phase == "Succeeded" then
+      hs.status = "Healthy"
+    else
+      hs.status = "Progressing"
+    end
+    return hs
+  resource.customizations.health.kairon.zyvor.dev_MachineSnapshotRestore: |
+    local hs = {}
+    if obj.status == nil or obj.status.phase == nil or obj.status.phase == "" then
+      hs.status = "Progressing"
+      hs.message = "Waiting for status.phase"
+      return hs
+    end
+    local phase = obj.status.phase
+    local healthy = {["Succeeded"] = true}
+    local degraded = {["Failed"] = true}
+    local suspended = {}
+    hs.message = obj.status.message or phase
+    if degraded[phase] then
+      hs.status = "Degraded"
+    elseif healthy[phase] then
+      hs.status = "Healthy"
+    elseif suspended[phase] then
+      hs.status = "Suspended"
+    else
+      hs.status = "Progressing"
+    end
+    return hs
+  resource.customizations.health.kairon.zyvor.dev_MachineBackup: |
+    local hs = {}
+    if obj.status == nil or obj.status.phase == nil or obj.status.phase == "" then
+      hs.status = "Progressing"
+      hs.message = "Waiting for status.phase"
+      return hs
+    end
+    local phase = obj.status.phase
+    local healthy = {["Succeeded"] = true}
+    local degraded = {["Failed"] = true}
+    local suspended = {}
+    hs.message = obj.status.message or phase
+    if degraded[phase] then
+      hs.status = "Degraded"
+    elseif healthy[phase] then
+      hs.status = "Healthy"
+    elseif suspended[phase] then
+      hs.status = "Suspended"
+    else
+      hs.status = "Progressing"
+    end
+    return hs
+  resource.customizations.health.kairon.zyvor.dev_MachineBackupRestore: |
+    local hs = {}
+    if obj.status == nil or obj.status.phase == nil or obj.status.phase == "" then
+      hs.status = "Progressing"
+      hs.message = "Waiting for status.phase"
+      return hs
+    end
+    local phase = obj.status.phase
+    local healthy = {["Succeeded"] = true}
+    local degraded = {["Failed"] = true}
+    local suspended = {}
+    hs.message = obj.status.message or phase
+    if degraded[phase] then
+      hs.status = "Degraded"
+    elseif healthy[phase] then
+      hs.status = "Healthy"
+    elseif suspended[phase] then
+      hs.status = "Suspended"
+    else
+      hs.status = "Progressing"
+    end
+    return hs
+  resource.customizations.health.kairon.zyvor.dev_MachineExport: |
+    local hs = {}
+    if obj.status == nil or obj.status.phase == nil or obj.status.phase == "" then
+      hs.status = "Progressing"
+      hs.message = "Waiting for status.phase"
+      return hs
+    end
+    local phase = obj.status.phase
+    local healthy = {["Ready"] = true, ["Expired"] = true}
+    local degraded = {["Failed"] = true}
+    local suspended = {}
+    hs.message = obj.status.message or phase
+    if degraded[phase] then
+      hs.status = "Degraded"
+    elseif healthy[phase] then
+      hs.status = "Healthy"
+    elseif suspended[phase] then
+      hs.status = "Suspended"
+    else
+      hs.status = "Progressing"
+    end
+    return hs
+  resource.customizations.health.kairon.zyvor.dev_MachineProtectionPlan: |
+    local hs = {}
+    if obj.status == nil or obj.status.phase == nil or obj.status.phase == "" then
+      hs.status = "Progressing"
+      hs.message = "Waiting for status.phase"
+      return hs
+    end
+    local phase = obj.status.phase
+    local healthy = {["Active"] = true, ["Standby"] = true}
+    local degraded = {["Invalid"] = true}
+    local suspended = {}
+    hs.message = obj.status.message or phase
+    if degraded[phase] then
+      hs.status = "Degraded"
+    elseif healthy[phase] then
+      hs.status = "Healthy"
+    elseif suspended[phase] then
+      hs.status = "Suspended"
+    else
+      hs.status = "Progressing"
+    end
+    return hs
+  resource.customizations.health.kairon.zyvor.dev_MachineImage: |
+    local hs = {}
+    if obj.status == nil or obj.status.phase == nil or obj.status.phase == "" then
+      hs.status = "Progressing"
+      hs.message = "Waiting for status.phase"
+      return hs
+    end
+    local phase = obj.status.phase
+    local healthy = {["Ready"] = true}
+    local degraded = {["Failed"] = true}
+    local suspended = {}
+    hs.message = obj.status.message or phase
+    if degraded[phase] then
+      hs.status = "Degraded"
+    elseif healthy[phase] then
+      hs.status = "Healthy"
+    elseif suspended[phase] then
+      hs.status = "Suspended"
+    else
+      hs.status = "Progressing"
+    end
+    return hs
+  resource.customizations.health.kairon.zyvor.dev_MachineSet: |
+    local hs = {}
+    if obj.status == nil or obj.status.replicas == nil then
+      hs.status = "Progressing"
+      hs.message = "Waiting for status.replicas"
+      return hs
+    end
+    local want = obj.spec.replicas or 0
+    local replicas = obj.status.replicas or 0
+    local ready = obj.status.readyReplicas or 0
+    local updated = obj.status.updatedReplicas or 0
+    if ready == want and replicas == want and updated == want then
+      hs.status = "Healthy"
+      hs.message = ready .. "/" .. want .. " ready"
+    else
+      hs.status = "Progressing"
+      hs.message = ready .. "/" .. want .. " ready, " .. updated .. " updated, " .. replicas .. " existing"
+    end
+    return hs

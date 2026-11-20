@@ -1,0 +1,23 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+apiVersion: kairon.zyvor.dev/v1
+kind: Machine
+metadata:
+  name: micro-worker
+  namespace: default
+spec:
+  image:
+    path: /var/lib/fluxvm/images/ubuntu.ext4
+  resources:
+    cpu: "1"
+    memory: 512Mi
+  runtime:
+    backend: firecracker
+    kernel: /var/lib/fluxvm/kernels/vmlinux
+  network:
+    mode: tap
+    bridge: vmbr0
+    mac: "06:00:AC:10:00:02"
+  ttlSeconds: 3600
+  powerState: Running

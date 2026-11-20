@@ -1,0 +1,29 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+apiVersion: kairon.zyvor.dev/v1
+kind: Machine
+metadata:
+  name: database
+  namespace: default
+spec:
+  image:
+    path: /var/lib/fluxvm/images/database.qcow2
+  resources:
+    cpu: "4"
+    memory: 8Gi
+  runtime:
+    backend: qemu
+  powerState: Running
+  volumes:
+    - name: data
+      claimName: database-data
+---
+apiVersion: kairon.zyvor.dev/v1
+kind: MachineSnapshot
+metadata:
+  name: database-before-upgrade
+  namespace: default
+spec:
+  machineName: database
+  volumeSnapshotClassName: csi-snapclass

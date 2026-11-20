@@ -1,0 +1,42 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+{{/*
+kairon-controller and kairon-ui both default to a single replica (see
+controller.replicaCount/ui.replicaCount in values.yaml, and for
+kairon-controller, controller.leaderElection for what actually makes
+replicaCount > 1 safe) -- maxUnavailable: 0 unconditionally means "never
+voluntarily evict a replica of either without going through PDB
+accounting", regardless of replicaCount: at replicaCount: 1 that's "don't
+evict the only replica"; above 1 it's stricter than a typical PDB (it
+blocks a voluntary `kubectl drain` entirely rather than tolerating N-1),
+which is deliberate here since kairon-controller/kairon-ui are cheap
+enough that "drain requires an explicit override" is an acceptable
+default. Default on: unlike networkpolicy.yaml, this has no real
+downside -- it only affects voluntary eviction, never the app's own
+traffic.
+
+kairon-node is deliberately not covered here: it's a DaemonSet (one pod
+per capable node), and a PDB isn't a meaningful concept for a DaemonSet --
+draining a node already takes its kairon-node pod with it regardless, and
+Kubernetes evicts DaemonSet pods without consulting PDBs during a drain
+that also removes the node itself.
+*/}}
+{{ if .Values.controller.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: kairon-controller, namespace: {{ .Release.Namespace }}}
+spec:
+  maxUnavailable: 0
+  selector: {matchLabels: {app.kubernetes.io/name: kairon-controller}}
+---
+{{ end }}
+{{ if and .Values.ui.enabled .Values.ui.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: kairon-ui, namespace: {{ .Release.Namespace }}}
+spec:
+  maxUnavailable: 0
+  selector: {matchLabels: {app.kubernetes.io/name: kairon-ui}}
+---
+{{ end }}

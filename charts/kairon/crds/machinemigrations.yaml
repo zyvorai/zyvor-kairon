@@ -1,0 +1,385 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: machinemigrations.kairon.zyvor.dev
+spec:
+  group: kairon.zyvor.dev
+  scope: Namespaced
+  names:
+    plural: machinemigrations
+    singular: machinemigration
+    kind: MachineMigration
+    shortNames:
+    - kmm
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    subresources: &subresources
+      status: {}
+    additionalPrinterColumns: &columns
+    - name: Machine
+      type: string
+      jsonPath: .spec.machineName
+    - name: Strategy
+      type: string
+      jsonPath: .status.effectiveStrategy
+    - name: Source
+      type: string
+      jsonPath: .status.sourceNode
+    - name: Target
+      type: string
+      jsonPath: .status.targetNode
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    - name: Stage
+      type: string
+      jsonPath: .status.adaptive.stage
+      priority: 1
+    schema: &schema
+      openAPIV3Schema:
+        type: object
+        required:
+        - spec
+        properties:
+          spec:
+            type: object
+            required:
+            - machineName
+            properties:
+              machineName:
+                type: string
+                minLength: 1
+              strategy:
+                type: string
+                enum:
+                - auto
+                - live
+                - cold
+                default: auto
+              targetNode:
+                type: string
+                description: Target Kubernetes node. Live migration target preparation
+                  is negotiated automatically over the Kairon mTLS peer API.
+              mode:
+                type: string
+                enum:
+                - pre-copy
+                - post-copy
+                default: pre-copy
+              bandwidthMbps:
+                type: integer
+                format: int64
+                minimum: 0
+              maxDowntimeMs:
+                type: integer
+                format: int64
+                minimum: 0
+              multifdChannels:
+                type: integer
+                minimum: 0
+                maximum: 255
+              fallbackToCold:
+                type: boolean
+                description: Continue as a cold migration (the Machine is stopped
+                  for the move) when a live migration is blocked before the source
+                  runtime was touched. Never applied after a transfer started.
+              migrationNetwork:
+                type: string
+                description: Migration network name configured on the target node's
+                  adapter (-migration-network name=ip), selecting which address the
+                  RAM/state transfer binds/advertises. Empty uses the adapter's
+                  default advertise address.
+              recovery:
+                type: object
+                description: Operator's explicit, attested instruction for resolving
+                  a migration parked in NeedsRecovery. Never set by Kairon itself;
+                  never acted on unless acknowledgedDiagnosis matches action.
+                required:
+                - action
+                - acknowledgedDiagnosis
+                - reason
+                properties:
+                  action:
+                    type: string
+                    enum:
+                    - ConfirmDestinationCommitted
+                    - ConfirmDestinationNotCommitted
+                    - ForceAbort
+                  acknowledgedDiagnosis:
+                    type: string
+                    enum:
+                    - DestinationCommitted
+                    - DestinationNotCommitted
+                    - Unknown
+                  reason:
+                    type: string
+                    minLength: 1
+                    description: Free-text evidence for what you observed that
+                      justifies this action.
+              cancel:
+                type: boolean
+                description: Requests that Kairon abort this migration while it
+                  is still a healthy, in-flight live migration -- phase Starting
+                  or Running, strictly before the destination has committed. Set
+                  by an operator (kaironctl cancel-migration or the dashboard),
+                  never by Kairon itself. A documented no-op once phase has
+                  advanced to Cutover or later, and for cold-strategy migrations,
+                  which have no in-flight transfer to abort.
+              adaptive:
+                type: object
+                description: Runs this live migration under kairon-node's adaptive
+                  engine. Snapshotted from the matching MigrationPolicy at admission,
+                  filling only fields left unset here. Experimental until lab-green.
+                properties:
+                  policy:
+                    type: string
+                  completionTimeoutPerGiB:
+                    type: string
+                    pattern: '^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$'
+                    description: Guest RAM in GiB times this Go duration bounds an adaptive
+                      migration before it is aborted with the source left running.
+                  progressTimeout:
+                    type: string
+                    pattern: '^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$'
+                    description: How long remaining RAM may fail to shrink before the
+                      transfer counts as stalled.
+                  autoConverge:
+                    type: object
+                    properties:
+                      enabled:
+                        type: boolean
+                      dirtyRateThresholdMbps:
+                        type: integer
+                        format: int64
+                        minimum: 0
+                  postCopy:
+                    type: object
+                    description: Lets the engine switch a stalled transfer to post-copy. After
+                      the switch a failure parks the migration in NeedsRecovery; the source is
+                      never resumed.
+                    properties:
+                      enabled:
+                        type: boolean
+                      triggerAfter:
+                        type: string
+                        pattern: '^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$'
+                  compression:
+                    type: object
+                    required:
+                    - algorithm
+                    properties:
+                      algorithm:
+                        type: string
+                        enum:
+                        - none
+                        - zlib
+                        - zstd
+                      level:
+                        type: integer
+                        minimum: 0
+                        maximum: 20
+                    x-kubernetes-validations:
+                    - rule: "self.algorithm != 'zlib' || !has(self.level) || self.level <= 9"
+                      message: zlib level must be 0-9
+                  bandwidth:
+                    type: object
+                    properties:
+                      maxMbps:
+                        type: integer
+                        format: int64
+                        minimum: 0
+                      adaptive:
+                        type: boolean
+            x-kubernetes-validations:
+            - rule: "!has(self.adaptive) || !has(self.adaptive.compression) || self.adaptive.compression.algorithm == 'none' || (has(self.multifdChannels) && self.multifdChannels > 0)"
+              message: adaptive compression requires multifdChannels > 0
+            - rule: "!has(self.adaptive) || !has(self.strategy) || self.strategy != 'cold'"
+              message: adaptive settings apply only to live migrations
+          status:
+            type: object
+            properties:
+              phase:
+                type: string
+              message:
+                type: string
+              sourceNode:
+                type: string
+              targetNode:
+                type: string
+              effectiveStrategy:
+                type: string
+              runtimeID:
+                type: string
+              ramTransferred:
+                type: integer
+                format: int64
+                minimum: 0
+              ramRemaining:
+                type: integer
+                format: int64
+                minimum: 0
+              ramTotal:
+                type: integer
+                format: int64
+                minimum: 0
+              totalTimeMs:
+                type: integer
+                format: int64
+                minimum: 0
+              downtimeMs:
+                type: integer
+                format: int64
+                minimum: 0
+              sessionID:
+                type: string
+                description: Opaque Kairon peer session identifier; never contains
+                  credentials.
+              transferID:
+                type: string
+                description: Opaque source-adapter transfer identifier.
+              transferPhase:
+                type: string
+                description: Source migration adapter phase.
+              backend:
+                type: string
+                description: Migration adapter backend selected by the target node.
+              dataPlaneEncrypted:
+                type: boolean
+                description: Whether the QEMU RAM/state transfer itself is
+                  TLS-encrypted (distinct from the always-on mTLS control-plane
+                  RPCs). Set once at Starting from the destination adapter's
+                  prepare() response; false (including on an older adapter that
+                  predates this field) means the transfer crossed the network
+                  in cleartext.
+              targetTopologyAllocation:
+                type: object
+                description: The live migration target's NUMA placement for a
+                  spec.topology Machine (same guest NUMA shape as the source).
+                properties:
+                  numaNodes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        cpus:
+                          type: string
+                        memoryMiB:
+                          type: integer
+                          format: int64
+                        hugepages:
+                          type: integer
+                          format: int64
+              targetAllocatedCpuSet:
+                type: array
+                items:
+                  type: integer
+                  minimum: 0
+              recovery:
+                type: object
+                description: Populated only while phase == NeedsRecovery -- a live
+                  diagnosis snapshot refreshed every reconcile tick, plus a permanent
+                  audit record of whatever recovery action was actually applied.
+                properties:
+                  sourceRuntimeStatus:
+                    type: string
+                  destinationSessionPhase:
+                    type: string
+                  destinationRuntimeStatus:
+                    type: string
+                  destinationRuntimeFound:
+                    type: boolean
+                  diagnosedAt:
+                    type: string
+                    format: date-time
+                  appliedAction:
+                    type: string
+                  appliedReason:
+                    type: string
+                  appliedAcknowledgedDiagnosis:
+                    type: string
+                  appliedAt:
+                    type: string
+                    format: date-time
+              progress:
+                type: object
+                description: Transfer telemetry from the latest adapter poll.
+                properties:
+                  dirtyPagesRate: &u64
+                    type: integer
+                    format: int64
+                    minimum: 0
+                  dirtyRateMbps: *u64
+                  throughputMbps: *u64
+                  duplicatePages: *u64
+                  dirtySyncCount: *u64
+                  compressionRatioPercent: *u64
+                  expectedDowntimeMs: *u64
+                  estimatedCompletionSeconds: *u64
+                  cpuThrottlePct: *u64
+                  postcopyRequests: *u64
+                  updatedAt:
+                    type: string
+                    format: date-time
+              adaptive:
+                type: object
+                description: Adaptive engine state for spec.adaptive migrations; any
+                  live migration gets it once post-copy starts, to latch postCopyStarted.
+                properties:
+                  stage:
+                    type: string
+                  message:
+                    type: string
+                  startedAt: &ts
+                    type: string
+                    format: date-time
+                  stageSince: *ts
+                  bestRAMRemaining: *u64
+                  bestProgressAt: *ts
+                  postCopyStarted:
+                    type: boolean
+                  postCopyArmed:
+                    type: boolean
+                  bandwidthMbps: *u64
+                  downtimeLimitMs: *u64
+                  maxThrottlePct:
+                    type: integer
+                    minimum: 0
+                    maximum: 100
+                  lastBandwidthChangeAt: *ts
+                  actions:
+                    type: array
+                    maxItems: 20
+                    items:
+                      type: object
+                      required:
+                      - at
+                      - action
+                      properties:
+                        at: *ts
+                        action:
+                          type: string
+                        detail:
+                          type: string
+  - name: v1beta1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1beta1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema
+  - name: v1alpha1
+    served: true
+    storage: false
+    deprecated: true
+    deprecationWarning: kairon.zyvor.dev/v1alpha1 is deprecated; use kairon.zyvor.dev/v1
+    subresources: *subresources
+    additionalPrinterColumns: *columns
+    schema: *schema

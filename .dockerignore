@@ -1,0 +1,7 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+bin
+dist
+.git
+coverage.out

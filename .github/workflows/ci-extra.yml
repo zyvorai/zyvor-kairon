@@ -1,0 +1,230 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+# Self-hosted routing: heavy trusted jobs run on the org `zyvor-build` runners
+# (shared Docker host, x86_64 only). The runs-on expression falls back to
+# ubuntu-latest for pull_request events, so fork PRs never reach self-hosted.
+
+# Extra correctness / hygiene gates kept out of the main ci.yml critical
+# path. Collapsed into two jobs so free-tier runner concurrency is not
+# exhausted by a dozen one-step matrices.
+name: ci-extra
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-extra-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  hygiene:
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '"ubuntu-latest"' || '["self-hosted","Linux","X64","zyvor-build","docker"]') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version-file: go.mod
+          cache: ${{ runner.environment == 'github-hosted' }}  # self-hosted: shared GOMODCACHE, cache restore/save takes 15-35 min
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e  # v5.1.0
+      - name: Install shellcheck + kubeconform + actionlint
+        run: |
+          set -euo pipefail
+          # No sudo on the self-hosted runners: install everything user-local.
+          bin="$HOME/.local/bin"; mkdir -p "$bin"; echo "$bin" >> "$GITHUB_PATH"; export PATH="$bin:$PATH"
+          python3 -c 'import yaml' 2>/dev/null || python3 -m pip install --user -q pyyaml
+          # Per-job scratch dir: the runners share one user and one /tmp.
+          dl="$(mktemp -d "${RUNNER_TEMP}/tools.XXXXXX")"
+          command -v shellcheck >/dev/null || {
+            sc=v0.10.0
+            curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/${sc}/shellcheck-${sc}.linux.x86_64.tar.xz" \
+              | tar -xJ -C "$dl" "shellcheck-${sc}/shellcheck"
+            mv "$dl/shellcheck-${sc}/shellcheck" "$bin/shellcheck"
+          }
+          ver=v0.6.7
+          curl -fsSL "https://github.com/yannh/kubeconform/releases/download/${ver}/kubeconform-linux-amd64.tar.gz" \
+            | tar -xz -C "$dl" kubeconform
+          mv "$dl/kubeconform" "$bin/kubeconform"
+          al=1.7.7
+          curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${al}/actionlint_${al}_linux_amd64.tar.gz" \
+            | tar -xz -C "$dl" actionlint
+          mv "$dl/actionlint" "$bin/actionlint"
+          rm -rf "$dl"
+      - name: Stdlib / forbidden-deps boundary
+        run: python3 scripts/check_stdlib_boundary.py
+      - name: License headers
+        run: python3 scripts/check_license_headers.py
+      - name: go mod tidy / verify
+        # `go mod verify` re-hashes every extracted module in GOMODCACHE. The
+        # self-hosted runners share one user and one ~/go/pkg/mod that
+        # concurrent jobs and cache restores write into, so it reports
+        # "dir has been modified" for modules nobody touched. Verify against a
+        # private per-job cache instead.
+        env:
+          GOMODCACHE: ${{ runner.temp }}/gomodcache-hygiene
+        run: |
+          set -euo pipefail
+          trap 'chmod -R u+w "$GOMODCACHE" 2>/dev/null; rm -rf "$GOMODCACHE"' EXIT
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+          go mod verify
+      - name: Scripts bash -n + shellcheck + certs
+        run: |
+          set -euo pipefail
+          mapfile -t scripts < <(find scripts -type f -name '*.sh' | sort)
+          for s in "${scripts[@]}"; do bash -n "$s"; done
+          shellcheck -S warning -e SC2155,SC2086,SC1091,SC2154 scripts/*.sh
+          chmod +x scripts/gen-webhook-tls-certs.sh scripts/gen-migration-mtls-certs.sh
+          tmp=$(mktemp -d)
+          scripts/gen-webhook-tls-certs.sh "$tmp/webhook"
+          test -f "$tmp/webhook/ca.pem"
+          scripts/gen-migration-mtls-certs.sh "$tmp/mig" worker-1=10.0.0.11
+          test -f "$tmp/mig/ca/ca.pem"
+      - name: actionlint
+        run: actionlint -color -config-file .github/actionlint.yaml
+      - name: kubeconform + YAML parse
+        run: |
+          set -euo pipefail
+          kubeconform -summary -strict -ignore-missing-schemas \
+            deploy/controller.yaml deploy/node.yaml deploy/ui.yaml deploy/rbac.yaml
+          kubeconform -summary -ignore-missing-schemas deploy/crd.yaml
+          python3 - <<'PY'
+          from pathlib import Path
+          import yaml
+          root = Path('.')
+          paths = list((root / 'examples').glob('*.yaml')) if (root / 'examples').exists() else []
+          paths += list((root / 'charts/kairon/crds').glob('*.yaml'))
+          paths += [root / 'charts/kairon/values.yaml', root / 'charts/kairon/values-production.yaml']
+          for p in paths:
+              docs = list(yaml.safe_load_all(p.read_text()))
+              assert docs, p
+          print(f'yaml parse: OK ({len(paths)} files)')
+          PY
+      - name: Helm render matrix
+        run: |
+          set -euo pipefail
+          render() {
+            local name="$1"; shift
+            echo "==> helm template ($name)"
+            helm template kairon charts/kairon --namespace kairon-system "$@" > "${RUNNER_TEMP}/helm-${name}.yaml"
+            python3 -c "import yaml,sys; d=[x for x in yaml.safe_load_all(open(sys.argv[1])) if x]; assert d, sys.argv[1]" "${RUNNER_TEMP}/helm-${name}.yaml"
+          }
+          render default
+          render migration --set migration.enabled=true
+          render ui --set ui.enabled=true
+          render csi --set csiNode.enabled=true --set csiController.enabled=true
+          render cordon --set controller.cordonEvacuation.enabled=true
+          render lease --set node.livenessLease.enabled=true
+          render chap --set node.csi.chap.enabled=true
+          render netpol --set controller.networkPolicy.enabled=true --set node.networkPolicy.enabled=true
+          render production \
+            -f charts/kairon/values-production.yaml \
+            --set webhook.tlsSecretName=ci-webhook-tls \
+            --set webhook.caBundle=Y2ktY2EtYnVuZGxl \
+            --set migration.dataplaneTlsSecretName=ci-mig \
+            --set ui.enabled=true
+          render everything \
+            --set ui.enabled=true \
+            --set migration.enabled=true \
+            --set csiNode.enabled=true \
+            --set csiController.enabled=true \
+            --set controller.cordonEvacuation.enabled=true \
+            --set node.livenessLease.enabled=true \
+            --set network.ciliumAttach.enabled=true \
+            --set network.ciliumPolicySync.enabled=true \
+            --set webhook.enabled=true \
+            --set webhook.tlsSecretName=ci-webhook-tls \
+            --set webhook.caBundle=Y2ktY2EtYnVuZGxl
+      - name: Docs guard
+        run: |
+          set -euo pipefail
+          for f in \
+            docs/COMPATIBILITY.md \
+            docs/DEPENDENCIES.md \
+            docs/STATUS.md \
+            docs/getting-started.md \
+            charts/kairon/values-production.yaml \
+            .github/workflows/hardware-migration.yml \
+            .github/workflows/release.yml \
+            scripts/hardware-migration-matrix.sh
+          do
+            test -f "$f"
+          done
+          grep -q 'values-production.yaml' docs/getting-started.md
+          grep -q 'COMPATIBILITY.md' docs/STATUS.md
+
+  build-artifacts:
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '"ubuntu-latest"' || '["self-hosted","Linux","X64","zyvor-build","docker"]') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version-file: go.mod
+          cache: ${{ runner.environment == 'github-hosted' }}  # self-hosted: shared GOMODCACHE, cache restore/save takes 15-35 min
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e  # v5.1.0
+      - name: Krew package
+        run: |
+          set -euo pipefail
+          # Call the script directly (as release.yml does): `make` is not installed on
+          # every self-hosted runner (zyvor-build-f: "make: command not found", exit 127).
+          ./scripts/krew-package.sh
+          test -f dist/krew/kairon.yaml
+          count=$(find dist/krew -maxdepth 1 -name 'kairon_*.tar.gz' | wc -l | tr -d ' ')
+          test "$count" = "4"
+          if grep -E 'CHANGE_ME|0000000000' dist/krew/kairon.yaml; then
+            echo "krew manifest still has placeholders" >&2
+            exit 1
+          fi
+      - name: Cross-compile CLIs
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for goos in linux darwin; do
+            for goarch in amd64 arm64; do
+              for cmd in kaironctl kubectl-kairon; do
+                CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
+                  go build -trimpath -ldflags '-s -w' \
+                  -o "dist/${cmd}-${goos}-${goarch}" "./cmd/${cmd}"
+              done
+            done
+          done
+          test "$(find dist -maxdepth 1 -type f -name 'kaironctl-*' -o -name 'kubectl-kairon-*' | wc -l | tr -d ' ')" = "8"
+      - name: Per-package race tests
+        run: |
+          set -euo pipefail
+          for p in \
+            ./internal/admission/ \
+            ./internal/agent/ \
+            ./internal/consoleproxy/ \
+            ./internal/controller/ \
+            ./internal/conversion/ \
+            ./internal/csinode/ \
+            ./internal/fluxvm/ \
+            ./internal/health/ \
+            ./internal/kaironctl/ \
+            ./internal/kube/ \
+            ./internal/leaderelection/ \
+            ./internal/metrics/ \
+            ./internal/migration/ \
+            ./internal/model/ \
+            ./internal/nodeliveness/ \
+            ./internal/ratelimit/ \
+            ./internal/scheduler/ \
+            ./internal/tlsreload/ \
+            ./internal/uiapi/
+          do
+            echo "==> go test -race $p"
+            go test -race -count=1 -timeout 10m "$p"
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: ci-extra-artifacts
+          path: |
+            dist/krew/
+            dist/kaironctl-*
+            dist/kubectl-kairon-*

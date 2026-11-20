@@ -1,0 +1,72 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+# Production installation profile for Kairon.
+# Prerequisites (the install fails fast with a message if the webhook ones are missing):
+#   - webhook TLS:   scripts/gen-webhook-tls-certs.sh, then pass
+#                    --set webhook.tlsSecretName=kairon-webhook-tls \
+#                    --set webhook.caBundle="$(base64 -w0 ca.crt)"
+#   - migration TLS: create the kairon-migration-tls Secret (ca.crt, tls.crt, tls.key)
+#                    in the release namespace, or kairon-node pods stay in
+#                    ContainerCreating (scripts/gen-migration-mtls-certs.sh).
+# Usage:
+#   helm install kairon charts/kairon -n kairon-system --create-namespace \
+#     -f charts/kairon/values-production.yaml \
+#     --set webhook.tlsSecretName=... --set webhook.caBundle=...
+#
+# Evaluation installs should keep charts/kairon/values.yaml defaults
+# (webhook and multi-tenant hardening off) so demos keep working.
+
+webhook:
+  enabled: true
+
+controller:
+  image:
+    tag: "" # Chart.AppVersion
+
+node:
+  image:
+    tag: ""
+  networkDefaultDeny: true
+  interval: 5m
+
+ui:
+  image:
+    tag: ""
+  auth:
+    namespaceScoping:
+      enabled: true
+    # Random generated admin password, not the lab default "Admin@321".
+    wellKnownDefault: false
+
+csiNode:
+  image:
+    tag: ""
+
+csiController:
+  image:
+    tag: ""
+
+migration:
+  enabled: true
+  # Require a real per-node dataplane identity in production rather than
+  # falling back to the shared control-plane cert.
+  dataplaneTls: true
+  # Operator must set dataplaneTlsSecretName to a Secret produced by
+  # scripts/gen-migration-mtls-certs.sh (or equivalent).
+  # dataplaneTlsSecretName: kairon-migration-dataplane
+
+# Network Fabric (FluxVM TC/eBPF edge) — Kairon declares policy; FluxVM owns BPF.
+# Recommended per-Machine for production VMs (not a Helm default — set on the CR):
+#   spec.network.dataplaneMode: ebpf
+#   spec.network.dataplaneRequired: true
+# Optional Cilium cluster attach remains off here; enable explicitly:
+# network:
+#   ciliumAttach:
+#     enabled: true
+#   ciliumPolicySync:
+#     enabled: true
+# See docs/network-fabric.md and docs/getting-started.md#network-fabric-ebpf-edge.
+
+# Prefer digest pins in locked-down environments by overriding:
+#   controller.image.tag: "v0.10.6@sha256:..."

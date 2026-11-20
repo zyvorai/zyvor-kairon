@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "python-dev",
+  "version": "1.0.0",
+  "description": "Ubuntu Python development workspace",
+  "requirements": [
+    "Ubuntu 24.04 cloud image with cloud-init and preinstalled qemu-guest-agent",
+    "Outbound access to approved Ubuntu package mirrors",
+    "Wait for cloud-init completion before invoking applications; not a certified production image"
+  ],
+  "spec": {
+    "resources": {
+      "cpu": "2",
+      "memory": "2Gi"
+    },
+    "runtime": {
+      "backend": "qemu"
+    },
+    "network": {
+      "mode": "user"
+    },
+    "guestAgent": {
+      "enabled": true
+    },
+    "powerState": "Running",
+    "cloudInit": {
+      "packages": [
+        "python3",
+        "python3-venv",
+        "git"
+      ],
+      "runCmd": []
+    }
+  }
+}

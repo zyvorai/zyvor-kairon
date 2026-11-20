@@ -1,0 +1,132 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+# Real multi-host migration matrix. Requires a self-hosted runner with
+# access to the Zyvor KVM lab and repository secrets (see docs/COMPATIBILITY.md).
+# The matrix job fails when KAIRON_HW_LAB is not configured on the lab runner:
+# a green nightly must mean migrations ran.
+#
+# validate: always runs on GitHub-hosted runners (PR/push) — script syntax,
+# safety gate, and docs/COMPATIBILITY.md presence. Does not touch a cluster.
+name: hardware-migration
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * *' # nightly 03:00 UTC
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '"ubuntu-latest"' || '["self-hosted","Linux","X64","zyvor-build","docker"]') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - name: Script syntax and safety gate
+        run: |
+          set -euo pipefail
+          test -f docs/COMPATIBILITY.md
+          for f in scripts/hardware-migration-matrix.sh scripts/recovery-drill.sh \
+                   scripts/lab-inject-source-failure.sh scripts/lab-inject-controller-failover.sh \
+                   scripts/lab-inject-postcopy-source-failure.sh \
+                   scripts/lib/lab.sh; do
+            bash -n "$f"
+          done
+          python3 -m py_compile scripts/lib/write_compat.py
+          if [[ -f scripts/multi-host-migration-test-run.sh ]]; then
+            bash -n scripts/multi-host-migration-test-run.sh
+          fi
+          # Safety gate must refuse without KAIRON_HW_LAB=1.
+          if scripts/hardware-migration-matrix.sh 2>${{ runner.temp }}/hw-refuse.txt; then
+            echo "expected refuse without KAIRON_HW_LAB=1" >&2
+            exit 1
+          fi
+          grep -qi 'KAIRON_HW_LAB' ${{ runner.temp }}/hw-refuse.txt
+          echo "hardware-migration validate: OK"
+      - name: Report what the lab matrix has and has not proven
+        run: |
+          set -euo pipefail
+          # The matrix itself needs the self-hosted lab and never runs on
+          # PRs. Surface the recorded state so a green check here is not
+          # mistaken for a green migration.
+          pass=$(grep -cE '^\| .*\| pass \|' docs/COMPATIBILITY.md || true)
+          fail=$(grep -cE '^\| .*\| fail \|' docs/COMPATIBILITY.md || true)
+          notrun=$(grep -cE '^\| .*\| not run \|' docs/COMPATIBILITY.md || true)
+          {
+            echo "### Hardware migration matrix (recorded, not run by this check)"
+            echo ""
+            echo "| pass | fail | not run |"
+            echo "|---|---|---|"
+            echo "| ${pass} | ${fail} | ${notrun} |"
+            echo ""
+            echo "Counted from \`docs/COMPATIBILITY.md\`. The matrix runs only on the self-hosted \`kairon-lab\` runner (nightly or manual)."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$fail" -gt 0 ]; then
+            echo "::warning title=Lab matrix has recorded failures::${fail} row(s) in docs/COMPATIBILITY.md are marked fail"
+          fi
+
+  matrix:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: [self-hosted, kairon-lab]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version-file: go.mod
+          cache: ${{ runner.environment == 'github-hosted' }}  # self-hosted: shared GOMODCACHE, cache restore/save takes 15-35 min
+      - name: Build CLI
+        run: make build
+      - name: Run hardware migration matrix
+        env:
+          KAIRON_HW_LAB: ${{ vars.KAIRON_HW_LAB }}
+          KAIRON_KUBE_URL: ${{ secrets.KAIRON_KUBE_URL }}
+          KAIRON_KUBE_TOKEN: ${{ secrets.KAIRON_KUBE_TOKEN }}
+          KAIRON_KUBE_CA_PEM: ${{ secrets.KAIRON_KUBE_CA }}
+          KAIRON_HW_MACHINE: ${{ vars.KAIRON_HW_MACHINE }}
+          KAIRON_HW_TARGET_NODE: ${{ vars.KAIRON_HW_TARGET_NODE }}
+          KAIRON_HW_NAMESPACE: ${{ vars.KAIRON_HW_NAMESPACE }}
+          KAIRON_HW_EBPF_MACHINE: ${{ vars.KAIRON_HW_EBPF_MACHINE }}
+          KAIRON_HW_IMAGE: ${{ vars.KAIRON_HW_IMAGE }}
+          KAIRON_HW_SOURCE_SSH: ${{ vars.KAIRON_HW_SOURCE_SSH }}
+          KAIRON_HW_TARGET_SSH: ${{ vars.KAIRON_HW_TARGET_SSH }}
+          KAIRON_HW_CONTROLLER_SSH: ${{ vars.KAIRON_HW_CONTROLLER_SSH }}
+          KAIRON_HW_LOAD_MIB: ${{ vars.KAIRON_HW_LOAD_MIB }}
+          KAIRON_HW_ADAPTIVE_LOAD_MIB: ${{ vars.KAIRON_HW_ADAPTIVE_LOAD_MIB }}
+          KAIRON_HW_ADAPTIVE_BANDWIDTH_MBPS: ${{ vars.KAIRON_HW_ADAPTIVE_BANDWIDTH_MBPS }}
+          KAIRON_HW_POSTCOPY_MACHINE: ${{ vars.KAIRON_HW_POSTCOPY_MACHINE }}
+          KAIRON_UI_URL: ${{ vars.KAIRON_UI_URL }}
+          KAIRON_UI_TOKEN: ${{ secrets.KAIRON_UI_TOKEN }}
+        run: |
+          if [[ "${KAIRON_HW_LAB:-}" != "1" ]]; then
+            echo "::error title=Hardware migration matrix did not run::KAIRON_HW_LAB is not set on this kairon-lab runner, so no migration was exercised. Configure the lab vars/secrets."
+            echo "### Hardware migration matrix: NOT RUN (KAIRON_HW_LAB unset)" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          if [[ -n "${KAIRON_KUBE_CA_PEM:-}" ]]; then
+            printf '%s\n' "$KAIRON_KUBE_CA_PEM" > "$RUNNER_TEMP/kube-ca.pem"
+            export KAIRON_KUBE_CA="$RUNNER_TEMP/kube-ca.pem"
+          fi
+          export PATH="$PWD/bin:$PATH"
+          set -o pipefail
+          scripts/hardware-migration-matrix.sh --write-compat | tee matrix-out.txt
+      - name: Upload COMPATIBILITY.md with results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        with:
+          name: compatibility-md
+          path: docs/COMPATIBILITY.md
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
+        if: always()
+        with:
+          name: hardware-migration-matrix
+          path: matrix-out.txt
+          if-no-files-found: ignore

@@ -1,0 +1,17 @@
+{
+  "apiVersion": "fleet.kairon.zyvor.dev/v1alpha1",
+  "kind": "MachineAutoscaler",
+  "metadata": {
+    "name": "autoscaler",
+    "namespace": "default"
+  },
+  "spec": {
+    "targetKind": "MachineSet",
+    "targetName": "workers",
+    "minReplicas": 2,
+    "maxReplicas": 10,
+    "targetCPUPercent": 60,
+    "stabilizationSeconds": 120,
+    "maxStep": 1
+  }
+}

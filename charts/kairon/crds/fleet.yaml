@@ -1,0 +1,920 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: machinehaprofiles.fleet.kairon.zyvor.dev
+spec:
+  group: fleet.kairon.zyvor.dev
+  scope: Namespaced
+  names:
+    plural: machinehaprofiles
+    singular: machinehaprofile
+    kind: MachineHAProfile
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    subresources:
+      status: {}
+    additionalPrinterColumns:
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            type: object
+            properties:
+              selector:
+                type: object
+                additionalProperties:
+                  type: string
+              nodes:
+                type: object
+                additionalProperties:
+                  type: object
+                  properties:
+                    endpoint:
+                      type: string
+                    systemID: &id001
+                      type: string
+                      pattern: ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$
+                      maxLength: 63
+                      minLength: 1
+                    secretName: *id001
+                  required:
+                  - endpoint
+                  - systemID
+                  - secretName
+              maxRestarts:
+                type: integer
+                minimum: 1
+              failureGraceSeconds:
+                type: integer
+                minimum: 30
+            required:
+            - selector
+            - nodes
+            - maxRestarts
+            - failureGraceSeconds
+          status:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+        required:
+        - spec
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: nodefencerequests.fleet.kairon.zyvor.dev
+spec:
+  group: fleet.kairon.zyvor.dev
+  scope: Namespaced
+  names:
+    plural: nodefencerequests
+    singular: nodefencerequest
+    kind: NodeFenceRequest
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    subresources:
+      status: {}
+    additionalPrinterColumns:
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            type: object
+            properties:
+              node: &id001
+                type: string
+                pattern: ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$
+                maxLength: 63
+                minLength: 1
+              nodeUID:
+                type: string
+                minLength: 1
+              profileName: *id001
+            required:
+            - node
+            - nodeUID
+            - profileName
+            x-kubernetes-validations:
+            - rule: self == oldSelf
+              message: spec is immutable; create a new resource
+          status:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+        required:
+        - spec
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: machineactionapprovals.fleet.kairon.zyvor.dev
+spec:
+  group: fleet.kairon.zyvor.dev
+  scope: Namespaced
+  names:
+    plural: machineactionapprovals
+    singular: machineactionapproval
+    kind: MachineActionApproval
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    subresources:
+      status: {}
+    additionalPrinterColumns:
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            type: object
+            properties:
+              action:
+                type: string
+                minLength: 1
+              argumentsHash:
+                type: string
+                pattern: ^[0-9a-f]{64}$
+              principal:
+                type: string
+                minLength: 1
+              targetResource:
+                type: string
+                enum:
+                - machines
+                - machinebackups
+              targetName:
+                type: string
+                pattern: ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$
+                maxLength: 63
+                minLength: 1
+              targetUID:
+                type: string
+                minLength: 1
+              targetGeneration:
+                type: integer
+                minimum: 0
+              approver:
+                type: string
+                minLength: 1
+              expiresAt:
+                type: string
+                format: date-time
+            required:
+            - action
+            - argumentsHash
+            - principal
+            - targetResource
+            - targetName
+            - targetUID
+            - targetGeneration
+            - approver
+            - expiresAt
+            x-kubernetes-validations:
+            - rule: self == oldSelf
+              message: spec is immutable; create a new resource
+          status:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+        required:
+        - spec
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: machinebalancepolicies.fleet.kairon.zyvor.dev
+spec:
+  group: fleet.kairon.zyvor.dev
+  scope: Namespaced
+  names:
+    plural: machinebalancepolicies
+    singular: machinebalancepolicy
+    kind: MachineBalancePolicy
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    subresources:
+      status: {}
+    additionalPrinterColumns:
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            type: object
+            properties:
+              selector:
+                type: object
+                additionalProperties:
+                  type: string
+              minImprovementPercent:
+                type: number
+                minimum: 1
+                maximum: 100
+              cooldownSeconds:
+                type: integer
+                minimum: 30
+              strategy:
+                type: string
+                enum:
+                - cold
+                - auto
+              dryRun:
+                type: boolean
+            required:
+            - selector
+            - minImprovementPercent
+            - cooldownSeconds
+            - strategy
+          status:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+        required:
+        - spec
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: machineautoscalers.fleet.kairon.zyvor.dev
+spec:
+  group: fleet.kairon.zyvor.dev
+  scope: Namespaced
+  names:
+    plural: machineautoscalers
+    singular: machineautoscaler
+    kind: MachineAutoscaler
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    subresources:
+      status: {}
+    additionalPrinterColumns:
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            type: object
+            properties:
+              targetKind:
+                type: string
+                enum:
+                - MachineSet
+                - MachinePool
+              targetName:
+                type: string
+                pattern: ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$
+                maxLength: 63
+                minLength: 1
+              minReplicas:
+                type: integer
+                minimum: 1
+              maxReplicas:
+                type: integer
+                minimum: 1
+                maximum: 10000
+              targetCPUPercent:
+                type: number
+                exclusiveMinimum: true
+                minimum: 0
+                maximum: 100
+              stabilizationSeconds:
+                type: integer
+                minimum: 30
+              maxStep:
+                type: integer
+                minimum: 1
+            required:
+            - targetKind
+            - targetName
+            - minReplicas
+            - maxReplicas
+            - targetCPUPercent
+            - stabilizationSeconds
+            - maxStep
+            x-kubernetes-validations:
+            - rule: self.maxReplicas >= self.minReplicas
+              message: maxReplicas must be at least minReplicas
+          status:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+        required:
+        - spec
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: machinerecoveryplans.fleet.kairon.zyvor.dev
+spec:
+  group: fleet.kairon.zyvor.dev
+  scope: Namespaced
+  names:
+    plural: machinerecoveryplans
+    singular: machinerecoveryplan
+    kind: MachineRecoveryPlan
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    subresources:
+      status: {}
+    additionalPrinterColumns:
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            type: object
+            properties:
+              steps:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    machineName: &id001
+                      type: string
+                      pattern: ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$
+                      maxLength: 63
+                      minLength: 1
+                    backupName: *id001
+                    dependsOn:
+                      type: array
+                      items: *id001
+                  required:
+                  - machineName
+                  - backupName
+              mode:
+                type: string
+                enum:
+                - RestoreInPlace
+                - TestRestore
+              maxDataAgeSeconds:
+                type: integer
+                minimum: 1
+              start:
+                type: boolean
+              testBridge: *id001
+            required:
+            - steps
+            - mode
+            - maxDataAgeSeconds
+            - start
+          status:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+        required:
+        - spec
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: machinebackupgroups.fleet.kairon.zyvor.dev
+spec:
+  group: fleet.kairon.zyvor.dev
+  scope: Namespaced
+  names:
+    plural: machinebackupgroups
+    singular: machinebackupgroup
+    kind: MachineBackupGroup
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    subresources:
+      status: {}
+    additionalPrinterColumns:
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            type: object
+            properties:
+              machines:
+                type: array
+                items:
+                  type: string
+                  pattern: ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$
+                  maxLength: 63
+                  minLength: 1
+              quiesce:
+                type: string
+                enum:
+                - auto
+                - required
+                - never
+              atlasBucketID:
+                type: string
+              intervalSeconds:
+                type: integer
+                minimum: 0
+              keepLast:
+                type: integer
+                minimum: 0
+            required:
+            - machines
+            - quiesce
+          status:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+        required:
+        - spec
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: machineimportplans.fleet.kairon.zyvor.dev
+spec:
+  group: fleet.kairon.zyvor.dev
+  scope: Namespaced
+  names:
+    plural: machineimportplans
+    singular: machineimportplan
+    kind: MachineImportPlan
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    subresources:
+      status: {}
+    additionalPrinterColumns:
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            type: object
+            properties:
+              entries:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                      pattern: ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$
+                      maxLength: 63
+                      minLength: 1
+                    image:
+                      type: object
+                      properties:
+                        digest:
+                          type: string
+                          pattern: ^sha256:[0-9a-fA-F]{64}$
+                        source:
+                          type: object
+                          properties:
+                            httpURL:
+                              type: string
+                            oci:
+                              type: string
+                            format:
+                              type: string
+                            repair:
+                              type: boolean
+                      required:
+                      - digest
+                      - source
+                    resources:
+                      type: object
+                      properties:
+                        cpu:
+                          type: string
+                        memory:
+                          type: string
+                        maxCpu:
+                          type: string
+                        maxMemory:
+                          type: string
+                      required:
+                      - cpu
+                      - memory
+                    backend:
+                      type: string
+                      enum:
+                      - qemu
+                      - cloud-hypervisor
+                      - firecracker
+                      - fluxvm
+                  required:
+                  - name
+                  - image
+                  - resources
+              maxConcurrent:
+                type: integer
+                minimum: 1
+                maximum: 100
+              powerState:
+                type: string
+                enum:
+                - Running
+                - Stopped
+            required:
+            - entries
+            - maxConcurrent
+            - powerState
+            x-kubernetes-validations:
+            - rule: self == oldSelf
+              message: spec is immutable; create a new resource
+          status:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+        required:
+        - spec
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: machinetemplateversions.fleet.kairon.zyvor.dev
+spec:
+  group: fleet.kairon.zyvor.dev
+  scope: Namespaced
+  names:
+    plural: machinetemplateversions
+    singular: machinetemplateversion
+    kind: MachineTemplateVersion
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    subresources:
+      status: {}
+    additionalPrinterColumns:
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            type: object
+            properties:
+              version:
+                type: string
+                minLength: 1
+              template: &id001
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+              maxTTLSeconds:
+                type: integer
+                minimum: 1
+            required:
+            - version
+            - template
+            - maxTTLSeconds
+            x-kubernetes-validations:
+            - rule: self == oldSelf
+              message: spec is immutable; create a new resource
+          status: *id001
+        required:
+        - spec
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: machinetemplateclaims.fleet.kairon.zyvor.dev
+spec:
+  group: fleet.kairon.zyvor.dev
+  scope: Namespaced
+  names:
+    plural: machinetemplateclaims
+    singular: machinetemplateclaim
+    kind: MachineTemplateClaim
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    subresources:
+      status: {}
+    additionalPrinterColumns:
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            type: object
+            properties:
+              templateName: &id001
+                type: string
+                pattern: ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$
+                maxLength: 63
+                minLength: 1
+              machineName: *id001
+              ttlSeconds:
+                type: integer
+                minimum: 1
+              networkClaim: *id001
+            required:
+            - templateName
+            - machineName
+            - ttlSeconds
+            x-kubernetes-validations:
+            - rule: self == oldSelf
+              message: spec is immutable; create a new resource
+          status:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+        required:
+        - spec
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: machinevirtualnetworks.fleet.kairon.zyvor.dev
+spec:
+  group: fleet.kairon.zyvor.dev
+  scope: Namespaced
+  names:
+    plural: machinevirtualnetworks
+    singular: machinevirtualnetwork
+    kind: MachineVirtualNetwork
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    subresources:
+      status: {}
+    additionalPrinterColumns:
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            type: object
+            properties:
+              cidr:
+                type: string
+              gateway:
+                type: string
+              bridge:
+                type: string
+                maxLength: 15
+              nodeSelector:
+                type: object
+                additionalProperties:
+                  type: string
+              dnsServers:
+                type: array
+                items:
+                  type: string
+            required:
+            - cidr
+            - gateway
+            - bridge
+            - nodeSelector
+            x-kubernetes-validations:
+            - rule: self == oldSelf
+              message: spec is immutable; create a new resource
+          status:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+        required:
+        - spec
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: machinenetworkclaims.fleet.kairon.zyvor.dev
+spec:
+  group: fleet.kairon.zyvor.dev
+  scope: Namespaced
+  names:
+    plural: machinenetworkclaims
+    singular: machinenetworkclaim
+    kind: MachineNetworkClaim
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    subresources:
+      status: {}
+    additionalPrinterColumns:
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            type: object
+            properties:
+              networkName: &id001
+                type: string
+                pattern: ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$
+                maxLength: 63
+                minLength: 1
+              machineName: *id001
+            required:
+            - networkName
+            - machineName
+            x-kubernetes-validations:
+            - rule: self == oldSelf
+              message: spec is immutable; create a new resource
+          status:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+        required:
+        - spec
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: machineusageledgers.fleet.kairon.zyvor.dev
+spec:
+  group: fleet.kairon.zyvor.dev
+  scope: Namespaced
+  names:
+    plural: machineusageledgers
+    singular: machineusageledger
+    kind: MachineUsageLedger
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    subresources:
+      status: {}
+    additionalPrinterColumns:
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            type: object
+            properties:
+              selector:
+                type: object
+                additionalProperties:
+                  type: string
+              maxGapSeconds:
+                type: integer
+                minimum: 30
+                maximum: 3600
+            required:
+            - selector
+            - maxGapSeconds
+          status:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+        required:
+        - spec

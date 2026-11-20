@@ -1,0 +1,42 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: kairon-node
+  namespace: kairon-system
+spec:
+  selector:
+    matchLabels: {app.kubernetes.io/name: kairon-node}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: kairon-node}
+    spec:
+      serviceAccountName: kairon-node
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      nodeSelector:
+        kairon.zyvor.dev/capable: "true"
+      containers:
+        - name: node
+          image: ghcr.io/zyvorai/kairon-node:latest
+          imagePullPolicy: IfNotPresent
+          args: ["--interval=3s", "--fluxvm-url=http://127.0.0.1:7788", "--image-root=/var/lib/fluxvm/images", "--vfio-allowlist=$(KAIRON_VFIO_ALLOWLIST)"]
+          env:
+            - name: NODE_NAME
+              valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
+            - name: KAIRON_VFIO_ALLOWLIST
+              value: ""
+          ports:
+            - {name: health, containerPort: 32302}
+          readinessProbe: {httpGet: {path: /readyz, port: health}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /healthz, port: health}, periodSeconds: 10}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities: {drop: ["ALL"]}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 250m, memory: 128Mi}

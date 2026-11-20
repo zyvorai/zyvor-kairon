@@ -1,0 +1,27 @@
+/* SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0 */
+/* Shared look for the Kairon README cards (light), matching the share card. */
+:root { --ink:#1d1d1f; --soft:#6e6e73; --muted:#86868b; --signal:#0071e3; --sky:#2997ff; --deep:#0058b0; --line:#e3e3e8; --warm:#f5f5f7; --pale:#e8f2fd;
+  --green:#1f7a4d; --violet:#6e3ad6; --amber:#c25e00; --red:#c4302b; --orange:#ff6a2a;
+  --sans:"SF Pro Display","Helvetica Neue",Helvetica,Arial,sans-serif; --mono:"SF Mono",Menlo,Consolas,monospace; }
+* { box-sizing:border-box; }
+html,body { margin:0; padding:0; }
+body { width:1600px; overflow:hidden; background:var(--warm); color:var(--ink); font-family:var(--sans); position:relative; }
+.bar { position:absolute; left:0; top:0; bottom:0; width:14px; background:linear-gradient(180deg,var(--signal),var(--sky)); }
+.wrap { position:absolute; left:64px; right:56px; top:40px; bottom:34px; display:flex; flex-direction:column; }
+.top { display:flex; align-items:center; gap:14px; font-family:var(--mono); font-size:18px; letter-spacing:.14em; text-transform:uppercase; color:var(--soft); }
+.top img { height:34px; } .top b { color:var(--deep); } .top .r { margin-left:auto; }
+h1 { margin:18px 0 0; font-size:56px; line-height:1.06; letter-spacing:-.025em; font-weight:700; }
+h1 em { font-style:normal; background:linear-gradient(90deg,var(--signal),var(--sky)); -webkit-background-clip:text; background-clip:text; color:transparent; }
+.lane { display:inline-block; font-family:var(--mono); font-size:14px; font-weight:700; letter-spacing:.12em; color:#fff; background:var(--c); padding:3px 10px; border-radius:11px; }
+.card { position:relative; background:#fff; border:2.5px solid var(--c); border-radius:16px; padding:16px 18px 16px 26px; }
+.card::before { content:""; position:absolute; left:0; top:0; bottom:0; width:9px; background:var(--c); border-radius:13px 0 0 13px; }
+.card h3 { margin:12px 0 6px; font-size:25px; line-height:1.14; letter-spacing:-.01em; }
+.card p { margin:0; font-size:19px; line-height:1.34; color:var(--soft); }
+.card ul { margin:10px 0 0; padding:0; list-style:none; }
+.card li { font-size:19px; line-height:1.32; padding:5px 0; border-top:1px solid var(--line); }
+.card li:first-child { border-top:0; }
+.card code, .mono { font-family:var(--mono); font-size:.9em; }
+.k { --c:var(--signal); } .a { --c:var(--ink); } .v { --c:var(--violet); } .o { --c:var(--green); } .m { --c:var(--amber); }
+.foot { margin-top:auto; padding-top:12px; border-top:3px solid var(--ink); display:flex; font-family:var(--mono); font-size:20px; color:var(--soft); }
+.foot b { color:var(--ink); } .foot .r { margin-left:auto; }
+.dot { display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--orange); margin-right:10px; vertical-align:middle; }

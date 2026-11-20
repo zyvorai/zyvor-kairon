@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kairon: capabilities at a glance</title>
+<!-- README card, 1600x400 at 2x. Build: ./docs/ux/build-readme-cards.sh -->
+<style>
+  :root { --acc:#0a84ff; --sans:'SF Pro Display','Helvetica Neue',Helvetica,Arial,sans-serif; --mono:'SF Mono',Menlo,Consolas,monospace; }
+  * { box-sizing:border-box; } html,body { margin:0; padding:0; }
+  body { width:1600px; min-height:400px; overflow:hidden; background:#000; color:#f5f5f7; font-family:var(--sans); position:relative; }
+  .glow { position:absolute; inset:0; background:radial-gradient(800px 420px at 92% -10%, color-mix(in srgb, var(--acc) 34%, transparent), transparent 65%),
+    radial-gradient(700px 380px at -5% 115%, rgba(0,113,227,.22), transparent 60%); }
+  .rail { position:absolute; left:0; top:0; bottom:0; width:6px; background:linear-gradient(180deg, var(--acc), rgba(41,151,255,.2)); }
+  .wrap { position:relative; padding:40px 64px 28px; }
+  .top { display:flex; align-items:center; justify-content:space-between; }
+  .brand { display:flex; align-items:center; gap:12px; font-family:var(--mono); font-size:15px; letter-spacing:.18em; text-transform:uppercase; color:#a1a1a6; }
+  .brand b { color:#fff; }
+  .kicker { font-family:var(--mono); font-size:15px; letter-spacing:.18em; text-transform:uppercase; color:var(--acc); }
+  h1 { margin:18px 0 0; font-size:50px; line-height:1.05; font-weight:800; letter-spacing:-.03em; white-space:nowrap; }
+  h1 em { font-style:normal; color:var(--acc); }
+  .foot { margin-top:28px; display:flex; justify-content:space-between; align-items:center; font-family:var(--mono); font-size:16px; color:#8e8e93; padding-top:18px; border-top:1px solid rgba(255,255,255,.08); }
+  .foot b { color:#f5f5f7; font-size:17px; }
+  .card { border-radius:16px; background:linear-gradient(180deg, rgba(28,30,36,.92), rgba(14,15,19,.95)); border:1px solid rgba(255,255,255,.12); position:relative; overflow:hidden; }
+  .tag { display:inline-block; font-family:var(--mono); font-size:12px; font-weight:700; letter-spacing:.16em; text-transform:uppercase; padding:4px 10px; border-radius:10px; border:1px solid currentColor; }
+
+  .caps { margin-top:30px; display:grid; grid-template-columns:repeat(4,1fr); gap:24px; }
+  .cap { padding:24px 26px 18px; }
+  .cap::before { content:''; position:absolute; right:-60px; top:-60px; width:200px; height:200px; border-radius:50%; background:radial-gradient(circle, color-mix(in srgb, var(--c) 30%, transparent), transparent 70%); }
+  .cap h2 { margin:16px 0 14px; font-size:27px; font-weight:700; letter-spacing:-.02em; }
+  .cap ul { margin:0; padding:0; list-style:none; }
+  .cap li { position:relative; padding:9px 0 9px 20px; font-size:18px; line-height:1.3; color:#d1d1d6; border-bottom:1px solid rgba(255,255,255,.07); }
+  .cap li:last-child { border-bottom:0; }
+  .cap li::before { content:''; position:absolute; left:2px; top:17px; width:7px; height:7px; border-radius:50%; background:var(--c); box-shadow:0 0 8px var(--c); }
+</style>
+</head>
+<body>
+<div class="glow"></div><div class="rail"></div>
+<div class="wrap">
+<div class="top"><div class="brand"><svg viewBox="0 0 64 64" width="30" height="30" aria-hidden="true"><defs><linearGradient id="zb" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ff5a15"/><stop offset="1" stop-color="#cc420a"/></linearGradient></defs><rect width="64" height="64" rx="15" fill="url(#zb)"/><path d="M18.5,20.5 45.5,20.5 18.5,43.5 45.5,43.5" fill="none" stroke="#fff" stroke-width="8.3" stroke-linecap="round" stroke-linejoin="round"/></svg><b>Zyvor</b><span>&middot;</span><span>Kairon</span></div><div class="kicker">Capabilities at a glance</div></div><h1>Real VMs on Kubernetes. <em>No pods pretending.</em></h1><div class="caps"><div class="card cap" style="--c:#2997ff"><span class="tag" style="color:#2997ff">Run</span><h2>Machines, not Pods</h2><ul><li>MachineSet and MachinePool</li><li>QEMU, CH, Firecracker, FluxVM</li><li>NUMA, CPU pinning, Windows</li><li>PVC, CSI and OCI disk boot</li><li>VMware OVA import</li></ul></div><div class="card cap" style="--c:#ff9f0a"><span class="tag" style="color:#ff9f0a">Move</span><h2>Moves that never guess</h2><ul><li>Cold migration and evacuation</li><li>Live migration over mutual TLS</li><li>NeedsRecovery, never two copies</li><li>MachineDisruptionBudget</li><li>Capacity-aware placement</li></ul></div><div class="card cap" style="--c:#30d158"><span class="tag" style="color:#30d158">Protect</span><h2>eBPF edge on every VM</h2><ul><li>Anti-spoof on every VM tap</li><li>DNS and TLS-SNI allowlists</li><li>Rate limits, attributed drops</li><li>Flows and one-command pcap</li><li>Snapshots, backups, restore</li></ul></div><div class="card cap" style="--c:#bf5af2"><span class="tag" style="color:#bf5af2">Automate</span><h2>Built for agents and ops</h2><ul><li>kaironctl mcp serve</li><li>Writes gated by --allow-write</li><li>Warm pools and claims, VM fork</li><li>kairon-ui with SSO and VNC</li><li>Prometheus metrics and alerts</li></ul></div></div><div class="foot"><b>github.com/zyvorai/zyvor-kairon</b><span>Go stdlib controller + node &#183; FluxVM &#183; KVM &#183; Helm OCI chart</span></div>
+</div>
+<script>document.body.setAttribute('data-h', Math.ceil(document.querySelector('.wrap').getBoundingClientRect().height));</script>
+</body>
+</html>

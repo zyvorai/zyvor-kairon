@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kairon: how it fits together</title>
+<!-- README card, 1600x400 at 2x. Build: ./docs/ux/build-readme-cards.sh -->
+<style>
+  :root { --acc:#0a84ff; --sans:'SF Pro Display','Helvetica Neue',Helvetica,Arial,sans-serif; --mono:'SF Mono',Menlo,Consolas,monospace; }
+  * { box-sizing:border-box; } html,body { margin:0; padding:0; }
+  body { width:1600px; min-height:400px; overflow:hidden; background:#000; color:#f5f5f7; font-family:var(--sans); position:relative; }
+  .glow { position:absolute; inset:0; background:radial-gradient(800px 420px at 92% -10%, color-mix(in srgb, var(--acc) 34%, transparent), transparent 65%),
+    radial-gradient(700px 380px at -5% 115%, rgba(0,113,227,.22), transparent 60%); }
+  .rail { position:absolute; left:0; top:0; bottom:0; width:6px; background:linear-gradient(180deg, var(--acc), rgba(41,151,255,.2)); }
+  .wrap { position:relative; padding:40px 64px 28px; }
+  .top { display:flex; align-items:center; justify-content:space-between; }
+  .brand { display:flex; align-items:center; gap:12px; font-family:var(--mono); font-size:15px; letter-spacing:.18em; text-transform:uppercase; color:#a1a1a6; }
+  .brand b { color:#fff; }
+  .kicker { font-family:var(--mono); font-size:15px; letter-spacing:.18em; text-transform:uppercase; color:var(--acc); }
+  h1 { margin:18px 0 0; font-size:50px; line-height:1.05; font-weight:800; letter-spacing:-.03em; white-space:nowrap; }
+  h1 em { font-style:normal; color:var(--acc); }
+  .foot { margin-top:28px; display:flex; justify-content:space-between; align-items:center; font-family:var(--mono); font-size:16px; color:#8e8e93; padding-top:18px; border-top:1px solid rgba(255,255,255,.08); }
+  .foot b { color:#f5f5f7; font-size:17px; }
+  .card { border-radius:16px; background:linear-gradient(180deg, rgba(28,30,36,.92), rgba(14,15,19,.95)); border:1px solid rgba(255,255,255,.12); position:relative; overflow:hidden; }
+  .tag { display:inline-block; font-family:var(--mono); font-size:12px; font-weight:700; letter-spacing:.16em; text-transform:uppercase; padding:4px 10px; border-radius:10px; border:1px solid currentColor; }
+
+  .you { margin-top:26px; display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:14px 18px; border-radius:14px; border:1px solid rgba(255,255,255,.1); background:rgba(255,255,255,.03); }
+  .you b { font-family:var(--mono); font-size:12px; letter-spacing:.14em; padding:4px 9px; border-radius:9px; background:#2c2c2e; color:#d1d1d6; }
+  .you span { font-size:17px; font-weight:600; padding:7px 13px; border-radius:16px; background:#1c1c1e; border:1px solid rgba(255,255,255,.12); }
+  .comps { margin-top:22px; display:grid; gap:24px; }
+  .comp { padding:20px 24px 22px; min-height:200px; }
+  .comp::before { content:''; position:absolute; left:-40px; top:-70px; width:240px; height:200px; border-radius:50%; background:radial-gradient(circle, color-mix(in srgb, var(--c) 24%, transparent), transparent 70%); }
+  .comp .row { display:flex; justify-content:space-between; align-items:center; position:relative; }
+  .comp i { font-style:normal; font-family:var(--mono); font-size:16px; font-weight:700; }
+  .comp h2 { margin:16px 0 8px; font-size:27px; font-weight:700; letter-spacing:-.02em; position:relative; }
+  .comp p { margin:0; font-size:18px; line-height:1.4; color:#c7c7cc; position:relative; }
+  .base { margin-top:22px; padding:16px; text-align:center; border-radius:14px; font-family:var(--mono); font-size:20px; color:#d1d1d6;
+    background:linear-gradient(90deg, rgba(0,113,227,.10), color-mix(in srgb, var(--acc) 22%, transparent), rgba(0,113,227,.10)); border:1px solid color-mix(in srgb, var(--acc) 55%, transparent); }
+  .base b { color:var(--acc); }
+</style>
+</head>
+<body>
+<div class="glow"></div><div class="rail"></div>
+<div class="wrap">
+<div class="top"><div class="brand"><svg viewBox="0 0 64 64" width="30" height="30" aria-hidden="true"><defs><linearGradient id="zb" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ff5a15"/><stop offset="1" stop-color="#cc420a"/></linearGradient></defs><rect width="64" height="64" rx="15" fill="url(#zb)"/><path d="M18.5,20.5 45.5,20.5 18.5,43.5 45.5,43.5" fill="none" stroke="#fff" stroke-width="8.3" stroke-linecap="round" stroke-linejoin="round"/></svg><b>Zyvor</b><span>&middot;</span><span>Kairon</span></div><div class="kicker">How it fits together</div></div><h1>Two Go binaries. <em>The Kubernetes API is the truth.</em></h1><div class="you"><b>YOU</b><span>kubectl apply Machine</span><span>kaironctl</span><span>kubectl kairon</span><span>kairon-ui</span><span>MCP client</span><span>Helm chart</span></div><div class="comps" style="grid-template-columns:repeat(4,1fr)"><div class="card comp" style="--c:#2997ff"><div class="row"><span class="tag" style="color:#2997ff">Controller</span><i style="color:#2997ff">:8443</i></div><h2>kairon-controller</h2><p>Placement, migration state machine, fencing, snapshots, quotas and budgets. Webhook on :8443.</p></div><div class="card comp" style="--c:#ff9f0a"><div class="row"><span class="tag" style="color:#ff9f0a">Node</span><i style="color:#ff9f0a">:9443</i></div><h2>kairon-node</h2><p>Per-host agent: FluxVM lifecycle, eBPF edge policy, mTLS live-migration peer, console relay.</p></div><div class="card comp" style="--c:#30d158"><div class="row"><span class="tag" style="color:#30d158">VMM</span><i style="color:#30d158">127.0.0.1:7788</i></div><h2>FluxVM</h2><p>The VMM layer on each host: QEMU, Cloud Hypervisor, Firecracker or FluxVM, plus the TC eBPF VM edge.</p></div><div class="card comp" style="--c:#bf5af2"><div class="row"><span class="tag" style="color:#bf5af2">Tools</span><i style="color:#bf5af2">:18082</i></div><h2>kaironctl &#183; kairon-ui</h2><p>CLI, kubectl plugin, embedded Helm installer and MCP server; optional dashboard with VNC console.</p></div></div><div class="base"><b>Kubernetes API</b> &middot; FluxVM REST &middot; /dev/kvm &middot; your Linux hosts</div><div class="foot"><span><b style="color:#f5f5f7">Optional:</b> eBPF VM edge &#183; live migration TLS &#183; Cilium policy sync</span><span>No virt-launcher &#183; no libvirt in the hot path &#183; no client-go in controller or node</span></div>
+</div>
+<script>document.body.setAttribute('data-h', Math.ceil(document.querySelector('.wrap').getBoundingClientRect().height));</script>
+</body>
+</html>

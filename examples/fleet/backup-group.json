@@ -1,0 +1,17 @@
+{
+  "apiVersion": "fleet.kairon.zyvor.dev/v1alpha1",
+  "kind": "MachineBackupGroup",
+  "metadata": {
+    "name": "backup-group",
+    "namespace": "default"
+  },
+  "spec": {
+    "machines": [
+      "database",
+      "api"
+    ],
+    "quiesce": "required",
+    "intervalSeconds": 86400,
+    "keepLast": 7
+  }
+}

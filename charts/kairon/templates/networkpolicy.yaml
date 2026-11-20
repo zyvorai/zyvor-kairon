@@ -1,0 +1,57 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+{{/*
+Off by default (unlike pdb.yaml): a NetworkPolicy here is Ingress-only
+(egress is left unrestricted -- both components need to reach the
+Kubernetes API, which is awkward to scope correctly by NetworkPolicy alone
+and out of scope here) and always allows same-namespace ingress, but
+enabling it in a cluster where Prometheus or an ingress controller lives
+in a DIFFERENT namespace can silently break scraping/ingress access unless
+*.networkPolicy.allowIngressFrom names that namespace -- get it wrong and
+you won't see an error, just a metrics gap or a 502. Each entry in
+allowIngressFrom is a full NetworkPolicyPeer (namespaceSelector and/or
+podSelector), passed through as-is.
+
+kairon-node is deliberately not covered here: it runs hostNetwork: true
+(see values.yaml), and standard NetworkPolicy does not apply to
+host-networked pods in most CNIs -- shipping a policy that implies
+protection it doesn't actually provide would be worse than shipping none.
+*/}}
+{{ if .Values.controller.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: kairon-controller, namespace: {{ .Release.Namespace }}}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: kairon-controller}}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector: {}
+{{ with .Values.controller.networkPolicy.allowIngressFrom }}
+{{ toYaml . | indent 8 }}
+{{ end }}
+      ports:
+        - {protocol: TCP, port: {{ .Values.controller.healthPort }}}
+{{ if .Values.webhook.enabled }}
+        - {protocol: TCP, port: {{ .Values.webhook.port }}}
+{{ end }}
+---
+{{ end }}
+{{ if and .Values.ui.enabled .Values.ui.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: kairon-ui, namespace: {{ .Release.Namespace }}}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: kairon-ui}}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector: {}
+{{ with .Values.ui.networkPolicy.allowIngressFrom }}
+{{ toYaml . | indent 8 }}
+{{ end }}
+      ports:
+        - {protocol: TCP, port: {{ .Values.ui.service.port }}}
+---
+{{ end }}

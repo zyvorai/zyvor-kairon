@@ -1,0 +1,70 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+name: codeql
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '17 4 * * 1'
+
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '"ubuntu-latest"' || '["self-hosted","Linux","X64","zyvor-build","docker"]') }}
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [go, javascript-typescript]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066  # v4
+        with:
+          languages: ${{ matrix.language }}
+      - if: matrix.language == 'go'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
+        with:
+          go-version-file: go.mod
+          cache: ${{ runner.environment == 'github-hosted' }}  # self-hosted: shared GOMODCACHE, cache restore/save takes 15-35 min
+      - if: matrix.language == 'go'
+        name: Autobuild Go
+        run: |
+          go build ./cmd/kairon-controller ./cmd/kairon-node ./cmd/kairon-ui \
+            ./cmd/kaironctl ./cmd/kubectl-kairon \
+            ./cmd/kairon-csi-node ./cmd/kairon-csi-controller
+      # npm is not installed on the self-hosted runners (zyvor-build-e: "npm: command not found",
+      # exit 127), so provide Node the same way ci.yml's web/website jobs do.
+      - if: matrix.language == 'javascript-typescript'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            website/package-lock.json
+      - if: matrix.language == 'javascript-typescript'
+        name: Build web + website
+        run: |
+          npm --prefix web ci
+          npm --prefix web run build
+          npm --prefix website ci
+          npm --prefix website run build
+      - uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066  # v4
+        with:
+          category: "/language:${{ matrix.language }}"
+          # The self-hosted runner OOM-killed `codeql database run-queries` (exit 137, then
+          # "runner received a shutdown signal") with the default of all host RAM / 12 threads.
+          ram: 8192
+          threads: 4

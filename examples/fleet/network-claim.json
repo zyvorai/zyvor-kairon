@@ -1,0 +1,12 @@
+{
+  "apiVersion": "fleet.kairon.zyvor.dev/v1alpha1",
+  "kind": "MachineNetworkClaim",
+  "metadata": {
+    "name": "network-claim",
+    "namespace": "default"
+  },
+  "spec": {
+    "networkName": "virtual-network",
+    "machineName": "dev-machine"
+  }
+}

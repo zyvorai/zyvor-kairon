@@ -1,0 +1,171 @@
+/* Copyright 2026 Zyvor · https://zyvor.dev
+   SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+   Sign-in: veyron's "siw" two-step field group (joined floating-label
+   field + round arrow button). Always rendered light via .force-light. */
+
+.loginwrap {
+  min-height: 100vh; display: grid; place-items: center; padding: 24px;
+  background: var(--bg-sub); color: var(--text);
+}
+.loginsplit {
+  width: min(980px, 100%); display: grid; grid-template-columns: 1.1fr 1fr; gap: 24px; align-items: center;
+}
+.loginsplit-left { position: relative; padding: 24px; min-height: 360px; display: flex; align-items: center; }
+.loginorb {
+  position: absolute; inset: 0; border-radius: 40px; filter: blur(40px); opacity: 0.9;
+  background:
+    radial-gradient(260px 220px at 30% 40%, rgba(0, 113, 227, 0.22), transparent 70%),
+    radial-gradient(240px 200px at 70% 60%, rgba(255, 90, 21, 0.18), transparent 70%);
+  animation: orbDrift 14s ease-in-out infinite alternate;
+}
+@keyframes orbDrift { to { transform: translate3d(14px, -10px, 0) scale(1.05); } }
+.loginbrand { position: relative; }
+.loginbrand .dot { border-radius: 10px; }
+.login-kicker { margin-top: 18px; font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--blue); }
+.login-title { font-size: clamp(32px, 4.4vw, 52px); letter-spacing: -0.045em; line-height: 1.05; margin-top: 8px; }
+.loginbrand-tagline { margin-top: 14px; color: var(--text-2); font-size: 16px; max-width: 380px; }
+
+.loginsplit-right { display: grid; justify-items: center; gap: 12px; }
+.logincard {
+  width: min(380px, 100%); padding: 32px 28px 26px;
+  background: var(--bg-elevated); border: 1px solid var(--hairline);
+  border-radius: 18px; box-shadow: var(--shadow-3);
+}
+.logincard h3 { font-size: 22px; letter-spacing: -0.03em; margin: 0 0 18px; }
+.logincard .formactions { justify-content: center; }
+.logincopy { color: var(--text-2); font-size: 14px; }
+.loginskeleton { height: 148px; border-radius: 12px; background: linear-gradient(90deg, var(--fill), var(--fill-hover), var(--fill)); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+.loginhost { font-size: 12px; color: var(--text-3); }
+.loginhost code { background: var(--fill); padding: 2px 6px; border-radius: 6px; }
+.loginor { text-align: center; color: var(--text-3); font-size: 12px; margin: 14px 0; }
+.loginfoot { text-align: center; margin-top: 18px; font-size: 13px; color: var(--text-2); }
+.loginstep { animation: stepIn 0.25s var(--ease); }
+@keyframes stepIn { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: none; } }
+button.wide { width: 100%; min-height: 40px; }
+
+.loginwho { display: flex; align-items: center; gap: 10px; font-size: 17px !important; }
+.loginavatar {
+  width: 34px; height: 34px; flex: none; border-radius: 50%;
+  display: grid; place-items: center; font-weight: 600;
+  background: var(--blue); color: #fff;
+}
+
+/* joined floating-label field + round arrow */
+.siw { position: relative; }
+.siw-field { position: relative; display: block; }
+.siw-field input {
+  min-height: 56px; padding: 22px 52px 6px 14px; font-size: 16px; border-radius: 14px;
+  background: var(--bg-elevated);
+}
+.siw-field span {
+  position: absolute; left: 15px; top: 17px; font-size: 16px; color: var(--text-3);
+  pointer-events: none; transition: transform 0.18s var(--ease), font-size 0.18s var(--ease), top 0.18s var(--ease);
+}
+.siw-field input:focus + span,
+.siw-field input:not(:placeholder-shown) + span { top: 8px; font-size: 11px; }
+.siw-go {
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  width: 34px; height: 34px; min-height: 0; padding: 0; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--fill-hover); border-color: transparent; color: var(--text-3);
+}
+.siw-go:not(:disabled) { background: var(--blue); color: #fff; }
+.siw-go:active:not(:disabled) { transform: translateY(-50%) scale(0.96); }
+
+.loginerror {
+  margin-top: 14px; display: flex; gap: 8px; align-items: flex-start;
+  background: var(--danger-bg); color: var(--danger);
+  padding: 10px 12px; border-radius: 12px; font-size: 13px;
+}
+.loginerror svg { flex: none; margin-top: 1px; }
+.spin { animation: spin 0.8s linear infinite; }
+
+@media (max-width: 860px) {
+  .loginsplit { grid-template-columns: 1fr; }
+  .loginsplit-left { min-height: 0; padding: 8px 8px 0; }
+  .login-title br { display: none; }
+}
+
+/* Single-form sign-in: username and password visible together. */
+.siw.stacked .siw-field + .siw-field { margin-top: -1px; }
+.siw.stacked .siw-field:first-child input { border-radius: 12px 12px 0 0; }
+.siw.stacked .siw-field:last-child input { border-radius: 0 0 12px 12px; }
+.loginhint {
+  margin: 14px 0 0; text-align: center; font-size: 12px; color: var(--text-3);
+}
+
+/* ── zorvia-style two-chapter sign-in ───────────────────────────────── */
+.loginwrap { display: block; padding: 0; background: var(--bg-sub); }
+.login-scroll { height: 100vh; overflow-y: auto; scroll-snap-type: y proximity; scroll-behavior: smooth; }
+.login-chapter { min-height: 100vh; display: grid; place-items: center; padding: 48px 24px; scroll-snap-align: start; position: relative; }
+.login-chapter-inner { width: min(560px, 100%); text-align: center; position: relative; }
+.login-hero { background: #fff; }
+.login-hero::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(700px 420px at 50% 28%, var(--tone-glow, rgba(0, 113, 227, 0.2)), transparent 70%);
+  animation: heroDrift 22s ease-in-out infinite alternate;
+}
+.login-signin { background: #f5f5f7; }
+.login-lockup { display: inline-flex; align-items: center; gap: 10px; font-size: 18px; color: var(--text-2); }
+.login-lockup b { color: var(--text); font-weight: 700; }
+.login-chips { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 18px; }
+.login-chips .chip { font-size: 12px; padding: 4px 10px; border-radius: 980px; background: var(--fill); color: var(--text-2); font-family: var(--font-mono); }
+.login-hero .login-title { font-size: clamp(2.6rem, 8vw, 4.6rem); font-weight: 600; letter-spacing: -0.045em; line-height: 1.04; text-wrap: balance; margin-top: 28px; }
+.login-hero .loginbrand-tagline { margin: 16px auto 0; font-size: 18px; max-width: 460px; }
+.login-pills { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 24px; }
+.login-pills span { font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 980px; color: var(--tone-color); background: var(--tone-wash); }
+.login-ctas { display: flex; gap: 12px; justify-content: center; margin-top: 32px; align-items: center; }
+.login-ctas .primary { min-height: 44px; padding: 0 28px; border-radius: 980px; }
+.login-cta-secondary { min-height: 44px; display: inline-flex; align-items: center; padding: 0 24px; border-radius: 980px; border: 1px solid var(--blue); color: var(--blue); text-decoration: none; }
+.login-form-heading { font-size: clamp(1.5rem, 3vw, 2rem); font-weight: 600; letter-spacing: -0.03em; margin-bottom: 20px; }
+.login-signin .logincard { margin: 0 auto; text-align: left; border-radius: 20px; box-shadow: var(--shadow-2); }
+.login-signin .loginhint { margin: 18px auto 0; max-width: 380px; }
+.login-identity { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; margin-bottom: 14px; border-radius: 980px; background: var(--fill); font-size: 13px; color: var(--text); }
+.siw-eye { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 36px; height: 36px; border-radius: 50%; color: var(--text-3); background: transparent; display: grid; place-items: center; }
+.login-remember { display: flex; align-items: center; gap: 10px; margin-top: 14px; font-size: 13px; color: var(--text-2); cursor: pointer; }
+.shake { animation: loginShake 0.4s var(--ease); }
+@keyframes loginShake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+.login-signin .loginhost { margin-top: 24px; }
+.loginwrap > .loginhost { text-align: center; padding: 10px 0 16px; background: #f5f5f7; margin: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .login-scroll { scroll-behavior: auto; scroll-snap-type: none; }
+  .login-hero::before, .shake { animation: none; }
+}
+.loginwrap { width: 100%; }
+.login-scroll { width: 100%; max-width: none; margin: 0; padding: 0; }
+.login-chapter { width: 100%; box-sizing: border-box; }
+
+/* README benchmark + live-count band on the hero */
+.login-stats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-top: 36px; text-align: left; }
+.login-stat { background: rgba(255, 255, 255, 0.7); border: 1px solid var(--hairline); border-radius: 16px; padding: 12px 14px; backdrop-filter: blur(8px); }
+.login-stat b { display: block; font-size: 26px; letter-spacing: -0.04em; font-weight: 650; color: var(--text); }
+.login-stat span { display: block; font-size: 12px; font-weight: 600; color: var(--text-2); }
+.login-stat small { display: block; font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.login-stat.live b { color: var(--blue); }
+.login-stats-note { margin-top: 12px; font-size: 11px; color: var(--text-3); max-width: 520px; margin-left: auto; margin-right: auto; }
+.login-chapter-inner { width: min(760px, 100%); }
+.login-signin .login-chapter-inner { width: min(560px, 100%); }
+
+@media (max-width: 720px) { .login-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.login-stat small { overflow-wrap: anywhere; }
+
+/* Wide screens: hero and credentials side by side, so signing in never needs a
+   scroll. The credentials column stays pinned while a tall hero scrolls. */
+@media (min-width: 1000px) {
+  .login-scroll { display: grid; grid-template-columns: minmax(0, 1fr) minmax(400px, 460px); scroll-snap-type: none; }
+  .login-hero .login-chapter-inner { text-align: left; width: min(820px, 100%); }
+  .login-hero .login-chips,
+  .login-hero .login-pills,
+  .login-hero .login-ctas { justify-content: flex-start; }
+  .login-hero .loginbrand-tagline,
+  .login-hero .login-stats-note { margin-left: 0; }
+  .login-hero .login-ctas .primary { display: none; }
+  .login-hero .login-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .login-signin { position: sticky; top: 0; height: 100vh; min-height: 0; align-self: start; }
+  .login-signin .login-chapter-inner { width: min(400px, 100%); }
+}
+@media (min-width: 1500px) {
+  .login-hero .login-stats { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}

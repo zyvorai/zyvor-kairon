@@ -1,0 +1,47 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+[Unit]
+Description=kairon-controller - kairon cluster-level scheduler/controller
+Documentation=https://github.com/zyvorai/zyvor-kairon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/kairon-controller --interval=5s --health-addr=:32301
+Restart=on-failure
+RestartSec=5s
+EnvironmentFile=/etc/kairon/kairon-controller.env
+
+User=kairon
+Group=kairon
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+LimitNOFILE=4096
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kairon-controller
+
+[Install]
+WantedBy=multi-user.target

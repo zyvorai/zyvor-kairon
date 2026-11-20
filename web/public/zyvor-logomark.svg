@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" role="img" aria-label="Zyvor">
+  <path
+    d="M2 2h14L6.6 16H16"
+    fill="none"
+    stroke="#ff5a15"
+    stroke-width="2.6"
+    stroke-linejoin="round"
+    stroke-linecap="round"
+  />
+</svg>

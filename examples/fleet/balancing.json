@@ -1,0 +1,17 @@
+{
+  "apiVersion": "fleet.kairon.zyvor.dev/v1alpha1",
+  "kind": "MachineBalancePolicy",
+  "metadata": {
+    "name": "balancing",
+    "namespace": "default"
+  },
+  "spec": {
+    "selector": {
+      "app": "worker"
+    },
+    "minImprovementPercent": 10,
+    "cooldownSeconds": 300,
+    "strategy": "cold",
+    "dryRun": true
+  }
+}

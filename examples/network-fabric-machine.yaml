@@ -1,0 +1,82 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+apiVersion: kairon.zyvor.dev/v1
+kind: Machine
+metadata:
+  name: web
+  namespace: default
+  labels:
+    app: web
+    tier: frontend
+spec:
+  nodeName: worker-1
+  image:
+    path: /var/lib/fluxvm/images/web.qcow2
+  resources:
+    cpu: "2"
+    memory: 2Gi
+  runtime:
+    backend: qemu
+  network:
+    mode: tap
+    netns: true
+    staticNetwork: true
+    # Recommended production dataplane: FluxVM TC/eBPF edge (not Cilium).
+    dataplaneRequired: true
+    dataplaneMode: ebpf
+    # Opt-in Cilium cluster network instead:
+    # dataplaneMode: cilium
+    # ciliumAttach: true   # requires Helm network.ciliumAttach.enabled=true
+    # ciliumAttach: true
+  serviceFabric:
+    services:
+      - name: web-vip
+        port: 8080
+        weight: 1
+  powerState: Running
+---
+apiVersion: kairon.zyvor.dev/v1
+kind: NetworkSecurityGroup
+metadata:
+  name: frontend
+  namespace: default
+spec:
+  groupName: frontend
+  labels:
+    - tier=frontend
+  priority: 100
+  description: allow HTTPS egress for frontend VMs
+  policy:
+    defaultAllow: false
+    allowCidrs:
+      - 10.0.0.0/8
+    allowPorts:
+      - tcp/443
+      - udp/53
+    allowIcmp: true
+---
+apiVersion: kairon.zyvor.dev/v1
+kind: MachineNetworkPolicy
+metadata:
+  name: web-edge
+  namespace: default
+spec:
+  selector:
+    app: web
+  policy:
+    defaultAllow: false
+    allowCidrs:
+      - 10.0.0.0/8
+      - 2001:db8:20::/48
+    allowPorts:
+      - tcp/443
+      - udp/53
+    groups:
+      - frontend
+    maxEgressMbps: 250
+    auditMode: false
+  # Opt-in: also sync this intent onto a real CiliumNetworkPolicy
+  # (requires Helm network.ciliumPolicySync.enabled=true).
+  # cilium:
+  #   sync: true
