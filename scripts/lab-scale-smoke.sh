@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 # Scale smoke: ramp up small CirrOS Machines in batches, wait for each batch to
 # run, stop at the first limit (Machines stuck Pending, a batch that does not

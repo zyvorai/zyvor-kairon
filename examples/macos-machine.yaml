@@ -1,5 +1,5 @@
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 #
 # A Machine that runs on a Mac through FluxVM's Apple Virtualization.framework backend ("vz").
 # The image must be a raw ARM64 disk. The Mac node carries the kairon.zyvor.dev/vm-only taint, so Machines tolerate it.

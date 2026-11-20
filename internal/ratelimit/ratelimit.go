@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 // Package ratelimit is a small, hand-rolled per-key token-bucket rate
 // limiter -- stdlib-only, so wiring it into kairon-ui doesn't need a third

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 """Opt-in real-cluster lifecycle qualification; never implies migration certification."""
 from __future__ import annotations
 import argparse

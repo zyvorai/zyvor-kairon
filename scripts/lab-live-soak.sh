@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 # Live-migration soak: move one Machine back and forth between two nodes N
 # times and stop at the first migration that does not end Succeeded, saving the

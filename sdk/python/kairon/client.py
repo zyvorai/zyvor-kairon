@@ -1,5 +1,5 @@
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 """Small synchronous clients for Kairon's Kubernetes and optional UI APIs.
 
 Writes are never retried: a lost response does not prove a write failed.

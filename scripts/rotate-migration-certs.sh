@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 # Rotates the leaf certificates of the live-migration mTLS peers and data-plane
 # adapters on a set of hosts, keeping the same CA so nothing about trust changes.

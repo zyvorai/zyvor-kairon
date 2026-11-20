@@ -1,5 +1,5 @@
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 #
 # What a MachineProtectionPlan's peer site may do on this cluster: read the
 # plan and post a planned-failover handoff on it, read the protected

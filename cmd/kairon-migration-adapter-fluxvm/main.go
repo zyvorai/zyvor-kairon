@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 // Command kairon-migration-adapter-fluxvm is a real implementation of the
 // Kairon migration adapter contract (docs/migration-adapter.md), backed by

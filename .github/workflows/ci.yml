@@ -1,5 +1,5 @@
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 # Self-hosted routing: heavy trusted jobs run on the org `zyvor-build` runners
 # (shared Docker host, x86_64 only). The runs-on expression falls back to

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 # Incremental S3 backup drill on one node (experimental feature; see
 # docs/guides/machine-backup-incremental.md). Against a disposable,

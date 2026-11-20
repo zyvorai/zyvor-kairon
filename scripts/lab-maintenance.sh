@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 # Node maintenance mode and DRS drill on one node (see
 # docs/guides/node-maintenance-drs.md). One QEMU Machine runs a probe that

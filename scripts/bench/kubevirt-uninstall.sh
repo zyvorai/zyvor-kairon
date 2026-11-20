@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 # Removes the KubeVirt release kubevirt-install.sh applied, CR first so the
 # operator tears down its own components. Destroys every KubeVirt VM on the

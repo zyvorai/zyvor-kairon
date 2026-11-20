@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 # Applies a real configuration change; use disposable lab resources only.
 set -euo pipefail
 change=${1:?usage: lab-advanced-operations.sh CHANGE.json RECOVERY.json INCIDENT.json BUNDLE.tar.gz RTT.json}

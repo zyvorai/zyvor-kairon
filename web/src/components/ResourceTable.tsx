@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 import { ArrowDown, ArrowUp, Download, Search, X } from 'lucide-react';
 import { ReactNode, useMemo, useState } from 'react';

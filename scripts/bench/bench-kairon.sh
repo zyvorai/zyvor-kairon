@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 # Kairon side of the Kairon vs KubeVirt benchmark. Run on the node under
 # test with kairon-controller, kairon-node and FluxVM running.

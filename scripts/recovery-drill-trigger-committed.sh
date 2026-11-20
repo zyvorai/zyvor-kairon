@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 # Trigger B (BEST-EFFORT, RACY -- not deterministic, unlike Trigger A in
 # recovery-drill-trigger-not-committed.sh) for docs/runbook-recovery-drill.md.

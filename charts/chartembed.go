@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 // Package charts embeds the Kairon Helm chart into the kaironctl binary
 // so `kaironctl install` works without a checkout of ./charts/kairon.

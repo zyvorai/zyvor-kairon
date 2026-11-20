@@ -1,6 +1,6 @@
 #!/bin/sh
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 #
 # open-iscsi's iscsiadm CLI needs a running iscsid to actually perform a
 # login -- there's no init system inside this container to start it any

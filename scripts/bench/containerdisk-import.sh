@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 # Wraps a qcow2/raw file as a KubeVirt containerDisk (disk/disk.img, owned
 # by uid 107) and imports it into the node's containerd, so both benchmark

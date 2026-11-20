@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 """check_dashboards.py -- validates charts/kairon/dashboards/*.json.
 
 Each file must be valid JSON with a unique uid, a title and panels, and every

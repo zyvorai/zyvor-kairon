@@ -8,7 +8,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/zyvorai/zyvor-kairon)](https://goreportcard.com/report/github.com/zyvorai/zyvor-kairon)
 [![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/zyvorai/zyvor-kairon?label=OpenSSF%20Scorecard)](https://scorecard.dev/viewer/?uri=github.com/zyvorai/zyvor-kairon)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15141/badge)](https://www.bestpractices.dev/projects/15141)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-1d1d1f.svg)](LICENSE)
+[![License: Zyvor Production 1.0](https://img.shields.io/badge/License-Zyvor_Production_1.0-1d1d1f.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-stdlib--only%20controller%20%C2%B7%20node-00ADD8?logo=go)](docs/DEPENDENCIES.md)
 
 [![Book a demo](https://img.shields.io/badge/Book_a_demo-0071e3?style=for-the-badge)](https://zyvor.dev/schedule?utm_source=github&utm_medium=kairon&utm_campaign=readme_hero)

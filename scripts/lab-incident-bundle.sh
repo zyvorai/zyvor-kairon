@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 # Incident bundle drill (see docs/guides/machine-incident-bundle.md). On
 # --node, one QEMU Machine gets two planted secrets through cloud-init (a

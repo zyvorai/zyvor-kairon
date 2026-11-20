@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 // Count-up animation for KPI numbers (zorvia's useCountUp). The easing and
 // frame maths are pure so they can be unit-tested without a DOM.

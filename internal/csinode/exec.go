@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 // Package csinode implements the CSI (Container Storage Interface) Node
 // and Controller services for Kairon's first-cut network-block volume

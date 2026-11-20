@@ -1,5 +1,5 @@
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 #
 # Plain-manifest mirror of charts/kairon/templates/all.yaml's kairon-ui
 # resources (gated behind ui.enabled in the Helm chart). Unlike the Helm

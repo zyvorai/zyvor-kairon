@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 // Package topology places a Machine's CPUs, memory and PCI devices on a
 // node's NUMA nodes and PCIe roots, from the node's NodeTopology and the

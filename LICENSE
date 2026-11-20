@@ -1,190 +1,393 @@
-                                 Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
+Zyvor Production License v1.0
 
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+Copyright © Zyvor AI Labs Private Limited. All rights reserved.
 
-   1. Definitions.
+1. Purpose
 
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
+This license permits limited use of the Software for evaluation, development, testing, research, education, and other non-production purposes.
 
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
+Any Production Use of the Software requires a separate paid commercial license from Zyvor AI Labs Private Limited ("Zyvor").
 
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
+By downloading, installing, accessing, modifying, compiling, or otherwise using the Software, you agree to the terms of this license.
 
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
+2. Definitions
 
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
+2.1 Software
 
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
+"Software" means the source code, object code, binaries, documentation, configuration files, scripts, APIs, SDKs, agents, controllers, user interfaces, and other materials distributed under this license.
 
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
+2.2 Non-Production Use
 
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
+"Non-Production Use" means use solely for:
 
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
+* evaluation;
+* proof-of-concept testing;
+* software development;
+* internal testing;
+* quality assurance;
+* laboratory environments;
+* demonstrations;
+* research;
+* education; or
+* personal experimentation.
 
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
+Non-Production Use must not support live business operations, customers, revenue-generating services, or production workloads.
 
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
+2.3 Production Use
 
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
+"Production Use" means any deployment or use of the Software that:
 
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
+* supports live business operations;
+* protects, monitors, manages, processes, routes, stores, or serves production data or workloads;
+* is used by employees, contractors, customers, partners, or end users as part of normal business operations;
+* is deployed on production servers, production clusters, production networks, production edge devices, or customer environments;
+* is used to provide a commercial product or service;
+* generates or supports revenue;
+* is incorporated into an OEM product, appliance, platform, managed service, SaaS offering, or hosted service;
+* is used for business continuity, security, observability, networking, infrastructure management, automation, orchestration, or operational decision-making in a live environment.
 
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
+Production Use requires a valid paid commercial license issued by Zyvor.
 
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
+3. Free License Grant
 
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
+Subject to compliance with this license, Zyvor grants you a limited, worldwide, non-exclusive, non-transferable, non-sublicensable, royalty-free license to:
 
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
+* download the Software;
+* inspect the source code;
+* compile and run the Software;
+* modify the Software for internal evaluation;
+* test integrations;
+* perform proof-of-concept deployments; and
+* use the Software for Non-Production Use.
 
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
+No rights for Production Use are granted under this free license.
 
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
+4. Production License Requirement
 
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
+You must obtain a separate written commercial license from Zyvor before using the Software in Production.
 
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
+A commercial license may specify:
 
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
+* permitted number of nodes;
+* servers;
+* CPU sockets or cores;
+* Kubernetes clusters;
+* virtual machines;
+* devices;
+* sites;
+* users;
+* customers;
+* subsidiaries;
+* geographic regions;
+* deployment environments;
+* subscription duration;
+* support entitlement; and
+* other usage limits.
 
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
+Production rights exist only while the applicable commercial license or subscription remains valid.
 
-   END OF TERMS AND CONDITIONS
+5. Commercial and Revenue-Generating Use
 
-   Copyright 2026 Zyvor AI Labs
+Unless separately licensed by Zyvor, you may not use the Software:
 
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
+* to operate a commercial service;
+* to provide managed services;
+* to provide hosting services;
+* to provide SaaS services;
+* to provide security or infrastructure services to third parties;
+* as part of a paid product;
+* as part of a commercial appliance;
+* as part of an OEM offering;
+* for resale;
+* for redistribution as part of another commercial product;
+* to provide commercial consulting services where operation of the Software is a material part of the service.
 
-       http://www.apache.org/licenses/LICENSE-2.0
+6. Managed Service Providers
 
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
+Managed service providers, hosting providers, cloud providers, telecommunications companies, system integrators, and similar organizations require a commercial license if the Software is used in connection with services provided to customers.
+
+Separate commercial terms may apply to:
+
+* MSP deployments;
+* multi-tenant deployments;
+* customer-managed environments;
+* embedded deployments;
+* white-label deployments; and
+* OEM distribution.
+
+7. Modification
+
+You may modify the Software solely for purposes permitted by this license.
+
+Modification of the Software does not remove or reduce the requirement to obtain a commercial license for Production Use.
+
+You may not remove or alter:
+
+* copyright notices;
+* license notices;
+* trademark notices;
+* attribution notices;
+* licensing controls; or
+* notices identifying Zyvor as the copyright owner.
+
+8. Redistribution
+
+You may redistribute unmodified or modified copies of the Software only with prior written permission from Zyvor.
+
+Any approved redistribution must include:
+
+* this license;
+* applicable copyright notices; and
+* all required attribution notices.
+
+This license does not grant a right to commercially redistribute, sublicense, sell, or resell the Software.
+
+9. Forks
+
+You may create forks for internal Non-Production Use.
+
+A fork does not receive independent Production Use rights.
+
+Production deployment of a fork, modified version, derivative version, or substantially similar version of the Software requires a commercial license from Zyvor unless otherwise agreed in writing.
+
+10. APIs, SDKs and Integrations
+
+Applications may communicate with the Software through documented APIs, SDKs, command-line interfaces, network interfaces, or other supported integration mechanisms.
+
+Using an API or SDK does not automatically grant Production Use rights for the underlying Software.
+
+Where Zyvor publishes an SDK under a separate license, that separate license governs the SDK.
+
+11. Benchmarking
+
+You may perform internal benchmarking.
+
+Publication of benchmarks, performance comparisons, scalability results, security evaluations, or competitive testing involving the Software must accurately describe:
+
+* the Software version;
+* deployment architecture;
+* hardware;
+* configuration;
+* workload; and
+* test methodology.
+
+You must not intentionally publish misleading or materially incomplete performance results.
+
+12. License Keys and Technical Controls
+
+Zyvor may use:
+
+* license keys;
+* activation tokens;
+* entitlement services;
+* node identifiers;
+* machine identifiers;
+* subscription validation;
+* deployment limits; or
+* other technical licensing mechanisms.
+
+You may not:
+
+* bypass licensing controls;
+* disable licensing enforcement;
+* forge license credentials;
+* modify the Software to avoid licensing requirements;
+* manipulate usage measurements intended for licensing; or
+* use another customer's license credentials.
+
+13. Trial and Evaluation Environments
+
+Zyvor may provide time-limited evaluation licenses.
+
+Unless otherwise stated in writing, an evaluation license:
+
+* is limited to Non-Production Use;
+* may expire automatically;
+* may contain technical limits;
+* may not be transferred; and
+* may not be used to operate customer-facing or revenue-generating workloads.
+
+14. Enterprise Features
+
+Certain features may be available only under a paid commercial license, including, without limitation:
+
+* enterprise management;
+* high availability;
+* centralized fleet management;
+* enterprise RBAC;
+* SSO;
+* SAML;
+* LDAP;
+* advanced identity integration;
+* audit logging;
+* compliance reporting;
+* enterprise policy management;
+* advanced security controls;
+* enterprise integrations;
+* long-term support;
+* certified builds;
+* premium updates;
+* enterprise dashboards;
+* advanced analytics;
+* SLA-backed support; and
+* commercial support.
+
+Availability of specific enterprise features may vary by product and subscription plan.
+
+15. No Circumvention
+
+You may not intentionally circumvent restrictions imposed by this license by:
+
+* splitting one production deployment into multiple evaluation environments;
+* repeatedly reinstalling trial versions;
+* using multiple organizations or accounts to avoid licensing limits;
+* operating production workloads under labels such as "testing", "development", or "evaluation";
+* cloning or modifying the Software primarily to avoid payment obligations.
+
+The actual nature and purpose of the deployment determines whether it constitutes Production Use.
+
+16. Ownership
+
+Zyvor and its licensors retain all right, title, and interest in and to the Software, including all copyrights, patents, trademarks, trade secrets, and other intellectual property rights.
+
+Except for the limited rights expressly granted by this license, no rights are transferred to you.
+
+17. Contributions
+
+Unless a separate contributor agreement applies, any contribution intentionally submitted to a Zyvor-controlled repository may be used, reproduced, modified, distributed, sublicensed, and commercially licensed by Zyvor.
+
+Contributors represent that they have the legal right to submit their contributions.
+
+Zyvor may require execution of a Contributor License Agreement before accepting contributions.
+
+18. Trademarks
+
+This license does not grant permission to use:
+
+* Zyvor;
+* Zyvor AI Labs;
+* Zyvor logos;
+* product names;
+* service marks; or
+* other Zyvor branding
+
+except as reasonably necessary to identify the origin of the Software.
+
+Forked or modified versions must not imply sponsorship, certification, or endorsement by Zyvor.
+
+19. Third-Party Components
+
+The Software may include third-party components distributed under separate licenses.
+
+Those components remain subject to their respective licenses.
+
+Nothing in this license limits rights granted directly to you under a third-party license.
+
+20. Compliance Verification
+
+For commercial deployments, Zyvor may require reasonable information necessary to verify license compliance, including:
+
+* deployment counts;
+* node counts;
+* cluster counts;
+* device counts;
+* subscription identifiers; and
+* licensed feature usage.
+
+Any compliance verification must be conducted in a commercially reasonable manner and subject to applicable confidentiality obligations.
+
+21. Termination
+
+Your rights under this license terminate automatically if you materially violate its terms.
+
+Upon termination, you must stop all unauthorized use of the Software.
+
+Zyvor may, at its discretion, provide an opportunity to cure a violation by:
+
+* purchasing an appropriate commercial license;
+* reducing the deployment to permitted use; or
+* stopping the non-compliant use.
+
+Termination does not eliminate any payment obligation arising from unauthorized Production Use.
+
+22. Commercial Licensing
+
+Commercial licenses, enterprise subscriptions, OEM agreements, MSP agreements, redistribution agreements, support contracts, and other commercial permissions are available separately from Zyvor.
+
+Commercial terms may supersede specific provisions of this license where expressly stated in writing.
+
+Commercial licensing inquiries:
+
+Zyvor AI Labs Private Limited
+Website: https://zyvor.dev
+
+23. Disclaimer of Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT.
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, ZYVOR DOES NOT WARRANT THAT THE SOFTWARE WILL BE ERROR-FREE, SECURE, UNINTERRUPTED, OR SUITABLE FOR ANY PARTICULAR PURPOSE.
+
+24. Limitation of Liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, ZYVOR SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES, INCLUDING LOSS OF PROFITS, REVENUE, DATA, BUSINESS, GOODWILL, OR BUSINESS OPPORTUNITY ARISING FROM USE OF THE SOFTWARE.
+
+25. Export and Legal Compliance
+
+You are responsible for complying with applicable:
+
+* export control laws;
+* sanctions;
+* data protection laws;
+* cybersecurity laws;
+* telecommunications laws;
+* industry regulations; and
+* other legal requirements applicable to your use of the Software.
+
+26. Governing Law
+
+Unless otherwise stated in a commercial agreement, this license shall be governed by the laws of India.
+
+Any dispute arising from this license shall be subject to the jurisdiction specified by Zyvor in its applicable commercial terms or, where no such terms exist, the competent courts having jurisdiction over Zyvor AI Labs Private Limited.
+
+27. Entire License
+
+This license constitutes the complete license governing the free Non-Production Use of the Software unless a separate written agreement has been executed with Zyvor.
+
+If you hold a valid commercial agreement with Zyvor, that commercial agreement controls to the extent of any conflict.
+
+⸻
+
+Summary
+
+Free
+
+You may use the Software without payment for:
+
+* development;
+* testing;
+* evaluation;
+* proofs of concept;
+* research;
+* education; and
+* non-production laboratory environments.
+
+Paid License Required
+
+A commercial license is required for:
+
+* production environments;
+* customer workloads;
+* internal business-critical workloads;
+* commercial services;
+* SaaS;
+* managed services;
+* OEM use;
+* appliances;
+* redistribution;
+* resale;
+* revenue-generating use; and
+* enterprise production deployments.
+
+Production = Commercial License Required.
+
+Copyright © Zyvor AI Labs Private Limited. All rights reserved.

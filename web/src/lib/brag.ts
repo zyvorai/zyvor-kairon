@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 // Headline numbers from the README's "Kairon vs KubeVirt" benchmark (same k3s
 // node, same Ubuntu 24.04 guest, KubeVirt v1.9.0). Kept here as one source so

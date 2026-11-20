@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 """Offline SQLite + real HTTP compatibility fixture, using only Python stdlib.
 Install at /opt/kairon-rehearsal/app.py on a Linux guest with python3 and QGA.
 The probe starts a temporary loopback HTTP server and exercises its /health API.

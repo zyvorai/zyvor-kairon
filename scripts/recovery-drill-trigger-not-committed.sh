@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 # Trigger A (deterministic) for docs/runbook-recovery-drill.md: drives a
 # real live migration to NeedsRecovery by firewalling off the

@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 import { LogOut, Menu, Moon, Search, Sun, UserCog, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';

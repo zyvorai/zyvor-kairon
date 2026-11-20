@@ -1,5 +1,5 @@
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 # A boot disk pinned by digest, and an install ISO. The URLs and digests are
 # placeholders: replace them with your own image and `sha256sum` of the exact

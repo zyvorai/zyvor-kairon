@@ -1,5 +1,5 @@
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 # Requires GitHub Pages enabled with Source = "GitHub Actions" (repo Settings
 # > Pages), done once via `gh api repos/<org>/<repo>/pages -X POST -f

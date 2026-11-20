@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 # Cross-cluster DR drill (experimental; see docs/guides/cross-cluster-dr.md).
 # Two "sites" are two namespaces, --site-a and --site-b, each with its own

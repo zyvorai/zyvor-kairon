@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 # Dead-node drill (docs/runbook-node-fence.md, Option B): a throwaway Machine
 # opted into stale evacuation runs on the victim node; the victim's node agent

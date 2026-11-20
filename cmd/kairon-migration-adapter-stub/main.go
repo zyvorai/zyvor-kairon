@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 // Command kairon-migration-adapter-stub is a test double for the Kairon
 // migration adapter contract documented in docs/migration-adapter.md. It

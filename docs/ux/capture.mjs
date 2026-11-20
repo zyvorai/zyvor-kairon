@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 //
 // Captures the dashboard screenshots in docs/ux/ (day-*.png, night-*.png) and
 // the short interaction clips in docs/ux/clips/ (WebM) from a running

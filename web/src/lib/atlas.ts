@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 // Helpers for rendering Atlas gateway payloads whose exact row shape varies
 // by resource: a bare array, or an object holding the array under a known key.

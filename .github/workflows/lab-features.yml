@@ -1,5 +1,5 @@
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 # Nightly per-feature lab drills (scripts/lab-*.sh via scripts/lab-run.sh) on
 # the self-hosted kairon-lab runner. Results are written into

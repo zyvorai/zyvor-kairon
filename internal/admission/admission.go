@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 // Package admission hand-rolls just the slice of the Kubernetes
 // admission.k8s.io/v1 AdmissionReview wire format kairon-controller's

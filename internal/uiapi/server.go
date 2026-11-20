@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 // Package uiapi is the HTTP backend for kairon-ui: a thin REST wrapper
 // around internal/kube.Client, one method-per-intent handler per route (no

@@ -1,5 +1,5 @@
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 # Incremental S3 backups (experimental): FluxVM tracks changed blocks in
 # persistent dirty bitmaps, so after one full each hourly backup uploads only

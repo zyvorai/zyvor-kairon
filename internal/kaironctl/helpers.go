@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 // Package kaironctl is kaironctl's Cobra command tree and every
 // subcommand implementation, factored out of cmd/kaironctl so

@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 // Package fencing is the one place a Machine is fenced off a dead node:
 // spec.nodeName and the runtime status are cleared and the Fenced
