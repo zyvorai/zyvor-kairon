@@ -1,8 +1,7 @@
 # User guide: container sandboxes (`spec.sandbox.oci`)
 
 Run an OCI container image as a Machine, in its own lightweight VM on a
-FluxVM node, with a docker-like CLI. There is no Docker daemon, no Podman
-and no Colima: FluxVM mounts the image's root filesystem with its own
+FluxVM node, with a docker-like CLI. There is no Docker daemon and no Podman: FluxVM mounts the image's root filesystem with its own
 init and runs the entrypoint. Experimental.
 
 ## Where it runs

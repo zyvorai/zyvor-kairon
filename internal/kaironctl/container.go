@@ -45,7 +45,7 @@ func newContainerCmd(opts *Options) *cobra.Command {
 		Aliases: []string{"ctr"},
 		Short:   "Run OCI container images as FluxVM sandboxes (experimental)",
 		Long: `Run a container image in its own lightweight VM on a FluxVM node, with a
-docker-like CLI. No Docker daemon, Podman or Colima is involved: the image's
+docker-like CLI. No Docker daemon or Podman is involved: the image's
 root filesystem is mounted by FluxVM's own init.
 
   kaironctl container run IMAGE [COMMAND...]    create (and with --wait, run to completion)
