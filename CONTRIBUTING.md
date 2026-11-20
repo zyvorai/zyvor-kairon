@@ -1,6 +1,6 @@
 # Contributing
 
-Kairon is Apache License 2.0 open source from [Zyvor](https://zyvor.dev).
+Kairon is source-available under the Zyvor Production License v1.0 from [Zyvor](https://zyvor.dev).
 
 ## Reporting bugs and requesting features
 
@@ -19,7 +19,7 @@ Changes land through GitHub pull requests against `main`. `main` is branch-prote
 5. Touching `web/` (the `kairon-ui` dashboard)? Run `npm --prefix web run typecheck && npm --prefix web test && npm --prefix web run build` -- the same three steps CI's `web` job runs. `make all` doesn't build the frontend, so this is a separate step.
 6. Keep the control plane dependency-light and never add a libvirt/KubeVirt runtime dependency. `kairon-controller` and `kairon-node` stay stdlib-only. Named exceptions are in [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md). Do not add the Cilium Go SDK; Cilium objects go through raw REST in `internal/kube`.
 7. Document API behavior changes in `docs/` and update examples.
-8. By contributing, you agree that your contributions are licensed under the Apache License, Version 2.0.
+8. By contributing, you agree that your contributions are licensed to Zyvor AI Labs under the Zyvor Production License v1.0.
 
 Commits should be small and reviewable. New features should prefer declarative API fields and idempotent reconciliation over imperative one-shot operations.
 

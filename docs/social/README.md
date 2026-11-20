@@ -25,4 +25,4 @@ pair. `build-social-svg.py` holds the light and dark palettes and generates both
 layout, so they cannot drift apart.
 
 Every claim on the social cards is already sourced in the project README and docs. The benchmark numbers on `readme/hero.html` and `readme/benchmark.html` come from `docs/benchmarks/*.json`; change them together.
-Licence wording follows `LICENSE`: Apache License 2.0.
+Licence wording follows `LICENSE`: Zyvor Production License v1.0.

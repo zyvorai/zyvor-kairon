@@ -76,7 +76,7 @@ def svg(p):
     <text x="732" y="476">NeedsRecovery</text>
   </g>
 
-  <text x="96" y="560" font-family="'SF Mono','Menlo',monospace" font-size="16" fill="{p['sec']}">Apache-2.0 · FluxVM · KVM</text>
+  <text x="96" y="560" font-family="'SF Mono','Menlo',monospace" font-size="16" fill="{p['sec']}">Zyvor Production License · FluxVM · KVM</text>
 
   <!-- architecture motif -->
   <g>

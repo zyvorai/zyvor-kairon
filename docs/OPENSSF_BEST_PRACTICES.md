@@ -12,7 +12,7 @@ silver → 7, gold → 10.
 |---------------|----------|
 | Description, obtain, feedback | [`README.md`](https://github.com/zyvorai/zyvor-kairon/blob/main/README.md), [GitHub Issues](https://github.com/zyvorai/zyvor-kairon/issues), [Releases](https://github.com/zyvorai/zyvor-kairon/releases) |
 | Contribution process + requirements | [`CONTRIBUTING.md`](https://github.com/zyvorai/zyvor-kairon/blob/main/CONTRIBUTING.md) (PR process, coding standard, test policy) |
-| License | [`LICENSE`](https://github.com/zyvorai/zyvor-kairon/blob/main/LICENSE) (Apache-2.0) |
+| License | [`LICENSE`](https://github.com/zyvorai/zyvor-kairon/blob/main/LICENSE) (Zyvor Production License v1.0, `LicenseRef-Zyvor-Production-1.0`) |
 | Interface docs | [`docs/CLI.md`](CLI.md), [`docs/guides/`](guides/), CRDs in [`charts/kairon`](https://github.com/zyvorai/zyvor-kairon/tree/main/charts/kairon) |
 | Releases / notes | SemVer tags `vX.Y.Z`, [`RELEASE_NOTES.md`](https://github.com/zyvorai/zyvor-kairon/blob/main/RELEASE_NOTES.md) |
 | Vulnerability reporting | [`SECURITY.md`](https://github.com/zyvorai/zyvor-kairon/blob/main/SECURITY.md) (private email + GitHub advisories, 14-day ack) |
