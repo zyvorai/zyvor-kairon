@@ -29,7 +29,6 @@ const RELEASE_NOTES = 'https://github.com/zyvorai/zyvor-kairon/blob/v0.10.0/RELE
 const SUB_LINKS = [
   {to: '#new', label: 'New in v0.10'},
   {to: '#see-it-move', label: 'See it move'},
-  {to: '#numbers', label: 'Numbers'},
   {to: '#verified', label: 'Verified'},
   {to: '#capabilities', label: 'Capabilities'},
   {to: '#deploy', label: 'One command'},
@@ -41,7 +40,7 @@ function Hero() {
   return (
     <Band tone="black" glow center>
       <p>
-        <TextLink to="#new">v0.10.0 is out: agent sessions, cross-cluster DR, Mac Fabric and virtctl parity</TextLink>
+        <TextLink to="#new">v0.10.0 is out: agent sessions, cross-cluster DR, Mac Fabric and GPU profiles</TextLink>
       </p>
       <Headline
         size="display"
@@ -90,7 +89,7 @@ function WhatsNew() {
             Agents, DR and <Grad>the data center.</Grad>
           </>
         }
-        lede="The biggest Kairon release yet: sandboxes for AI coding agents, failover to a second cluster, GPUs and Macs as schedulable pools, and every virtctl verb in kaironctl. New features are opt-in and marked Experimental until their lab rows pass."
+        lede="The biggest Kairon release yet: sandboxes for AI coding agents, failover to a second cluster, GPUs and Macs as schedulable pools, and a fuller kaironctl. New features are opt-in and marked Experimental until their lab rows pass."
       />
       <Cards
         cards={[
@@ -99,7 +98,6 @@ function WhatsNew() {
           {eyebrow: 'Experimental', title: 'Cross-cluster DR', body: 'MachineProtectionPlan replicates Machines to a second cluster with RPO and RTO objectives, ordered failover and failback with epoch fencing, kept addresses, DNS that follows the active site, and scheduled DR tests.', to: '/docs/guides/cross-cluster-dr', more: 'DR guide ›'},
           {eyebrow: 'Experimental', title: 'Mac Fabric', body: 'Several Apple silicon Macs as one pool: chip, macOS and Rosetta labels, spec.apple scheduling, and MacNetwork private networks across Macs over Thunderbolt.', to: '/docs/guides/mac-fabric', more: 'Mac Fabric guide ›'},
           {eyebrow: 'Experimental', title: 'GPUs and accelerators', body: 'vGPU and MIG profiles scheduled by free instances and GPU memory, GPU health in NodeTopology, and named accelerator profiles that expand into devices with per-node capacity.', to: '/docs/guides/accelerator-profiles', more: 'Accelerator profiles ›'},
-          {eyebrow: 'kaironctl', title: 'Coming from virtctl', body: 'console, vnc and screenshots, restart and soft-reboot, exports and memory dumps, guest info, SSH keys, expose, freeze, guestfs, cdrom, create clone, --dry-run -o yaml and wait.', to: '/docs/CLI#coming-from-virtctl', more: 'virtctl to kaironctl ›'},
         ]}
       />
       <div className="zv-two" style={{marginTop: '3rem', textAlign: 'left'}}>
@@ -188,34 +186,6 @@ function SeeItMove() {
   );
 }
 
-function Numbers() {
-  return (
-    <Band tone="light" id="numbers" center>
-      <Headline
-        eyebrow="Measured, not marketed"
-        title={
-          <>
-            Half the stack. <Grad>Same VM.</Grad>
-          </>
-        }
-        lede="Same k3s node, same Ubuntu 24.04 guest, same 1 vCPU and 512 MiB, one script driving both. What you stop paying for is everything KubeVirt puts around the VM."
-      />
-      <StatBar
-        stats={[
-          {value: 14, suffix: 'x', label: 'less idle control plane', note: '63 MiB against 905 MiB of memory.'},
-          {value: 7.4, decimals: 1, suffix: 'x', label: 'faster to SSH, five VMs', note: '24.8 s against 184.7 s, median.'},
-          {value: 0, label: 'pods per running VM', note: 'The VM is the only thing running.'},
-          {value: 4, label: 'hypervisors, one CRD', note: 'QEMU, Cloud Hypervisor, Firecracker, FluxVM.'},
-        ]}
-      />
-      <p className="zv-stat__note" style={{marginTop: '2.5rem'}}>
-        KubeVirt v1.9.0. Method, raw JSON and caveats:{' '}
-        <TextLink to="/docs/benchmarks/kairon-vs-kubevirt">read the benchmark</TextLink>
-      </p>
-    </Band>
-  );
-}
-
 function VerifiedBand() {
   return (
     <Band tone="soft" id="verified" center>
@@ -291,7 +261,6 @@ function Capabilities() {
           {title: 'DRS and maintenance', body: 'Rebalance on reserved resources or measured pressure, and drain a node by migrating, hibernating or parking its Machines.', to: '/docs/guides/node-maintenance-drs', glyph: '⚖', experimental: true},
           {title: 'NVMe-oF and disk QoS', body: 'nvme-tcp and nvme-rdma volumes with native multipath and raw Block boot, plus per-disk IOPS and bandwidth limits changed live.', to: '/docs/guides/machine-storage-nvmeof', glyph: '⛁', experimental: true},
           {title: 'Incident bundles', body: 'One command collects a redacted tar.gz: cluster state plus the node’s QMP, cgroup, console log, dataplane and pcap.', to: '/docs/guides/machine-incident-bundle', glyph: '⚑', experimental: true},
-          {title: 'Every virtctl verb', body: 'console, vnc, restart, soft-reboot, export, memory-dump, guest info, credentials, expose, freeze, guestfs, cdrom and wait in kaironctl.', to: '/docs/CLI#coming-from-virtctl', glyph: '›_', variant: 'dark'},
           {title: 'Every Mac a node, every Mac a pool', body: 'Register an Apple silicon Mac as a Node and run vz Machines through FluxVM, verified on an M4. Mac Fabric pools several Macs with capability scheduling and private networks over Thunderbolt.', to: '/docs/guides/mac-fabric', glyph: '⬢', variant: 'wide', more: 'Mac Fabric ›'},
           {title: 'Small enough to audit', body: 'kairon-controller and kairon-node use only the Go standard library, enforced in CI.', to: '/docs/DEPENDENCIES', glyph: '❏'},
         ]}
@@ -362,7 +331,6 @@ function UseCases() {
         cards={[
           {eyebrow: 'CI', title: 'Throwaway sandboxes', body: 'Warm pools that can sit paused, fork, idle suspend and maximum lifetimes for ephemeral VMs.', to: '/docs/guides/agent-sandboxes', more: 'Agent sandboxes ›'},
           {eyebrow: 'AI coding agents', title: 'A VM per agent, on a leash', body: 'Agent sessions with a git workspace, an egress policy, budgets, checkpoints and forks, and commands that wait for a human.', to: '/docs/guides/agent-sessions', more: 'Agent sessions ›'},
-          {eyebrow: 'Platform teams', title: 'Replace KubeVirt, keep Kubernetes', body: 'One CRD, zero pods per VM, a control plane you can read, and the virtctl verbs you already know.', to: '/docs/benchmarks/kairon-vs-kubevirt', more: 'See the benchmark ›'},
           {eyebrow: 'Migration', title: 'Move off VMware', body: 'kaironctl import ova streams an OVA and FluxVM repairs the guest.', to: '/docs/guides/migrate-from-vmware', more: 'Migration guide ›'},
           {eyebrow: 'Business continuity', title: 'Survive losing a site', body: 'Incremental backups to S3 and failover to a second cluster, with tests you can schedule.', to: '/docs/guides/cross-cluster-dr', more: 'Cross-cluster DR ›'},
           {eyebrow: 'GPU workloads', title: 'Share and place GPUs', body: 'vGPU and MIG slices, NUMA-aware placement and named accelerator shapes for inference fleets.', to: '/docs/guides/accelerator-profiles', more: 'Accelerator profiles ›'},
@@ -428,14 +396,13 @@ function Honest() {
 export default function Home(): ReactNode {
   return (
     <Layout
-      title="Real VMs on Kubernetes, without KubeVirt"
-      description="Kairon is Zyvor's Apache-2.0 control plane for running virtual machines on Kubernetes through FluxVM: no virt-launcher pod, no libvirt. v0.10.0 adds agent sessions for AI coding agents, cross-cluster DR, Mac Fabric, GPU profiles and every virtctl verb.">
+      title="Real VMs on Kubernetes, no pod per VM"
+      description="Kairon is Zyvor's source-available control plane for running virtual machines on Kubernetes through FluxVM: no virt-launcher pod, no libvirt. v0.10.0 adds agent sessions for AI coding agents, cross-cluster DR, Mac Fabric and GPU profiles.">
       <SubNav title="Kairon" links={SUB_LINKS} />
       <main>
         <Hero />
         <WhatsNew />
         <SeeItMove />
-        <Numbers />
         <VerifiedBand />
         <HowItWorks />
         <Capabilities />
@@ -445,7 +412,7 @@ export default function Home(): ReactNode {
         <Honest />
         <CtaBand
           title="Run your first VM today."
-          lede="Apache-2.0, free to run in production. Zyvor Enterprise adds support and SLAs.">
+          lede="Free for non-production use; production needs a commercial license from Zyvor. Zyvor Enterprise adds support and SLAs.">
           <Btn to="/deploy">Deploy Kairon</Btn>
           <Btn to="https://github.com/zyvorai/zyvor-kairon" variant="ghost">
             View on GitHub

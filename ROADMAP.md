@@ -17,14 +17,12 @@ v0.9.1 (2026-10-11, a patch on v0.9.0: all-namespaces Migrations/Snapshots, `doc
 
 The two open multi-host items carried over from v0.7 and v0.8 are listed under "Prove live migration, beyond one Mac" below.
 
-## v0.8 — Beat KubeVirt
+## v0.8 — Proof and parity
 
-Close every gap in the [README comparison](README.md#kairon-vs-kubevirt) and publish numbers, not claims. Kairon and FluxVM ship together; each item lands on `main` with CI and docs.
+Publish numbers, not claims. Kairon and FluxVM ship together; each item lands on `main` with CI and docs.
 
 **Proof**
 
-- [x] Benchmarks vs KubeVirt on identical hardware (create→Running, guest-ready, per-VM overhead, density, control-plane RSS) → [`docs/benchmarks/`](docs/benchmarks/kairon-vs-kubevirt.md)
-- [ ] Migration downtime vs KubeVirt (needs a second node)
 - [x] Hardware matrix fails on failure, real guest-agent smoke, `--write-compat`; recovery / source-failure / controller-failover drills
 
 **Storage (Atlas)**

@@ -27,11 +27,7 @@
 
 <sub>Dashboard tour captured against the local sample-data stack (<a href="docs/ux/README.md">how</a>), not a production cluster.</sub>
 
-![Kairon: VMs that don't pretend to be Pods. Measured against KubeVirt v1.9.0: 14x lighter idle control plane, 7.4x faster to SSH for five VMs](docs/assets/readme-hero.jpg)
-
 </div>
-
-[Client overview (PDF)](docs/Kairon-Client-Overview.pdf)
 
 ---
 
@@ -46,7 +42,7 @@ New since v0.6.0 (latest tag: v0.10.6; the rows down to incident bundles are new
 | | |
 |---|---|
 | **Agent sessions (experimental)** | An `AgentSession` is a FluxVM agent session: a sandbox VM with a git workspace, a compiled egress/filesystem/process policy, budgets, checkpoints, live forks and an event ledger, scheduled and quota-counted like a Machine. Commands can wait for an admin's approval; chunked uploads, an interactive shell, credential grants the guest never sees, and the Mac guest's screen. `kaironctl session`, `session_*` MCP tools, both SDKs and a dashboard page. Mac nodes on FluxVM 0.4.8+. [Guide →](docs/guides/agent-sessions.md) |
-| **Coming from virtctl** | `kaironctl` covers virtctl's verbs: console and VNC (with screenshots), restart/soft-reboot, exports and memory dumps, guest info, SSH keys and passwords, `expose`, `freeze`, `guestfs`, `cdrom`, `create clone`, `objectgraph`, `--dry-run -o yaml`, `wait`. [CLI →](docs/CLI.md) |
+| **Full VM CLI** | `kaironctl` covers day-to-day VM operations: console and VNC (with screenshots), restart/soft-reboot, exports and memory dumps, guest info, SSH keys and passwords, `expose`, `freeze`, `guestfs`, `cdrom`, `create clone`, `objectgraph`, `--dry-run -o yaml`, `wait`. [CLI →](docs/CLI.md) |
 | **Self-test: is it all working?** | `kaironctl selftest` (or the dashboard's Self-test page) boots a tiny CirrOS VM and proves power, network, hotplug, snapshot-restore and more, with live coloured logs and a PASS / FAIL / SKIP table. `deploy-remote.sh --self-test` runs it right after a deploy. [Guide →](docs/guides/selftest.md) |
 | **Deploy without building locally** | `deploy-remote.sh --remote-build` copies a small source tarball and compiles on the host, so a laptop needs no Go, no Node and no build cache. [Fastest path →](docs/getting-started.md#fastest-path) |
 | **HTTPS by default** | The dashboard and the VNC console relay serve TLS out of the box (generated or bring-your-own certificate); plain HTTP is a named opt-out. [Dashboard guide →](docs/guides/kairon-ui-dashboard.md#https) |
@@ -67,7 +63,6 @@ New since v0.6.0 (latest tag: v0.10.6; the rows down to incident bundles are new
 | **Native macOS node** | `kairon-node` registers an Apple silicon Mac as a Node and runs `backend: vz` Machines through FluxVM. Verified on an M4; multi-Mac clusters not yet. [Guide →](docs/macos.md) · [Mac cluster →](docs/macos-cluster.md) |
 | **Developer ecosystem kit** | Python and TypeScript SDKs, digest-pinned recipes, disposable-VM GitHub Actions, Terraform composition. [Kit →](ecosystem/README.md) |
 | **Fleet automation (experimental)** | Opt-in Redfish fencing, balancing, autoscaling, backup and recovery plans, template claims, usage CSV and a Fleet dashboard. [Guide →](docs/guides/enterprise-fleet.md) |
-| **Kairon vs KubeVirt benchmark** | Same node, same guest, one script driving both; method and raw JSON in [docs/benchmarks](docs/benchmarks/kairon-vs-kubevirt.md). |
 | **Import from VMware** | `kaironctl import ova` streams an OVA once, reads vCPU, memory and firmware from the OVF, and FluxVM converts and repairs the disk. [Guide →](docs/guides/migrate-from-vmware.md) |
 | **Warm pools and claims** | `MachinePool` keeps booted Machines ready; a `MachineClaim` binds one in a single reconcile tick, with per-claim egress allowlists. [Guide →](docs/guides/machine-pools.md) |
 | **VM fork** | `kaironctl fork` and the MCP `fork_machine` tool fork a running Machine through FluxVM. [Guide →](docs/guides/machine-fork.md) |
@@ -100,52 +95,6 @@ New since v0.6.0 (latest tag: v0.10.6; the rows down to incident bundles are new
 | Your AI agent needs to see and drive your fleet | **`kaironctl mcp serve`**: Machines, policies and live network data for Hermes Agent and any MCP client, writes gated behind `--allow-write`. Also published as the `ghcr.io/zyvorai/kairon-mcp` image and listed in the MCP Registry as `io.github.zyvorai/kairon` (v0.10.2) ([install from the registry](docs/guides/hermes-mcp.md#install-from-the-mcp-registry-oci)). |
 
 ![Capabilities at a glance: Run, Move, Protect, Automate](docs/ux/readme-capabilities.jpg)
-
----
-
-## The numbers
-
-![Kairon vs KubeVirt v1.9.0 on the same node: 14x less idle control-plane memory, 2.9x faster to SSH for one VM, 7.4x faster for five, the same memory per VM](docs/assets/readme-benchmark.jpg)
-
-| | **Kairon** | **KubeVirt v1.9.0** | |
-|---|---|---|---|
-| Idle control plane memory | **63 MiB** | 905 MiB | 14x less |
-| 1 VM to SSH | **23.7 s** | 67.6 s | 2.9x faster |
-| 5 VMs to SSH, median | **24.8 s** | 184.7 s | 7.4x faster |
-| Memory per VM (5 VMs) | 660 MiB | 661 MiB | Even: same QEMU, same guest |
-
-Same k3s node, same Ubuntu 24.04 image, same 1 vCPU / 512 MiB guest and cloud-init seed, one script driving both, ready meaning the guest's sshd answers. The VM costs the same either way; what you stop paying for is everything KubeVirt puts around it. Method, raw JSON and caveats (including the 10-VM run): [docs/benchmarks](docs/benchmarks/kairon-vs-kubevirt.md).
-
----
-
-## Kairon vs KubeVirt
-
-![Kairon vs KubeVirt: the same kubectl and KVM, half the stack in between](docs/ux/readme-vs.jpg)
-
-Every layer you remove is one less thing to patch, one less log to read and one less process to crash at 2 a.m.
-
-| | **Kairon** | **KubeVirt** |
-|---|---|---|
-| A VM is | A `Machine`: its own CRD, its own lifecycle | A Pod in disguise (`virt-launcher`) |
-| Pods per running VM | **0** | 1 `virt-launcher` pod each |
-| Idle control plane, 5 VMs to SSH ([measured](#the-numbers)) | **63 MiB**, **25 s** | 905 MiB, 185 s |
-| Path to KVM | `kairon-node` → FluxVM REST → KVM | `virt-handler` → `virt-launcher` → libvirt → QEMU |
-| Hypervisors | **QEMU, Cloud Hypervisor, Firecracker, FluxVM** | QEMU via libvirt |
-| MicroVMs and warm pools | Firecracker / FluxVM sandboxes, FluxVM warm pools ([24 ms claim measured](https://github.com/zyvorai/zyvor-fluxvm/tree/main/docs/benchmarks)) | Not a target |
-| Scheduling | Capacity-aware Kairon placement on real allocatable | Pod scheduler plus virt extras |
-| Control plane code | **Go standard library only** (controller, node) | Large client-go / controller-runtime surface |
-| VM network | **eBPF VM edge**: anti-spoof, DNS/SNI policy, rate limit, flows, drop reasons, pcap | Pod CNI, masquerade/bridge binding, Multus |
-| Network policy | `MachineNetworkPolicy` + `NetworkSecurityGroup`, optional Cilium sync | Pod `NetworkPolicy` |
-| Live migration | mTLS node-to-node prepare/commit/abort with an encrypted data plane | libvirt migration inside the virt stack |
-| Ambiguous migration commit | **`NeedsRecovery`**: no silent split-brain | Stack-dependent recovery |
-| Packet capture of one VM | `kaironctl network capture demo --seconds 15` | Exec into the launcher pod and bring your own tools |
-| AI agents | **MCP server built in** (`kaironctl mcp serve`) | Not included |
-| Browser console | noVNC relay with per-Machine allowlists and Kubernetes RBAC | `virtctl vnc` / external UI |
-| Source of truth | **The Kubernetes API, nothing else** | Kubernetes plus virt abstractions |
-| Install | One Helm chart from OCI, or `kaironctl install` | Operator plus CR, CDI for images |
-| **Choose KubeVirt when** | | You need its years of ecosystem integrations (OpenShift Virtualization, Harvester) today |
-
-The previous layer-stack illustration: [docs/assets/kairon-vs-kubevirt.jpg](docs/assets/kairon-vs-kubevirt.jpg).
 
 ---
 
@@ -223,8 +172,6 @@ More pages: [gallery](https://zyvorai.github.io/zyvor-kairon/gallery). Screensho
 <img src="docs/ux/anim/machine-lifecycle.svg" alt="Animated Machine lifecycle: Pending, Running, Paused, Halted, Stopped, Failed" width="100%">
 
 <img src="docs/ux/anim/live-migration.svg" alt="Animated live migration between two nodes over a mutually authenticated TLS link (Preview)" width="100%">
-
-<img src="docs/ux/anim/no-pod-per-vm.svg" alt="Animated bars: idle control plane memory and time to SSH, Kairon against KubeVirt v1.9.0" width="100%">
 
 <details>
 <summary><b>New in v0.10.0, animated:</b> agent sessions, idle sandboxes, cross-cluster DR, maintenance and DRS, elastic memory, incremental backups, Mac Fabric</summary>
@@ -429,7 +376,7 @@ Start with [CONTRIBUTING.md](CONTRIBUTING.md); the dependency rules are in [docs
 
 | Product | Role next to Kairon |
 |---|---|
-| **Kairon** | VMs on Kubernetes without KubeVirt |
+| **Kairon** | VMs on Kubernetes, no pod per VM |
 | **[FluxVM](https://github.com/zyvorai/zyvor-fluxvm)** | The VMM layer Kairon runs on: QEMU, Cloud Hypervisor, Firecracker and its own hypervisor, eBPF VM edge, sandboxes, fork |
 | **[Atlas](https://github.com/zyvorai/zyvor-atlas)** | Storage: `kairon-controller` provisions Machine volumes, snapshots and S3 backups through Atlas |
 | **[Machina](https://github.com/zyvorai/zyvor-machina)** | Private cloud on plain Linux + KVM: fleet, HA/DRS, Fleet Cloud, native eBPF, Zyra AI |

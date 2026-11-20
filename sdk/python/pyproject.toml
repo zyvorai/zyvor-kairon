@@ -7,7 +7,7 @@ name = "zyvor-kairon"
 version = "0.1.0"
 description = "Dependency-free Kubernetes and guest-operation clients for Kairon"
 requires-python = ">=3.11"
-license = {text = "Apache-2.0"}
+license = {text = "LicenseRef-Zyvor-Production-1.0"}
 
 [tool.setuptools]
 packages = ["kairon"]

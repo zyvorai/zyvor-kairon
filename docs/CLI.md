@@ -233,44 +233,12 @@ kaironctl new machine win11 --preset windows --secure-boot --tpm -o json
 
 Presets are starting points, not tuned for any workload: the sizes are plausible defaults, the image path is a placeholder, and the `gpu` preset names a placeholder `MachineAcceleratorProfile` (`gpu-profile`) your cluster admin must have defined. The command is covered by unit tests only (every preset is validated against the embedded Machine CRD schema and the admission validators); no generated manifest has been applied to a real cluster.
 
-## Coming from virtctl
-
-| virtctl | kaironctl |
-| --- | --- |
-| `start`, `stop`, `pause`, `unpause` | `start`, `stop`, `pause`, `resume` |
-| `stop --force --grace-period N` | `stop --force`, `stop --grace-period N` |
-| `restart` | `restart` (alias `reset`) |
-| `soft-reboot` | `soft-reboot` |
-| `console` | `console` |
-| `vnc [--proxy-only]` | `vnc [--proxy-only]` |
-| `ssh`, `scp`, `port-forward` | `ssh`, `scp`, `port-forward` |
-| `migrate`, `migrate-cancel` | `migrate`, `cancel-migration` |
-| `vmexport create\|download\|delete` | `export create\|list\|download\|delete`, or `export machine` for all of it at once |
-| `memory-dump get\|download\|remove` | `memory-dump get\|download\|remove` |
-| `guestosinfo`, `fslist`, `userlist` | `guest osinfo`, `guest fslist`, `guest userlist` |
-| `credentials add-ssh-key\|remove-ssh-key\|set-password` | `credentials add-ssh-key\|remove-ssh-key\|set-password` |
-| `expose` | `expose` |
-| `create vm --dry-run`, `expand` | `create … --dry-run -o yaml`, `expand` |
-| `addvolume`, `removevolume` | `disk attach`, `disk detach` |
-| `image-upload` | `image upload` |
-| `start --paused`, `--dry-run` on power verbs | `start --paused`, `--dry-run` on start, stop, halt, pause, resume, restart and migrate |
-| `freeze`, `unfreeze` | `freeze [--unfreeze-timeout]`, `unfreeze` |
-| `vnc screenshot` | `vnc screenshot` |
-| `objectgraph` | `objectgraph [-o tree\|json\|yaml\|dot]` |
-| `adm permitted-devices` | `permitted-devices [NODE]` |
-| `adm log-verbosity` | `adm log-verbosity` |
-| `create clone` | `create clone SOURCE --name NEW` |
-| `guestfs` | `guestfs [--rw]` |
-| `vmexport --manifest` | `export manifest` |
-| `usbredir` | — (FluxVM has no USB redirection) |
-| — | `wait`, `open`, `cdrom insert\|eject\|list` |
-
-Notes:
+## VM operation notes
 
 - **Through kairon-ui.** `console`, `vnc`, `vnc screenshot`, `guestfs`, `soft-reboot`, `memory-dump`, `export download`, `guest …`, `credentials`, `wait --for agent|ssh|port` and `open` go through kairon-ui. They need `KAIRON_UI_URL` and, when kairon-ui authenticates, `KAIRON_UI_TOKEN`. Guest exec, guest files, `credentials` and `memory-dump` need an administrator account.
 - **`console`** draws a window-style header (machine, namespace, node, phase, backend, IP and size), then hands the terminal to the guest's serial console. `Ctrl+]` detaches. `--log FILE` appends everything the console prints, and `--no-frame` skips the header. It needs a Running Machine with `spec.guestAgent.console`.
 - **`vnc`** listens on `127.0.0.1` and starts a viewer: Screen Sharing on macOS, `remote-viewer` or `vncviewer` elsewhere. `--proxy-only` just prints the address. Each viewer connection gets its own single-use ticket. It needs the qemu backend.
-- **Restart and reset are the same.** FluxVM has no reset, and its stop is already an immediate power-off. `restart` sets `kairon.zyvor.dev/restart-requested`, kairon-node stops and starts the runtime on the same node and records the request in `status.lastRestartRequest`, and it waits while a migration is in flight. Unlike `virtctl restart`, it does not rebuild the VM from the current spec: settings fixed when the runtime is created, such as `spec.network.forwards`, apply only after `stop` and `start`, which also resets a Machine without `spec.volumes` to its image. `soft-reboot` reboots only the guest OS.
+- **Restart and reset are the same.** FluxVM has no reset, and its stop is already an immediate power-off. `restart` sets `kairon.zyvor.dev/restart-requested`, kairon-node stops and starts the runtime on the same node and records the request in `status.lastRestartRequest`, and it waits while a migration is in flight. It does not rebuild the VM from the current spec: settings fixed when the runtime is created, such as `spec.network.forwards`, apply only after `stop` and `start`, which also resets a Machine without `spec.volumes` to its image. `soft-reboot` reboots only the guest OS.
 - **Graceful stop.** `stop --grace-period N` (at most 600) stores `kairon.zyvor.dev/stop-grace-period-seconds`. Later stops then ask the guest agent to power off and stop the runtime once the guest is down or the period ends; `status.shutdownDeadline` shows the deadline. Without `spec.guestAgent.enabled` the stop is immediate. `--force` stops at once and clears the stored period.
 - **`expose`** creates a Service without a selector, because Machines are VMs rather than pods, plus an EndpointSlice with the guest IP. kairon-controller keeps that slice current when the IP changes (restart, migration) and marks it ready only while the Machine is Running. The Machine owns the Service, so deleting the Machine deletes it. The guest IP must be routable from the cluster's nodes; a NAT-only guest network is reachable from its own node alone.
 - **`credentials`** changes a running Linux guest in place. SSH keys are edited through the guest agent (`spec.guestAgent.enabled`): adding skips keys already present and matches on the key data, not the comment. `set-password` writes `USER:PASSWORD` to a root-only file through the FluxVM guest agent (`spec.guestAgent.console`) and pipes it into `chpasswd`, which removes the file, so the password never appears on a command line. It prompts twice without echo, or reads one line with `--password-stdin`.

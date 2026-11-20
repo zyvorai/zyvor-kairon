@@ -89,11 +89,3 @@ about a minute and boots on virtio-blk and virtio-net to a login prompt.
 5. **Node cache.** Set the chart's `node.imageCacheDir` (off by default).
    The chart mounts that host directory into kairon-node at the same path,
    which is what FluxVM needs to read the downloaded OVA.
-
-## Compared with KubeVirt
-
-KubeVirt's import path is CDI (a DataVolume that converts the disk) plus
-virt-v2v or the Forklift/MTV operator for the guest repair, each with its own
-CRDs and pods. In Kairon the download, conversion and repair are part of the
-Machine's first reconcile on the node, driven by two fields on
-`spec.image.source`.

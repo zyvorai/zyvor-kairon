@@ -159,7 +159,7 @@ except Exception as e:
 readme_docs = ["README.md", "ARCHITECTURE.md", "docs/README.md", "docs/WHAT_SHIPS.md", "docs/STATUS.md"]
 readme = "\n".join((root / p).read_text() for p in readme_docs)
 for needle in [
-    "without KubeVirt", "no libvirt", "FluxVM", "Zyvor Production License", "Production gaps",
+    "pod per VM", "no libvirt", "FluxVM", "Zyvor Production License", "Production gaps",
     "MachineMigration", "MachineSnapshot", "adopt-only", "ResourceClaim", "vfio_devices",
     "MachineNetworkPolicy", "Network Fabric", "kaironctl install", "Cilium",
 ]:

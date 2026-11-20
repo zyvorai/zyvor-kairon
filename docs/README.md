@@ -18,7 +18,6 @@ The root [README](https://github.com/zyvorai/zyvor-kairon/blob/main/README.md) i
 | See what's new in v0.10.4 and how to upgrade | [RELEASE_NOTES.md](https://github.com/zyvorai/zyvor-kairon/blob/main/RELEASE_NOTES.md) (v0.10.4 hardening patch and its upgrade notes; v0.10.0: agent sessions, agent sandboxes, cross-cluster DR, Mac Fabric, GPUs, DRS, NVMe-oF, HTTPS and console TLS by default) |
 | Upgrade or roll back an install (CRDs first, keep your values) | [getting-started.md#upgrade-rollback-and-node-drains](getting-started.md#upgrade-rollback-and-node-drains) |
 | Install for production (webhook TLS Secret, migration Secrets) | [getting-started.md#evaluation-vs-production](getting-started.md#evaluation-vs-production) |
-| Find the kaironctl verb for a virtctl command | [CLI.md#coming-from-virtctl](CLI.md#coming-from-virtctl) |
 | Give an AI coding agent its own VM | [guides/agent-sessions.md](guides/agent-sessions.md) · [guides/agent-sandboxes.md](guides/agent-sandboxes.md) |
 | Ten-minute architecture tour | [../ARCHITECTURE.md](https://github.com/zyvorai/zyvor-kairon/blob/main/ARCHITECTURE.md) |
 | Deep architecture reference | [architecture.md](architecture.md) |

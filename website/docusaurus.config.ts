@@ -7,7 +7,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 
 const config: Config = {
   title: 'Kairon',
-  tagline: 'Real VMs on Kubernetes — without KubeVirt',
+  tagline: 'Real VMs on Kubernetes — no pod per VM',
   favicon: 'img/favicon.svg',
 
   future: {
@@ -111,7 +111,6 @@ const config: Config = {
             {label: 'Agent sandboxes', to: '/docs/guides/agent-sandboxes'},
             {label: 'Cross-cluster DR', to: '/docs/guides/cross-cluster-dr'},
             {label: 'Mac Fabric', to: '/docs/guides/mac-fabric'},
-            {label: 'Coming from virtctl', to: '/docs/CLI#coming-from-virtctl'},
           ],
         },
         {
@@ -121,7 +120,7 @@ const config: Config = {
             {label: 'Support', to: '/support'},
             {label: 'Release notes', href: 'https://github.com/zyvorai/zyvor-kairon/blob/main/RELEASE_NOTES.md'},
             {label: 'Roadmap', href: 'https://github.com/zyvorai/zyvor-kairon/blob/main/ROADMAP.md'},
-            {label: 'License (Apache-2.0)', href: 'https://github.com/zyvorai/zyvor-kairon/blob/main/LICENSE'},
+            {label: 'License (Zyvor PL 1.0)', href: 'https://github.com/zyvorai/zyvor-kairon/blob/main/LICENSE'},
           ],
         },
         {
@@ -132,7 +131,7 @@ const config: Config = {
           ],
         },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} Zyvor. Kairon core is Apache-2.0 licensed.`,
+      copyright: `Copyright © ${new Date().getFullYear()} Zyvor. Source-available under the Zyvor Production License v1.0; production use needs a commercial license.`,
     },
     prism: {
       theme: prismThemes.github,

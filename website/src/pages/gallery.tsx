@@ -32,7 +32,6 @@ const DIAGRAMS = [
   {name: 'how-it-works', alt: 'How Kairon works: clients, the Kubernetes API, controller, node and FluxVM'},
   {name: 'machine-lifecycle', alt: 'Machine lifecycle: Pending, Running, Paused, Halted, Stopped, Failed'},
   {name: 'live-migration', alt: 'Live migration between two nodes over a mutually authenticated TLS link (Preview)'},
-  {name: 'no-pod-per-vm', alt: 'Idle control plane memory and time to SSH, Kairon against KubeVirt v1.9.0'},
   {name: 'agent-session', alt: 'Agent sessions: commands pass the policy, git push waits for an admin, egress is allowed or refused, and the session checkpoints and forks (Experimental)'},
   {name: 'agent-sandbox', alt: 'Agent sandboxes: a Machine goes idle, pauses itself and wakes on the next connection (Experimental)'},
   {name: 'cross-cluster-dr', alt: 'Cross-cluster DR: replicate, lose a site, start Machines in order on the other site, move DNS and fence the old site (Experimental)'},

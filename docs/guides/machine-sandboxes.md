@@ -185,8 +185,7 @@ same behavior as before this existed.
 **A note on overlap with FluxVM's own Kubernetes integration**: FluxVM
 ships its own `MicroVMPool` CRD (part of `fluxvm-microvm`, a node-local
 controller that reconciles against the exact same `/v1/pools` API this
-section wraps) as part of a separate scheduler-native fleet story
-("not KubeVirt -- no live migration/CDI/virtctl"). If your cluster also
+section wraps) as part of a separate scheduler-native fleet story. If your cluster also
 runs FluxVM's own `fluxvm-microvm` operator against the same nodes,
 **don't manage the same pool name from both** -- neither coordinates with
 the other, and both would independently create/delete/claim against the

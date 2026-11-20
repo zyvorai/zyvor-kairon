@@ -19,8 +19,5 @@ render() { # <html> <jpg> <height>
   sips -s format jpeg -s formatOptions 90 "$TMP/$2.png" --out "$OUT/$2" >/dev/null
   echo "wrote docs/assets/$2 ($(du -k "$OUT/$2" | cut -f1) KB)"
 }
-render hero.html readme-hero.jpg 800
-render benchmark.html readme-benchmark.jpg 800
-render vs-kubevirt.html kairon-vs-kubevirt.jpg 820
 render capabilities.html readme-capabilities.jpg 640
 render architecture.html readme-architecture.jpg 700
