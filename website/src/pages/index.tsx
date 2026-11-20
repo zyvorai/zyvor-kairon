@@ -412,7 +412,7 @@ export default function Home(): ReactNode {
         <Honest />
         <CtaBand
           title="Run your first VM today."
-          lede="Free for non-production use; production needs a commercial license from Zyvor. Zyvor Enterprise adds support and SLAs.">
+          lede="A commercial license is required to run it from Zyvor. Zyvor Enterprise adds support and SLAs.">
           <Btn to="/deploy">Deploy Kairon</Btn>
           <Btn to="https://github.com/zyvorai/zyvor-kairon" variant="ghost">
             View on GitHub
