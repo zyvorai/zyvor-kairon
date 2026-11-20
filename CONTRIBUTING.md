@@ -12,7 +12,7 @@ Do **not** file security vulnerabilities as public issues -- follow [SECURITY.md
 
 Changes land through GitHub pull requests against `main`. `main` is branch-protected: a PR needs one approving review and green `lint`, `test`, and `analyze (go)` checks, and merges with linear history.
 
-1. Fork the repository and create a focused branch.
+1. Create a focused branch in your own checkout (email sales@zyvor.dev before sending a change, so we can agree scope).
 2. Use Go 1.27.4 or newer (`go.mod` says `go 1.27.4`; CI reads the version from `go.mod`) and golangci-lint **v2.14** (the version CI runs). golangci-lint v2.13 cannot load Go 1.27.2 export data, so an older local install will fail to lint. Install it from https://golangci-lint.run/welcome/install/.
 3. Run `make all` before opening a pull request. That is `gofmt` check, `go vet`, `golangci-lint`, race tests, a coverage floor (`internal/...` at or above `COVERAGE_THRESHOLD`, currently 50%), build/smoke, `scripts/validate.py`, RBAC coverage, `helm lint` and the stdlib-boundary check (`make stdlib-boundary`). RBAC coverage and `helm lint` need `helm` and PyYAML. `make all` does **not** run the license-header check; run `python3 scripts/check_license_headers.py` (or `make license-headers`) yourself. CI runs it in the `hygiene` job of `ci-extra.yml`.
 4. Add tests for scheduler, API, reconciliation or parsing changes.
