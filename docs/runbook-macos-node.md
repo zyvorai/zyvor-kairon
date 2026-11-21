@@ -2,9 +2,9 @@
 
 Procedure for operating `kairon-node` on an Apple-silicon Mac. How the port
 works and what has and has not been verified is in [macos.md](macos.md); the
-multi-Mac picture is in [macos-cluster.md](macos-cluster.md). This repository
-ships no launchd plist or service wrapper, so process supervision (start at
-login, restart on crash) is up to you.
+multi-Mac picture is in [macos-cluster.md](macos-cluster.md). To supervise it
+(start at login, restart on crash) use `scripts/macos-node.sh`, described under
+[Run it as a LaunchAgent](#run-it-as-a-launchagent).
 
 ## Prerequisites
 
@@ -31,6 +31,33 @@ kairon-node                         # --register-node is on by default on macOS
 `scripts/macos-e2e.sh` shows a complete working invocation, including the
 extra flags it passes for a throwaway run (`--interval=3s`,
 `--health-addr=127.0.0.1:32392`, `--console-addr=`).
+
+## Run it as a LaunchAgent
+
+`scripts/macos-node.sh` installs `kairon-node` as `dev.zyvor.kairon-node`, a launchd **LaunchAgent** of the logged-in user (not a
+LaunchDaemon: FluxVM's vz backend restores saved VM state only in an unlocked login session). Put the settings from
+[Start](#start) in a file that only you can read, then install:
+
+```bash
+mkdir -p ~/.config/kairon && chmod 700 ~/.config/kairon
+cat > ~/.config/kairon/kairon-node.env <<'EOF2'
+NODE_NAME=mac-studio-1
+KAIRON_KUBE_URL=https://API:6443
+KAIRON_KUBE_TOKEN=...
+KAIRON_KUBE_CA=/path/to/ca.pem
+KAIRON_NODE_CONSOLE_TOKEN=...      # optional: enables the :8090 console relay that Veyron and kairon-ui use
+EOF2
+chmod 600 ~/.config/kairon/kairon-node.env
+
+make build                          # writes bin/kairon-node
+scripts/macos-node.sh install --bin "$PWD/bin/kairon-node"
+scripts/macos-node.sh status
+```
+
+The tokens stay in the env file: the plist only runs `sh -c '. ENV_FILE; exec kairon-node ...'`, and the script refuses an env
+file that is group- or world-readable. The log is `~/Library/Logs/kairon-node.log`. `scripts/macos-node.sh render` prints the
+plist without installing, and `scripts/test-macos-node.sh` (`make test-macos-node`) checks it offline. The health listener is bound to
+`127.0.0.1:32302` by the agent. Not verified against a live cluster yet.
 
 Optional: `--mlx-url` / `KAIRON_MLX_URL` for a loopback MLX endpoint (adds the
 `kairon.zyvor.dev/mlx=true` label and an `inference-url` annotation to the
