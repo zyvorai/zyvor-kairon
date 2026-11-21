@@ -9,7 +9,7 @@ VERSION ?= $(shell cat VERSION)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 COVERAGE_THRESHOLD ?= 50
 
-.PHONY: rbac-bundle all fmt fmt-check vet lint test test-race cover cover-check build clean validate rbac-coverage helm-check docker-build smoke krew-package stdlib-boundary license-headers
+.PHONY: rbac-bundle all fmt fmt-check vet lint test test-race cover cover-check build clean validate rbac-coverage helm-check docker-build smoke krew-package stdlib-boundary license-headers test-macos-node
 all: fmt-check vet lint test-race cover-check build validate rbac-coverage helm-check smoke stdlib-boundary
 
 stdlib-boundary:
@@ -17,6 +17,9 @@ stdlib-boundary:
 
 license-headers:
 	python3 scripts/check_license_headers.py
+
+test-macos-node:
+	scripts/test-macos-node.sh
 
 fmt:
 	gofmt -w $$(find cmd internal -name '*.go' -type f)
