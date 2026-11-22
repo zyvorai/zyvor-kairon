@@ -1,5 +1,5 @@
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # The referenced ResourceClaim must already exist in this namespace and have
 # status.allocation populated by a DRA driver. The node must separately allow

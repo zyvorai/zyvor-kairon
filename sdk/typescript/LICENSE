@@ -1,482 +1,98 @@
-Zyvor Production License v1.0
+# Zyvor Production Licence v2.0
 
-Copyright © Zyvor AI Labs Private Limited. All rights reserved.
+Copyright © 2026 Zyvor AI Labs Private Limited. All rights reserved.  
+SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
-Revision of 2026-11-20 (supersedes the text previously published under this name).
+## 1. One licence for Zyvor repositories
 
-1. Purpose
+This is the common production licence of Zyvor AI Labs Private Limited (“Zyvor”) for its software portfolio, including releases distributed through https://github.com/zyvorai and through Zyvor’s official distribution channels. The same text may be used unchanged in every repository. A “Covered Release” is a release, source revision or distribution to which Zyvor attaches this licence or which Zyvor expressly identifies by repository and revision as subject to it. “Software” means the portions of a Covered Release that Zyvor owns or is authorised to license under these terms, including source, executables, libraries, SDKs, agents, mobile and desktop applications, web assets, images, charts, scripts, examples, specifications and documentation. “Customer” means the individual or legal entity named in an accepted Order.
 
-This license permits limited use of the Software for evaluation, development, testing, research, education, and other non-production purposes.
+**Withdrawal and supersession.** For each Covered Release, Zyvor withdraws and supersedes all previous standard Zyvor licence offers for that release. This Zyvor Production Licence v2.0 is the sole standard licence Zyvor offers for the Covered Release. Earlier standard terms, including any earlier production, community, personal-use, research or free-evaluation offer, cannot be elected as an alternative basis for using newly covered material. A historical badge, cached webpage, package label or unexpired trial credential does not carry such an offer forward.
 
-Any Production Use of the Software requires a separate paid commercial license from Zyvor AI Labs Private Limited ("Zyvor").
+**Existing rights.** Rights already received in an earlier copy or separately licensed component continue according to the instrument that granted them, including any valid expiry or termination provisions. An existing negotiated agreement covering updates or future versions governs to the extent of its grant. To replace such an agreement, the parties must follow its amendment procedure or execute a written replacement identifying the agreement, affected products and effective date. Mere publication of this text does not effect that replacement.
 
-By downloading, installing, accessing, modifying, compiling, or otherwise using the Software, you agree to the terms of this license.
+**Common terms, defined purchase.** One Order may cover one product, a named bundle or the whole portfolio. Portfolio-wide coverage requires an express grant specifying whether it includes later-added products. A shared publisher name, release pipeline, dependency or repository organisation does not expand the products purchased.
 
-2. Definitions
+## 2. Public inspection and reserved rights
 
-2.1 Software
+Anyone may read materials Zyvor makes publicly viewable. For a public GitHub repository, users retain the rights granted under GitHub’s applicable terms, including viewing and forking through the service. A public listing, fork, image, package, install script or working credential confers no additional licence. Subject to those platform rights, separately licensed materials and mandatory law, a paid Order is required before the first local copy, build, installation, execution, modification or deployment. This requirement applies equally to individuals, companies, schools, public bodies and nonprofits, including use for learning, development, research, benchmarking, staging, demonstrations and disaster recovery. Zyvor reserves all rights beyond the express grants in this licence and the Order.
 
-"Software" means the source code, object code, binaries, documentation, configuration files, scripts, APIs, SDKs, agents, controllers, user interfaces, and other materials distributed under this license.
+## 3. Ordering, acceptance and activation
 
-2.2 Non-Production Use
+An “Order” is a written order issued or countersigned by Zyvor that identifies the Customer, the covered product or bundle and release or release range, permitted use, quantity and unit of measurement, licence fee, currency, taxes and term. The territory is worldwide unless the Order specifies otherwise. An Order must incorporate this licence by version. Customer accepts by signing the Order or by an authorized representative affirmatively accepting the identified terms at checkout. Zyvor may issue its written confirmation electronically. The commercial grant begins on the later of the agreed start date and Zyvor’s receipt of the applicable initial payment. Further installments, if any, are due as specified in the Order. A quote, donation, support purchase or licence key alone grants no operating rights. A person placing an Order for an entity represents that they have authority to bind it.
 
-"Non-Production Use" means use solely for:
+## 4. Paid grant
 
-* evaluation;
-* proof-of-concept testing;
-* software development;
-* internal testing;
-* quality assurance;
-* laboratory environments;
-* demonstrations;
-* research;
-* education; or
-* personal experimentation.
+During the paid term, Zyvor grants Customer a limited, nonexclusive, nontransferable licence to download, copy, install and run the covered Software for Customer’s own internal operations, within the Order’s scope. Customer may build covered source, make internal modifications, run the resulting builds, and make reasonable backup copies within that scope. Customer may permit employees and contractors to exercise these rights solely on Customer’s behalf. Customer must bind them to restrictions consistent with this licence and is responsible for their use. Affiliates require express coverage in the Order. Each paid evaluation Order must state its permitted purpose and end date. A paid evaluation permits production workloads only if expressly authorized. Renewal or expansion requires an accepted paid Order.
 
-Non-Production Use must not support live business operations, customers, revenue-generating services, or production workloads.
+## 5. Measuring the entitlement
 
-2.3 Production Use
+The Order must state the purchased unit, quantity, counting period and covered environments. Zyvor and Customer shall resolve a missing measurement term in writing before activation. A node-based infrastructure price does not establish the price or unit for desktop software, an SDK, a business application or another product. The following rules apply when the corresponding unit is selected, unless the Order expressly varies them.
 
-"Production Use" means any deployment or use of the Software that:
+- **Node or device.** Count each distinct physical host, virtual machine or end-user device on which the metered component identified in the Order is installed for operation. Multiple copies of that component on the same metered unit count once. An installed standby counts. An uninstalled backup image does not. A replacement may take over the entitlement after the old unit is decommissioned. Any permitted overlap must be stated in the Order.
+- **Named user.** Count each individual authorised to use the product, including a contractor. Credentials are personal. A seat may be reassigned on a genuine personnel change. Rotating credentials among active users does not reduce the required count.
+- **Concurrent use, tenant or consumption.** The Order shall define the event being counted, the measurement interval, the authoritative usage record and any overage rate. For a hosted deployment, creating multiple accounts for the same operator does not create separate allowances.
+- **SDK, site, project or enterprise.** The Order shall identify the permitted developers, application, site, project or legal entities, as applicable. An SDK development entitlement permits building within the agreed scope. Shipping an embedded runtime or library to others also requires distribution rights.
+- **Bundles.** Where multiple products share one entitlement, the Order shall identify those products and state how a shared unit is counted. Where a paid product includes a runtime dependency, Customer may operate the supplied dependency as part of that product to the extent Zyvor can grant that right. Standalone use is governed by the dependency’s own terms.
 
-* supports live business operations;
-* protects, monitors, manages, processes, routes, stores, or serves production data or workloads;
-* is used by employees, contractors, customers, partners, or end users as part of normal business operations;
-* is deployed on production servers, production clusters, production networks, production edge devices, or customer environments;
-* is used to provide a commercial product or service;
-* generates or supports revenue;
-* is incorporated into an OEM product, appliance, platform, managed service, SaaS offering, or hosted service;
-* is used for business continuity, security, observability, networking, infrastructure management, automation, orchestration, or operational decision-making in a live environment.
+Customer must purchase additional capacity before exceeding its entitlement unless its Order expressly permits metered overages. Automation performed for Customer counts on the same basis as the equivalent operation performed directly.
 
-Production Use requires a valid paid commercial license issued by Zyvor.
+## 6. Customer-facing use, hosting and redistribution
 
-2.4 Organization
+Customer may use the Software internally to support its business and serve customers through its own applications within the Order’s scope. For example, visitors who merely receive a retailer’s receipts do not require operator seats solely because the retailer generated those receipts with the Software. Where customers themselves operate the Software, the applicable user or tenant metric governs.
 
-"Organization" means a company, partnership, institution, government body, or other legal entity, together with its affiliates, subsidiaries, and any entity under common control, and any individual acting for or on behalf of any of them.
+Providing the Software’s functionality as a hosted product, giving third parties administrative access for their own operations, or operating the Software on behalf of unrelated customers requires express service-provider rights. Resale, OEM embedding, distribution through an app store or marketplace, white-labelling, sublicensing and distribution of modified builds each require corresponding rights in an Order. A distributor’s Order must identify the permitted channel, downstream rights, reporting basis and responsibility for fees. A customer may download the copies it purchased from an authorised channel under the applicable end-user grant.
 
-2.5 Evaluation Period
+## 7. Ownership, safeguards and third-party software
 
-"Evaluation Period" means 30 days, counted from the first day on which any person in an Organization first installs, runs, or accesses a given Software product, and counted cumulatively across all machines, environments, accounts, versions, and reinstallations. The Evaluation Period applies once per Organization per Software product and is not restarted by upgrading, reinstalling, re-cloning, or moving the Software.
+Zyvor and its licensors retain their intellectual property in the Software. Customer retains its rights in its own data and original additions, subject to Zyvor’s rights in the underlying Software. Customer must preserve copyright, licence and attribution notices. Customer may not share or forge activation credentials, defeat usage controls, falsify usage records, or use an intermediary to exceed its licensed scope. No trademark rights are granted except as necessary to identify the Software accurately. Third-party components, including separately licensed Zyvor projects bundled with the Software, remain governed by their respective licences. Those licences control for the relevant components, including any applicable rights to copy, modify or redistribute them. This agreement preserves all rights that applicable law makes non-waivable.
 
-3. Free License Grant
+## 8. Fees, support and verification
 
-Subject to compliance with this license, Zyvor grants you a limited, worldwide, non-exclusive, non-transferable, non-sublicensable, royalty-free license to:
+Customer shall pay the fees and applicable taxes stated in its Order. Mandatory withholding may be deducted against official evidence of remittance. Support, service levels, upgrades and access to future releases are included only as stated in the Order. A change to public pricing does not change an accepted Order during its term.
 
-* download the Software;
-* inspect the source code;
-* compile and run the Software;
-* modify the Software for internal evaluation;
-* test integrations;
-* perform proof-of-concept deployments; and
-* use the Software for Non-Production Use.
+Customer shall keep records of the purchased usage metric and relevant dates sufficient to verify compliance during the term and for twelve months afterward. On written request, Customer shall provide a reasonable compliance summary. If the summary shows a material discrepancy or reasonably fails to resolve one, an independent auditor bound to confidentiality may inspect relevant licence records on fifteen business days’ notice during normal business hours, at Zyvor’s expense, once per year. Verification is limited to necessary records and excludes customer workloads, credentials and personal data unnecessary to verify the count. Under an accepted Order, verified excess use is chargeable at the agreed unit rate for the period of excess use, prorated for time-based units or measured at actual quantities for consumption units. Payment of a shortfall does not grant future capacity.
 
-No rights for Production Use are granted under this free license.
+## 9. Expiry, breach and remedies
 
-The free license for an Organization is limited to the Evaluation Period. After the Evaluation Period ends, an Organization must stop all use of the Software and delete all copies unless it holds a valid written commercial license or a written extension signed by Zyvor. An extension is effective only if it is in writing, identifies the Organization and the Software product, and states an end date.
+Operating rights end when the paid term expires. Either party may terminate an Order for material breach if the other fails to cure it within fifteen business days after written notice specifying the breach. Zyvor may immediately revoke compromised credentials and shall provide a replacement promptly to a Customer otherwise entitled to use the Software. On expiry or termination Customer must cease exercising the expired rights, remove active installations and delete copies made under the Order. Inaccessible routine backups may expire on their ordinary cycle. One archival copy may be retained if required by law. Neither may be used operationally. Customer retains access to its own data and is responsible for exporting it before expiry. Accrued payments, ownership, confidentiality, verification for the stated retention period, liability provisions and dispute terms survive. Either party may seek damages or interim relief available under applicable law. No party may recover twice for the same loss.
 
-An individual who is not acting for or on behalf of an Organization may use the Software for personal learning, personal experimentation, and non-commercial education without the Evaluation Period limit, but only for Non-Production Use.
+## 10. Confidentiality
 
-4. Production License Requirement
+Each party shall use the other’s nonpublic order information, keys and compliance records only to perform or enforce the Order, protect them with reasonable care, and disclose them only to personnel or professional advisers who need them and are bound to confidentiality. This duty excludes information lawfully public, already known, independently developed or lawfully received from another source. Legally required disclosure is permitted, with advance notice where lawful. These duties last three years after termination, and for trade secrets for as long as they qualify as such.
 
-You must obtain a separate written commercial license from Zyvor before using the Software in Production.
+## 11. Warranties and liability
 
-A commercial license may specify:
+Zyvor warrants that it has authority to grant the rights it grants under the Order. Except for express commitments in an Order and mandatory legal protections, the Software is supplied as is. Zyvor disclaims implied warranties of merchantability, fitness for a particular purpose and uninterrupted operation to the extent permitted by law.
 
-* permitted number of nodes;
-* servers;
-* CPU sockets or cores;
-* Kubernetes clusters;
-* virtual machines;
-* devices;
-* sites;
-* users;
-* customers;
-* subsidiaries;
-* geographic regions;
-* deployment environments;
-* subscription duration;
-* support entitlement; and
-* other usage limits.
+To the extent permitted by law, neither party is liable for indirect or consequential loss, including consequential loss of profit. Each party’s aggregate liability arising from an Order is limited to the fees paid or payable under that Order for the twelve months preceding the event giving rise to the claim. The cap and exclusions do not apply to Customer’s obligation to pay agreed fees, either party’s fraud or wilful misconduct, infringement of the other party’s intellectual property, or liability that applicable law does not permit the parties to limit.
 
-Production rights exist only while the applicable commercial license or subscription remains valid.
+## 12. General terms
 
-5. Commercial and Revenue-Generating Use
+Each party shall comply with applicable laws, including applicable export restrictions. Customer may not assign its Order without Zyvor’s prior written consent. Notices shall be sent to the email addresses specified in the Order or, for Zyvor if none is specified, to sales@zyvor.dev. Notices are effective on receipt. Indian law governs. Subject to mandatory law, the competent courts at the place of Zyvor’s registered office in India have exclusive jurisdiction. Either party may seek urgent interim relief from a court with jurisdiction.
 
-Unless separately licensed by Zyvor, you may not use the Software:
+A separately signed master agreement controls where it conflicts with this licence. Subject to that agreement, an accepted Order controls where it expressly varies an identified provision. The applicable signed agreement, Order and this licence constitute the entire agreement for that purchase. Purchase-order boilerplate does not amend it. An amendment requires written agreement by authorized representatives. A waiver applies only to the matter waived. If a provision is unenforceable, the remaining provisions continue in effect.
 
-* to operate a commercial service;
-* to provide managed services;
-* to provide hosting services;
-* to provide SaaS services;
-* to provide security or infrastructure services to third parties;
-* as part of a paid product;
-* as part of a commercial appliance;
-* as part of an OEM offering;
-* for resale;
-* for redistribution as part of another commercial product;
-* to provide commercial consulting services where operation of the Software is a material part of the service.
+## 13. Packages, integrations and distribution records
 
-6. Managed Service Providers
+A mirror, package registry, container registry, portable image, private fork or automated installer does not change the terms governing the material it delivers. Subject to existing grants and applicable platform rights, repackaging covered material or translating it to a different programming language does not confer permission to distribute it. Customer may make the internal deployment copies reasonably required by its Order and must retain the licence and third-party notices with those copies.
 
-Managed service providers, hosting providers, cloud providers, telecommunications companies, system integrators, and similar organizations require a commercial license if the Software is used in connection with services provided to customers.
+Customer may develop independent applications that exchange data with a licensed installation through documented interfaces. Ownership of Customer’s independent application and its data remains with Customer. Copying a covered SDK into a deliverable, distributing a covered client library, or granting customers access to a hosted instance is governed by the specific grants in sections 4 to 7. Independently written code and publicly specified interfaces are outside this licence to the extent they contain no covered material and their use exercises no rights reserved to Zyvor.
 
-Separate commercial terms may apply to:
+## 14. Credentials, renewals and transition
 
-* MSP deployments;
-* multi-tenant deployments;
-* customer-managed environments;
-* embedded deployments;
-* white-label deployments; and
-* OEM distribution.
+Customer must limit access to activation material to authorised operators, safeguard it using reasonable technical measures, and notify Zyvor promptly upon discovering unauthorised use. Both parties shall cooperate to rotate compromised credentials. A key that continues to work after expiry does not renew an Order. A renewal must identify its effective date, product scope, quantity and fee. Customer should retain its Order and the release identifier together so the parties can determine the applicable terms after an upgrade, acquisition or migration.
 
-7. Modification
+An upgrade within a purchased release range is covered for the remainder of the paid term on the agreed conditions. A product rename or transfer between Zyvor repositories does not by itself cancel a paid right in a release already covered. A new product, expanded bundle or different licence version applies to an existing Order only under its agreed update or amendment terms.
 
-You may modify the Software solely for purposes permitted by this license.
+## 15. Repository-specific rights and contributions
 
-Modification of the Software does not remove or reduce the requirement to obtain a commercial license for Production Use.
+This common licence governs only material within section 1. An upstream fork, vendored dependency, separately licensed file, third-party font, dataset, model or media asset retains its applicable terms. The presence of any of them in a Zyvor repository does not establish ownership. The applicable component notices, attribution requirements and source-availability obligations travel with the material they cover. Where the underlying terms require additional rights for the recipient, those rights remain available.
 
-You may not remove or alter:
+Submitting an issue, patch or pull request does not transfer ownership to Zyvor. Zyvor may include a contribution in a proprietary Covered Release only where it holds sufficient rights under applicable contributor terms, a separate written grant or the contribution’s existing licence. An operational licence purchased by a contributor is separate from any rights that contributor grants to Zyvor.
 
-* copyright notices;
-* license notices;
-* trademark notices;
-* attribution notices;
-* licensing controls; or
-* notices identifying Zyvor as the copyright owner.
+## 16. Orders involving earlier licences
 
-8. Redistribution
+When the parties agree to replace an earlier licence, their written instrument must identify the earlier agreement and customer, list the releases and environments affected, state the transition date, and address remaining prepaid fees and surviving rights. Where only some products migrate, the earlier agreement continues for the others according to its terms. Accrued payment claims, agreed credits and continuing confidentiality obligations survive unless the parties expressly settle or vary them. This clause provides a mechanism for a documented transition and does not impose new charges for past authorised use.
 
-You may redistribute unmodified or modified copies of the Software only with prior written permission from Zyvor.
-
-Any approved redistribution must include:
-
-* this license;
-* applicable copyright notices; and
-* all required attribution notices.
-
-This license does not grant a right to commercially redistribute, sublicense, sell, or resell the Software.
-
-9. Forks
-
-You may create forks for internal Non-Production Use.
-
-A fork does not receive independent Production Use rights.
-
-Production deployment of a fork, modified version, derivative version, or substantially similar version of the Software requires a commercial license from Zyvor unless otherwise agreed in writing.
-
-10. APIs, SDKs and Integrations
-
-Applications may communicate with the Software through documented APIs, SDKs, command-line interfaces, network interfaces, or other supported integration mechanisms.
-
-Using an API or SDK does not automatically grant Production Use rights for the underlying Software.
-
-Where Zyvor publishes an SDK under a separate license, that separate license governs the SDK.
-
-11. Benchmarking
-
-You may perform internal benchmarking.
-
-Publication of benchmarks, performance comparisons, scalability results, security evaluations, or competitive testing involving the Software must accurately describe:
-
-* the Software version;
-* deployment architecture;
-* hardware;
-* configuration;
-* workload; and
-* test methodology.
-
-You must not intentionally publish misleading or materially incomplete performance results.
-
-12. License Keys and Technical Controls
-
-Zyvor may use:
-
-* license keys;
-* activation tokens;
-* entitlement services;
-* node identifiers;
-* machine identifiers;
-* subscription validation;
-* deployment limits; or
-* other technical licensing mechanisms.
-
-You may not:
-
-* bypass licensing controls;
-* disable licensing enforcement;
-* forge license credentials;
-* modify the Software to avoid licensing requirements;
-* manipulate usage measurements intended for licensing; or
-* use another customer's license credentials;
-* remove, hide, or interfere with any licensing notice, status line, or license check; or
-* share, publish, or transfer a license key, activation token, or trial key to anyone outside the licensed Organization.
-
-Where the Software contains a license check or sends license validation requests to Zyvor, you consent to those requests.
-
-13. Trial and Evaluation Environments
-
-Zyvor may provide time-limited evaluation licenses.
-
-Unless otherwise stated in writing, an evaluation license:
-
-* is limited to Non-Production Use;
-* may expire automatically;
-* may contain technical limits;
-* may not be transferred; and
-* may not be used to operate customer-facing or revenue-generating workloads;
-* does not extend the Evaluation Period unless it says so in writing; and
-* is granted once per Organization per Software product.
-
-14. Enterprise Features
-
-Certain features may be available only under a paid commercial license, including, without limitation:
-
-* enterprise management;
-* high availability;
-* centralized fleet management;
-* enterprise RBAC;
-* SSO;
-* SAML;
-* LDAP;
-* advanced identity integration;
-* audit logging;
-* compliance reporting;
-* enterprise policy management;
-* advanced security controls;
-* enterprise integrations;
-* long-term support;
-* certified builds;
-* premium updates;
-* enterprise dashboards;
-* advanced analytics;
-* SLA-backed support; and
-* commercial support.
-
-Availability of specific enterprise features may vary by product and subscription plan.
-
-15. No Circumvention
-
-You may not intentionally circumvent restrictions imposed by this license by:
-
-* splitting one production deployment into multiple evaluation environments;
-* repeatedly reinstalling trial versions;
-* using multiple organizations or accounts to avoid licensing limits;
-* operating production workloads under labels such as "testing", "development", or "evaluation";
-* cloning or modifying the Software primarily to avoid payment obligations.
-
-The actual nature and purpose of the deployment determines whether it constitutes Production Use.
-
-Use is presumed to be Production Use, unless you show otherwise by written records, if:
-
-* it continues after the Evaluation Period ends without a valid commercial license or written extension;
-* it processes real customer, employee, financial, or operational data;
-* it is reachable by anyone outside the team evaluating the Software; or
-* it runs on infrastructure that also runs production workloads.
-
-Use by affiliates, subsidiaries, contractors, or related parties to obtain a second Evaluation Period, or to avoid a limit, a fee, or the Evaluation Period, is treated as use by the same Organization.
-
-16. Ownership
-
-Zyvor and its licensors retain all right, title, and interest in and to the Software, including all copyrights, patents, trademarks, trade secrets, and other intellectual property rights.
-
-Except for the limited rights expressly granted by this license, no rights are transferred to you.
-
-17. Contributions
-
-Unless a separate contributor agreement applies, any contribution intentionally submitted to a Zyvor-controlled repository may be used, reproduced, modified, distributed, sublicensed, and commercially licensed by Zyvor.
-
-Contributors represent that they have the legal right to submit their contributions.
-
-Zyvor may require execution of a Contributor License Agreement before accepting contributions.
-
-18. Trademarks
-
-This license does not grant permission to use:
-
-* Zyvor;
-* Zyvor AI Labs;
-* Zyvor logos;
-* product names;
-* service marks; or
-* other Zyvor branding
-
-except as reasonably necessary to identify the origin of the Software.
-
-Forked or modified versions must not imply sponsorship, certification, or endorsement by Zyvor.
-
-19. Third-Party Components
-
-The Software may include third-party components distributed under separate licenses.
-
-Those components remain subject to their respective licenses.
-
-Nothing in this license limits rights granted directly to you under a third-party license.
-
-20. Compliance Verification
-
-Zyvor may require, at any time while you use the Software and for 24 months afterwards, reasonable information necessary to verify license compliance, including for use that you describe as Non-Production Use. Where Zyvor requests it, you must, within 15 days:
-
-* provide a written certification, signed by an authorized officer, describing your use of the Software and confirming that it complies with this license; and
-* provide the information below.
-
-The information includes:
-
-* deployment counts;
-* node counts;
-* cluster counts;
-* device counts;
-* subscription identifiers; and
-* licensed feature usage.
-
-You must keep accurate records of your installations and use of the Software for at least 24 months. Once in any 12-month period, on 15 days' notice, Zyvor or an independent auditor bound by confidentiality obligations may inspect those records and the relevant deployments during normal business hours to verify compliance.
-
-If an audit or certification shows use that is not licensed, or under-licensing, you must immediately obtain the appropriate license and pay the amounts due under section 21, and you must also pay the reasonable cost of the audit.
-
-Any compliance verification must be conducted in a commercially reasonable manner and subject to applicable confidentiality obligations.
-
-21. Termination
-
-Your rights under this license terminate automatically and immediately, without notice, if you materially violate its terms. Any Production Use without a valid commercial license, and any use after the Evaluation Period without a valid commercial license or written extension, is a material violation. There is no right to cure a violation of this kind.
-
-Upon termination, you must stop all use of the Software and delete all copies, and you must certify in writing, on request, that you have done so.
-
-For other violations, Zyvor may, at its discretion, provide an opportunity to cure by:
-
-* purchasing an appropriate commercial license;
-* reducing the deployment to permitted use; or
-* stopping the non-compliant use.
-
-Unauthorized Production Use. If you use the Software in Production without a valid commercial license, you must pay Zyvor, for the whole period of that use, license fees at Zyvor's then-current list price for the Software and the scope of deployment (without discounts), plus a further 100% of those fees as agreed liquidated damages for the cost of detection, enforcement, lost sales, and the harm to Zyvor's licensing program, together with interest at 1.5% per month, or the maximum rate permitted by law if lower, from the date each payment would have been due. The parties agree that this sum is a genuine and reasonable pre-estimate of Zyvor's loss and not a penalty, and it is in addition to Zyvor's other remedies, including damages for infringement.
-
-You must also pay Zyvor's reasonable costs of enforcing this license, including reasonable legal fees, where Zyvor prevails.
-
-Termination does not eliminate any payment obligation arising from unauthorized use, and sections 11, 15, 16, 20, 21, 23 to 26, and 28 to 32 survive termination.
-
-22. Commercial Licensing
-
-Commercial licenses, enterprise subscriptions, OEM agreements, MSP agreements, redistribution agreements, support contracts, and other commercial permissions are available separately from Zyvor.
-
-Commercial terms may supersede specific provisions of this license where expressly stated in writing.
-
-Commercial licensing inquiries:
-
-Zyvor AI Labs Private Limited
-Website: https://zyvor.dev
-
-23. Disclaimer of Warranty
-
-THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT.
-
-TO THE MAXIMUM EXTENT PERMITTED BY LAW, ZYVOR DOES NOT WARRANT THAT THE SOFTWARE WILL BE ERROR-FREE, SECURE, UNINTERRUPTED, OR SUITABLE FOR ANY PARTICULAR PURPOSE.
-
-24. Limitation of Liability
-
-TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, ZYVOR SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES, INCLUDING LOSS OF PROFITS, REVENUE, DATA, BUSINESS, GOODWILL, OR BUSINESS OPPORTUNITY ARISING FROM USE OF THE SOFTWARE.
-
-25. Export and Legal Compliance
-
-You are responsible for complying with applicable:
-
-* export control laws;
-* sanctions;
-* data protection laws;
-* cybersecurity laws;
-* telecommunications laws;
-* industry regulations; and
-* other legal requirements applicable to your use of the Software.
-
-26. Governing Law
-
-Unless otherwise stated in a commercial agreement, this license shall be governed by the laws of India.
-
-Any dispute arising from this license shall be subject to the exclusive jurisdiction of the competent courts at the place of the registered office of Zyvor AI Labs Private Limited in India, unless Zyvor's applicable commercial terms specify a different forum. You irrevocably submit to that jurisdiction and waive any objection to it on the ground of inconvenient forum.
-
-Zyvor may, in addition, seek interim or injunctive relief to protect its rights in any court that has jurisdiction over you, the Software, or the infringing use.
-
-27. Entire License
-
-This license constitutes the complete license governing the free Non-Production Use of the Software unless a separate written agreement has been executed with Zyvor.
-
-If you hold a valid commercial agreement with Zyvor, that commercial agreement controls to the extent of any conflict.
-
-28. Injunctive Relief
-
-You acknowledge that unlicensed Production Use, use after the Evaluation Period, and circumvention of a license control would cause Zyvor harm that is difficult to measure in money. Zyvor is entitled to seek injunctive relief and specific performance for any actual or threatened violation, in addition to damages, without having to prove actual damages or post a bond, to the extent permitted by law.
-
-29. Assignment and Change of Control
-
-You may not assign, sublicense, or transfer this license, or any right under it, whether by operation of law, merger, change of control, or otherwise, without Zyvor's prior written consent. Any attempted transfer is void. A commercial license is held only by the Organization named in it.
-
-30. Relationship to Earlier Versions
-
-This revision applies to all copies of the Software distributed under the name "Zyvor Production License v1.0", including copies obtained before this revision, from the date it is published for the Software you use. Versions of the Software that Zyvor released before relicensing under this name remain under the license they were released under, and nothing in this license changes that.
-
-If any provision of this license is held unenforceable, the remaining provisions continue in effect, and the unenforceable provision is enforced to the maximum extent permitted by law.
-
-31. Penalties and Legal Consequences
-
-Unauthorized copying, redistribution, or Production Use of the Software, removal or circumvention of notices or licensing controls, and sharing or forging license credentials are breaches of this license and may infringe Zyvor's copyright and other rights. They may also constitute offences under applicable law, including the Copyright Act, 1957 of India (including sections 63 and 63B) and the Information Technology Act, 2000, and the corresponding laws of other countries, which can carry fines and imprisonment.
-
-Zyvor reserves the right to pursue every available civil and criminal remedy, to make complaints to the police and other authorities, and to seek seizure, destruction, and delivery up of infringing copies, accounts of profits, and damages.
-
-Each member of an Organization that uses the Software, together with its affiliates, is jointly and severally liable for amounts due under this license. An officer, director, or other individual who directs, approves, or knowingly permits a violation may be personally liable to the extent permitted by law.
-
-The limitations of liability in section 24 protect Zyvor only. They do not limit your payment obligations, your liability for infringement, or any remedy of Zyvor.
-
-32. Substance Over Form; No Loopholes
-
-This license is interpreted according to the real effect of what you do and not the labels you use. Any arrangement whose effect is to obtain the benefit of Production Use without a valid commercial license is treated as Production Use by you. This includes use:
-
-* through affiliates, subsidiaries, contractors, consultants, resellers, or customers;
-* through a third-party host, cloud tenant, container image, mirror, fork, archive, or package registry;
-* through automation, scripts, bots, AI agents, or AI tools acting on your behalf, whose use is your use;
-* by making the Software, or its functionality, available over a network to anyone outside the team evaluating it, whether or not a copy is delivered to them;
-* in a customer's, partner's, or third party's environment; and
-* by splitting, renaming, relabeling, or restructuring a deployment, an Organization, or an account.
-
-You may not use the Software, its source code, or its documentation to develop, train, or improve a competing product or service, or to build a tool whose purpose is to defeat, emulate, or avoid this license or its controls.
-
-Downloading, installing, copying, or using the Software is acceptance of this license. A signature is not required. The license applies to every copy of a version of the Software that was distributed under it, however you obtained that copy, including from a mirror, fork, archive, or third party. It does not change the license that applies to a version that Zyvor released under a different license.
-
-No failure or delay by Zyvor in enforcing this license, no acceptance of a payment, and no knowledge of or silence about your use is a waiver or grants any license by implication, estoppel, or course of dealing. Rights are granted only expressly in writing. A waiver is effective only if it is in writing and signed by Zyvor.
-
-If this license is ambiguous about whether a use is Production Use, the use is treated as Production Use unless Zyvor confirms in writing that it is not.
-
-⸻
-
-Summary
-
-Free, for a limited time
-
-An Organization may use the Software without payment for 30 days per Software product (the Evaluation Period) for:
-
-* development;
-* testing;
-* evaluation;
-* proofs of concept;
-* research;
-* education; and
-* non-production laboratory environments.
-
-After 30 days an Organization must stop using the Software unless it holds a commercial license or a written extension from Zyvor. Individuals acting for themselves, and not for an Organization, may continue personal, non-commercial learning and experimentation.
-
-Paid License Required
-
-A commercial license is required for:
-
-* production environments;
-* customer workloads;
-* internal business-critical workloads;
-* commercial services;
-* SaaS;
-* managed services;
-* OEM use;
-* appliances;
-* redistribution;
-* resale;
-* revenue-generating use; and
-* enterprise production deployments.
-
-Production = Commercial License Required. Unlicensed Production Use is billed at list price from the first day plus a further 100%, with interest and costs, and may also lead to criminal complaints, fines, and imprisonment under applicable law.
-
-Copyright © Zyvor AI Labs Private Limited. All rights reserved.
+Commercial licensing, paid evaluations and portfolio orders may be requested at sales@zyvor.dev.

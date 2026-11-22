@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 # End-to-end check of Kairon on a Mac: this Mac registers as a Node, a Machine with backend "vz" is scheduled to it,
 # kairon-node starts it through FluxVM's Apple Virtualization.framework backend, and it is reachable over SSH.
 #

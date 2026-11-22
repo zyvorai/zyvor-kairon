@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Adapted from ../fabric/scripts/deploy-remote.sh for kairon's architecture:
 # kairon-node/kairon-controller are not self-contained daemons (they require

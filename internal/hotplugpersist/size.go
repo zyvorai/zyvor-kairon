@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Package hotplugpersist keeps a Machine's realized CPU and memory across
 // stop/start. FluxVM boots from the create request, not from QMP hotplug

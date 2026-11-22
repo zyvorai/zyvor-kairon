@@ -1,5 +1,5 @@
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Optional kind-based smoke: install CRDs + Helm chart into a throwaway
 # cluster. Does not require FluxVM; only checks objects apply cleanly.

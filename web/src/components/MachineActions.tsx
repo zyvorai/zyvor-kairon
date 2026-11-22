@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 import { useState } from 'react';
 import { apiErrorText, apiJSON } from '../api';

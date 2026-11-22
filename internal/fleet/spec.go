@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Package fleet implements opt-in fleet automation using durable Kubernetes
 // intent and existing Kairon primitives. No model inference runs here.

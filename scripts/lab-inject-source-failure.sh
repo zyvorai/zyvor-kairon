@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Source failure during transfer: starts a live migration, waits for Running,
 # stops kairon-node on the source host for --outage seconds, then restarts it.

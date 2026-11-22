@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 import {
   Activity, Archive, ArchiveRestore, ArrowLeftRight, Bot, Box, Boxes, Disc3, Download, Calendar, Camera, Cpu, Gauge, HardDrive, Layers, Network, RotateCcw, Route, Server,

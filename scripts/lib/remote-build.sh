@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Runs ON the deploy host (shipped and invoked by scripts/deploy-remote.sh
 # --remote-build). Unpacks a source tarball, builds the requested static Go

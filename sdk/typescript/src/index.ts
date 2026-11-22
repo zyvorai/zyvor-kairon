@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 /** Kairon clients. No runtime dependencies, write retries, or credential sharing. */
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export interface Metadata {

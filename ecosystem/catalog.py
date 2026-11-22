@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 """Render reviewed recipes into Machine, warm-pool or immutable fleet templates."""
 from __future__ import annotations
 import argparse

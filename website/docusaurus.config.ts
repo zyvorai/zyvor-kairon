@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 import {themes as prismThemes} from 'prism-react-renderer';
 import type {Config} from '@docusaurus/types';
@@ -131,7 +131,7 @@ const config: Config = {
           ],
         },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} Zyvor. Source-available under the Zyvor Production License v1.0; production use needs a commercial license.`,
+      copyright: `Copyright © ${new Date().getFullYear()} Zyvor. Source-available under the Zyvor Production Licence v2.0; production use needs a commercial license.`,
     },
     prism: {
       theme: prismThemes.github,

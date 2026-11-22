@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Single source of truth for navigation: the grouped mega-menu, the mobile
 // sheet, hash routing and the command palette all read NAV. Icons are

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # NVMe-oF drill (see docs/guides/machine-storage-nvmeof.md), run on one node
 # that is both storage node and Machine host. A dummy interface carries two

@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Package nodeliveness gives kairon-node an independent, per-node
 // coordination.k8s.io/v1 Lease it renews every reconcile tick -- a real

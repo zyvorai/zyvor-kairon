@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Package bgp is a minimal, announce-only BGP-4 speaker (RFC 4271): it opens
 // a session to each configured peer, advertises a set of IPv4 prefixes with

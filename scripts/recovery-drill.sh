@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Automated NeedsRecovery drill (docs/runbook-recovery-drill.md, trigger A).
 # Starts a live migration, waits for Running, firewalls the destination's

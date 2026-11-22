@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 # Run only on a configured disposable Kairon/CSI lab; see the guide.
 set -euo pipefail
 compatible=${1:?usage: lab-rehearsal.sh COMPATIBLE.json BREAKING.json}

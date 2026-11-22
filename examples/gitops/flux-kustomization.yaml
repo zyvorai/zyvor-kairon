@@ -1,5 +1,5 @@
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Flux health checks for Kairon custom resources (Flux 2.5+, which added
 # Kustomization.spec.healthCheckExprs). Flux's built-in kstatus has no idea

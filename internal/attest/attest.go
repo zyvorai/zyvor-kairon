@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Package attest verifies SEV-SNP attestation reports and TDX quotes and
 // binds them to one Machine. Signature and certificate-chain checks are

@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 360" role="img" aria-label="Machine lifecycle: Pending to Running, and from Running to Paused, Halted, Stopped or Failed">
-<!-- Copyright 2026 Zyvor. SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0 -->
+<!-- Copyright 2026 Zyvor. SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0 -->
 <defs>
 <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#06121c"/><stop offset="1" stop-color="#0b1f2e"/></linearGradient>
 <filter id="glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>

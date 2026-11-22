@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Package conversion hand-rolls just the slice of the Kubernetes
 // apiextensions.k8s.io/v1 ConversionReview wire format a CRD conversion

@@ -22,4 +22,4 @@ pair. `build-social-svg.py` holds the light and dark palettes and generates both
 layout, so they cannot drift apart.
 
 Every claim on the social cards is already sourced in the project README and docs.
-Licence wording follows `LICENSE`: Zyvor Production License v1.0.
+Licence wording follows `LICENSE`: Zyvor Production Licence v2.0.

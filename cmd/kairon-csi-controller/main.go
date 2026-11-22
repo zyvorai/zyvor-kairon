@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // kairon-csi-controller serves Kairon's first-cut CSI Controller service
 // (see internal/csinode) over gRPC on a Unix socket -- dynamic

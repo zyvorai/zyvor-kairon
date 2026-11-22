@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # vGPU (mediated device) drill on one node with the kernel's mbochs sample
 # driver standing in for a vGPU host driver (see docs/guides/gpu-vgpu.md).

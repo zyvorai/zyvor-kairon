@@ -1,5 +1,5 @@
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 #
 # Machines spread over several Macs. Each Mac runs kairon-node (registers itself as a Node) and FluxVM (`fluxctl serve`).
 # NODE_NAME on each Mac sets the Node name used below. Multi-Mac clusters are not yet verified; see docs/macos-cluster.md.

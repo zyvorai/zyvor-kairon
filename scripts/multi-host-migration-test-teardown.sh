@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Reverses multi-host-migration-test-deploy.sh: uninstalls kairon-node (+
 # kairon-controller) via deploy-remote.sh --uninstall (unmodified), then

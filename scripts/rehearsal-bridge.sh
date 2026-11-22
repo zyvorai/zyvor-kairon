@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 set -euo pipefail
 bridge=${1:?usage: sudo scripts/rehearsal-bridge.sh krh-demo}
 [[ "$bridge" =~ ^krh-[a-z0-9-]{1,11}$ ]] || { echo 'invalid bridge name' >&2; exit 1; }

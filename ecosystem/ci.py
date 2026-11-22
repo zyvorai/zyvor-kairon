@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 """Execute a JSON argv in a disposable Kairon VM; never interpolate shell input."""
 from __future__ import annotations
 import argparse

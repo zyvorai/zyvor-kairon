@@ -1,5 +1,5 @@
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 #
 # Optional: apply alongside deploy/rbac.yaml to use CBT backups to S3
 # (MachineBackup spec.target, MachineBackupPolicy). kairon-node reads the
