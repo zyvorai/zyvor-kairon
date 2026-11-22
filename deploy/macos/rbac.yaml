@@ -1,5 +1,5 @@
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 #
 # Extra permissions for a kairon-node running on a Mac. A Mac has no kubelet, so kairon-node creates and heartbeats its
 # own Node object (internal/macnode). Apply this next to deploy/rbac.yaml; Linux nodes do not need it.

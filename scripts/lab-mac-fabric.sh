@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Mac Fabric drill without Macs (see docs/guides/mac-fabric.md). Three Mac
 # Nodes are created through the Kubernetes API with the labels, annotations,

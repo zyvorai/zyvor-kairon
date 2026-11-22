@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Agent-sandbox drill and benchmark (see docs/guides/agent-sandboxes.md).
 # Everything runs on one node through kaironctl, and each case prints one

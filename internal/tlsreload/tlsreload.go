@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Package tlsreload hot-reloads a TLS leaf certificate/key pair from disk
 // on a stdlib-only polling interval -- no fsnotify, no new dependency,

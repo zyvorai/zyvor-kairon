@@ -1,5 +1,5 @@
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Two NVIDIA GPUs with at least 40Gi each under one PCIe root on one NUMA
 # node, plus a Mellanox VF on the same root for GPUDirect RDMA. See

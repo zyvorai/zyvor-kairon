@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 //
 // Changes the visibility of GHCR container packages through the GitHub web UI.
 // GitHub has no REST/gh endpoint for package visibility, so this drives the

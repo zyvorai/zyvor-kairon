@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 """check_stdlib_boundary.py -- keep Helm/client-go/OIDC out of controller/node.
 
 docs/DEPENDENCIES.md: kairon-controller and kairon-node stay free of the

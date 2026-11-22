@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 #
 # Build multi-platform kubectl-kairon archives for Krew and emit a filled
 # manifest under dist/krew/kairon.yaml (deploy/krew/kairon.yaml stays the

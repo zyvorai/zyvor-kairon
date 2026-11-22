@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Every FROM is pinned to a digest, not just a tag: a floating tag can be
 # repointed (accidentally or via supply-chain compromise) without this file

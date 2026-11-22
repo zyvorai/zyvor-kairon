@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Back up every Kairon CRD object (cluster-wide, all namespaces) to plain
 # YAML -- the Kubernetes-level state a cluster/etcd loss would otherwise

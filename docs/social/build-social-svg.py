@@ -1,5 +1,5 @@
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 import sys  # usage: python3 docs/social/build-social-svg.py docs/assets
 LIGHT = dict(
     bg0="#ffffff", bg1="#f5f5f7", wash="#0071e3", wash_op="0.10", wash2_op="0.05",
@@ -76,7 +76,7 @@ def svg(p):
     <text x="732" y="476">NeedsRecovery</text>
   </g>
 
-  <text x="96" y="560" font-family="'SF Mono','Menlo',monospace" font-size="16" fill="{p['sec']}">Zyvor Production License · FluxVM · KVM</text>
+  <text x="96" y="560" font-family="'SF Mono','Menlo',monospace" font-size="16" fill="{p['sec']}">Zyvor Production Licence v2.0 · FluxVM · KVM</text>
 
   <!-- architecture motif -->
   <g>

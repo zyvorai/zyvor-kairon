@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 /**
  * Agent sessions: a FluxVM agent session (its own sandbox VM, a workspace, a
  * compiled policy, checkpoints and an event ledger) as a Kairon AgentSession,

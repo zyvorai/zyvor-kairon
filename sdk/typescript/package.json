@@ -2,7 +2,7 @@
   "name": "@zyvor/kairon",
   "version": "0.1.0",
   "description": "Dependency-free Kubernetes and guest-operation clients for Kairon",
-  "license": "LicenseRef-Zyvor-Production-1.0",
+  "license": "LicenseRef-Zyvor-Production-2.0",
   "type": "module",
   "engines": {"node": ">=22"},
   "exports": {".": {"types": "./dist/index.d.ts", "import": "./dist/index.js"}},

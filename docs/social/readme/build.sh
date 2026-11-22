@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Render the README cards (docs/social/readme/*.html) to JPEGs in docs/assets/.
 # Needs Google Chrome and macOS `sips` (both already on a Mac); nothing is installed.

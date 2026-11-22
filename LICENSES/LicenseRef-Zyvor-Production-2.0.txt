@@ -1,0 +1,98 @@
+# Zyvor Production Licence v2.0
+
+Copyright © 2026 Zyvor AI Labs Private Limited. All rights reserved.  
+SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
+
+## 1. One licence for Zyvor repositories
+
+This is the common production licence of Zyvor AI Labs Private Limited (“Zyvor”) for its software portfolio, including releases distributed through https://github.com/zyvorai and through Zyvor’s official distribution channels. The same text may be used unchanged in every repository. A “Covered Release” is a release, source revision or distribution to which Zyvor attaches this licence or which Zyvor expressly identifies by repository and revision as subject to it. “Software” means the portions of a Covered Release that Zyvor owns or is authorised to license under these terms, including source, executables, libraries, SDKs, agents, mobile and desktop applications, web assets, images, charts, scripts, examples, specifications and documentation. “Customer” means the individual or legal entity named in an accepted Order.
+
+**Withdrawal and supersession.** For each Covered Release, Zyvor withdraws and supersedes all previous standard Zyvor licence offers for that release. This Zyvor Production Licence v2.0 is the sole standard licence Zyvor offers for the Covered Release. Earlier standard terms, including any earlier production, community, personal-use, research or free-evaluation offer, cannot be elected as an alternative basis for using newly covered material. A historical badge, cached webpage, package label or unexpired trial credential does not carry such an offer forward.
+
+**Existing rights.** Rights already received in an earlier copy or separately licensed component continue according to the instrument that granted them, including any valid expiry or termination provisions. An existing negotiated agreement covering updates or future versions governs to the extent of its grant. To replace such an agreement, the parties must follow its amendment procedure or execute a written replacement identifying the agreement, affected products and effective date. Mere publication of this text does not effect that replacement.
+
+**Common terms, defined purchase.** One Order may cover one product, a named bundle or the whole portfolio. Portfolio-wide coverage requires an express grant specifying whether it includes later-added products. A shared publisher name, release pipeline, dependency or repository organisation does not expand the products purchased.
+
+## 2. Public inspection and reserved rights
+
+Anyone may read materials Zyvor makes publicly viewable. For a public GitHub repository, users retain the rights granted under GitHub’s applicable terms, including viewing and forking through the service. A public listing, fork, image, package, install script or working credential confers no additional licence. Subject to those platform rights, separately licensed materials and mandatory law, a paid Order is required before the first local copy, build, installation, execution, modification or deployment. This requirement applies equally to individuals, companies, schools, public bodies and nonprofits, including use for learning, development, research, benchmarking, staging, demonstrations and disaster recovery. Zyvor reserves all rights beyond the express grants in this licence and the Order.
+
+## 3. Ordering, acceptance and activation
+
+An “Order” is a written order issued or countersigned by Zyvor that identifies the Customer, the covered product or bundle and release or release range, permitted use, quantity and unit of measurement, licence fee, currency, taxes and term. The territory is worldwide unless the Order specifies otherwise. An Order must incorporate this licence by version. Customer accepts by signing the Order or by an authorized representative affirmatively accepting the identified terms at checkout. Zyvor may issue its written confirmation electronically. The commercial grant begins on the later of the agreed start date and Zyvor’s receipt of the applicable initial payment. Further installments, if any, are due as specified in the Order. A quote, donation, support purchase or licence key alone grants no operating rights. A person placing an Order for an entity represents that they have authority to bind it.
+
+## 4. Paid grant
+
+During the paid term, Zyvor grants Customer a limited, nonexclusive, nontransferable licence to download, copy, install and run the covered Software for Customer’s own internal operations, within the Order’s scope. Customer may build covered source, make internal modifications, run the resulting builds, and make reasonable backup copies within that scope. Customer may permit employees and contractors to exercise these rights solely on Customer’s behalf. Customer must bind them to restrictions consistent with this licence and is responsible for their use. Affiliates require express coverage in the Order. Each paid evaluation Order must state its permitted purpose and end date. A paid evaluation permits production workloads only if expressly authorized. Renewal or expansion requires an accepted paid Order.
+
+## 5. Measuring the entitlement
+
+The Order must state the purchased unit, quantity, counting period and covered environments. Zyvor and Customer shall resolve a missing measurement term in writing before activation. A node-based infrastructure price does not establish the price or unit for desktop software, an SDK, a business application or another product. The following rules apply when the corresponding unit is selected, unless the Order expressly varies them.
+
+- **Node or device.** Count each distinct physical host, virtual machine or end-user device on which the metered component identified in the Order is installed for operation. Multiple copies of that component on the same metered unit count once. An installed standby counts. An uninstalled backup image does not. A replacement may take over the entitlement after the old unit is decommissioned. Any permitted overlap must be stated in the Order.
+- **Named user.** Count each individual authorised to use the product, including a contractor. Credentials are personal. A seat may be reassigned on a genuine personnel change. Rotating credentials among active users does not reduce the required count.
+- **Concurrent use, tenant or consumption.** The Order shall define the event being counted, the measurement interval, the authoritative usage record and any overage rate. For a hosted deployment, creating multiple accounts for the same operator does not create separate allowances.
+- **SDK, site, project or enterprise.** The Order shall identify the permitted developers, application, site, project or legal entities, as applicable. An SDK development entitlement permits building within the agreed scope. Shipping an embedded runtime or library to others also requires distribution rights.
+- **Bundles.** Where multiple products share one entitlement, the Order shall identify those products and state how a shared unit is counted. Where a paid product includes a runtime dependency, Customer may operate the supplied dependency as part of that product to the extent Zyvor can grant that right. Standalone use is governed by the dependency’s own terms.
+
+Customer must purchase additional capacity before exceeding its entitlement unless its Order expressly permits metered overages. Automation performed for Customer counts on the same basis as the equivalent operation performed directly.
+
+## 6. Customer-facing use, hosting and redistribution
+
+Customer may use the Software internally to support its business and serve customers through its own applications within the Order’s scope. For example, visitors who merely receive a retailer’s receipts do not require operator seats solely because the retailer generated those receipts with the Software. Where customers themselves operate the Software, the applicable user or tenant metric governs.
+
+Providing the Software’s functionality as a hosted product, giving third parties administrative access for their own operations, or operating the Software on behalf of unrelated customers requires express service-provider rights. Resale, OEM embedding, distribution through an app store or marketplace, white-labelling, sublicensing and distribution of modified builds each require corresponding rights in an Order. A distributor’s Order must identify the permitted channel, downstream rights, reporting basis and responsibility for fees. A customer may download the copies it purchased from an authorised channel under the applicable end-user grant.
+
+## 7. Ownership, safeguards and third-party software
+
+Zyvor and its licensors retain their intellectual property in the Software. Customer retains its rights in its own data and original additions, subject to Zyvor’s rights in the underlying Software. Customer must preserve copyright, licence and attribution notices. Customer may not share or forge activation credentials, defeat usage controls, falsify usage records, or use an intermediary to exceed its licensed scope. No trademark rights are granted except as necessary to identify the Software accurately. Third-party components, including separately licensed Zyvor projects bundled with the Software, remain governed by their respective licences. Those licences control for the relevant components, including any applicable rights to copy, modify or redistribute them. This agreement preserves all rights that applicable law makes non-waivable.
+
+## 8. Fees, support and verification
+
+Customer shall pay the fees and applicable taxes stated in its Order. Mandatory withholding may be deducted against official evidence of remittance. Support, service levels, upgrades and access to future releases are included only as stated in the Order. A change to public pricing does not change an accepted Order during its term.
+
+Customer shall keep records of the purchased usage metric and relevant dates sufficient to verify compliance during the term and for twelve months afterward. On written request, Customer shall provide a reasonable compliance summary. If the summary shows a material discrepancy or reasonably fails to resolve one, an independent auditor bound to confidentiality may inspect relevant licence records on fifteen business days’ notice during normal business hours, at Zyvor’s expense, once per year. Verification is limited to necessary records and excludes customer workloads, credentials and personal data unnecessary to verify the count. Under an accepted Order, verified excess use is chargeable at the agreed unit rate for the period of excess use, prorated for time-based units or measured at actual quantities for consumption units. Payment of a shortfall does not grant future capacity.
+
+## 9. Expiry, breach and remedies
+
+Operating rights end when the paid term expires. Either party may terminate an Order for material breach if the other fails to cure it within fifteen business days after written notice specifying the breach. Zyvor may immediately revoke compromised credentials and shall provide a replacement promptly to a Customer otherwise entitled to use the Software. On expiry or termination Customer must cease exercising the expired rights, remove active installations and delete copies made under the Order. Inaccessible routine backups may expire on their ordinary cycle. One archival copy may be retained if required by law. Neither may be used operationally. Customer retains access to its own data and is responsible for exporting it before expiry. Accrued payments, ownership, confidentiality, verification for the stated retention period, liability provisions and dispute terms survive. Either party may seek damages or interim relief available under applicable law. No party may recover twice for the same loss.
+
+## 10. Confidentiality
+
+Each party shall use the other’s nonpublic order information, keys and compliance records only to perform or enforce the Order, protect them with reasonable care, and disclose them only to personnel or professional advisers who need them and are bound to confidentiality. This duty excludes information lawfully public, already known, independently developed or lawfully received from another source. Legally required disclosure is permitted, with advance notice where lawful. These duties last three years after termination, and for trade secrets for as long as they qualify as such.
+
+## 11. Warranties and liability
+
+Zyvor warrants that it has authority to grant the rights it grants under the Order. Except for express commitments in an Order and mandatory legal protections, the Software is supplied as is. Zyvor disclaims implied warranties of merchantability, fitness for a particular purpose and uninterrupted operation to the extent permitted by law.
+
+To the extent permitted by law, neither party is liable for indirect or consequential loss, including consequential loss of profit. Each party’s aggregate liability arising from an Order is limited to the fees paid or payable under that Order for the twelve months preceding the event giving rise to the claim. The cap and exclusions do not apply to Customer’s obligation to pay agreed fees, either party’s fraud or wilful misconduct, infringement of the other party’s intellectual property, or liability that applicable law does not permit the parties to limit.
+
+## 12. General terms
+
+Each party shall comply with applicable laws, including applicable export restrictions. Customer may not assign its Order without Zyvor’s prior written consent. Notices shall be sent to the email addresses specified in the Order or, for Zyvor if none is specified, to sales@zyvor.dev. Notices are effective on receipt. Indian law governs. Subject to mandatory law, the competent courts at the place of Zyvor’s registered office in India have exclusive jurisdiction. Either party may seek urgent interim relief from a court with jurisdiction.
+
+A separately signed master agreement controls where it conflicts with this licence. Subject to that agreement, an accepted Order controls where it expressly varies an identified provision. The applicable signed agreement, Order and this licence constitute the entire agreement for that purchase. Purchase-order boilerplate does not amend it. An amendment requires written agreement by authorized representatives. A waiver applies only to the matter waived. If a provision is unenforceable, the remaining provisions continue in effect.
+
+## 13. Packages, integrations and distribution records
+
+A mirror, package registry, container registry, portable image, private fork or automated installer does not change the terms governing the material it delivers. Subject to existing grants and applicable platform rights, repackaging covered material or translating it to a different programming language does not confer permission to distribute it. Customer may make the internal deployment copies reasonably required by its Order and must retain the licence and third-party notices with those copies.
+
+Customer may develop independent applications that exchange data with a licensed installation through documented interfaces. Ownership of Customer’s independent application and its data remains with Customer. Copying a covered SDK into a deliverable, distributing a covered client library, or granting customers access to a hosted instance is governed by the specific grants in sections 4 to 7. Independently written code and publicly specified interfaces are outside this licence to the extent they contain no covered material and their use exercises no rights reserved to Zyvor.
+
+## 14. Credentials, renewals and transition
+
+Customer must limit access to activation material to authorised operators, safeguard it using reasonable technical measures, and notify Zyvor promptly upon discovering unauthorised use. Both parties shall cooperate to rotate compromised credentials. A key that continues to work after expiry does not renew an Order. A renewal must identify its effective date, product scope, quantity and fee. Customer should retain its Order and the release identifier together so the parties can determine the applicable terms after an upgrade, acquisition or migration.
+
+An upgrade within a purchased release range is covered for the remainder of the paid term on the agreed conditions. A product rename or transfer between Zyvor repositories does not by itself cancel a paid right in a release already covered. A new product, expanded bundle or different licence version applies to an existing Order only under its agreed update or amendment terms.
+
+## 15. Repository-specific rights and contributions
+
+This common licence governs only material within section 1. An upstream fork, vendored dependency, separately licensed file, third-party font, dataset, model or media asset retains its applicable terms. The presence of any of them in a Zyvor repository does not establish ownership. The applicable component notices, attribution requirements and source-availability obligations travel with the material they cover. Where the underlying terms require additional rights for the recipient, those rights remain available.
+
+Submitting an issue, patch or pull request does not transfer ownership to Zyvor. Zyvor may include a contribution in a proprietary Covered Release only where it holds sufficient rights under applicable contributor terms, a separate written grant or the contribution’s existing licence. An operational licence purchased by a contributor is separate from any rights that contributor grants to Zyvor.
+
+## 16. Orders involving earlier licences
+
+When the parties agree to replace an earlier licence, their written instrument must identify the earlier agreement and customer, list the releases and environments affected, state the transition date, and address remaining prepaid fees and surviving rights. Where only some products migrate, the earlier agreement continues for the others according to its terms. Accrued payment claims, agreed credits and continuing confidentiality obligations survive unless the parties expressly settle or vary them. This clause provides a mechanism for a documented transition and does not impose new charges for past authorised use.
+
+Commercial licensing, paid evaluations and portfolio orders may be requested at sales@zyvor.dev.

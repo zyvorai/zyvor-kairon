@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {APIError, AgentSession, ApprovalRequired, CommandError, SessionError, UIClient, fromBase64, sessionSpec, toBase64} from '../dist/index.js';

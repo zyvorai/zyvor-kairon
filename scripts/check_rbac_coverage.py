@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 """check_rbac_coverage.py -- cross-checks each in-cluster component's actual
 internal/kube.Client method calls against the RBAC (ClusterRole/Role) grants
 its own ServiceAccount holds in charts/kairon/templates/all.yaml.

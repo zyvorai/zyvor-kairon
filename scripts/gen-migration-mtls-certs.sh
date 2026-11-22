@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Generates the mTLS material for a real two-host live-migration test (see
 # docs/runbook-multi-host-migration-test.md). Two DISTINCT cert families,

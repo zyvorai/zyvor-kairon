@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # MachineAcceleratorProfile drill on one node, with the kernel's mbochs
 # sample mdev driver standing in for a vGPU host driver (as lab-vgpu.sh).

@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Package llm is a minimal client for OpenAI-compatible chat completion
 // endpoints (OpenAI, Ollama, vLLM, LiteLLM). It only ever returns text;

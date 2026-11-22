@@ -1,5 +1,5 @@
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Snapshot every Machine labelled tier=web in this namespace once a day at
 # 02:30 UTC, spread over a fixed 30-minute window per schedule, keeping the

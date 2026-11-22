@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 """End-to-end MCP check: drive a built `kaironctl mcp serve` with the
 official MCP Python SDK client against a fake Kubernetes/UI API.
 

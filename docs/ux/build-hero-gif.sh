@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 #
 # Build docs/ux/anim/hero.gif from the dashboard screenshots in docs/ux.
 # Needs ffmpeg.   ./docs/ux/build-hero-gif.sh

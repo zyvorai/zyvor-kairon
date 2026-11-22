@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 # Render docs/ux/readme-*.html to 3200px-wide JPEGs used by the README. Needs Google Chrome and macOS `sips`.
 #   ./docs/ux/build-readme-cards.sh
 set -euo pipefail

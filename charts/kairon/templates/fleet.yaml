@@ -1,5 +1,5 @@
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 {{ if .Values.fleet.enabled }}
 {{ if not (and .Values.webhook.enabled .Values.webhook.tlsSecretName .Values.webhook.caBundle (eq .Values.webhook.failurePolicy "Fail")) }}

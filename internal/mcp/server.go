@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 // Package mcp is a minimal Model Context Protocol server over stdio:
 // newline-delimited JSON-RPC 2.0 with the tools capability only.

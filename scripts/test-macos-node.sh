@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 # Offline test of scripts/macos-node.sh: renders the LaunchAgent for a throwaway HOME and checks it. Loads nothing into
 # launchd and needs no Kubernetes or FluxVM, so it runs on any host with bash (plutil is used when present).
