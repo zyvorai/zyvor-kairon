@@ -73,6 +73,7 @@ The root [README](https://github.com/zyvorai/zyvor-kairon/blob/main/README.md) i
 | [`guides/machine-images.md`](guides/machine-images.md) | `MachineImage`: a cluster-scoped, versioned catalog of boot disks and ISOs, pinned into a Machine by digest once |
 | [`guides/machine-install-media.md`](guides/machine-install-media.md) | `spec.cdroms` + `spec.image.blank`: install Windows or Linux from an ISO onto an empty disk |
 | [`guides/machine-sets.md`](guides/machine-sets.md) | `MachineSet`: replica reconciliation, `RollingUpdate`/`Recreate` rollout strategy |
+| [`guides/machineset-autoscaling.md`](guides/machineset-autoscaling.md) | Autoscaling a `MachineSet`: the `/scale` subresource, HPA with prometheus-adapter, KEDA, per-MachineSet usage recording rules |
 | [`guides/agent-sandboxes.md`](guides/agent-sandboxes.md) | `spec.lifecycle` idle suspend, wake on connect and max lifetime; paused warm pools; per-claim usage; the SDK `Sandbox` class |
 | [`guides/agent-sessions.md`](guides/agent-sessions.md) | `AgentSession`: FluxVM agent sessions with workspace, policy, checkpoints, forks, jobs, files, git, previews and an exportable trajectory; admin approvals, chunked uploads, an interactive shell, credential grants, and the Mac guest's screen and input (experimental) |
 | [`guides/machine-fork.md`](guides/machine-fork.md) | `kaironctl fork` / `fork_machine`: live copies of a Running Machine from one memory snapshot |
