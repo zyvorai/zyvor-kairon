@@ -166,8 +166,8 @@ to the dataplane or would change cardinality or CRDs.
 | --- | --- |
 | `kaironctl network flows MACHINE` | Table with PROTO, SRC, DST, PACKETS, BYTES, and RTT / PROCESS / HOST when present. Falls back to JSON if the payload is not a flow dump. |
 | `kaironctl network drops MACHINE` | Table with REASON, POLICY, SRC, DST, PACKETS, plus PROCESS / RTT when present. |
-| `kaironctl network stats MACHINE` | Counter summary plus `rtt` (and min/max) when the stats object carries them. |
-| Dashboard Network panel | Stats cards, and flow / attributed-drop tables with the same optional columns. JSON remains below the table. |
+| `kaironctl network stats MACHINE` | Counter summary plus an RTT line (`samples`, min, avg, p50, p95, max) when the stats object carries latency fields or a sample array. Hidden when absent. |
+| Dashboard Network panel | Stats cards, and flow / attributed-drop tables with PROCESS, HOST and RTT columns when the dataplane supplies them. JSON remains below the table. See the [dashboard guide](guides/kairon-ui-dashboard.md#machine-inspector). |
 | Dashboard Network overview | Existing attach/policy cards, plus max migration black-hole time from `status.network.edge.blackholeWindowMs`. |
 
 `drops`, `flows` and `stats` still go through kairon-ui: set
