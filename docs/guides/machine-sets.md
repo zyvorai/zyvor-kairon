@@ -143,19 +143,16 @@ for the specific stuck replica, per the "Real limits today" section below).
 
 ## Rollout strategy
 
-- **`RollingUpdate`** (the default): replaces outdated replicas
-  `maxUnavailable`-at-a-time, computed each tick as `(ready current +
-  outdated) - (replicas - maxUnavailable)` -- i.e. never letting actual
-  available capacity drop further below `replicas` than `maxUnavailable`
-  allows. A current-template replica only counts toward that available
-  total once its `status.phase` is `Running`; one that merely exists (just
-  created, not yet scheduled or booted) doesn't -- so a rollout won't tear
-  down another old, healthy replica to make room for a replacement that
-  hasn't actually come up yet. Replacement creation happens automatically
-  on a later tick, once a deletion has actually dropped the total below
-  `replicas` again (step 3 above picks it up). `maxUnavailable` is an
-  integer or a percentage string (e.g. `"25%"`), same parsing
-  `MachineDisruptionBudget` already uses; empty defaults to `1`.
+- **`RollingUpdate`** (the default): replaces outdated replicas while
+  respecting both `maxUnavailable` and `maxSurge`. With `maxSurge` > 0 the
+  controller may create new (current-template) replicas first, up to
+  `replicas + maxSurge` total, before deleting old ones. Without surge the
+  classic behavior is preserved: delete only when it would not drop
+  available below `replicas - maxUnavailable`, then create replacements on
+  a later tick. A current-template replica only counts as available once
+  its `status.phase` is `Running`. Both fields accept an integer or a
+  percentage string (same parsing as `MachineDisruptionBudget`);
+  `maxUnavailable` defaults to `1`, `maxSurge` defaults to `0`.
 - **`Recreate`**: terminates every outdated replica first, and creates no
   replacements until none remain -- matches a real Kubernetes
   `Deployment`'s own `Recreate` strategy (full stop, then restart) exactly.
@@ -177,10 +174,10 @@ replaced (not edited in place) by the rollout logic above.
   a boot failure severe enough to never reach `Running` correctly stalls
   the rollout in place rather than cycling every replica through it; one
   that boots fine but is application-broken is not caught here.
-- **No `maxSurge`.** A rollout never temporarily exceeds `spec.replicas`
-  -- only `maxUnavailable` (a dip below, never a surge above) is offered,
-  since Kairon's scheduler (`internal/scheduler`) has no surge budget to
-  reason about a temporary extra replica against.
+- **`maxSurge` is best-effort.** Extra replicas are created during a
+  rollout up to the surge limit, but the scheduler still decides placement.
+  A surge Machine that cannot be placed stays `Pending`; the rollout does
+  not fail closed on it.
 - **No autoscaling.** `spec.replicas` is only ever changed by you (or your
   own tooling) editing the object -- there's no `MachineHorizontalAutoscaler`
   or similar reacting to load.
