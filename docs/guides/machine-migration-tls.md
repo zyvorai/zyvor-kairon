@@ -62,8 +62,72 @@ staging the shared `tlsSecretName` control-plane cert onto the data plane
 too -- exactly this project's behavior before this field existed, so
 existing deployments' `helm upgrade` changes nothing on its own.
 
-## Remember the other half
+## Let Helm run the adapter
 
+By default the host-level adapter is a bare-host systemd unit Helm can't
+see (next section). Set `migration.adapter.enabled: true` and the chart
+runs `kairon-migration-adapter-fluxvm` itself, as a `kairon-migration-adapter`
+DaemonSet on the same nodes as `kairon-node`, from the `kairon-node`
+image. One set of values then enables encrypted migration end to end:
+
+```yaml
+migration:
+  enabled: true
+  # Host directory, writable by UID 65532 on every node. Holds the staged
+  # certs (tls/) and the adapter's socket.
+  adapterHostPath: /var/lib/kairon/migration-adapter
+  dataplaneTls: true
+  adapter:
+    enabled: true
+    # fluxvmTokenSecret: {name: fluxvm-token, key: token}  # if FluxVM needs auth
+  # Per-node certs: either a gen-migration-mtls-certs.sh bundle ...
+  dataplaneTlsSecretName: kairon-migration-dataplane-tls
+  # ... or cert-manager (needs its CRDs; mutually exclusive with the above):
+  # dataplaneCertManager:
+  #   enabled: true
+  #   createSelfSignedCA: true          # or issuerRef: {name: my-ca, kind: ClusterIssuer}
+  #   nodes:
+  #     - {name: worker-1, ip: 10.0.1.11}
+  #     - {name: worker-2, ip: 10.0.1.12}
+  # Then, once every migration reports status.dataPlaneEncrypted=true:
+  # requireEncryptedDataPlane: true
+```
+
+What the chart wires up:
+
+- The adapter listens on `<adapterHostPath>/migration-adapter.sock`, and
+  `kairon-node`'s `--migration-adapter-socket` defaults to it (an explicit
+  `migration.adapterSocket` still wins).
+- `--advertise-host` is the node's `status.hostIP`, the value the systemd
+  unit's `__ADVERTISE_HOST__` placeholder was filled with by hand. With
+  `dataplaneCertManager` each node's `ip` must be that same address, since
+  QEMU verifies it.
+- With `dataplaneTls: true` the adapter gets `--migration-data-tls=true`
+  plus `<adapterHostPath>/tls/{ca.crt,tls.crt,tls.key}`, the files
+  `kairon-node`'s existing init container stages there. The adapter passes
+  those paths to FluxVM, which opens them on the host, so the DaemonSet
+  mounts `adapterHostPath` at its real host path and runs `hostNetwork`
+  (FluxVM's API is on the host's loopback, `node.fluxvmURL`).
+- `dataplaneCertManager` creates one cert-manager `Certificate` per listed
+  node (SAN = node name + IP, client and server auth, ECDSA P-256, the same
+  shape the script issues), optionally from a chart-made private CA.
+  `kairon-node` mounts the resulting Secrets as one projected volume in the
+  same `<node>-ca.crt`/`-tls.crt`/`-tls.key` layout, so the per-node init
+  container keeps failing closed for a node that isn't listed or whose
+  cert isn't issued yet. The issuer must fill `ca.crt` (CA-type issuers
+  do; ACME does not).
+- The adapter needs no Kubernetes API access: no ServiceAccount token, no
+  RBAC.
+
+Before turning it on for a node, stop and disable that node's
+`kairon-migration-adapter-fluxvm` systemd unit (`systemctl disable --now
+kairon-migration-adapter-fluxvm`). The image must be one built with this
+change (the `kairon-node` image ships `/kairon-migration-adapter-fluxvm`
+from the release after it); override `migration.adapter.image` otherwise.
+
+## Remember the other half (systemd adapter)
+
+With the default `migration.adapter.enabled: false`,
 `migration.dataplaneTls`/`dataplaneTlsSecretName` only control what cert
 material gets *staged* onto `adapterHostPath`. The actual
 `-migration-data-tls=true` enforcement flag lives in each node's
@@ -77,9 +141,13 @@ trusting it's actually on.
 
 ## Real limits today
 
-- `dataplaneTls`/`dataplaneTlsSecretName` control cert *distribution*
-  only, not the systemd-unit-side enforcement flag (above) -- the two can
-  drift out of sync per node.
+- With the systemd adapter, `dataplaneTls`/`dataplaneTlsSecretName`
+  control cert *distribution* only, not the unit's enforcement flag
+  (above), and the two can drift out of sync per node. The chart-managed
+  adapter (`migration.adapter.enabled`) closes that gap.
+- Staged certs are copied once, at `kairon-node` pod start. A renewed
+  cert (cert-manager or a re-applied Secret) reaches FluxVM after
+  `kairon-node` restarts on that node (`kubectl rollout restart ds/kairon-node`).
 - `gen-migration-mtls-certs.sh`'s default 30-day CA validity is meant for
   the [two-host migration test runbook](../runbook-multi-host-migration-test.md),
   not long-lived production issuance -- override `CERT_DAYS` (and rotate

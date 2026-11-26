@@ -1,0 +1,79 @@
+{{- /*
+Copyright 2026 Zyvor · https://zyvor.dev
+SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
+
+Per-node migration data-plane certs via cert-manager
+(migration.dataplaneCertManager.enabled, off by default) -- the in-cluster
+equivalent of scripts/gen-migration-mtls-certs.sh's data-plane family:
+one leaf per node, SAN = that node's name and the IP its adapter
+advertises (QEMU verifies the IP the source dials), clientAuth+serverAuth,
+ECDSA P-256. kairon-node assembles the resulting Secrets into one
+projected volume (all.yaml) and its init container keeps picking out only
+its own node's files, fail-closed. Never a shared/wildcard SAN.
+
+The issuer must populate ca.crt in each Secret (cert-manager's CA and
+selfSigned-backed CA issuers do; ACME does not and would fail closed).
+*/ -}}
+{{- $c := .Values.migration.dataplaneCertManager }}
+{{- if $c.enabled }}
+{{- if not (and .Values.migration.enabled .Values.migration.dataplaneTls .Values.migration.adapterHostPath) }}
+{{- fail "migration.dataplaneCertManager.enabled needs migration.enabled, migration.dataplaneTls and migration.adapterHostPath" }}
+{{- end }}
+{{- if .Values.migration.dataplaneTlsSecretName }}
+{{- fail "migration.dataplaneCertManager.enabled and migration.dataplaneTlsSecretName are mutually exclusive: pick one source of per-node data-plane certs" }}
+{{- end }}
+{{- if not $c.nodes }}
+{{- fail "migration.dataplaneCertManager.nodes must list every kairon-node node as {name: <Kubernetes node name>, ip: <advertised InternalIP>}" }}
+{{- end }}
+{{- if not (or $c.issuerRef.name $c.createSelfSignedCA) }}
+{{- fail "migration.dataplaneCertManager needs issuerRef.name (an existing CA-type Issuer/ClusterIssuer) or createSelfSignedCA: true" }}
+{{- end }}
+{{- $issuer := $c.issuerRef }}
+{{- if $c.createSelfSignedCA }}
+{{- if not $c.issuerRef.name }}
+{{- $issuer = dict "name" (printf "%s-ca" $c.secretPrefix) "kind" "Issuer" "group" "cert-manager.io" }}
+{{- end }}
+# Bootstrap a private CA: selfSigned Issuer -> CA Certificate -> CA Issuer.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata: {name: {{ $c.secretPrefix }}-selfsigned, namespace: {{ .Release.Namespace }}}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: {name: {{ $c.secretPrefix }}-ca, namespace: {{ .Release.Namespace }}}
+spec:
+  isCA: true
+  commonName: kairon-migration-dataplane-ca
+  secretName: {{ $c.secretPrefix }}-ca
+  duration: 87600h
+  privateKey: {algorithm: ECDSA, size: 256}
+  issuerRef: {name: {{ $c.secretPrefix }}-selfsigned, kind: Issuer, group: cert-manager.io}
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata: {name: {{ $c.secretPrefix }}-ca, namespace: {{ .Release.Namespace }}}
+spec:
+  ca: {secretName: {{ $c.secretPrefix }}-ca}
+{{- end }}
+{{- range $c.nodes }}
+{{- if not (and .name .ip) }}
+{{- fail "every migration.dataplaneCertManager.nodes entry needs both name and ip" }}
+{{- end }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: {name: {{ $c.secretPrefix }}-{{ .name }}, namespace: {{ $.Release.Namespace }}}
+spec:
+  secretName: {{ $c.secretPrefix }}-{{ .name }}
+  commonName: {{ .name | quote }}
+  dnsNames: [{{ .name | quote }}]
+  ipAddresses: [{{ .ip | quote }}]
+  duration: {{ $c.duration }}
+  renewBefore: {{ $c.renewBefore }}
+  usages: ["digital signature", "key encipherment", "server auth", "client auth"]
+  privateKey: {algorithm: ECDSA, size: 256, rotationPolicy: Always}
+  issuerRef: {name: {{ $issuer.name }}, kind: {{ $issuer.kind | default "Issuer" }}, group: {{ $issuer.group | default "cert-manager.io" }}}
+{{- end }}
+{{- end }}

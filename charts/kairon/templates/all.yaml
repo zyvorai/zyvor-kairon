@@ -655,10 +655,10 @@ spec:
         # migration data-plane TLS, distinct from this pod's own mTLS
         # control-plane connection) onto the adapterHostPath volume, which
         # the host-level adapter process reads directly.
-{{ if .Values.migration.dataplaneTlsSecretName }}
-        # dataplaneTlsSecretName set: pick out *this node's own* cert from
-        # the per-node bundle (see values.yaml's comment) via the Downward
-        # API -- never the shared control-plane cert. Fails the pod
+{{ if or .Values.migration.dataplaneTlsSecretName .Values.migration.dataplaneCertManager.enabled }}
+        # dataplaneTlsSecretName (or dataplaneCertManager) set: pick out
+        # *this node's own* cert from the per-node bundle (see
+        # values.yaml's comment) via the Downward API -- never the shared control-plane cert. Fails the pod
         # outright (exit 1, not a silent fallback) if this node's own
         # three files aren't in the Secret, since presenting no data-plane
         # identity at all is a much safer failure than presenting the
@@ -673,7 +673,7 @@ spec:
               mkdir -p /adapter/tls
               src="/etc/kairon/migration-dataplane-tls/${NODE_NAME}"
               if [ ! -f "${src}-ca.crt" ] || [ ! -f "${src}-tls.crt" ] || [ ! -f "${src}-tls.key" ]; then
-                echo "FATAL: no per-node data-plane cert for node ${NODE_NAME} in migration.dataplaneTlsSecretName (expected ${NODE_NAME}-ca.crt/-tls.crt/-tls.key) -- refusing to fall back to a shared or wrong identity" >&2
+                echo "FATAL: no per-node data-plane cert for node ${NODE_NAME} in migration.dataplaneTlsSecretName/dataplaneCertManager.nodes (expected ${NODE_NAME}-ca.crt/-tls.crt/-tls.key) -- refusing to fall back to a shared or wrong identity" >&2
                 exit 1
               fi
               cp "${src}-ca.crt" /adapter/tls/ca.crt
@@ -728,6 +728,10 @@ spec:
             - "--migration-state-dir={{ .Values.migration.stateDir }}"
 {{ if .Values.migration.adapterSocket }}
             - "--migration-adapter-socket={{ .Values.migration.adapterSocket }}"
+{{ else if and .Values.migration.adapter.enabled .Values.migration.adapterHostPath }}
+            # Chart-managed adapter (templates/migration-adapter.yaml) listens
+            # on the shared adapterHostPath volume, already mounted below.
+            - "--migration-adapter-socket={{ trimSuffix "/" .Values.migration.adapterHostPath }}/migration-adapter.sock"
 {{ end }}
 {{ if .Values.migration.requireEncryptedDataPlane }}
             - "--migration-require-encrypted"
@@ -884,6 +888,25 @@ spec:
           secret:
             secretName: {{ .Values.migration.dataplaneTlsSecretName }}
             defaultMode: 0440
+{{ else if and .Values.migration.dataplaneTls .Values.migration.dataplaneCertManager.enabled }}
+        # Same "<node>-ca.crt"/"-tls.crt"/"-tls.key" layout as a
+        # dataplaneTlsSecretName bundle, assembled from one cert-manager
+        # Secret per node (templates/migration-dataplane-certs.yaml).
+        # optional: a node whose Secret isn't issued yet only fails *its
+        # own* init container (closed), instead of blocking every node.
+        - name: migration-dataplane-tls
+          projected:
+            defaultMode: 0440
+            sources:
+{{- range .Values.migration.dataplaneCertManager.nodes }}
+              - secret:
+                  name: {{ $.Values.migration.dataplaneCertManager.secretPrefix }}-{{ .name }}
+                  optional: true
+                  items:
+                    - {key: ca.crt, path: {{ .name }}-ca.crt}
+                    - {key: tls.crt, path: {{ .name }}-tls.crt}
+                    - {key: tls.key, path: {{ .name }}-tls.key}
+{{- end }}
 {{ end }}
         - name: migration-state
 {{ if .Values.migration.stateHostPath }}
