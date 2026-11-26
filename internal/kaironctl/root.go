@@ -357,7 +357,7 @@ const deleteExamples = `  $ kaironctl delete machine demo
   $ kaironctl delete machines --selector tier=web --dry-run`
 
 const editExamples = `  $ kaironctl edit machine demo --priority 10
-  $ kaironctl edit machineset web --replicas 5`
+  $ kaironctl edit machineset web --paused=true`
 
 // newImportCmd is the legacy `import ova` command plus the offline
 // `import kubevirt`, which must run before any cluster client is built.

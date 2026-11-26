@@ -140,9 +140,9 @@ func cmdGet(ctx context.Context, kc *kube.Client, args []string) {
 			fatal(err)
 		}
 		items = selectorFilter(items, selector, func(s model.MachineSet) map[string]string { return s.Metadata.Labels })
-		fmt.Printf("NAME\tSTRATEGY\tREPLICAS\tREADY\tUPDATED\n")
+		fmt.Printf("NAME\tSTRATEGY\tREPLICAS\tREADY\tUPDATED\tPAUSED\n")
 		for _, s := range items {
-			fmt.Printf("%s\t%s\t%d\t%d\t%d\n", s.Metadata.Name, dash(defaultStrategy(s.Spec.Strategy)), s.Spec.Replicas, s.Status.ReadyReplicas, s.Status.UpdatedReplicas)
+			fmt.Printf("%s\t%s\t%d\t%d\t%d\t%t\n", s.Metadata.Name, dash(defaultStrategy(s.Spec.Strategy)), s.Spec.Replicas, s.Status.ReadyReplicas, s.Status.UpdatedReplicas, s.Spec.Paused)
 		}
 	case "machinepool", "machinepools":
 		items, err := kc.ListMachinePoolsNamespace(ctx, ns)

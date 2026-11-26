@@ -15,7 +15,7 @@ import (
 
 func cmdEdit(ctx context.Context, kc *kube.Client, args []string) {
 	if len(args) < 2 {
-		fatal(fmt.Errorf("usage: kaironctl edit migrationpolicy NAME [--bandwidth-mbps N] [--max-concurrent N] [--strategy static|adaptive] [tuning flags] | edit snapshotschedule NAME [--suspend true|false] [--interval-seconds N] [--keep-last N] [--starting-deadline-seconds N] | edit quota NAME [--max-machines N] [--max-total-cpu N] [--max-total-memory SIZE] | edit budget NAME [--selector k=v] [--min-available X] [--max-unavailable X] | edit machine NAME --priority N | edit machineset NAME [--strategy RollingUpdate|Recreate] [--max-unavailable X] | edit networkpolicy NAME [--machine-name X] [--selector k=v] [--allow-cidr CIDR] [--deny-cidr CIDR] [--allow-port proto/port] [--default-allow BOOL] [--audit-mode BOOL] [--max-egress-mbps N] [--max-egress-pps N] | edit securitygroup NAME [--group-label k=v] [--priority N] [--description TEXT] [policy flags as above]"))
+		fatal(fmt.Errorf("usage: kaironctl edit migrationpolicy NAME [--bandwidth-mbps N] [--max-concurrent N] [--strategy static|adaptive] [tuning flags] | edit snapshotschedule NAME [--suspend true|false] [--interval-seconds N] [--keep-last N] [--starting-deadline-seconds N] | edit quota NAME [--max-machines N] [--max-total-cpu N] [--max-total-memory SIZE] | edit budget NAME [--selector k=v] [--min-available X] [--max-unavailable X] | edit machine NAME --priority N | edit machineset NAME [--strategy RollingUpdate|Recreate] [--max-unavailable X] [--paused=true|false] | edit networkpolicy NAME [--machine-name X] [--selector k=v] [--allow-cidr CIDR] [--deny-cidr CIDR] [--allow-port proto/port] [--default-allow BOOL] [--audit-mode BOOL] [--max-egress-mbps N] [--max-egress-pps N] | edit securitygroup NAME [--group-label k=v] [--priority N] [--description TEXT] [policy flags as above]"))
 	}
 	kind, name := strings.ToLower(args[0]), args[1]
 	switch kind {
@@ -83,7 +83,9 @@ func cmdEditMachine(ctx context.Context, kc *kube.Client, name string, args []st
 // this closes the one real gap left: before this, changing a MachineSet's
 // rollout strategy or maxUnavailable bound after creation needed
 // kubectl edit/patch, unlike every other CRD kind this project offers a
-// `kaironctl edit` verb for at all.
+// `kaironctl edit` verb for at all. --paused=true|false sets spec.paused
+// (freeze/resume every create and delete, see
+// internal/controller/machineset.go's stepMachineSetToward).
 // editSpecFromFlags implements the common "parse only the flags the
 // caller actually passed, build a partial spec patch from them, apply
 // it, print a confirmation" skeleton that cmdEditMachineSet and
@@ -111,14 +113,17 @@ func cmdEditMachineSet(ctx context.Context, kc *kube.Client, name string, args [
 	ns := fs.String("namespace", "default", "namespace")
 	strategy := fs.String("strategy", "", "new rollout strategy: RollingUpdate | Recreate")
 	maxUnavailable := fs.String("max-unavailable", "", "new integer or percentage bound on simultaneously-missing/outdated replicas during RollingUpdate")
+	paused := fs.Bool("paused", false, "freeze (true) or resume (false) every replica create and delete")
 	editSpecFromFlags(fs, args, func(spec map[string]any, flagName string) {
 		switch flagName {
 		case "strategy":
 			spec["strategy"] = *strategy
 		case "max-unavailable":
 			spec["maxUnavailable"] = *maxUnavailable
+		case "paused":
+			spec["paused"] = *paused
 		}
-	}, "pass at least one of --strategy or --max-unavailable", func(spec map[string]any) error {
+	}, "pass at least one of --strategy, --max-unavailable or --paused", func(spec map[string]any) error {
 		return kc.PatchMachineSet(ctx, *ns, name, map[string]any{"spec": spec})
 	}, "machineset", name)
 }
