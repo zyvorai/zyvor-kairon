@@ -5447,6 +5447,8 @@ spec:
                 type: string
               maxSurge:
                 type: string
+              paused:
+                type: boolean
               template:
                 type: object
                 required:

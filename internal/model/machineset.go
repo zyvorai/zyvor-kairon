@@ -86,6 +86,10 @@ type MachineSetSpec struct {
 	// (no surge). The scheduler still has the final say on placement; a
 	// surge that cannot be placed simply stays Pending.
 	MaxSurge string `json:"maxSurge,omitempty"`
+	// Paused, when true, stops the MachineSet from creating or deleting
+	// replicas for rollout or scale purposes. Existing Machines are left
+	// untouched. Useful to freeze a rollout mid-way. Defaults to false.
+	Paused bool `json:"paused,omitempty"`
 }
 
 // MachineTemplate is deliberately not embedded MachineSpec directly (a

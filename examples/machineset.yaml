@@ -11,6 +11,7 @@ spec:
   strategy: RollingUpdate
   maxUnavailable: 1
   maxSurge: 1
+  paused: false
   template:
     labels:
       app: web
