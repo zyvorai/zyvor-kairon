@@ -57,6 +57,8 @@ spec:
                 enum: ["RollingUpdate", "Recreate"]
               maxUnavailable:
                 type: string
+              maxSurge:
+                type: string
               template:
                 type: object
                 required:
