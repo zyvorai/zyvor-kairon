@@ -3,6 +3,12 @@
 
 package model
 
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+)
+
 const KindMachineSet = "MachineSet"
 
 // LabelMachineSet/LabelMachineSetTemplateHash are the labels
@@ -21,6 +27,48 @@ const (
 	LabelMachineSet             = "kairon.zyvor.dev/machineset"
 	LabelMachineSetTemplateHash = "kairon.zyvor.dev/machineset-template-hash"
 )
+
+// Template revision annotations, written on the MachineSet itself by
+// kairon-controller (internal/controller/machineset.go's
+// recordMachineSetTemplateRevision) and swapped by `kaironctl machineset
+// rollback`. The controller only ever sees the live spec.template, so to
+// be able to restore the one before it, it has to remember the template it
+// last observed: when the live template's hash stops matching
+// AnnotationMachineSetCurrentTemplateHash, the recorded "current" pair is
+// moved to the "previous" pair and the live template is recorded as the
+// new "current". The template bodies are JSON-encoded MachineTemplates.
+//
+// Annotations rather than a ControllerRevision-style object: this project
+// has no revision CRD (and no client-go to borrow one from), a single step
+// of history is all rollback needs, and keeping it on the object means it
+// is deleted with the MachineSet and readable with plain kubectl. The cost
+// is the Kubernetes 256 KiB total-annotation limit, so a template whose
+// JSON exceeds MaxMachineSetTemplateAnnotationBytes is recorded by hash
+// only -- rollout still works, but that revision cannot be rolled back to.
+const (
+	AnnotationMachineSetCurrentTemplateHash  = "kairon.zyvor.dev/current-template-hash"
+	AnnotationMachineSetCurrentTemplate      = "kairon.zyvor.dev/current-template"
+	AnnotationMachineSetPreviousTemplateHash = "kairon.zyvor.dev/previous-template-hash"
+	AnnotationMachineSetPreviousTemplate     = "kairon.zyvor.dev/previous-template"
+)
+
+// MaxMachineSetTemplateAnnotationBytes caps one recorded template body.
+// Two of them (current + previous) stay well under the 256 KiB limit Kubernetes
+// enforces on all of an object's annotations combined, leaving room for
+// everyone else's annotations (kubectl's last-applied-configuration
+// included).
+const MaxMachineSetTemplateAnnotationBytes = 64 * 1024
+
+// MachineSetTemplateHash fingerprints a MachineTemplate: the first 12 hex
+// characters of the SHA-256 of its JSON encoding. It is the value of
+// LabelMachineSetTemplateHash on every replica and of the template-hash
+// annotations above; kaironctl uses it to check a recorded template before
+// restoring it.
+func MachineSetTemplateHash(t MachineTemplate) string {
+	b, _ := json.Marshal(t) // Marshal on a plain struct of strings/maps never errors
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])[:12]
+}
 
 // FinalizerMachineSet guards a MachineSet's own deletion until every
 // Machine it owns (LabelMachineSet match) is actually gone -- see

@@ -6,7 +6,6 @@ package controller
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -69,10 +68,76 @@ func (c *Controller) reconcileMachineSets(ctx context.Context, machineSets []mod
 // each owned object" idea a real Kubernetes ReplicaSet's own
 // pod-template-hash label captures, computed here instead of trusted from
 // an external controller since this project has none to delegate to.
+//
+// The implementation lives in model.MachineSetTemplateHash so kaironctl
+// (machineset rollback) computes exactly the same value.
 func machineSetTemplateHash(t model.MachineTemplate) string {
-	b, _ := json.Marshal(t) // Marshal on a plain struct of strings/maps never errors
-	sum := sha256.Sum256(b)
-	return hex.EncodeToString(sum[:])[:12]
+	return model.MachineSetTemplateHash(t)
+}
+
+// machineSetTemplateRevisionPatch returns the metadata merge patch that
+// keeps ms's template revision annotations (model.
+// AnnotationMachineSetCurrentTemplateHash and friends) in step with its live
+// spec.template, or ok=false when they already are. hash is
+// machineSetTemplateHash(ms.Spec.Template).
+//
+//   - First sighting (no current-template-hash yet): record the live
+//     template as "current"; there is no "previous" to keep.
+//   - Template changed (recorded hash != live hash): the recorded "current"
+//     becomes "previous" and the live template becomes "current". This is
+//     the only point the old template is still known, which is why
+//     "current" has to be recorded at all.
+//   - kaironctl machineset rollback writes the swapped annotations in the
+//     same PATCH as the restored template, so the controller finds them
+//     already in step and leaves them alone -- a second rollback goes
+//     forward again.
+//
+// A template whose JSON exceeds model.MaxMachineSetTemplateAnnotationBytes
+// is recorded by hash only (its body annotation is removed): rolling back
+// to it is refused by kaironctl instead of storing an object that would
+// push the MachineSet past the API server's annotation size limit.
+func machineSetTemplateRevisionPatch(ms model.MachineSet, hash string) (map[string]any, bool) {
+	ann := ms.Metadata.Annotations
+	recorded := ann[model.AnnotationMachineSetCurrentTemplateHash]
+	if recorded == hash {
+		return nil, false
+	}
+	var body any // nil deletes the annotation under JSON merge patch
+	if b, err := json.Marshal(ms.Spec.Template); err == nil && len(b) <= model.MaxMachineSetTemplateAnnotationBytes {
+		body = string(b)
+	}
+	patch := map[string]any{
+		model.AnnotationMachineSetCurrentTemplateHash: hash,
+		model.AnnotationMachineSetCurrentTemplate:     body,
+	}
+	if recorded != "" {
+		patch[model.AnnotationMachineSetPreviousTemplateHash] = recorded
+		var prev any
+		if v, ok := ann[model.AnnotationMachineSetCurrentTemplate]; ok && v != "" {
+			prev = v
+		}
+		patch[model.AnnotationMachineSetPreviousTemplate] = prev
+	}
+	return map[string]any{"metadata": map[string]any{"annotations": patch}}, true
+}
+
+// recordMachineSetTemplateRevision applies machineSetTemplateRevisionPatch.
+// A failure is logged, not returned: it is bookkeeping for rollback only and
+// must never hold up a rollout or scale. Nothing is lost by failing -- the
+// recorded "current" is unchanged, so the next tick computes the same
+// move again.
+func (c *Controller) recordMachineSetTemplateRevision(ctx context.Context, ms model.MachineSet, hash string) {
+	patch, ok := machineSetTemplateRevisionPatch(ms, hash)
+	if !ok {
+		return
+	}
+	if err := c.Kube.PatchMachineSet(ctx, ms.Namespace(), ms.Metadata.Name, patch); err != nil {
+		c.Log.Error("machineset template revision annotation patch failed", "namespace", ms.Namespace(), "machineset", ms.Metadata.Name, "error", err)
+		return
+	}
+	if prev := ms.Metadata.Annotations[model.AnnotationMachineSetCurrentTemplateHash]; prev != "" {
+		c.Log.Info("machineset template changed", "namespace", ms.Namespace(), "machineset", ms.Metadata.Name, "previousTemplateHash", prev, "templateHash", hash)
+	}
 }
 
 // ownedMachines returns machines carrying ms's LabelMachineSet label,
@@ -213,6 +278,10 @@ func (c *Controller) reconcileMachineSet(ctx context.Context, ms model.MachineSe
 			return status, fmt.Errorf("add machineset finalizer: %w", err)
 		}
 	}
+
+	// Recorded even while paused: it creates and deletes nothing, and a
+	// template edited during a pause should still be rollback-able.
+	c.recordMachineSetTemplateRevision(ctx, ms, hash)
 
 	if err := c.stepMachineSetToward(ctx, ms, hash, strategy, desired, current, outdated, readyCurrent); err != nil {
 		return status, err
