@@ -1,0 +1,29 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
+#
+# prometheus-community/prometheus-adapter Helm values exposing the
+# kairon-autoscaling recording rules (charts/kairon/alerts.yaml) as
+# custom.metrics.k8s.io Object metrics on MachineSet. Merge into your own
+# values (set prometheus.url/port for your Prometheus). See
+# docs/guides/machineset-autoscaling.md.
+#
+# Check with:
+#   kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1/namespaces/default/machinesets.kairon.zyvor.dev/web/machineset_cpu_percent"
+rules:
+  custom:
+  - seriesQuery: 'kairon:machineset_cpu_percent:sum{namespace!="",machineset!=""}'
+    resources:
+      overrides:
+        namespace: {resource: "namespace"}
+        machineset: {group: "kairon.zyvor.dev", resource: "machineset"}
+    name:
+      as: "machineset_cpu_percent"
+    metricsQuery: 'max(<<.Series>>{<<.LabelMatchers>>}) by (<<.GroupBy>>)'
+  - seriesQuery: 'kairon:machineset_memory_bytes:sum{namespace!="",machineset!=""}'
+    resources:
+      overrides:
+        namespace: {resource: "namespace"}
+        machineset: {group: "kairon.zyvor.dev", resource: "machineset"}
+    name:
+      as: "machineset_memory_bytes"
+    metricsQuery: 'max(<<.Series>>{<<.LabelMatchers>>}) by (<<.GroupBy>>)'

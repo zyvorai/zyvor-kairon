@@ -1,0 +1,20 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
+#
+# Lets a user, CI job or custom autoscaler run `kubectl scale machineset`
+# in one namespace without broader write access to MachineSets. The
+# built-in HPA controller and KEDA need nothing extra: their own roles
+# already grant get/update on */scale. See
+# docs/guides/machineset-autoscaling.md.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: machineset-scaler
+  namespace: default
+rules:
+- apiGroups: ["kairon.zyvor.dev"]
+  resources: ["machinesets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["kairon.zyvor.dev"]
+  resources: ["machinesets/scale"]
+  verbs: ["get", "update", "patch"]

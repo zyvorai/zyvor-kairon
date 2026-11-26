@@ -57,6 +57,9 @@ func (c *Controller) reconcileMachineSets(ctx context.Context, machineSets []mod
 	}
 	if c.Metrics != nil {
 		c.Metrics.ObserveMachineSets(observed)
+		// Membership join key for per-MachineSet usage queries (HPA/KEDA
+		// autoscaling, docs/guides/machineset-autoscaling.md).
+		c.Metrics.ObserveMachineSetMachines(observed, machines)
 	}
 }
 
@@ -289,7 +292,6 @@ func (c *Controller) stepMachineSetToward(ctx context.Context, ms model.MachineS
 	}
 	return nil
 }
-
 
 func resolveMaxSurge(spec string, desired int) (int, error) {
 	if spec == "" || spec == "0" || spec == "0%" {

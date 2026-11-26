@@ -223,3 +223,31 @@ groups:
             `kubectl get machines -l kairon.zyvor.dev/machineset=<name>`
             for the specific replica(s) not reaching Running.
           runbook: "docs/guides/machine-sets.md"
+
+  # Recording rules (not alerts) for autoscaling a MachineSet through its
+  # scale subresource with HPA (prometheus-adapter) or KEDA -- see
+  # docs/guides/machineset-autoscaling.md and examples/autoscaling/.
+  # kairon_machine_resource_usage comes from kairon-node and only knows the
+  # machine name; kairon_machineset_machine_info (kairon-controller) maps
+  # machine -> machineset. Both sides are max()-collapsed onto their join
+  # labels first, so differing job/instance labels -- or a second
+  # controller replica still exporting stale membership after losing
+  # leadership -- can't cause a duplicate-series join error. Each series is
+  # a MachineSet-wide SUM: consumers divide by status.replicas themselves
+  # (HPA/KEDA AverageValue targets do exactly that).
+  - name: kairon-autoscaling
+    rules:
+      - record: kairon:machineset_cpu_percent:sum
+        expr: |
+          sum by (namespace, machineset) (
+            max by (namespace, machine) (kairon_machine_resource_usage{resource="cpu_percent"})
+            * on (namespace, machine) group_left (machineset)
+            max by (namespace, machine, machineset) (kairon_machineset_machine_info)
+          )
+      - record: kairon:machineset_memory_bytes:sum
+        expr: |
+          sum by (namespace, machineset) (
+            max by (namespace, machine) (kairon_machine_resource_usage{resource="memory_bytes"})
+            * on (namespace, machine) group_left (machineset)
+            max by (namespace, machine, machineset) (kairon_machineset_machine_info)
+          )

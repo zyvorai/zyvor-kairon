@@ -1,0 +1,53 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
+#
+# HorizontalPodAutoscaler driving a MachineSet through its scale
+# subresource. Needs the kairon-autoscaling recording rules
+# (charts/kairon/alerts.yaml) and prometheus-adapter configured with
+# prometheus-adapter-values.yaml (this directory). See
+# docs/guides/machineset-autoscaling.md.
+#
+# Object metric with target.type AverageValue on purpose: HPA divides the
+# MachineSet-wide SUM by status.replicas itself. A Value target (or any
+# Resource/Pods metric) makes HPA count Pods matching status.selector --
+# Machines are not Pods, so it would find none and refuse to scale.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: web
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: kairon.zyvor.dev/v1
+    kind: MachineSet
+    name: web
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Object
+    object:
+      describedObject:
+        apiVersion: kairon.zyvor.dev/v1
+        kind: MachineSet
+        name: web
+      metric:
+        name: machineset_cpu_percent
+      target:
+        # Per-replica average of kairon_machine_resource_usage{resource="cpu_percent"}.
+        type: AverageValue
+        averageValue: "60"
+  # VMs take far longer than Pods to boot: add one Machine at a time, and
+  # wait out a longer window before removing capacity.
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Pods # "Pods" is HPA's name for replicas; here, Machines
+        value: 1
+        periodSeconds: 120
+    scaleDown:
+      stabilizationWindowSeconds: 600
+      policies:
+      - type: Pods
+        value: 1
+        periodSeconds: 300
