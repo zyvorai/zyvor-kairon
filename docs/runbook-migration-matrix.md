@@ -14,6 +14,7 @@ the runner and cluster access are [`runbook-lab-setup.md`](runbook-lab-setup.md)
 ```bash
 make build                                     # bin/kaironctl
 scripts/migration-matrix.sh env                # every input, and whether it is set here
+scripts/migration-matrix.sh run --dry-run --profile=full   # no network: what is missing, the plan
 scripts/migration-matrix.sh preflight --env-file=$HOME/.config/kairon/lab.env
 scripts/migration-matrix.sh run --profile=core --env-file=$HOME/.config/kairon/lab.env
 ```
@@ -24,8 +25,33 @@ environment):
 ```bash
 make migration-preflight LAB_ENV=~/.config/kairon/lab.env            # PROFILE=core by default
 make migration-matrix    LAB_ENV=~/.config/kairon/lab.env PROFILE=full MATRIX_FLAGS=--write-compat
+make migration-dry-run   PROFILE=full                               # inputs only, no network
 make migration-audit-ci                                              # workflows vs. the input table
 ```
+
+`scripts/migration-matrix-preflight.sh` (added with the MachineSet pause
+work) is the same thing as `scripts/migration-matrix.sh preflight --dry-run
+--profile=full`; it takes the same flags and has no logic of its own.
+
+### Dry run
+
+`--dry-run` (on `preflight` or `run`) reads only the environment and
+`--env-file`. It contacts nothing, so it works on a laptop or a PR runner.
+Each unset input is printed with its GitHub kind, the rows it gates and the
+command that sets it:
+
+```text
+MISSING KAIRON_UI_TOKEN  [GitHub secret, core]
+        what:  admin kairon-ui bearer token for KAIRON_UI_URL
+        gates: live, live-adaptive-converge, live-postcopy-switch, guest-agent
+        set:   printf %s "$VALUE" | gh secret set KAIRON_UI_TOKEN   (locally: export KAIRON_UI_TOKEN=..., or put it in --env-file)
+```
+
+It then lists every case as `runs`, `recorded "not run" (reason)` or
+`blocked`, and for `run` it prints the exact `hardware-migration-matrix.sh`
+command. It exits 1 when a required input is missing, or when
+`--strict` is set and a row would be "not run". A dry-run pass does not
+mean the lab is healthy: run `preflight` without `--dry-run` for that.
 
 | Profile | Cases | Rows it can turn green |
 |---|---|---|
@@ -149,8 +175,8 @@ Set values by piping, never on a command line, for example
 
 1. Bring the two hosts up with the adapter: either
    [`runbook-multi-host-migration-test.md`](runbook-multi-host-migration-test.md)
-   (systemd units), or the Helm chart with `migration.adapter.mode=sidecar`
-   (see [migration TLS](guides/machine-migration-tls.md)).
+   (systemd units), or the Helm chart with `migration.adapter.enabled=true`
+   (see [migration TLS](guides/machine-migration-tls.md#let-helm-run-the-adapter)).
 2. Create `KAIRON_HW_MACHINE` with `spec.guestAgent.enabled: true` on a
    shared-storage image, and `KAIRON_HW_EBPF_MACHINE` with
    `spec.network.dataplaneMode: ebpf` and `dataplaneRequired: true`.

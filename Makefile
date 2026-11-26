@@ -10,7 +10,7 @@ LDFLAGS := -s -w -X main.version=$(VERSION)
 COVERAGE_THRESHOLD ?= 50
 
 .PHONY: rbac-bundle all fmt fmt-check vet lint test test-race cover cover-check build clean validate rbac-coverage helm-check docker-build smoke krew-package krew-index stdlib-boundary license-headers test-macos-node \
-	migration-env migration-preflight migration-matrix migration-audit-ci
+	migration-env migration-preflight migration-dry-run migration-matrix migration-audit-ci
 all: fmt-check vet lint test-race cover-check build validate rbac-coverage helm-check smoke stdlib-boundary
 
 stdlib-boundary:
@@ -137,6 +137,11 @@ migration-env:
 
 migration-preflight:
 	./scripts/migration-matrix.sh preflight --profile=$(PROFILE) $(MATRIX_ENV) $(MATRIX_FLAGS)
+
+# Inputs only, no network: each missing input with its `gh secret/variable set`
+# line, then which rows would run or be "not run", and the exact command.
+migration-dry-run:
+	./scripts/migration-matrix.sh run --dry-run --profile=$(PROFILE) $(MATRIX_ENV) $(MATRIX_FLAGS)
 
 migration-matrix: build
 	./scripts/migration-matrix.sh run --profile=$(PROFILE) $(MATRIX_ENV) $(MATRIX_FLAGS)
