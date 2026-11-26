@@ -9,7 +9,7 @@ VERSION ?= $(shell cat VERSION)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 COVERAGE_THRESHOLD ?= 50
 
-.PHONY: rbac-bundle all fmt fmt-check vet lint test test-race cover cover-check build clean validate rbac-coverage helm-check docker-build smoke krew-package stdlib-boundary license-headers test-macos-node
+.PHONY: rbac-bundle all fmt fmt-check vet lint test test-race cover cover-check build clean validate rbac-coverage helm-check docker-build smoke krew-package krew-index stdlib-boundary license-headers test-macos-node
 all: fmt-check vet lint test-race cover-check build validate rbac-coverage helm-check smoke stdlib-boundary
 
 stdlib-boundary:
@@ -123,9 +123,17 @@ helm-check:
 	@helm template kairon charts/kairon --namespace kairon-system --set node.imageMaxDownloadBytes=107374182400 \
 		| grep -q -- '"--image-max-download-bytes=107374182400"'
 
-# Multi-arch kubectl-kairon tarballs + filled deploy/krew/kairon.yaml checksums.
+# Multi-arch kubectl-kairon tarballs + filled dist/krew/kairon.yaml checksums.
+# The committed deploy/krew/kairon.yaml stays the placeholder template.
 krew-package:
 	./scripts/krew-package.sh
+
+# Copy a filled manifest into plugins/kairon.yaml (this repo's custom Krew index).
+# Default source is dist/krew/kairon.yaml. To download a published release asset:
+#   ./scripts/krew-index-sync.sh vX.Y.Z
+# Only commit plugins/kairon.yaml when its checksums match the published archives.
+krew-index:
+	./scripts/krew-index-sync.sh
 
 docker-build:
 	docker build --target controller -t $(IMAGE)-controller:$(TAG) .

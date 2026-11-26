@@ -239,7 +239,7 @@ chmod +x kaironctl && sudo mv kaironctl /usr/local/bin/
 kaironctl create demo --image /var/lib/fluxvm/images/ubuntu.qcow2 --cpu 2 --memory 2Gi
 ```
 
-Other platforms: `kaironctl-linux-arm64` and `kairon_darwin_{amd64,arm64}.tar.gz` (the `kubectl kairon` plugin) are on the [release page](https://github.com/zyvorai/zyvor-kairon/releases/tag/v0.10.6); verify downloads against the release's `SHA256SUMS`. `kubectl krew install kairon` is **not** available: Kairon is not in the public Krew index, so install the plugin from the release's `kairon.yaml` (see [CLI](docs/CLI.md#install-via-krew)).
+Other platforms: `kaironctl-linux-arm64` and `kairon_darwin_{amd64,arm64}.tar.gz` (the `kubectl kairon` plugin) are on the [release page](https://github.com/zyvorai/zyvor-kairon/releases/tag/v0.10.6); verify downloads against the release's `SHA256SUMS`. `kubectl krew install kairon` is **not** available until a manifest is merged into the public Krew index (a PR to kubernetes-sigs/krew-index; see [Releasing](docs/RELEASING.md#public-krew-index)). Until then, add this repo as a custom index (`kubectl krew index add kairon https://github.com/zyvorai/zyvor-kairon.git` then `kubectl krew install kairon/kairon`, once a filled `plugins/kairon.yaml` is on the default branch) or install from the release's `kairon.yaml` (see [CLI](docs/CLI.md#install-via-krew)).
 
 **Production profile.** Add `-f https://raw.githubusercontent.com/zyvorai/zyvor-kairon/v0.10.6/charts/kairon/values-production.yaml` (or `kaironctl install --profile production`) only after you have created its prerequisites; without them the install stops with a message (webhook values) or `kairon-node` pods stay in `ContainerCreating` (migration Secret):
 

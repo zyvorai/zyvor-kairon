@@ -1,0 +1,78 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
+#
+# krew-release-bot template (https://github.com/rajatjindal/krew-release-bot).
+# Do not enable the Action until a first plugin manifest has been merged
+# into kubernetes-sigs/krew-index: the bot only updates an existing entry,
+# and the first version must be submitted by hand (docs/RELEASING.md).
+#
+# After that PR is merged, add this step to the release workflow once the
+# kairon_*.tar.gz assets are published:
+#   - name: Update new version in krew-index
+#     uses: rajatjindal/krew-release-bot@v0.0.50
+#     with:
+#       krew_template_file: deploy/krew/kairon.krew.yaml
+
+apiVersion: krew.googlecontainertools.github.com/v1alpha2
+kind: Plugin
+metadata:
+  name: kairon
+spec:
+  version: {{ .TagName }}
+  homepage: https://github.com/zyvorai/zyvor-kairon
+  shortDescription: Operate Kairon Machines on Kubernetes
+  description: |
+    kubectl kairon is the kubectl plugin twin of kaironctl: create and operate
+    Machines, migrations, snapshots, and install, upgrade, roll back and
+    diagnose the Kairon control plane (embedded Helm chart + Helm SDK; doctor,
+    logs, events, sysdump, connectivity test, ui).
+  caveats: |
+    Uses your kubeconfig like kubectl: pass --kubeconfig PATH and/or
+    --context NAME to pick a cluster. KAIRON_KUBE_URL (e.g. after kubectl
+    proxy) and the in-cluster service account are honoured when neither flag
+    is given.
+  platforms:
+  - selector:
+      matchLabels:
+        os: darwin
+        arch: arm64
+    {{addURIAndSha "https://github.com/zyvorai/zyvor-kairon/releases/download/{{ .TagName }}/kairon_darwin_arm64.tar.gz" .TagName }}
+    files:
+    - from: kubectl-kairon
+      to: "."
+    - from: LICENSE
+      to: "."
+    bin: kubectl-kairon
+  - selector:
+      matchLabels:
+        os: darwin
+        arch: amd64
+    {{addURIAndSha "https://github.com/zyvorai/zyvor-kairon/releases/download/{{ .TagName }}/kairon_darwin_amd64.tar.gz" .TagName }}
+    files:
+    - from: kubectl-kairon
+      to: "."
+    - from: LICENSE
+      to: "."
+    bin: kubectl-kairon
+  - selector:
+      matchLabels:
+        os: linux
+        arch: amd64
+    {{addURIAndSha "https://github.com/zyvorai/zyvor-kairon/releases/download/{{ .TagName }}/kairon_linux_amd64.tar.gz" .TagName }}
+    files:
+    - from: kubectl-kairon
+      to: "."
+    - from: LICENSE
+      to: "."
+    bin: kubectl-kairon
+  - selector:
+      matchLabels:
+        os: linux
+        arch: arm64
+    {{addURIAndSha "https://github.com/zyvorai/zyvor-kairon/releases/download/{{ .TagName }}/kairon_linux_arm64.tar.gz" .TagName }}
+    files:
+    - from: kubectl-kairon
+      to: "."
+    - from: LICENSE
+      to: "."
+    bin: kubectl-kairon

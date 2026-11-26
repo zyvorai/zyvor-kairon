@@ -1,12 +1,23 @@
 # Copyright 2026 Zyvor · https://zyvor.dev
 # SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 #
-# Krew plugin manifest for kubectl-kairon.
-# Install locally (after `make krew-package`):
-#   kubectl krew install --manifest=deploy/krew/kairon.yaml --archive=dist/krew/kairon_*.tar.gz
+# Krew plugin manifest template for kubectl-kairon.
+# Placeholder sha256 values are filled by `make krew-package` / the release
+# workflow into dist/krew/kairon.yaml (this file stays the template).
 #
-# For a public release, replace uri/sha256 with GitHub Release asset URLs and
-# submit this file to https://github.com/kubernetes-sigs/krew-index
+# Local install test (after `make krew-package`):
+#   kubectl krew install --manifest=dist/krew/kairon.yaml \
+#     --archive=dist/krew/kairon_<os>_<arch>.tar.gz
+#
+# Custom index (this repository): after a release, copy the filled
+# manifest to plugins/kairon.yaml (`./scripts/krew-index-sync.sh` or the
+# release asset) and merge that to the default branch (do not commit
+# placeholder sha256 values; Krew rejects them), then:
+#   kubectl krew index add kairon https://github.com/zyvorai/zyvor-kairon.git
+#   kubectl krew install kairon/kairon
+#
+# `kubectl krew install kairon` (default index) needs a PR to
+# https://github.com/kubernetes-sigs/krew-index — see docs/RELEASING.md.
 
 apiVersion: krew.googlecontainertools.github.com/v1alpha2
 kind: Plugin
@@ -33,6 +44,11 @@ spec:
         arch: arm64
     uri: https://github.com/zyvorai/zyvor-kairon/releases/download/v0.10.6/kairon_darwin_arm64.tar.gz
     sha256: "PLACEHOLDER_SHA256_DARWIN_ARM64"
+    files:
+    - from: kubectl-kairon
+      to: "."
+    - from: LICENSE
+      to: "."
     bin: kubectl-kairon
   - selector:
       matchLabels:
@@ -40,6 +56,11 @@ spec:
         arch: amd64
     uri: https://github.com/zyvorai/zyvor-kairon/releases/download/v0.10.6/kairon_darwin_amd64.tar.gz
     sha256: "PLACEHOLDER_SHA256_DARWIN_AMD64"
+    files:
+    - from: kubectl-kairon
+      to: "."
+    - from: LICENSE
+      to: "."
     bin: kubectl-kairon
   - selector:
       matchLabels:
@@ -47,6 +68,11 @@ spec:
         arch: amd64
     uri: https://github.com/zyvorai/zyvor-kairon/releases/download/v0.10.6/kairon_linux_amd64.tar.gz
     sha256: "PLACEHOLDER_SHA256_LINUX_AMD64"
+    files:
+    - from: kubectl-kairon
+      to: "."
+    - from: LICENSE
+      to: "."
     bin: kubectl-kairon
   - selector:
       matchLabels:
@@ -54,4 +80,9 @@ spec:
         arch: arm64
     uri: https://github.com/zyvorai/zyvor-kairon/releases/download/v0.10.6/kairon_linux_arm64.tar.gz
     sha256: "PLACEHOLDER_SHA256_LINUX_ARM64"
+    files:
+    - from: kubectl-kairon
+      to: "."
+    - from: LICENSE
+      to: "."
     bin: kubectl-kairon
