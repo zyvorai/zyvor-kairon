@@ -25,7 +25,8 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}"
     CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/kairon-node ./cmd/kairon-node && \
     CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/kairon-ui ./cmd/kairon-ui && \
     CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/kairon-csi-node ./cmd/kairon-csi-node && \
-    CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/kairon-csi-controller ./cmd/kairon-csi-controller
+    CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/kairon-csi-controller ./cmd/kairon-csi-controller && \
+    CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/kairon-migration-adapter-fluxvm ./cmd/kairon-migration-adapter-fluxvm
 
 FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab AS controller
 COPY --from=build /out/kairon-controller /kairon-controller
@@ -33,6 +34,12 @@ ENTRYPOINT ["/kairon-controller"]
 
 FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab AS node
 COPY --from=build /out/kairon-node /kairon-node
+# Also ships the host's migration adapter, so the chart's opt-in
+# kairon-migration-adapter DaemonSet (migration.adapter.enabled) can run it
+# from this same image with `command: ["/kairon-migration-adapter-fluxvm"]`
+# instead of a separately built/published image. The default entrypoint is
+# unchanged.
+COPY --from=build /out/kairon-migration-adapter-fluxvm /kairon-migration-adapter-fluxvm
 ENTRYPOINT ["/kairon-node"]
 
 FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab AS ui

@@ -419,6 +419,39 @@ jobs:
           assert any(v.get('secret', {}).get('secretName') == 'ci-migration-dataplane' for v in vols), vols
           print('helm render YAML: OK (values-production.yaml)')
           PY
+          # Chart-managed migration adapter + cert-manager per-node certs:
+          # the whole encrypted-migration path from Helm values alone.
+          helm template kairon charts/kairon --namespace kairon-system \
+            --set migration.enabled=true \
+            --set migration.adapterHostPath=/var/lib/kairon/migration-adapter \
+            --set migration.dataplaneTls=true \
+            --set migration.adapter.enabled=true \
+            --set migration.dataplaneCertManager.enabled=true \
+            --set migration.dataplaneCertManager.createSelfSignedCA=true \
+            --set 'migration.dataplaneCertManager.nodes[0].name=worker-1' \
+            --set 'migration.dataplaneCertManager.nodes[0].ip=10.0.1.11' \
+            > ${{ runner.temp }}/kairon-migration-tls.yaml
+          python3 - <<'PY'
+          import yaml
+          docs = [d for d in yaml.safe_load_all(open('${{ runner.temp }}/kairon-migration-tls.yaml')) if d]
+          ds = {d['metadata']['name']: d for d in docs if d.get('kind') == 'DaemonSet'}
+          sock = '/var/lib/kairon/migration-adapter/migration-adapter.sock'
+          adapter = ds['kairon-migration-adapter']['spec']['template']['spec']
+          a_args = adapter['containers'][0]['args']
+          assert adapter['containers'][0]['command'] == ['/kairon-migration-adapter-fluxvm'], adapter
+          assert '--socket=' + sock in a_args and '--migration-data-tls=true' in a_args, a_args
+          assert '--migration-ca=/var/lib/kairon/migration-adapter/tls/ca.crt' in a_args, a_args
+          assert adapter['automountServiceAccountToken'] is False and adapter['hostNetwork'] is True
+          node = ds['kairon-node']['spec']['template']['spec']
+          assert '--migration-adapter-socket=' + sock in node['containers'][0]['args']
+          vol = next(v for v in node['volumes'] if v['name'] == 'migration-dataplane-tls')
+          paths = [i['path'] for s in vol['projected']['sources'] for i in s['secret']['items']]
+          assert paths == ['worker-1-ca.crt', 'worker-1-tls.crt', 'worker-1-tls.key'], paths
+          certs = {d['metadata']['name']: d for d in docs if d.get('kind') == 'Certificate'}
+          leaf = certs['kairon-migration-dataplane-worker-1']['spec']
+          assert leaf['ipAddresses'] == ['10.0.1.11'] and leaf['issuerRef']['name'] == 'kairon-migration-dataplane-ca', leaf
+          print('helm render YAML: OK (migration adapter + data-plane TLS)')
+          PY
 
       - name: v0.6 foundations package tests
         run: |
