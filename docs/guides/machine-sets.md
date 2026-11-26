@@ -37,6 +37,8 @@ $ kaironctl scale machineset web --replicas 5
 machineset/web scaled to 5 replicas
 $ kaironctl edit machineset web --strategy Recreate --max-unavailable 2
 machineset/web updated
+$ kaironctl edit machineset web --paused=true
+machineset/web updated
 ```
 
 `create machineset` reuses the exact same Machine-spec flags `kaironctl
@@ -44,7 +46,7 @@ create` (a single Machine) already has for `spec.template.spec` -- anything
 those flags don't cover (`spec.placement`, device claims, security,
 per-volume claims) still needs `kubectl apply`/YAML, the same limit a plain
 `create machine` already has for those fields. `scale` (replicas) and `edit`
-(`--strategy`/`--max-unavailable`) are the only mutations these verbs
+(`--strategy`/`--max-unavailable`/`--paused`) are the only mutations these verbs
 support beyond create -- editing the template itself still means `kubectl
 edit`/`apply`.
 
@@ -68,7 +70,7 @@ disruption across a MachineSet's own replicas the same way they'd throttle
 any other Machines), and everything else that already operates on Machines
 keeps working exactly as it does today. `kaironctl get machinesets` (or
 `kubectl get machinesets`) lists the `MachineSet`s themselves --
-`STRATEGY`/`REPLICAS`/`READY`/`UPDATED` at a glance, without having to
+`STRATEGY`/`REPLICAS`/`READY`/`UPDATED`/`PAUSED` at a glance, without having to
 separately count matching Machines by hand -- `kairon-ui`'s own "Machine
 sets" dashboard page (read-only, `GET /api/v1/machinesets`) shows the same
 thing.
@@ -163,6 +165,37 @@ Changing `spec.template` never touches an already-running replica directly
 -- it only changes what *new* replicas look like; existing ones are
 replaced (not edited in place) by the rollout logic above.
 
+## Pausing a MachineSet
+
+`spec.paused: true` freezes a MachineSet: kairon-controller creates and
+deletes no replicas for it, whether for scale-up, scale-down or a
+template rollout. Existing replicas keep running untouched.
+
+```console
+$ kaironctl edit machineset web --paused=true     # or create ... --paused
+$ kubectl get machinesets
+NAME   REPLICAS   READY   UPDATED   STRATEGY        PAUSED   AGE
+web    3          3       3         RollingUpdate   true     2d
+$ kaironctl edit machineset web --paused=false    # resume
+```
+
+While paused:
+
+- `spec.replicas` and `spec.template` can still be edited (including by
+  HPA/KEDA through `/scale`); the change is recorded but not acted on.
+  On resume the controller steps toward whatever `spec` says then, with
+  the usual `maxUnavailable`/`maxSurge` pacing.
+- `status` is still refreshed every tick: replica counts, `status.paused`,
+  and a `Paused` condition (`True`, reason `Paused`; `False`, reason
+  `NotPaused`) whose `lastTransitionTime` is when pause last flipped. So
+  `kubectl wait machineset/web --for=condition=Paused=false` works.
+- Deleting the MachineSet still deletes its replicas (pause doesn't block
+  the deletion cascade).
+- A replica that dies is not replaced until you resume.
+
+The `PAUSED` column in `kubectl get` reads `spec.paused` (shows your
+intent immediately); `status.paused` is the controller's echo of it.
+
 ## Real limits today (first cut)
 
 - **Gated on `status.phase == Running`, not on deeper application health.**
@@ -184,7 +217,9 @@ replaced (not edited in place) by the rollout logic above.
   `spec.replicas`; the fleet `MachineAutoscaler` can too. The MachineSet
   controller only reconciles toward whatever `spec.replicas` says. See
   [machineset-autoscaling.md](machineset-autoscaling.md).
-- **Pause is supported.** Set `spec.paused: true` (or `kaironctl edit machineset NAME --paused=true`) to freeze creates and deletes. Set it back to `false` to resume. No automatic undo yet.
+- **Pause, but no automatic undo.** `spec.paused` freezes a rollout
+  partway (see [Pausing a MachineSet](#pausing-a-machineset)); to roll
+  back, edit `spec.template` back to the previous shape yourself.
 - **Replica names are randomly suffixed** (`<machineset-name>-<8 hex
   chars>`), not sequential/predictable -- don't script against a specific
   replica's name surviving a rollout.
