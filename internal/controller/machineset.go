@@ -290,7 +290,6 @@ func (c *Controller) stepMachineSetToward(ctx context.Context, ms model.MachineS
 	return nil
 }
 
-
 func resolveMaxSurge(spec string, desired int) (int, error) {
 	if spec == "" || spec == "0" || spec == "0%" {
 		return 0, nil
