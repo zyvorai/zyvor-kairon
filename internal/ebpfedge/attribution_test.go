@@ -297,3 +297,21 @@ func TestAnnotateDropsLookupUsesTuple(t *testing.T) {
 		t.Fatalf("host scope should stay on HostProcess: %+v", drops[0])
 	}
 }
+func TestSummarizeRTT(t *testing.T) {
+	if !SummarizeRTT(nil).IsZero() {
+		t.Fatal("empty samples should be zero")
+	}
+	got := SummarizeRTT([]uint64{800, 1000, 1200, 1400, 5000})
+	if got.Samples != 5 || got.MinRTTUs != 800 || got.MaxRTTUs != 5000 {
+		t.Fatalf("bounds: %+v", got)
+	}
+	if got.AvgRTTUs != 1880 || got.P50Us != 1200 || got.P95Us != 5000 {
+		t.Fatalf("avg/percentiles: %+v", got)
+	}
+	// Input must not be reordered.
+	in := []uint64{5000, 800}
+	_ = SummarizeRTT(in)
+	if in[0] != 5000 || in[1] != 800 {
+		t.Fatalf("input mutated: %v", in)
+	}
+}
