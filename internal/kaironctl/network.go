@@ -17,6 +17,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/zyvorai/kairon/internal/ebpfedge"
 	"github.com/zyvorai/kairon/internal/kaironctl/style"
 	"github.com/zyvorai/kairon/internal/kube"
 	"github.com/zyvorai/kairon/internal/model"
@@ -29,10 +30,10 @@ func newNetworkCmd(opts *Options) *cobra.Command {
 		Long: `Network diagnostics for Machines and policies (FluxVM TC/eBPF edge).
 
   kaironctl network status MACHINE       dataplane, Cilium attach, CNP sync
-  kaironctl network flows MACHINE        recent eBPF flows
+  kaironctl network flows MACHINE        recent eBPF flows (process, RTT when supplied)
   kaironctl network drop-reasons MACHINE recent drop reasons
-  kaironctl network drops MACHINE        attributed drops (policy, spoof, sni)
-  kaironctl network stats MACHINE        dataplane stats
+  kaironctl network drops MACHINE        attributed drops (policy, process when supplied)
+  kaironctl network stats MACHINE        dataplane stats (RTT when supplied)
   kaironctl network effective MACHINE    merged effective policy
   kaironctl network observe              drops summarised across Machines (-A, --by, --top)
   kaironctl network policies             list MachineNetworkPolicies
@@ -302,6 +303,9 @@ func printObservability(ctx context.Context, m model.Machine, kind string, limit
 		return err
 	}
 	style.Log(style.EmojiInfo, "%s:", kind)
+	if printFormattedObservability(os.Stdout, kind, body) {
+		return nil
+	}
 	var pretty any
 	if err := json.Unmarshal(body, &pretty); err != nil {
 		fmt.Println(string(body))
@@ -311,6 +315,63 @@ func printObservability(ctx context.Context, m model.Machine, kind string, limit
 	enc.SetIndent("  ", "  ")
 	_ = enc.Encode(pretty)
 	return nil
+}
+
+// printFormattedObservability writes a table or counter summary when the
+// payload is a recognised FluxVM/PacketWolf flow, drop or stats dump.
+// Process and RTT columns appear when the dataplane supplies them.
+func printFormattedObservability(w io.Writer, kind string, body []byte) bool {
+	switch kind {
+	case "network-flows":
+		flows, err := ebpfedge.DecodeFlowRecords(body)
+		if err != nil || !flowDumpRecognized(flows) {
+			return false
+		}
+		formatFlowTable(w, flows)
+		return true
+	case "network-drops":
+		drops, err := ebpfedge.DecodeDropEvents(body)
+		if err != nil || !dropDumpRecognized(drops) {
+			return false
+		}
+		formatDropTable(w, drops)
+		return true
+	case "network-stats":
+		stats, err := ebpfedge.DecodeDataplaneStats(body)
+		if err != nil {
+			return false
+		}
+		formatDataplaneStats(w, stats)
+		return true
+	default:
+		return false
+	}
+}
+
+func flowDumpRecognized(flows []ebpfedge.FlowRecord) bool {
+	if len(flows) == 0 {
+		return true
+	}
+	if len(flows) > 1 {
+		return true
+	}
+	fr := flows[0]
+	if fr.Proto != "" || fr.SrcIP != "" || fr.DstIP != "" || fr.Packets > 0 || fr.Bytes > 0 || fr.Identity != 0 {
+		return true
+	}
+	// A lone empty record from an unrelated JSON object is not a flow dump.
+	return false
+}
+
+func dropDumpRecognized(drops []ebpfedge.DropEvent) bool {
+	if len(drops) == 0 {
+		return true
+	}
+	if len(drops) > 1 {
+		return true
+	}
+	ev := drops[0]
+	return ev.Reason != "" || ev.SrcIP != "" || ev.DstIP != "" || ev.Packets > 0 || ev.Machine != ""
 }
 
 // fetchObservability GETs a Machine's uiapi pass-through route and

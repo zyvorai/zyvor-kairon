@@ -23,12 +23,15 @@ type FlowKey struct {
 // reason if any packet of it was denied.
 type FlowRecord struct {
 	FlowKey
-	Bytes     uint64    `json:"bytes"`
-	Packets   uint64    `json:"packets"`
-	FirstSeen time.Time `json:"firstSeen"`
-	LastSeen  time.Time `json:"lastSeen"`
-	Denied    bool      `json:"denied,omitempty"`
-	Reason    string    `json:"reason,omitempty"`
+	Bytes       uint64      `json:"bytes"`
+	Packets     uint64      `json:"packets"`
+	FirstSeen   time.Time   `json:"firstSeen"`
+	LastSeen    time.Time   `json:"lastSeen"`
+	Denied      bool        `json:"denied,omitempty"`
+	Reason      string      `json:"reason,omitempty"`
+	Process     ProcessAttr `json:"process,omitempty"`
+	HostProcess ProcessAttr `json:"hostProcess,omitempty"`
+	Latency     LatencyAttr `json:"latency,omitempty"`
 }
 
 // FlowTable is a bounded, concurrency-safe table of FlowRecords. When full,
@@ -50,6 +53,12 @@ func NewFlowTable(max int) *FlowTable {
 // Record adds one packet's bytes to its flow. A non-allow decision marks the
 // flow denied with the decision's reason.
 func (t *FlowTable) Record(key FlowKey, bytes uint32, d Decision, now time.Time) {
+	t.RecordAttr(key, bytes, d, Attribution{}, now)
+}
+
+// RecordAttr is Record plus optional process and latency attribution
+// from FluxVM or PacketWolf. Existing fields on the flow are kept.
+func (t *FlowTable) RecordAttr(key FlowKey, bytes uint32, d Decision, attr Attribution, now time.Time) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	fr, ok := t.flows[key]
@@ -67,6 +76,7 @@ func (t *FlowTable) Record(key FlowKey, bytes uint32, d Decision, now time.Time)
 		fr.Denied = true
 		fr.Reason = d.Reason
 	}
+	attr.ApplyToFlow(fr)
 }
 
 // Snapshot returns the flows, most recently seen first.

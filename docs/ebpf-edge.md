@@ -9,6 +9,13 @@ migration. FluxVM enforces it in the VM's TC/TCX program
 FluxVM's side (routes, wire format, BPF maps, host requirements) is in
 [fluxvm docs/vm-edge-contract.md](https://github.com/zyvorai/fluxvm/blob/main/docs/vm-edge-contract.md).
 
+Process-level attribution (guest or host PID, comm, cgroup) and
+per-flow RTT are extension fields FluxVM or PacketWolf may attach to a
+flow or drop. Kairon decodes them and shows them in `kaironctl network`
+and the dashboard when they are present; it does not invent them and
+does not inspect guest memory. The contract and remaining integration
+points are in [`ebpf-fluxvm-integration.md`](ebpf-fluxvm-integration.md).
+
 ## What Kairon projects
 
 | Feature | Where you set it | FluxVM endpoint |
@@ -323,9 +330,10 @@ sum by (namespace, machine, reason) (rate(kairon_net_drops_total[5m]))
 | --- | --- |
 | `kaironctl network status MACHINE` | Dataplane attach, schema, Cilium and policy sync. |
 | `kaironctl network identity MACHINE` | The stable identity. Works offline. |
-| `kaironctl network drops MACHINE [--limit N]` | Attributed drops. |
+| `kaironctl network drops MACHINE [--limit N]` | Attributed drops (PROCESS / RTT columns when the dataplane supplies them). |
 | `kaironctl network drop-reasons MACHINE` | Raw kernel drop reasons. |
-| `kaironctl network flows MACHINE` | Recent flows. |
+| `kaironctl network flows MACHINE` | Recent flows (PROCESS / HOST / RTT columns when supplied). |
+| `kaironctl network stats MACHINE` | Dataplane counters, plus RTT when the stats object carries it. |
 | `kaironctl network capture MACHINE [--output FILE]` | Starts a capture; with `--output`, waits and writes the pcap. |
 | `kaironctl network captures MACHINE` | Capture sessions and their state. |
 
@@ -380,6 +388,9 @@ FluxVM's `docs/vm-edge-contract.md`.
   yet.
 - Drop metrics are sampled from FluxVM's top 256 flows on each tick,
   so a very wide spread of dropped flows is under-counted.
+- Process and RTT fields are only shown when FluxVM or PacketWolf
+  includes them on the dump. They are not Prometheus labels (high
+  cardinality); see [`ebpf-fluxvm-integration.md`](ebpf-fluxvm-integration.md).
 - Verified on a single host. The conntrack move across two hosts is
   covered by unit tests and FluxVM's restore path, not yet by a two-host
   run.

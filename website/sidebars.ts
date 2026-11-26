@@ -197,6 +197,7 @@ const sidebars: SidebarsConfig = {
         'architecture',
         'network-fabric',
         'ebpf-edge',
+        'ebpf-fluxvm-integration',
         'ebpf-performance-patch',
         'migration-adapter',
         'ai-agents',
