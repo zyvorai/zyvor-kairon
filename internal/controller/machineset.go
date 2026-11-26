@@ -57,6 +57,9 @@ func (c *Controller) reconcileMachineSets(ctx context.Context, machineSets []mod
 	}
 	if c.Metrics != nil {
 		c.Metrics.ObserveMachineSets(observed)
+		// Membership join key for per-MachineSet usage queries (HPA/KEDA
+		// autoscaling, docs/guides/machineset-autoscaling.md).
+		c.Metrics.ObserveMachineSetMachines(observed, machines)
 	}
 }
 
