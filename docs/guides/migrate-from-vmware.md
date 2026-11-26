@@ -12,6 +12,10 @@ tar -C exports/web01 -cf web01.ova web01.ovf web01-disk1.vmdk
 # publish it (any static file server works)
 aws s3 cp web01.ova s3://exports/ && URL=$(aws s3 presign s3://exports/web01.ova --expires-in 86400)
 
+# inspect before conversion (OVF firmware/OS; run again on the VMDK for virtio/fstab)
+kaironctl import preflight ./web01.ova
+kaironctl import preflight ./exports/web01/web01-disk1.vmdk
+
 kaironctl import ova "$URL" --name web01 --network tap
 kaironctl get machines
 ```
@@ -74,6 +78,10 @@ about a minute and boots on virtio-blk and virtio-net to a login prompt.
 
 ## Checklist
 
+0. **Pre-import inspection.** Run `kaironctl import preflight` on the OVA (OVF
+   firmware and OS) and on the boot VMDK (GuestKit virtio, fstab and
+   cloud-init) before `import ova`. Fix or accept each `FAIL`/`WARN`. See
+   [machine-image-import.md](machine-image-import.md#pre-import-inspection).
 1. **Static IPs.** VMware NIC names (`ens192`, `ens160`) don't exist on
    virtio. The repair warns about configs that use them and adds a DHCP
    fallback. Re-apply a static address with cloud-init or the guest's own

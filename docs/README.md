@@ -69,8 +69,8 @@ The root [README](https://github.com/zyvorai/zyvor-kairon/blob/main/README.md) i
 | [`guides/machine-storage-nvmeof.md`](guides/machine-storage-nvmeof.md) | NVMe-oF volumes (`nvme-tcp`, `nvme-rdma`, native multipath), raw Block boot in place, per-disk QEMU I/O and the `StoragePaths` condition (experimental) |
 | [`guides/machine-storage-atlas.md`](guides/machine-storage-atlas.md) | `spec.volumes[].atlas`: controller provisions Machine disks through Atlas (PVC or raw RBD), gates scheduling on readiness, releases after runtime cleanup |
 | [`guides/machine-storage-thirdparty-csi.md`](guides/machine-storage-thirdparty-csi.md) | `node.thirdPartyCSIDrivers`: `kairon-node` as a generic CSI client against an allowlisted third-party driver, including `attachRequired` drivers (VolumeAttachment) and namespace-allowlisted node secrets |
-| [`guides/migrate-from-vmware.md`](guides/migrate-from-vmware.md) | Moving VMware VMs to Kairon: `kaironctl import ova`, offline virtio repair, checklist |
-| [`guides/machine-image-import.md`](guides/machine-image-import.md) | `spec.image.source`: downloading a remote image URL into `kairon-node`'s own digest-keyed cache |
+| [`guides/migrate-from-vmware.md`](guides/migrate-from-vmware.md) | Moving VMware VMs to Kairon: `kaironctl import preflight`, `kaironctl import ova`, offline virtio repair, checklist |
+| [`guides/machine-image-import.md`](guides/machine-image-import.md) | `spec.image.source`: downloading a remote image URL into `kairon-node`'s own digest-keyed cache; `kaironctl import preflight` |
 | [`guides/machine-images.md`](guides/machine-images.md) | `MachineImage`: a cluster-scoped, versioned catalog of boot disks and ISOs, pinned into a Machine by digest once |
 | [`guides/machine-install-media.md`](guides/machine-install-media.md) | `spec.cdroms` + `spec.image.blank`: install Windows or Linux from an ISO onto an empty disk |
 | [`guides/machine-sets.md`](guides/machine-sets.md) | `MachineSet`: replica reconciliation, `RollingUpdate`/`Recreate` rollout strategy |

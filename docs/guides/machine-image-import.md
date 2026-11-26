@@ -90,6 +90,39 @@ same digest skips straight to step 4 -- no re-download. This is the whole
 answer to "50 Machines booting the same golden image": the cache path is
 content-addressed and immutable once written, so it's shared for free.
 
+## Pre-import inspection
+
+`kaironctl import preflight SOURCE` runs a read-only GuestKit doctor (or reads a
+saved report) and calls out common repair issues **before** FluxVM converts
+the disk. It is offline: it never contacts a cluster and never writes to the
+image.
+
+```bash
+kaironctl import preflight ./web01.vmdk
+kaironctl import preflight ./web01.ova --firmware efi
+guestkit doctor disk.qcow2 --target kvm -o json > doctor.json
+kaironctl import preflight disk.qcow2 --from-json doctor.json -o json
+```
+
+The table uses `PASS`, `WARN` and `FAIL`; the command exits non-zero on any
+`FAIL` (`--strict` also on `WARN`). What it can say is limited to data the
+inspection actually exposes:
+
+| Check | Where the data comes from |
+| --- | --- |
+| `format` | The source name, against the formats Kairon imports (`qcow2`, `raw`, `ova`, `vmdk`, `vhd`, `vhdx`). GuestKit can open VDI; Kairon cannot, so `.vdi` fails here. |
+| `firmware` | OVF `firmware` (and `--firmware bios\|efi` for a mismatch), plus GuestKit `BOOT-005` / `BOOT-012` when doctor is run |
+| `virtio` / `windows-virtio` | GuestKit `BOOT-006` (missing virtio modules, or a Windows guest that needs virtio-win injection) |
+| `fstab` | GuestKit `BOOT-001` (fstab UUID vs partition table). Device names such as `/dev/sdX` are reported only when inspect JSON lists those mounts. |
+| `cloud-init` | GuestKit `BOOT-008`, including "Cloud-init not configured" |
+| `guest-agent` | Only when inspect JSON lists a qemu-guest-agent package or service — a short `packages.sample` is not treated as absence. GuestKit doctor has no dedicated guest-agent check today. |
+
+An OVA/OVF is parsed for firmware and OS, but is not handed to `guestkit`
+(it is an archive). Preflight the VMDK (or converted qcow2) for virtio,
+fstab and cloud-init. `guestkit` must be on `PATH` unless you pass
+`--from-json`. See [CLI.md](../CLI.md) and
+[migrate-from-vmware.md](migrate-from-vmware.md).
+
 ## Converting and repairing
 
 With `format: ova` (or `vmdk`, `vhd`, `vhdx`) or `repair: true`, kairon-node
