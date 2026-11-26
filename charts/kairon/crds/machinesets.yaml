@@ -37,6 +37,11 @@ spec:
     - name: Strategy
       type: string
       jsonPath: .spec.strategy
+    # .spec.paused, not .status.paused: shows the operator's intent the
+    # moment it is set, before the controller's next tick. Empty when unset.
+    - name: Paused
+      type: boolean
+      jsonPath: .spec.paused
     schema: &schema
       openAPIV3Schema:
         type: object
@@ -93,6 +98,28 @@ spec:
                 type: integer
               selector:
                 type: string
+              paused:
+                type: boolean
+              conditions:
+                type: array
+                items:
+                  type: object
+                  required:
+                  - type
+                  - status
+                  - lastTransitionTime
+                  properties:
+                    type:
+                      type: string
+                    status:
+                      type: string
+                    reason:
+                      type: string
+                    message:
+                      type: string
+                    lastTransitionTime:
+                      type: string
+                      format: date-time
               message:
                 type: string
   - name: v1beta1
