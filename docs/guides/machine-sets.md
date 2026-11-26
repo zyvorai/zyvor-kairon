@@ -163,6 +163,52 @@ Changing `spec.template` never touches an already-running replica directly
 -- it only changes what *new* replicas look like; existing ones are
 replaced (not edited in place) by the rollout logic above.
 
+## Rolling back a template
+
+kairon-controller keeps one step of template history on the MachineSet
+itself, in four annotations:
+
+| Annotation | Value |
+| --- | --- |
+| `kairon.zyvor.dev/current-template-hash` | hash of the template the controller last saw |
+| `kairon.zyvor.dev/current-template` | that template, as JSON |
+| `kairon.zyvor.dev/previous-template-hash` | hash of the template before it |
+| `kairon.zyvor.dev/previous-template` | that template, as JSON |
+
+The hash is the same value replicas carry in
+`kairon.zyvor.dev/machineset-template-hash`. When the live `spec.template`
+stops matching `current-template-hash`, the controller moves the "current"
+pair to "previous" and records the live template as "current". This happens
+even while the MachineSet is paused. A MachineSet that existed before this
+release gets its first "current" on the next reconcile; it has no "previous"
+until its template changes once.
+
+To go back:
+
+```bash
+kaironctl machineset rollback web --dry-run     # prints old -> new template hash
+kaironctl machineset rollback web -n prod
+```
+
+`rollback` restores the previous template and swaps the two annotation pairs
+in one PATCH (guarded by `resourceVersion`, so a concurrent edit makes it
+fail instead of being overwritten). The controller then rolls replicas over
+exactly as for any other template change, under the MachineSet's own
+`strategy`, `maxUnavailable` and `maxSurge`. Running `rollback` again goes
+forward to the template you just left.
+
+It refuses, without changing anything, when:
+
+- no previous template is recorded yet;
+- the controller has not yet recorded the live template (you edited it
+  moments ago); wait one reconcile interval and retry;
+- the recorded template does not hash to its recorded hash (edited by hand).
+
+Limits: only one step of history is kept, and annotations count toward the
+256 KiB Kubernetes limit, so a template whose JSON is over 64 KiB is
+recorded by hash only and can't be rolled back to. On a paused MachineSet,
+`rollback` changes the template but nothing is replaced until you unpause.
+
 ## Real limits today (first cut)
 
 - **Gated on `status.phase == Running`, not on deeper application health.**
@@ -184,7 +230,7 @@ replaced (not edited in place) by the rollout logic above.
   `spec.replicas`; the fleet `MachineAutoscaler` can too. The MachineSet
   controller only reconciles toward whatever `spec.replicas` says. See
   [machineset-autoscaling.md](machineset-autoscaling.md).
-- **Pause is supported.** Set `spec.paused: true` (or `kaironctl edit machineset NAME --paused=true`) to freeze creates and deletes. Set it back to `false` to resume. No automatic undo yet.
+- **Pause is supported.** Set `spec.paused: true` (or `kaironctl edit machineset NAME --paused=true`) to freeze creates and deletes. Set it back to `false` to resume. To undo a template change, see [Rolling back a template](#rolling-back-a-template).
 - **Replica names are randomly suffixed** (`<machineset-name>-<8 hex
   chars>`), not sequential/predictable -- don't script against a specific
   replica's name surviving a rollout.

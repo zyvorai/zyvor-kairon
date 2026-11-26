@@ -155,6 +155,7 @@ kaironctl edit [machine|machineset|migrationpolicy|snapshotschedule|quota|budget
 kaironctl scale machineset NAME --replicas N
 kaironctl scale machineset --selector k=v --replicas N
 kaironctl scale machinepool NAME --replicas N
+kaironctl machineset rollback NAME [--namespace NS] [--dry-run]   # restore the previous spec.template; see guides/machine-sets.md
 kaironctl import ova SOURCE [--url URL] [--name NAME] [--no-repair] [--dry-run] [create flags]
                     # multi-VM OVF: prints one Machine per VM as multi-doc YAML (no create), warnings on stderr; see guides/migrate-from-vmware.md
 kaironctl import kubevirt FILE... [--namespace NS] [-o yaml|json] [--strict]   # offline; FILE - reads stdin
