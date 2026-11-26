@@ -123,6 +123,18 @@ helm-check:
 		echo "helm-check: --image-max-download-bytes rendered with default values" >&2; exit 1; fi
 	@helm template kairon charts/kairon --namespace kairon-system --set node.imageMaxDownloadBytes=107374182400 \
 		| grep -q -- '"--image-max-download-bytes=107374182400"'
+	@# migration-adapter-tls (busybox, image user root) must set runAsUser or runAsNonRoot refuses it.
+	@helm template kairon charts/kairon --namespace kairon-system --set migration.enabled=true \
+		--set migration.adapterHostPath=/var/lib/kairon/migration-adapter --set migration.dataplaneTls=true \
+		| grep -q 'securityContext: {runAsUser: 65532, runAsGroup: 65532, allowPrivilegeEscalation: false'
+	@# adapter.hostEnvFile: adapter.env with data-plane TLS on, no adapter DaemonSet.
+	@helm template kairon charts/kairon --namespace kairon-system --set migration.enabled=true \
+		--set migration.adapterHostPath=/var/lib/kairon/migration-adapter --set migration.dataplaneTls=true \
+		--set migration.adapter.hostEnvFile=true > $(CURDIR)/.helm-check-host-adapter.yaml
+	@grep -q 'KAIRON_MIGRATION_DATA_TLS=true' $(CURDIR)/.helm-check-host-adapter.yaml
+	@if grep -q 'name: kairon-migration-adapter,' $(CURDIR)/.helm-check-host-adapter.yaml; then \
+		echo "helm-check: hostEnvFile rendered the adapter DaemonSet" >&2; rm -f $(CURDIR)/.helm-check-host-adapter.yaml; exit 1; fi
+	@rm -f $(CURDIR)/.helm-check-host-adapter.yaml
 
 # Multi-host migration matrix (docs/runbook-migration-matrix.md). Inputs come
 # from the environment or LAB_ENV (a KEY=value file, keep it 0600).

@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -704,6 +705,57 @@ func (m migrationNetworkFlag) Set(value string) error {
 	return nil
 }
 
+// Environment defaults for the flags a host systemd unit would otherwise
+// hard-code. The Helm chart (migration.adapter.hostEnvFile) writes them to
+// <adapterHostPath>/adapter.env, which the unit's helm-managed drop-in
+// loads, so `helm upgrade` changes what a bare-host adapter does without a
+// unit edit. An explicit flag always wins over its variable.
+const (
+	envSocket        = "KAIRON_MIGRATION_ADAPTER_SOCKET"
+	envAdvertiseHost = "KAIRON_MIGRATION_ADVERTISE_HOST"
+	envDataTLS       = "KAIRON_MIGRATION_DATA_TLS"
+	envNetworks      = "KAIRON_MIGRATION_NETWORKS"
+)
+
+// envOr returns $name, or def when it is unset or empty.
+func envOr(name, def string) string {
+	if v := os.Getenv(name); v != "" {
+		return v
+	}
+	return def
+}
+
+// envBool parses $name as a bool; unset or empty is false. A value that is
+// not a bool is an error rather than false, since a typo in
+// KAIRON_MIGRATION_DATA_TLS must not quietly mean cleartext.
+func envBool(name string) (bool, error) {
+	v := os.Getenv(name)
+	if v == "" {
+		return false, nil
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return false, fmt.Errorf("$%s=%q is not a bool", name, v)
+	}
+	return b, nil
+}
+
+// envNetworksInto adds $KAIRON_MIGRATION_NETWORKS (comma-separated
+// name=ip) to m; -migration-network flags parsed afterwards add to or
+// override these entries.
+func envNetworksInto(m migrationNetworkFlag, name string) error {
+	for _, item := range strings.Split(os.Getenv(name), ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if err := m.Set(item); err != nil {
+			return fmt.Errorf("$%s: %w", name, err)
+		}
+	}
+	return nil
+}
+
 func main() {
 	os.Exit(run())
 }
@@ -711,21 +763,30 @@ func main() {
 // run returns the process exit code rather than calling os.Exit directly,
 // so every deferred cleanup (e.g. cancel()) actually runs before exit.
 func run() int {
-	socket := flag.String("socket", "", "Unix socket path to listen on (required)")
+	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	dataTLSDefault, err := envBool(envDataTLS)
+	if err != nil {
+		log.Error("invalid environment", "error", err)
+		return 2
+	}
+	socket := flag.String("socket", os.Getenv(envSocket), "Unix socket path to listen on (required; default: $"+envSocket+")")
 	fluxURL := flag.String("fluxvm-url", "http://127.0.0.1:8080", "local FluxVM REST API base URL")
 	fluxToken := flag.String("fluxvm-token", os.Getenv("FLUXVM_TOKEN"), "FluxVM admin Bearer token (default: $FLUXVM_TOKEN)")
-	advertiseHost := flag.String("advertise-host", "127.0.0.1", "address migration peers should use to reach this host's receivers")
+	advertiseHost := flag.String("advertise-host", envOr(envAdvertiseHost, "127.0.0.1"), "address migration peers should use to reach this host's receivers (default: $"+envAdvertiseHost+", else 127.0.0.1)")
 	bridge := flag.String("bridge", "virbr0", "ignored; receivers reuse the source VM's own network spec")
 	receiverTTL := flag.Uint64("receiver-ttl-seconds", 300, "how long an unclaimed receiver is kept before FluxVM reclaims it")
 	migrationNetworks := make(migrationNetworkFlag)
-	flag.Var(migrationNetworks, "migration-network", "name=ip mapping a MachineMigration's migrationNetwork to the address the receiver binds/advertises (repeatable)")
-	dataTLS := flag.Bool("migration-data-tls", false, "authenticate/encrypt the QEMU migration data stream via TLS (requires -migration-ca/-migration-cert/-migration-key)")
+	if err := envNetworksInto(migrationNetworks, envNetworks); err != nil {
+		log.Error("invalid environment", "error", err)
+		return 2
+	}
+	flag.Var(migrationNetworks, "migration-network", "name=ip mapping a MachineMigration's migrationNetwork to the address the receiver binds/advertises (repeatable; also $"+envNetworks+", comma-separated)")
+	dataTLS := flag.Bool("migration-data-tls", dataTLSDefault, "authenticate/encrypt the QEMU migration data stream via TLS (requires -migration-ca/-migration-cert/-migration-key; default: $"+envDataTLS+")")
 	tlsCA := flag.String("migration-ca", os.Getenv("KAIRON_MIGRATION_CA"), "CA cert path for migration data-plane TLS (default: $KAIRON_MIGRATION_CA)")
 	tlsCert := flag.String("migration-cert", os.Getenv("KAIRON_MIGRATION_CERT"), "cert path for migration data-plane TLS (default: $KAIRON_MIGRATION_CERT)")
 	tlsKey := flag.String("migration-key", os.Getenv("KAIRON_MIGRATION_KEY"), "key path for migration data-plane TLS (default: $KAIRON_MIGRATION_KEY)")
 	flag.Parse()
 
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	if *socket == "" {
 		log.Error("--socket is required")
 		return 2

@@ -46,6 +46,25 @@ data-plane TLS {{ if .Values.migration.dataplaneTls }}ON{{ else }}OFF (QEMU memo
 Stop any kairon-migration-adapter-fluxvm systemd unit on these nodes. Verify a
 real migration reports status.dataPlaneEncrypted=true before setting
 migration.requireEncryptedDataPlane=true (docs/guides/machine-migration-tls.md).
+{{- else if and .Values.migration.enabled .Values.migration.adapter.hostEnvFile }}
+
+Migration adapter: host systemd unit driven by {{ trimSuffix "/" .Values.migration.adapterHostPath }}/adapter.env
+(data-plane TLS {{ if .Values.migration.dataplaneTls }}ON{{ else }}OFF{{ end }}). kairon-node writes that file; each node
+needs, once, the unit with its helm-env.conf drop-in and
+kairon-migration-adapter-fluxvm-env.path enabled
+(docs/guides/machine-migration-tls.md#host-systemd-adapter-driven-by-helm).
+{{- else if and .Values.migration.enabled .Values.migration.dataplaneTls }}
+
+Migration data-plane TLS: certs are staged under {{ .Values.migration.adapterHostPath | default "(no adapterHostPath)" }}/tls only.
+Encryption also needs --migration-data-tls on each node's adapter: set
+migration.adapter.enabled=true (DaemonSet) or migration.adapter.hostEnvFile=true
+(systemd unit), or edit the unit by hand (docs/guides/machine-migration-tls.md).
+{{- end }}
+{{- if and .Values.migration.enabled .Values.migration.dataplaneCertManager.enabled (not .Values.migration.dataplaneTlsRefreshSeconds) }}
+
+cert-manager renews the data-plane certs, but they are staged once per
+kairon-node start: set migration.dataplaneTlsRefreshSeconds (e.g. 300) or
+restart kairon-node after a renewal.
 {{- end }}
 
 Check that it all works. This boots a tiny CirrOS VM, exercises power, network

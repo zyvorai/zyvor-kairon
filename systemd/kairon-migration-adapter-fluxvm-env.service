@@ -1,0 +1,13 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
+
+# Triggered by kairon-migration-adapter-fluxvm-env.path.
+
+[Unit]
+Description=kairon - restart kairon-migration-adapter-fluxvm after adapter.env changed
+Documentation=https://github.com/zyvorai/zyvor-kairon
+ConditionPathExists=/var/lib/kairon/migration-adapter/adapter.env
+
+[Service]
+Type=oneshot
+ExecStart=/bin/systemctl restart kairon-migration-adapter-fluxvm.service

@@ -176,6 +176,7 @@ Set values by piping, never on a command line, for example
 1. Bring the two hosts up with the adapter: either
    [`runbook-multi-host-migration-test.md`](runbook-multi-host-migration-test.md)
    (systemd units), or the Helm chart with `migration.adapter.enabled=true`
+   (DaemonSet) or `migration.adapter.hostEnvFile=true` (systemd unit, Helm-driven)
    (see [migration TLS](guides/machine-migration-tls.md#let-helm-run-the-adapter)).
 2. Create `KAIRON_HW_MACHINE` with `spec.guestAgent.enabled: true` on a
    shared-storage image, and `KAIRON_HW_EBPF_MACHINE` with

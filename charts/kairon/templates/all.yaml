@@ -612,7 +612,7 @@ spec:
       dnsPolicy: ClusterFirstWithHostNet
       nodeSelector:
 {{ toYaml .Values.node.nodeSelector | indent 8 }}
-{{ if or .Values.node.cpuPinning.enabled (and .Values.migration.enabled .Values.migration.adapterHostPath .Values.migration.dataplaneTls) }}
+{{ if or .Values.node.cpuPinning.enabled (and .Values.migration.enabled .Values.migration.adapterHostPath (or .Values.migration.dataplaneTls .Values.migration.adapter.hostEnvFile)) }}
       initContainers:
 {{ end }}
 {{ if .Values.node.cpuPinning.enabled }}
@@ -648,59 +648,144 @@ spec:
             requests: {cpu: 5m, memory: 8Mi}
             limits: {cpu: 50m, memory: 32Mi}
 {{ end }}
-{{ if and .Values.migration.enabled .Values.migration.adapterHostPath .Values.migration.dataplaneTls }}
-        # kairon-migration-adapter-fluxvm runs as a bare-host systemd unit,
-        # not in this pod -- it has no access to either Secret volume
-        # below. Materialize the cert material it needs (for the QEMU
-        # migration data-plane TLS, distinct from this pod's own mTLS
-        # control-plane connection) onto the adapterHostPath volume, which
-        # the host-level adapter process reads directly.
-{{ if or .Values.migration.dataplaneTlsSecretName .Values.migration.dataplaneCertManager.enabled }}
+{{ if and .Values.migration.enabled .Values.migration.adapterHostPath (or .Values.migration.dataplaneTls .Values.migration.adapter.hostEnvFile) }}
+{{- $m := .Values.migration }}
+{{- $perNode := and $m.dataplaneTls (or $m.dataplaneTlsSecretName $m.dataplaneCertManager.enabled) }}
+{{- $refresh := int64 ($m.dataplaneTlsRefreshSeconds | default 0) }}
+{{- $hostPath := trimSuffix "/" $m.adapterHostPath }}
+        # Stages what the host-level adapter needs onto the adapterHostPath
+        # volume: the data-plane cert material (dataplaneTls; for the QEMU
+        # migration stream, distinct from this pod's own mTLS control-plane
+        # connection), and with adapter.hostEnvFile the adapter.env a bare-
+        # host systemd adapter loads. The adapter hands the cert *paths* to
+        # FluxVM, which opens them on the host.
+{{- if $perNode }}
         # dataplaneTlsSecretName (or dataplaneCertManager) set: pick out
-        # *this node's own* cert from the per-node bundle (see
-        # values.yaml's comment) via the Downward API -- never the shared control-plane cert. Fails the pod
-        # outright (exit 1, not a silent fallback) if this node's own
-        # three files aren't in the Secret, since presenting no data-plane
-        # identity at all is a much safer failure than presenting the
-        # wrong one.
+        # *this node's own* cert from the per-node bundle via the Downward
+        # API -- never the shared control-plane cert. Fails (exit 1, not a
+        # silent fallback) if this node's own three files aren't there:
+        # presenting no data-plane identity is a much safer failure than
+        # presenting the wrong one.
+{{- else if $m.dataplaneTls }}
+        # dataplaneTlsSecretName not set: stage the shared control-plane
+        # cert (tlsSecretName) onto the data plane too -- weaker (every node
+        # can present the same identity there), but this project's behavior
+        # before dataplaneTlsSecretName existed.
+{{- end }}
+{{- if gt $refresh 0 }}
+        # dataplaneTlsRefreshSeconds > 0: a native sidecar (Kubernetes 1.29+)
+        # that re-stages every {{ $refresh }}s, so a renewed cert reaches the
+        # host without a kairon-node restart. The startup probe holds
+        # kairon-node back until the first good copy (still fail-closed).
+{{- end }}
         - name: migration-adapter-tls
           image: busybox:1.36
+{{- if gt $refresh 0 }}
+          restartPolicy: Always
+          startupProbe:
+            exec: {command: ["test", "-f", "/staged/ok"]}
+            periodSeconds: 2
+            failureThreshold: 150
+{{- end }}
           command:
             - sh
             - -c
             - |
               set -e
-              mkdir -p /adapter/tls
-              src="/etc/kairon/migration-dataplane-tls/${NODE_NAME}"
-              if [ ! -f "${src}-ca.crt" ] || [ ! -f "${src}-tls.crt" ] || [ ! -f "${src}-tls.key" ]; then
-                echo "FATAL: no per-node data-plane cert for node ${NODE_NAME} in migration.dataplaneTlsSecretName/dataplaneCertManager.nodes (expected ${NODE_NAME}-ca.crt/-tls.crt/-tls.key) -- refusing to fall back to a shared or wrong identity" >&2
-                exit 1
-              fi
-              cp "${src}-ca.crt" /adapter/tls/ca.crt
-              cp "${src}-tls.crt" /adapter/tls/tls.crt
-              cp "${src}-tls.key" /adapter/tls/tls.key
+              # put SRC DST: replace DST atomically, only when it changed.
+              put() {
+                if cmp -s "$1" "$2"; then return 0; fi
+                rm -f "$2.tmp"
+                cp "$1" "$2.tmp"
+                mv -f "$2.tmp" "$2"
+                echo "staged $2"
+              }
+              stage() {
+{{- if $m.dataplaneTls }}
+                mkdir -p /adapter/tls
+{{- if $perNode }}
+                src="/etc/kairon/migration-dataplane-tls/${NODE_NAME}"
+                if [ ! -f "${src}-ca.crt" ] || [ ! -f "${src}-tls.crt" ] || [ ! -f "${src}-tls.key" ]; then
+                  echo "FATAL: no per-node data-plane cert for node ${NODE_NAME} in migration.dataplaneTlsSecretName/dataplaneCertManager.nodes (expected ${NODE_NAME}-ca.crt/-tls.crt/-tls.key) -- refusing to fall back to a shared or wrong identity" >&2
+                  return 1
+                fi
+                put "${src}-ca.crt" /adapter/tls/ca.crt
+                put "${src}-tls.crt" /adapter/tls/tls.crt
+                put "${src}-tls.key" /adapter/tls/tls.key
+{{- else }}
+                put /etc/kairon/migration-tls/ca.crt /adapter/tls/ca.crt
+                put /etc/kairon/migration-tls/tls.crt /adapter/tls/tls.crt
+                put /etc/kairon/migration-tls/tls.key /adapter/tls/tls.key
+{{- end }}
+{{- end }}
+{{- if $m.adapter.hostEnvFile }}
+                # adapter.hostEnvFile: what the bare-host systemd adapter
+                # would otherwise take from hand-edited ExecStart flags.
+                # Rewritten only when it changes, since the unit's path
+                # watcher restarts the adapter on every change.
+                {
+                  echo "# Written by the kairon Helm chart (kairon-node pod, migration-adapter-tls); helm upgrade rewrites it."
+                  echo "KAIRON_MIGRATION_ADAPTER_SOCKET={{ $hostPath }}/migration-adapter.sock"
+                  echo "KAIRON_MIGRATION_ADVERTISE_HOST=${HOST_IP}"
+                  echo "KAIRON_MIGRATION_DATA_TLS={{ if $m.dataplaneTls }}true{{ else }}false{{ end }}"
+{{- if $m.dataplaneTls }}
+                  echo "KAIRON_MIGRATION_CA={{ $hostPath }}/tls/ca.crt"
+                  echo "KAIRON_MIGRATION_CERT={{ $hostPath }}/tls/tls.crt"
+                  echo "KAIRON_MIGRATION_KEY={{ $hostPath }}/tls/tls.key"
+{{- end }}
+{{- $nets := list }}
+{{- range $name, $ip := $m.adapter.migrationNetworks }}
+{{- $nets = append $nets (printf "%s=%s" $name $ip) }}
+{{- end }}
+{{- if $nets }}
+                  echo "KAIRON_MIGRATION_NETWORKS={{ join "," $nets }}"
+{{- end }}
+                } > /adapter/.adapter.env.tmp
+                if cmp -s /adapter/.adapter.env.tmp /adapter/adapter.env; then
+                  rm -f /adapter/.adapter.env.tmp
+                else
+                  mv -f /adapter/.adapter.env.tmp /adapter/adapter.env
+                  echo "wrote /adapter/adapter.env"
+                fi
+{{- end }}
+              }
+{{- if gt $refresh 0 }}
+              stage
+              touch /staged/ok
+              while sleep {{ $refresh }}; do
+                stage || echo "WARN: re-stage failed; {{ $hostPath }} keeps the previous files" >&2
+              done
+{{- else }}
+              stage
+{{- end }}
+{{- if or $perNode $m.adapter.hostEnvFile }}
           env:
+{{- if $perNode }}
             - name: NODE_NAME
               valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
+{{- end }}
+{{- if $m.adapter.hostEnvFile }}
+            - name: HOST_IP
+              valueFrom: {fieldRef: {fieldPath: status.hostIP}}
+{{- end }}
+{{- end }}
           volumeMounts:
+{{- if $perNode }}
             - {name: migration-dataplane-tls, mountPath: /etc/kairon/migration-dataplane-tls, readOnly: true}
-            - {name: migration-adapter, mountPath: /adapter}
-          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}, capabilities: {drop: ["ALL"]}}
-{{ else }}
-        # dataplaneTlsSecretName not set: fall back to staging the shared
-        # control-plane cert (tlsSecretName) onto the data plane too --
-        # weaker (every node can present the same identity there), but
-        # exactly this project's behavior before dataplaneTlsSecretName
-        # existed, so no existing deployment's `helm upgrade` changes
-        # behavior just by picking up this chart version.
-        - name: migration-adapter-tls
-          image: busybox:1.36
-          command: ["sh", "-c", "mkdir -p /adapter/tls && cp /etc/kairon/migration-tls/ca.crt /etc/kairon/migration-tls/tls.crt /etc/kairon/migration-tls/tls.key /adapter/tls/"]
-          volumeMounts:
+{{- else if $m.dataplaneTls }}
             - {name: migration-tls, mountPath: /etc/kairon/migration-tls, readOnly: true}
+{{- end }}
             - {name: migration-adapter, mountPath: /adapter}
-          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}, capabilities: {drop: ["ALL"]}}
-{{ end }}
+{{- if gt $refresh 0 }}
+            - {name: migration-tls-staged, mountPath: /staged}
+{{- end }}
+          # busybox's image user is root; run as kairon-node's UID so
+          # runAsNonRoot holds (the Secret volumes are 0440 with
+          # fsGroup 65532, and adapterHostPath must be writable by 65532).
+          securityContext: {runAsUser: 65532, runAsGroup: 65532, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}, capabilities: {drop: ["ALL"]}}
+          resources:
+            requests: {cpu: 5m, memory: 8Mi}
+            limits: {cpu: 50m, memory: 32Mi}
 {{ end }}
       containers:
         - name: node
@@ -728,9 +813,10 @@ spec:
             - "--migration-state-dir={{ .Values.migration.stateDir }}"
 {{ if .Values.migration.adapterSocket }}
             - "--migration-adapter-socket={{ .Values.migration.adapterSocket }}"
-{{ else if and .Values.migration.adapter.enabled .Values.migration.adapterHostPath }}
-            # Chart-managed adapter (templates/migration-adapter.yaml) listens
-            # on the shared adapterHostPath volume, already mounted below.
+{{ else if and (or .Values.migration.adapter.enabled .Values.migration.adapter.hostEnvFile) .Values.migration.adapterHostPath }}
+            # Chart-managed adapter (templates/migration-adapter.yaml), or the
+            # systemd adapter driven by adapter.env (adapter.hostEnvFile),
+            # listens on the shared adapterHostPath volume, mounted below.
             - "--migration-adapter-socket={{ trimSuffix "/" .Values.migration.adapterHostPath }}/migration-adapter.sock"
 {{ end }}
 {{ if .Values.migration.requireEncryptedDataPlane }}
@@ -922,6 +1008,10 @@ spec:
             path: {{ .Values.migration.adapterHostPath | quote }}
             type: Directory
 {{ end }}
+{{- if and .Values.migration.adapterHostPath .Values.migration.dataplaneTls (gt (int64 (.Values.migration.dataplaneTlsRefreshSeconds | default 0)) 0) }}
+        - name: migration-tls-staged
+          emptyDir: {medium: Memory, sizeLimit: 1Mi}
+{{- end }}
 {{ end }}
 {{ if and .Values.console.enabled .Values.console.tls.enabled }}
         - name: console-tls
