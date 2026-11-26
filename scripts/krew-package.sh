@@ -2,9 +2,12 @@
 # Copyright 2026 Zyvor · https://zyvor.dev
 # SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 #
-# Build multi-platform kubectl-kairon archives for Krew and emit a filled
-# manifest under dist/krew/kairon.yaml (deploy/krew/kairon.yaml stays the
-# placeholder template committed to git).
+# Build multi-platform kubectl-kairon archives for Krew (kubectl-kairon +
+# LICENSE in kairon_<os>_<arch>.tar.gz) and emit a filled manifest under
+# dist/krew/kairon.yaml (deploy/krew/kairon.yaml stays the placeholder
+# template committed to git). After a GitHub Release, copy that filled
+# manifest to plugins/kairon.yaml with scripts/krew-index-sync.sh so the
+# custom index on the default branch stays current.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

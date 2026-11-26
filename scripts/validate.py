@@ -94,6 +94,16 @@ try:
             fail(f"{d['metadata']['name']} v1beta1/v1alpha1 and v1 schemas must match (conversion: None)")
         elif d["metadata"]["name"] not in no_status and "status" not in v.get("subresources", {}):
             fail(f"{d['metadata']['name']} must expose v1 + status")
+    # MachineSet's scale subresource is what `kubectl scale`, HPA and KEDA
+    # drive (docs/guides/machineset-autoscaling.md); status.selector is
+    # populated by internal/controller/machineset.go.
+    machineset = next(d for d in crds if d["metadata"]["name"] == "machinesets.kairon.zyvor.dev")
+    want_scale = {"specReplicasPath": ".spec.replicas", "statusReplicasPath": ".status.replicas", "labelSelectorPath": ".status.selector"}
+    for ver in machineset["spec"]["versions"]:
+        if ver.get("subresources", {}).get("scale") != want_scale:
+            fail(f"MachineSet {ver['name']} must expose the scale subresource {want_scale}")
+    if "selector" not in machineset["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["status"]["properties"]:
+        fail("MachineSet.status.selector missing (scale subresource labelSelectorPath)")
     migration = next(d for d in crds if d["metadata"]["name"] == "machinemigrations.kairon.zyvor.dev")
     props = migration["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]
     if "destination" in props["spec"]["properties"]:

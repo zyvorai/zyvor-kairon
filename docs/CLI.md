@@ -20,7 +20,24 @@ Global flags: `-n/--namespace`, `--kubeconfig PATH`, `--context NAME` (see [Meta
 
 ## Install via Krew
 
-Kairon is **not in the public Krew index**, so `kubectl krew install kairon` does not work. Each release attaches the plugin archives (`kairon_{darwin,linux}_{amd64,arm64}.tar.gz`) and a manifest with their checksums (`kairon.yaml`); install from those:
+`kubectl krew install kairon` (the default, public index) does **not** work today. Getting that command to work requires a pull request to [kubernetes-sigs/krew-index](https://github.com/kubernetes-sigs/krew-index); this repository does not open that PR. The steps, the licence caveat, and an optional krew-release-bot hook are in [Releasing](RELEASING.md#public-krew-index). Until a manifest is merged there, install from this repo's custom index, from a release's manifest and archive, or from a local package.
+
+### Custom index (this repository)
+
+The repository is a Krew custom index (`plugins/` at the repo root). After a GitHub Release has published the `kairon_{darwin,linux}_{amd64,arm64}.tar.gz` archives **and** a filled `plugins/kairon.yaml` (valid sha256 digests, not placeholders) has been merged to the default branch:
+
+```bash
+kubectl krew index add kairon https://github.com/zyvorai/zyvor-kairon.git
+kubectl krew update
+kubectl krew install kairon/kairon
+kubectl kairon version
+```
+
+`kubectl krew install kairon` (no `kairon/` prefix) still talks to the public default index and will keep failing until the krew-index PR is merged. `plugins/kairon.yaml` is added by a maintainer after each release (`./scripts/krew-index-sync.sh vX.Y.Z` or a copy of the release asset); Krew rejects placeholder checksums, so the file is not committed until those sums are real. Until it exists on the default branch, `kubectl krew install kairon/kairon` will not find the plugin.
+
+### Install from a release asset
+
+Each release attaches the plugin archives (`kairon_{darwin,linux}_{amd64,arm64}.tar.gz`) and a manifest with their checksums (`kairon.yaml`); install from those:
 
 ```bash
 V=v0.10.6
@@ -32,7 +49,7 @@ kubectl kairon version
 
 (The commands were not re-run against the published v0.10.6 assets, and the `kairon.yaml` checksums were not compared with that release's `SHA256SUMS`.) You can also skip Krew: the `kaironctl-linux-{amd64,arm64}` binaries on the same release page are the same command tree.
 
-To test the packaging from a checkout:
+### Local packaging test
 
 ```bash
 make krew-package
@@ -43,7 +60,7 @@ kubectl kairon version
 kubectl kairon install --dry-run
 ```
 
-Manifest template (placeholder checksums, committed at an older version; `make krew-package` and the release workflow rewrite the version, the `/releases/download/vX.Y.Z/` URLs and the checksums, so the template's version is not what you install and the release's `kairon.yaml` is the manifest to use; the URIs in it still use the pre-rename `zyvorai/kairon` repository path, which GitHub redirects): [`deploy/krew/kairon.yaml`](../deploy/krew/kairon.yaml). Packaging script: [`scripts/krew-package.sh`](../scripts/krew-package.sh).
+The archives contain `kubectl-kairon` and `LICENSE` (linux and darwin, amd64 and arm64; Windows is not packaged). Manifest template (placeholder checksums; `make krew-package` and the release workflow write version, `/releases/download/vX.Y.Z/` URLs and checksums into `dist/krew/kairon.yaml`, so the template's version is not what you install and the release's `kairon.yaml` is the manifest to use): [`deploy/krew/kairon.yaml`](../deploy/krew/kairon.yaml). Packaging script: [`scripts/krew-package.sh`](../scripts/krew-package.sh). Optional krew-release-bot template, used only after a public-index entry exists: [`deploy/krew/kairon.krew.yaml`](../deploy/krew/kairon.krew.yaml).
 
 ## Lifecycle (embedded Helm SDK)
 

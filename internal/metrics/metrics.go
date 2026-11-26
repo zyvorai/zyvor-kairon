@@ -89,6 +89,14 @@ type Recorder struct {
 	// MachineSet's rollout status to report here.
 	machineSetStatus *prometheus.GaugeVec
 
+	// MachineSet -> Machine membership, one series per owned replica --
+	// only registered by NewRecorder, see ObserveMachineSetMachines. Exists
+	// so per-VM usage (kairon_machine_resource_usage, exported by
+	// kairon-node, which has no idea which MachineSet a Machine belongs
+	// to) can be joined onto its MachineSet in PromQL for autoscaling --
+	// docs/guides/machineset-autoscaling.md.
+	machineSetMachine *prometheus.GaugeVec
+
 	// VM-edge drops and conntrack restores -- only registered by
 	// NewNodeRecorder, see Edge.
 	edge *EdgeRecorder
@@ -240,6 +248,14 @@ func NewRecorder() *Recorder {
 				"kairon_quota_resource/kairon_disruption_budget_status already do with their own " +
 				"type/field labels.",
 		}, []string{"namespace", "machineset", "field"}),
+		machineSetMachine: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "kairon_machineset_machine_info",
+			Help: "Always 1: one series per Machine a MachineSet currently owns, by namespace, " +
+				"machineset, and machine -- the kube_pod_owner-style join key that lets " +
+				"kairon_machine_resource_usage (labelled by machine only) be aggregated per " +
+				"MachineSet, e.g. for an HPA Object metric via prometheus-adapter or a KEDA " +
+				"Prometheus trigger.",
+		}, []string{"namespace", "machineset", "machine"}),
 		reconcileDuration:   reconcileDuration,
 		reconcileErrors:     reconcileErrors,
 		reconcileItemErrors: reconcileItemErrors,
@@ -255,7 +271,7 @@ func NewRecorder() *Recorder {
 	}
 	reg.MustRegister(r.phaseCount, r.phaseAgeSeconds, r.completedTotal, r.transferDuration, r.cutoverDowntime, r.dataPlaneEncrypted,
 		r.migrationProgress, r.adaptiveStage, r.adaptiveActions,
-		r.quotaResource, r.disruptionBudgetStatus, r.machineSetStatus, r.reconcileDuration, r.reconcileErrors, r.reconcileItemErrors, r.webhookDecisions, r.apiRequestDuration)
+		r.quotaResource, r.disruptionBudgetStatus, r.machineSetStatus, r.machineSetMachine, r.reconcileDuration, r.reconcileErrors, r.reconcileItemErrors, r.webhookDecisions, r.apiRequestDuration)
 	r.backup = newBackupMetrics(reg)
 	r.topology = newTopologyMetrics(reg)
 	r.placement = newPlacementMetrics(reg)
@@ -536,6 +552,31 @@ func (r *Recorder) ObserveMachineSets(machineSets []model.MachineSet) {
 		r.machineSetStatus.WithLabelValues(ns, name, "replicas").Set(float64(ms.Status.Replicas))
 		r.machineSetStatus.WithLabelValues(ns, name, "ready_replicas").Set(float64(ms.Status.ReadyReplicas))
 		r.machineSetStatus.WithLabelValues(ns, name, "updated_replicas").Set(float64(ms.Status.UpdatedReplicas))
+	}
+}
+
+// ObserveMachineSetMachines publishes kairon_machineset_machine_info: one
+// series per Machine carrying a listed MachineSet's LabelMachineSet label
+// in the same namespace, skipping Machines already being deleted -- the
+// same ownership rule internal/controller's ownedMachines applies, so the
+// join matches what status.replicas counts. Like ObserveMachineSets it is
+// a pure function of this tick's listings and Reset()s first, so a
+// deleted replica or MachineSet stops reporting instead of lingering.
+func (r *Recorder) ObserveMachineSetMachines(machineSets []model.MachineSet, machines []model.Machine) {
+	if r.machineSetMachine == nil {
+		return
+	}
+	r.machineSetMachine.Reset()
+	sets := make(map[[2]string]bool, len(machineSets))
+	for _, ms := range machineSets {
+		sets[[2]string{ms.Namespace(), ms.Metadata.Name}] = true
+	}
+	for _, m := range machines {
+		owner := m.Metadata.Labels[model.LabelMachineSet]
+		if owner == "" || m.Metadata.DeletionTimestamp != nil || !sets[[2]string{m.Namespace(), owner}] {
+			continue
+		}
+		r.machineSetMachine.WithLabelValues(m.Namespace(), owner, m.Metadata.Name).Set(1)
 	}
 }
 

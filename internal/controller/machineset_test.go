@@ -137,6 +137,26 @@ func TestReconcileMachineSetCreatesMissingReplicas(t *testing.T) {
 	}
 }
 
+// TestReconcileMachineSetPublishesScaleSelector covers the contract the
+// CRD's scale subresource depends on (labelSelectorPath: .status.selector):
+// every status patch carries a selector matching exactly the label stamped
+// on owned Machines, so `kubectl scale`, HPA and KEDA can resolve them.
+func TestReconcileMachineSetPublishesScaleSelector(t *testing.T) {
+	ctl, fake := newMachineSetTestController(t)
+	ms := testMachineSet(1, "", "")
+	hash := machineSetTemplateHash(ms.Spec.Template)
+	if _, err := ctl.reconcileMachineSet(context.Background(), ms, []model.Machine{ownedMachine("ms1-a", hash, "Running")}); err != nil {
+		t.Fatalf("reconcileMachineSet: %v", err)
+	}
+	want := model.LabelMachineSet + "=ms1"
+	if !fake.hadPatch || fake.patched.Selector != want {
+		t.Fatalf("status.selector = %q, want %q", fake.patched.Selector, want)
+	}
+	if fake.patched.Replicas != 1 {
+		t.Fatalf("status.replicas = %d, want 1 (the scale subresource's statusReplicasPath)", fake.patched.Replicas)
+	}
+}
+
 func TestReconcileMachineSetScalesDownExcessCurrentReplicas(t *testing.T) {
 	ctl, fake := newMachineSetTestController(t)
 	ms := testMachineSet(1, "", "")
@@ -361,6 +381,8 @@ func TestReconcileMachineSetsObservesMetrics(t *testing.T) {
 		`kairon_machineset_status{field="replicas",machineset="ms1",namespace="prod"} 2`,
 		`kairon_machineset_status{field="ready_replicas",machineset="ms1",namespace="prod"} 1`,
 		`kairon_machineset_status{field="updated_replicas",machineset="ms1",namespace="prod"} 2`,
+		`kairon_machineset_machine_info{machine="ms1-a",machineset="ms1",namespace="prod"} 1`,
+		`kairon_machineset_machine_info{machine="ms1-b",machineset="ms1",namespace="prod"} 1`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q in:\n%s", want, body)

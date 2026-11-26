@@ -71,10 +71,7 @@ type MachineSetSpec struct {
 	Template MachineTemplate `json:"template"`
 	// Strategy is RollingUpdate (default, when empty) or Recreate -- see
 	// internal/controller/machineset.go's reconcileMachineSet for exactly
-	// what each does. Never MaxSurge-capable: only MaxUnavailable is
-	// offered, since Kairon has no capacity/overcommit model
-	// (internal/scheduler) to safely reason about a temporary surge
-	// above Replicas against yet.
+	// what each does.
 	Strategy string `json:"strategy,omitempty"`
 	// MaxUnavailable bounds how many of Replicas may be simultaneously
 	// missing/outdated while RollingUpdate replaces old replicas with new
@@ -83,6 +80,16 @@ type MachineSetSpec struct {
 	// (model.ParseIntOrPercent). Ignored for Recreate. Defaults to 1 when
 	// empty.
 	MaxUnavailable string `json:"maxUnavailable,omitempty"`
+	// MaxSurge bounds how many extra Machines (above Replicas) may be
+	// created temporarily during a RollingUpdate so new replicas can come
+	// up before old ones are deleted. Integer or percentage. Defaults to 0
+	// (no surge). The scheduler still has the final say on placement; a
+	// surge that cannot be placed simply stays Pending.
+	MaxSurge string `json:"maxSurge,omitempty"`
+	// Paused, when true, stops the MachineSet from creating or deleting
+	// replicas for rollout or scale purposes. Existing Machines are left
+	// untouched. Defaults to false.
+	Paused bool `json:"paused,omitempty"`
 }
 
 // MachineTemplate is deliberately not embedded MachineSpec directly (a
@@ -110,6 +117,8 @@ type MachineSetStatus struct {
 	// Selector is the label selector of owned Machines, for the scale
 	// subresource.
 	Selector string `json:"selector,omitempty"`
+	// Paused mirrors spec.paused.
+	Paused bool `json:"paused,omitempty"`
 	// No omitempty -- this whole status is patched as one object
 	// (internal/kube.Client.PatchMachineSetStatus); under JSON merge-patch
 	// semantics an absent key never clears a previously-set value, so a

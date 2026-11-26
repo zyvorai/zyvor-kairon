@@ -293,6 +293,59 @@ func TestObserveMachineSetsNoopsOnNodeRecorder(t *testing.T) {
 	r.ObserveMachineSets([]model.MachineSet{machineSetWithStatus("prod", "web", 3, 3, 3)})
 }
 
+func machineSetMember(ns, name, owner string) model.Machine {
+	return model.Machine{Metadata: model.ObjectMeta{Name: name, Namespace: ns, Labels: map[string]string{model.LabelMachineSet: owner}}}
+}
+
+// TestObserveMachineSetMachinesPublishesOwnedReplicasOnly checks the
+// membership join key used for per-MachineSet autoscaling queries: only
+// Machines owned by a listed MachineSet in the same namespace, and not
+// already being deleted, get a series.
+func TestObserveMachineSetMachinesPublishesOwnedReplicasOnly(t *testing.T) {
+	r := NewRecorder()
+	now := time.Now()
+	deleting := machineSetMember("prod", "web-dead", "web")
+	deleting.Metadata.DeletionTimestamp = &now
+	r.ObserveMachineSetMachines(
+		[]model.MachineSet{machineSetWithStatus("prod", "web", 2, 2, 2)},
+		[]model.Machine{
+			machineSetMember("prod", "web-a", "web"),
+			machineSetMember("prod", "web-b", "web"),
+			machineSetMember("staging", "web-c", "web"), // same set name, other namespace
+			machineSetMember("prod", "db-a", "db"),      // MachineSet not listed
+			{Metadata: model.ObjectMeta{Name: "loose", Namespace: "prod"}},
+			deleting,
+		},
+	)
+	if got := testutil.CollectAndCount(r.machineSetMachine); got != 2 {
+		t.Fatalf("series = %d, want 2", got)
+	}
+	for _, m := range []string{"web-a", "web-b"} {
+		if got := testutil.ToFloat64(r.machineSetMachine.WithLabelValues("prod", "web", m)); got != 1 {
+			t.Errorf("%s = %v, want 1", m, got)
+		}
+	}
+}
+
+// TestObserveMachineSetMachinesPrunesScaledDownReplicas: a replica removed
+// by a scale-down must stop contributing to per-MachineSet aggregates.
+func TestObserveMachineSetMachinesPrunesScaledDownReplicas(t *testing.T) {
+	r := NewRecorder()
+	sets := []model.MachineSet{machineSetWithStatus("prod", "web", 2, 2, 2)}
+	r.ObserveMachineSetMachines(sets, []model.Machine{machineSetMember("prod", "web-a", "web"), machineSetMember("prod", "web-b", "web")})
+	r.ObserveMachineSetMachines(sets, []model.Machine{machineSetMember("prod", "web-a", "web")})
+	rec := httptest.NewRecorder()
+	r.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+	if strings.Contains(rec.Body.String(), `machine="web-b"`) {
+		t.Error("expected web-b's membership series to be pruned after scale-down")
+	}
+}
+
+func TestObserveMachineSetMachinesNoopsOnNodeRecorder(t *testing.T) {
+	r := NewNodeRecorder()
+	r.ObserveMachineSetMachines([]model.MachineSet{machineSetWithStatus("prod", "web", 1, 1, 1)}, []model.Machine{machineSetMember("prod", "web-a", "web")})
+}
+
 func TestHandlerServesPrometheusExposition(t *testing.T) {
 	r := NewRecorder()
 	r.ObserveMigrations([]model.MachineMigration{migration("prod", "a", "Running")})

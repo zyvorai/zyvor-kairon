@@ -57,6 +57,9 @@ func (c *Controller) reconcileMachineSets(ctx context.Context, machineSets []mod
 	}
 	if c.Metrics != nil {
 		c.Metrics.ObserveMachineSets(observed)
+		// Membership join key for per-MachineSet usage queries (HPA/KEDA
+		// autoscaling, docs/guides/machineset-autoscaling.md).
+		c.Metrics.ObserveMachineSetMachines(observed, machines)
 	}
 }
 
@@ -196,6 +199,7 @@ func (c *Controller) reconcileMachineSet(ctx context.Context, ms model.MachineSe
 		ReadyReplicas:   readyCurrent,
 		UpdatedReplicas: len(current),
 		Selector:        model.LabelMachineSet + "=" + ms.Metadata.Name,
+		Paused:          ms.Spec.Paused,
 	}
 
 	// Added once, before any owned Machine is ever created -- guarantees
@@ -225,6 +229,9 @@ func (c *Controller) reconcileMachineSet(ctx context.Context, ms model.MachineSe
 // after CreateMachine returns, long before kairon-node has even scheduled
 // it, let alone booted it to Running).
 func (c *Controller) stepMachineSetToward(ctx context.Context, ms model.MachineSet, hash, strategy string, desired int, current, outdated []model.Machine, readyCurrent int) error {
+	if ms.Spec.Paused {
+		return nil // freeze: no creates or deletes while paused
+	}
 	total := len(current) + len(outdated)
 
 	// Under-provisioned (net-new scale-up, or a replica died on its own)
@@ -249,24 +256,29 @@ func (c *Controller) stepMachineSetToward(ctx context.Context, ms model.MachineS
 		return nil
 	}
 
-	// RollingUpdate: replace outdated replicas maxUnavailable-at-a-time,
-	// never letting available (readyCurrent+outdated still running) drop
-	// below desired-maxUnavailable. Replacement creation happens on a
-	// later tick, once this deletion has actually reduced total below
-	// desired again (the "total < desired" branch above picks it up) --
-	// outdated replicas count as available capacity right up until the
-	// tick that deletes them, they're still real running Machines, just
-	// not on the current template yet. A current-template replica that
-	// exists but hasn't reached Running yet does NOT count as available:
-	// gating on readyCurrent rather than len(current) is what stops the
-	// rollout from tearing down another old, healthy replica before a
-	// just-created replacement has actually come up -- exactly the
-	// health-gating reconcileMachineSet's own comment used to name as a
-	// real, unclosed gap.
+	// RollingUpdate: replace outdated replicas while respecting both
+	// maxUnavailable and maxSurge. With maxSurge > 0 we may create new
+	// (current-template) replicas before deleting old ones, up to
+	// desired+maxSurge total. Without surge the previous behavior is
+	// preserved: only delete when it would not drop available below
+	// desired-maxUnavailable, then create on a later tick once total
+	// falls below desired.
 	if len(outdated) > 0 {
 		maxUnavailable, err := resolveMaxUnavailable(ms.Spec.MaxUnavailable, desired)
 		if err != nil {
 			return fmt.Errorf("spec.maxUnavailable: %w", err)
+		}
+		maxSurge, err := resolveMaxSurge(ms.Spec.MaxSurge, desired)
+		if err != nil {
+			return fmt.Errorf("spec.maxSurge: %w", err)
+		}
+		// Prefer creating new replicas first when surge budget remains.
+		if maxSurge > 0 && total < desired+maxSurge {
+			toCreate := (desired + maxSurge) - total
+			if toCreate > maxSurge {
+				toCreate = maxSurge
+			}
+			return c.createMachineSetReplicas(ctx, ms, hash, toCreate)
 		}
 		minAvailable := desired - maxUnavailable
 		available := readyCurrent + len(outdated)
@@ -283,6 +295,20 @@ func (c *Controller) stepMachineSetToward(ctx context.Context, ms model.MachineS
 		return c.deleteMachines(ctx, ms, current[:len(current)-desired])
 	}
 	return nil
+}
+
+func resolveMaxSurge(spec string, desired int) (int, error) {
+	if spec == "" || spec == "0" || spec == "0%" {
+		return 0, nil
+	}
+	n, err := model.ParseIntOrPercent(spec, desired)
+	if err != nil {
+		return 0, err
+	}
+	if n < 0 {
+		n = 0
+	}
+	return n, nil
 }
 
 func resolveMaxUnavailable(spec string, desired int) (int, error) {

@@ -1,0 +1,31 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
+#
+# KEDA alternative to hpa-machineset.yaml: no prometheus-adapter needed,
+# KEDA queries Prometheus itself and drives the MachineSet's scale
+# subresource through an HPA it manages (External metric, AverageValue,
+# so no Pod lookup). Use this OR hpa-machineset.yaml OR a fleet
+# MachineAutoscaler for a given MachineSet, never two of them. See
+# docs/guides/machineset-autoscaling.md.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: web
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: kairon.zyvor.dev/v1
+    kind: MachineSet
+    name: web
+  minReplicaCount: 2
+  maxReplicaCount: 10
+  cooldownPeriod: 600
+  triggers:
+  - type: prometheus
+    metricType: AverageValue
+    metadata:
+      serverAddress: http://prometheus-operated.monitoring.svc:9090
+      # MachineSet-wide CPU sum; KEDA divides by replicas, so threshold is
+      # the per-replica target.
+      query: sum(kairon:machineset_cpu_percent:sum{namespace="default",machineset="web"})
+      threshold: "60"
