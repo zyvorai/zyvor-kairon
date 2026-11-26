@@ -5,6 +5,7 @@ package ebpfedge
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -141,5 +142,158 @@ func TestAttributeCopiesProcessFromPacket(t *testing.T) {
 	})
 	if !dropped || ev.Process.Comm != "scraper" || ev.SrcPort != 40000 || ev.Identity == 0 {
 		t.Fatalf("attributed drop missing process: %+v dropped=%v", ev, dropped)
+	}
+}
+
+func TestChainSkipsNilAndEmpty(t *testing.T) {
+	key := FlowKey{Proto: "tcp", SrcIP: "10.0.0.1", DstIP: "10.0.0.2", DstPort: 80}
+	filled := MapAttributor{
+		Source: AttrSourceFluxVM,
+		Flows:  map[FlowKey]Attribution{key: {Process: ProcessAttr{Comm: "nginx", PID: 1, Scope: AttrScopeGuest}}},
+	}
+	var empty Chain
+	got, err := empty.Lookup(context.Background(), key)
+	if err != nil || !got.IsZero() {
+		t.Fatalf("empty chain: %+v err=%v", got, err)
+	}
+	if empty.Name() != "" {
+		t.Fatalf("empty name: %q", empty.Name())
+	}
+	ch := Chain{nil, MapAttributor{Source: "noop"}, filled, nil}
+	got, err = ch.Lookup(context.Background(), key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Process.Comm != "nginx" || got.Process.PID != 1 {
+		t.Fatalf("nil members should be skipped: %+v", got)
+	}
+	if ch.Name() != "noop+fluxvm" {
+		t.Fatalf("name should skip nils: %q", ch.Name())
+	}
+}
+
+func TestChainOrderingFirstWinsOverlappingFields(t *testing.T) {
+	key := FlowKey{Proto: "tcp", SrcIP: "10.0.0.8", DstIP: "1.1.1.1", SrcPort: 9, DstPort: 443}
+	first := MapAttributor{Source: "first", Flows: map[FlowKey]Attribution{
+		key: {Process: ProcessAttr{Comm: "nginx", PID: 1, Scope: AttrScopeGuest}, Latency: LatencyAttr{RTTUs: 500}},
+	}}
+	second := MapAttributor{Source: "second", Flows: map[FlowKey]Attribution{
+		key: {Process: ProcessAttr{Comm: "curl", PID: 99, Scope: AttrScopeGuest, Cgroup: "/guest/curl"}, Latency: LatencyAttr{RTTUs: 9000, MinRTTUs: 200}},
+	}}
+	got, err := (Chain{first, second}).Lookup(context.Background(), key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Process.Comm != "nginx" || got.Process.PID != 1 {
+		t.Fatalf("later attributor overwrote: %+v", got.Process)
+	}
+	if got.Process.Cgroup != "/guest/curl" {
+		t.Fatalf("gap cgroup not filled: %+v", got.Process)
+	}
+	if got.Latency.RTTUs != 500 || got.Latency.MinRTTUs != 200 {
+		t.Fatalf("latency merge: %+v", got.Latency)
+	}
+	// Reversing the chain must prefer the other comm.
+	rev, err := (Chain{second, first}).Lookup(context.Background(), key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rev.Process.Comm != "curl" || rev.Process.PID != 99 || rev.Latency.RTTUs != 9000 {
+		t.Fatalf("reversed order: %+v", rev)
+	}
+}
+
+func TestChainLookupErrorAborts(t *testing.T) {
+	key := FlowKey{Proto: "udp", DstPort: 53}
+	boom := errors.New("lookup failed")
+	first := MapAttributor{Source: "ok", Flows: map[FlowKey]Attribution{
+		key: {Process: ProcessAttr{Comm: "coredns", PID: 8}},
+	}}
+	ch := Chain{first, errAttributor{err: boom}}
+	got, err := ch.Lookup(context.Background(), key)
+	if !errors.Is(err, boom) {
+		t.Fatalf("want lookup failed, got err=%v", err)
+	}
+	if got.Process.Comm != "coredns" {
+		t.Fatalf("partial merge should still be returned: %+v", got)
+	}
+}
+
+type errAttributor struct{ err error }
+
+func (e errAttributor) Name() string { return "err" }
+func (e errAttributor) Lookup(context.Context, FlowKey) (Attribution, error) {
+	return Attribution{}, e.err
+}
+
+func TestMapAttributorMissAndNilMap(t *testing.T) {
+	key := FlowKey{Proto: "tcp", DstPort: 22}
+	var empty MapAttributor
+	got, err := empty.Lookup(context.Background(), key)
+	if err != nil || !got.IsZero() {
+		t.Fatalf("nil map: %+v err=%v", got, err)
+	}
+	if empty.Name() != "map" {
+		t.Fatalf("default name: %q", empty.Name())
+	}
+	attr := MapAttributor{Source: AttrSourcePacketWolf, Flows: map[FlowKey]Attribution{
+		FlowKey{Proto: "tcp", DstPort: 80}: {Process: ProcessAttr{Comm: "nginx"}},
+	}}
+	got, err = attr.Lookup(context.Background(), key)
+	if err != nil || !got.IsZero() {
+		t.Fatalf("miss should be zero, not an error: %+v err=%v", got, err)
+	}
+}
+
+func TestAnnotateNilAttributorAndMiss(t *testing.T) {
+	key := FlowKey{Identity: 7, Proto: "tcp", SrcIP: "10.0.0.8", DstIP: "1.1.1.1", SrcPort: 2, DstPort: 443}
+	flows := []FlowRecord{{FlowKey: key, Packets: 4, Process: ProcessAttr{Comm: "keep"}}}
+	if err := AnnotateFlows(context.Background(), flows, nil); err != nil {
+		t.Fatal(err)
+	}
+	if flows[0].Process.Comm != "keep" || !flows[0].Latency.IsZero() {
+		t.Fatalf("nil attributor mutated flow: %+v", flows[0])
+	}
+	drops := []DropEvent{{Reason: ReasonPolicyDeny, SrcIP: key.SrcIP}}
+	if err := AnnotateDrops(context.Background(), drops, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !drops[0].Process.IsZero() {
+		t.Fatalf("nil attributor mutated drop: %+v", drops[0])
+	}
+	miss := MapAttributor{Source: AttrSourceFluxVM, Flows: map[FlowKey]Attribution{}}
+	if err := AnnotateFlows(context.Background(), flows, miss); err != nil {
+		t.Fatal(err)
+	}
+	if flows[0].Process.Comm != "keep" || flows[0].Process.PID != 0 {
+		t.Fatalf("miss should leave the record: %+v", flows[0])
+	}
+	other := FlowKey{Identity: 7, Proto: "tcp", SrcIP: "10.0.0.9", DstIP: "1.1.1.1", SrcPort: 3, DstPort: 80}
+	attr := MapAttributor{Flows: map[FlowKey]Attribution{
+		other: {Process: ProcessAttr{Comm: "sshd", PID: 15, Scope: AttrScopeGuest}},
+	}}
+	mixed := []FlowRecord{{FlowKey: key}, {FlowKey: other}}
+	if err := AnnotateFlows(context.Background(), mixed, attr); err != nil {
+		t.Fatal(err)
+	}
+	if !mixed[0].Process.IsZero() || mixed[1].Process.Comm != "sshd" {
+		t.Fatalf("hit/miss mix: %+v", mixed)
+	}
+}
+
+func TestAnnotateDropsLookupUsesTuple(t *testing.T) {
+	key := FlowKey{Identity: 11, Proto: "tcp", SrcIP: "10.1.0.2", DstIP: "9.9.9.9", SrcPort: 50000, DstPort: 443}
+	attr := MapAttributor{Flows: map[FlowKey]Attribution{
+		key: {HostProcess: ProcessAttr{Comm: "vhost", PID: 4, Scope: AttrScopeHost, Source: AttrSourceFluxVM}},
+	}}
+	drops := []DropEvent{{
+		Reason: ReasonSNIDeny, Identity: key.Identity, Proto: key.Proto,
+		SrcIP: key.SrcIP, DstIP: key.DstIP, SrcPort: key.SrcPort, DstPort: key.DstPort,
+	}}
+	if err := AnnotateDrops(context.Background(), drops, attr); err != nil {
+		t.Fatal(err)
+	}
+	if drops[0].HostProcess.Comm != "vhost" || !drops[0].Process.IsZero() {
+		t.Fatalf("host scope should stay on HostProcess: %+v", drops[0])
 	}
 }
