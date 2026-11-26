@@ -186,8 +186,9 @@ replaced (not edited in place) by the rollout logic above.
   [machineset-autoscaling.md](machineset-autoscaling.md).
 - **Pause is supported.** Set `spec.paused: true` to freeze the MachineSet
   (no creates or deletes for scale or rollout). Set it back to `false` to
-  resume. There is still no automatic rollback/`undo` primitive -- to roll
-  back, edit `spec.template` to the previous shape yourself.
+  resume. From the CLI: `kaironctl edit machineset NAME --paused=true`
+  (or `--paused=false` to resume). There is still no automatic rollback/`undo`
+  primitive -- to roll back, edit `spec.template` to the previous shape yourself.
 - **Replica names are randomly suffixed** (`<machineset-name>-<8 hex
   chars>`), not sequential/predictable -- don't script against a specific
   replica's name surviving a rollout.

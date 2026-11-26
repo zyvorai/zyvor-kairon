@@ -111,14 +111,20 @@ func cmdEditMachineSet(ctx context.Context, kc *kube.Client, name string, args [
 	ns := fs.String("namespace", "default", "namespace")
 	strategy := fs.String("strategy", "", "new rollout strategy: RollingUpdate | Recreate")
 	maxUnavailable := fs.String("max-unavailable", "", "new integer or percentage bound on simultaneously-missing/outdated replicas during RollingUpdate")
+	maxSurge := fs.String("max-surge", "", "new integer or percentage bound on extra replicas during RollingUpdate (0 = no surge)")
+	paused := fs.Bool("paused", false, "freeze (true) or resume (false) scale and rollout")
 	editSpecFromFlags(fs, args, func(spec map[string]any, flagName string) {
 		switch flagName {
 		case "strategy":
 			spec["strategy"] = *strategy
 		case "max-unavailable":
 			spec["maxUnavailable"] = *maxUnavailable
+		case "max-surge":
+			spec["maxSurge"] = *maxSurge
+		case "paused":
+			spec["paused"] = *paused
 		}
-	}, "pass at least one of --strategy or --max-unavailable", func(spec map[string]any) error {
+	}, "pass at least one of --strategy, --max-unavailable, --max-surge or --paused", func(spec map[string]any) error {
 		return kc.PatchMachineSet(ctx, *ns, name, map[string]any{"spec": spec})
 	}, "machineset", name)
 }
