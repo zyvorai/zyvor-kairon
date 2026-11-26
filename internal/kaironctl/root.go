@@ -362,7 +362,7 @@ const editExamples = `  $ kaironctl edit machine demo --priority 10
 // newImportCmd is the legacy `import ova` command plus the offline
 // `import kubevirt`, which must run before any cluster client is built.
 func newImportCmd(opts *Options) *cobra.Command {
-	cmd := legacyCmd(opts, "import", "Create a Machine from a VMware OVA, or convert KubeVirt VirtualMachines offline", importExamples, cmdImport)
+	cmd := legacyCmd(opts, "import", "Create a Machine from a VMware OVA, convert KubeVirt VirtualMachines, or preflight a guest disk", importExamples, cmdImport)
 	ova := cmd.RunE
 	cmd.RunE = func(c *cobra.Command, args []string) error {
 		if len(args) > 0 && strings.EqualFold(args[0], "kubevirt") {
@@ -371,12 +371,21 @@ func newImportCmd(opts *Options) *cobra.Command {
 			}
 			return importKubevirtArgs(c, args[1:])
 		}
+		if len(args) > 0 && strings.EqualFold(args[0], "preflight") {
+			if wantsHelp(args[1:]) {
+				return c.Help()
+			}
+			return importPreflightArgs(c, args[1:])
+		}
 		return ova(c, args)
 	}
 	return cmd
 }
 
-const importExamples = `  $ kaironctl import ova https://files.example.com/web01.ova
+const importExamples = `  $ kaironctl import preflight ./web01.vmdk
+  $ kaironctl import preflight ./web01.ova --firmware efi
+  $ kaironctl import preflight disk.qcow2 --from-json doctor.json -o json
+  $ kaironctl import ova https://files.example.com/web01.ova
   $ kaironctl import ova ./web01.ova --url https://files.example.com/web01.ova --name web01 --network tap
   $ kaironctl import ova https://files.example.com/db.ova --cpu 8 --memory 32Gi --sha256 sha256:... --dry-run
   $ kaironctl import kubevirt vm.yaml -o yaml > machine.yaml

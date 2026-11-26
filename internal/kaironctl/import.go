@@ -203,7 +203,7 @@ func openImportSource(ctx context.Context, source string) (io.ReadCloser, error)
 // cmdImport implements `kaironctl import ova SOURCE`.
 func cmdImport(ctx context.Context, kc *kube.Client, args []string) {
 	if len(args) < 2 || strings.ToLower(args[0]) != "ova" {
-		fatal(fmt.Errorf("usage: kaironctl import ova SOURCE [--name NAME] [--url URL] [--no-repair] [--dry-run] [create flags]"))
+		fatal(fmt.Errorf("usage: kaironctl import ova SOURCE [--name NAME] [--url URL] [--no-repair] [--dry-run] [create flags]\n       kaironctl import preflight SOURCE [-o table|json|yaml] [--strict] [--firmware bios|efi] [--from-json PATH]\n       kaironctl import kubevirt FILE..."))
 	}
 	source := args[1]
 	fs := flag.NewFlagSet("import ova", flag.ExitOnError)
