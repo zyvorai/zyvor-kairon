@@ -86,6 +86,10 @@ type MachineSetSpec struct {
 	// (no surge). The scheduler still has the final say on placement; a
 	// surge that cannot be placed simply stays Pending.
 	MaxSurge string `json:"maxSurge,omitempty"`
+	// Paused, when true, stops the MachineSet from creating or deleting
+	// replicas for rollout or scale purposes. Existing Machines are left
+	// untouched. Defaults to false.
+	Paused bool `json:"paused,omitempty"`
 }
 
 // MachineTemplate is deliberately not embedded MachineSpec directly (a
@@ -113,6 +117,8 @@ type MachineSetStatus struct {
 	// Selector is the label selector of owned Machines, for the scale
 	// subresource.
 	Selector string `json:"selector,omitempty"`
+	// Paused mirrors spec.paused.
+	Paused bool `json:"paused,omitempty"`
 	// No omitempty -- this whole status is patched as one object
 	// (internal/kube.Client.PatchMachineSetStatus); under JSON merge-patch
 	// semantics an absent key never clears a previously-set value, so a

@@ -199,6 +199,7 @@ func (c *Controller) reconcileMachineSet(ctx context.Context, ms model.MachineSe
 		ReadyReplicas:   readyCurrent,
 		UpdatedReplicas: len(current),
 		Selector:        model.LabelMachineSet + "=" + ms.Metadata.Name,
+		Paused:          ms.Spec.Paused,
 	}
 
 	// Added once, before any owned Machine is ever created -- guarantees
@@ -228,6 +229,9 @@ func (c *Controller) reconcileMachineSet(ctx context.Context, ms model.MachineSe
 // after CreateMachine returns, long before kairon-node has even scheduled
 // it, let alone booted it to Running).
 func (c *Controller) stepMachineSetToward(ctx context.Context, ms model.MachineSet, hash, strategy string, desired int, current, outdated []model.Machine, readyCurrent int) error {
+	if ms.Spec.Paused {
+		return nil // freeze: no creates or deletes while paused
+	}
 	total := len(current) + len(outdated)
 
 	// Under-provisioned (net-new scale-up, or a replica died on its own)

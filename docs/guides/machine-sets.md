@@ -184,11 +184,7 @@ replaced (not edited in place) by the rollout logic above.
   `spec.replicas`; the fleet `MachineAutoscaler` can too. The MachineSet
   controller only reconciles toward whatever `spec.replicas` says. See
   [machineset-autoscaling.md](machineset-autoscaling.md).
-- **No pause/rollback primitive.** There's no `kubectl rollout
-  pause`/`undo` equivalent -- to stop a rollout partway, edit
-  `spec.template` back to the previous shape yourself; the same
-  incremental reconciliation resumes toward whatever `spec.template` says
-  right now.
+- **Pause is supported.** Set `spec.paused: true` (or `kaironctl edit machineset NAME --paused=true`) to freeze creates and deletes. Set it back to `false` to resume. No automatic undo yet.
 - **Replica names are randomly suffixed** (`<machineset-name>-<8 hex
   chars>`), not sequential/predictable -- don't script against a specific
   replica's name surviving a rollout.
