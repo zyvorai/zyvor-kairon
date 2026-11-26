@@ -163,6 +163,22 @@ so neither has an equivalent per-tick tally to report here. See
 `docs/guides/machine-sets.md` for the full picture, including the
 `KaironMachineSetRolloutStuck` alert below.
 
+## `kairon_machineset_machine_info` (`kairon-controller` only)
+
+`kairon_machineset_machine_info{namespace, machineset, machine}` is always
+`1`, one series per `Machine` a `MachineSet` currently owns (same ownership
+rule `status.replicas` counts: the `kairon.zyvor.dev/machineset` label, same
+namespace, not already being deleted). It is a join key, the Kairon
+equivalent of `kube-state-metrics`' `kube_pod_owner`: per-VM usage
+(`kairon_machine_resource_usage`) is exported by `kairon-node`, which has no
+idea which `MachineSet` a `Machine` belongs to, so aggregating usage per
+`MachineSet` needs this series on the other side of an `on(namespace,
+machine)` join. Recorded by `internal/metrics.Recorder.ObserveMachineSetMachines`
+in the same `reconcileMachineSets` pass as `kairon_machineset_status`, and
+`Reset()` each tick so scaled-down replicas drop out. Its main use is
+autoscaling a `MachineSet` with HPA or KEDA; see
+[machineset-autoscaling.md](machineset-autoscaling.md).
+
 ## Alerts
 
 `charts/kairon/alerts.yaml` now has five rule groups:
