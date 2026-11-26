@@ -145,6 +145,7 @@ migrations, snapshots, and more. Same command tree as kubectl-kairon.`,
 		legacyCmd(opts, "delete", "Delete a Kairon resource", deleteExamples, cmdDelete),
 		legacyCmd(opts, "edit", "Edit a Kairon resource (only flags you pass are patched)", editExamples, cmdEdit),
 		legacyCmd(opts, "scale", "Scale a MachineSet or MachinePool", scaleExamples, cmdScale),
+		legacyCmd(opts, "machineset", "MachineSet operations: roll back to the previous template", machineSetExamples, cmdMachineSet),
 		legacyCmd(opts, "claim", "Claim a warm Machine from a MachinePool", claimExamples, cmdClaim),
 		legacyCmd(opts, "fork", "Fork a running Machine into live copies", forkExamples, cmdFork),
 		newImportCmd(opts),
@@ -299,7 +300,7 @@ var positionalFirst = map[string]bool{
 	"create": true, "scale": true, "edit": true, "trigger": true,
 	"migrate": true, "evacuate": true, "recover": true, "cancel-migration": true,
 	"fence": true, "snapshot": true, "restore": true, "volumes": true,
-	"disk": true, "nic": true, "import": true,
+	"disk": true, "nic": true, "import": true, "machineset": true,
 }
 
 // checkLeadingPositional rejects a leading flag-like argument for verbs

@@ -17,7 +17,7 @@ var legacyVerbs = []string{
 	"get", "describe", "delete", "edit", "scale", "claim", "fork", "import",
 	"top", "trigger", "migrate", "evacuate", "recover", "cancel-migration",
 	"fence", "snapshot", "restore", "backup", "backuppolicy", "dr", "mac",
-	"volumes", "disk", "nic", "create", "start", "stop",
+	"volumes", "disk", "nic", "create", "start", "stop", "machineset",
 }
 
 func runWithFakeAPI(t *testing.T, args ...string) (calls int32, err error) {
@@ -54,7 +54,7 @@ func TestLegacyHelpMakesNoAPICall(t *testing.T) {
 }
 
 func TestLegacyLeadingFlagRejectedBeforeAPICall(t *testing.T) {
-	for _, verb := range []string{"migrate", "snapshot", "restore", "evacuate", "recover", "cancel-migration", "fence", "volumes", "disk", "nic", "scale", "edit", "trigger", "create", "import"} {
+	for _, verb := range []string{"migrate", "snapshot", "restore", "evacuate", "recover", "cancel-migration", "fence", "volumes", "disk", "nic", "scale", "edit", "trigger", "create", "import", "machineset"} {
 		calls, err := runWithFakeAPI(t, verb, "--anything")
 		if err == nil {
 			t.Errorf("%s --anything: expected an error", verb)
