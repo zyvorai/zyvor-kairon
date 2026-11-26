@@ -94,6 +94,7 @@ type PacketMeta struct {
 	SrcIP    string
 	DstIP    string
 	Proto    string // tcp|udp|icmp
+	SrcPort  uint16
 	DstPort  uint16
 	SNI      string
 	DNSQName string
@@ -103,6 +104,9 @@ type PacketMeta struct {
 	HTTPPath   string
 	Bytes      uint32
 	Ingress    bool
+	// Process is optional process-level attribution supplied by FluxVM
+	// or PacketWolf for this packet. Decide does not consult it.
+	Process ProcessAttr
 }
 
 // Decision is what the edge would do with PacketMeta.
@@ -119,14 +123,21 @@ type Decision struct {
 
 // DropEvent is an attributed drop, ready for status and Prometheus.
 type DropEvent struct {
-	Machine    string `json:"machine"`
-	Namespace  string `json:"namespace"`
-	Reason     string `json:"reason"`
-	PolicyName string `json:"policyName,omitempty"`
-	SrcIP      string `json:"srcIP,omitempty"`
-	DstIP      string `json:"dstIP,omitempty"`
-	Proto      string `json:"proto,omitempty"`
-	DstPort    uint16 `json:"dstPort,omitempty"`
+	Machine     string      `json:"machine"`
+	Namespace   string      `json:"namespace"`
+	Reason      string      `json:"reason"`
+	PolicyName  string      `json:"policyName,omitempty"`
+	SrcIP       string      `json:"srcIP,omitempty"`
+	DstIP       string      `json:"dstIP,omitempty"`
+	Proto       string      `json:"proto,omitempty"`
+	SrcPort     uint16      `json:"srcPort,omitempty"`
+	DstPort     uint16      `json:"dstPort,omitempty"`
+	Identity    uint32      `json:"identity,omitempty"`
+	Packets     uint64      `json:"packets,omitempty"`
+	Bytes       uint64      `json:"bytes,omitempty"`
+	Process     ProcessAttr `json:"process,omitempty"`
+	HostProcess ProcessAttr `json:"hostProcess,omitempty"`
+	Latency     LatencyAttr `json:"latency,omitempty"`
 }
 
 // ConntrackEntry is one L4 session moved with a live migration.
@@ -334,7 +345,10 @@ func Attribute(spec EdgeSpec, pkt PacketMeta) (DropEvent, bool) {
 		SrcIP:      pkt.SrcIP,
 		DstIP:      pkt.DstIP,
 		Proto:      pkt.Proto,
+		SrcPort:    pkt.SrcPort,
 		DstPort:    pkt.DstPort,
+		Identity:   d.Identity,
+		Process:    pkt.Process,
 	}, true
 }
 

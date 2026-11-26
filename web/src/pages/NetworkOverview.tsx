@@ -39,6 +39,7 @@ export default function NetworkOverview() {
           <div className="healthcard"><strong>{s.policySynced}</strong><span className="healthcount">policy synced</span></div>
           <div className="healthcard"><strong>{s.antiSpoof}</strong><span className="healthcount">anti-spoof on</span></div>
           <div className={'healthcard ' + (s.needsAttention ? 'bad' : 'ok')}><strong>{s.needsAttention}</strong><span className="healthcount">need attention</span></div>
+          <div className="healthcard"><strong>{s.maxBlackholeMs ? `${s.maxBlackholeMs} ms` : '—'}</strong><span className="healthcount">max migration blackhole{s.withBlackhole ? ` · ${s.withBlackhole} vm` : ''}</span></div>
         </div>
         {s.byPolicy.length > 0 && (
           <p className="usageHint">Policies: {s.byPolicy.map((p) => `${p.policy} ×${p.count}`).join(' · ')}</p>

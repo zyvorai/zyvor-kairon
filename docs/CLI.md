@@ -217,8 +217,15 @@ and any matching `MachineNetworkPolicy` with `spec.cilium.sync`. `--flows` /
 - `kaironctl network drops MACHINE` — drops recorded by FluxVM's VM edge,
   with Kairon's reason names (`spoof_ip`, `spoof_mac`, `dns_deny`,
   `sni_deny`, `rate_limit`, `policy_deny`, `default_deny`, `malformed`,
-  `migration`), the policy name, flow and packet count. `--limit`
-  defaults to 10. Needs `KAIRON_UI_URL`.
+  `migration`), the policy name, flow and packet count. When FluxVM or
+  PacketWolf also supplies process (PID, comm, cgroup) or RTT fields,
+  those columns are printed. `--limit` defaults to 10. Needs
+  `KAIRON_UI_URL`.
+- `kaironctl network flows MACHINE` — recent flows as a table (5-tuple,
+  packets, bytes). PROCESS, HOST and RTT columns appear when the
+  dataplane includes them. Unrecognised payloads stay JSON.
+- `kaironctl network stats MACHINE` — dataplane counters, plus RTT
+  (and min/max) when the stats object carries latency fields.
 - `kaironctl network identity MACHINE` — the Machine's stable edge
   identity (FNV-1a of namespace and name). Computed locally; no cluster
   access needed.
@@ -229,7 +236,7 @@ and any matching `MachineNetworkPolicy` with `spec.cilium.sync`. `--flows` /
 - `kaironctl network captures MACHINE` — capture sessions with their
   state (`running`, `done`, `failed`, `interrupted`) and packet counts.
 
-See [ebpf-edge.md](ebpf-edge.md).
+See [ebpf-edge.md](ebpf-edge.md) and [ebpf-fluxvm-integration.md](ebpf-fluxvm-integration.md).
 
 ## Starter manifests (offline)
 
