@@ -39,6 +39,14 @@ named per-operator accounts -- generate each passwordHash with:
   kairon-ui -hash-password 'the password'
 {{- end }}
 {{- end }}
+{{- if and .Values.migration.enabled .Values.migration.adapter.enabled }}
+
+Migration adapter: kairon-migration-adapter DaemonSet on {{ trimSuffix "/" .Values.migration.adapterHostPath }}/migration-adapter.sock,
+data-plane TLS {{ if .Values.migration.dataplaneTls }}ON{{ else }}OFF (QEMU memory crosses the network in cleartext; set migration.dataplaneTls=true){{ end }}.
+Stop any kairon-migration-adapter-fluxvm systemd unit on these nodes. Verify a
+real migration reports status.dataPlaneEncrypted=true before setting
+migration.requireEncryptedDataPlane=true (docs/guides/machine-migration-tls.md).
+{{- end }}
 
 Check that it all works. This boots a tiny CirrOS VM, exercises power, network
 and more, prints a coloured log, then deletes the VM:

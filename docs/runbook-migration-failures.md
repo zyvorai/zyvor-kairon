@@ -91,7 +91,7 @@ Cancel only works in that window, and not at all once post-copy has started (`st
 
 To actually turn encryption on, two things must both be true simultaneously across the fleet:
 1. `migration.dataplaneTls: true` in Helm (stages cert material onto every node's `adapterHostPath`). Also set `migration.dataplaneTlsSecretName` for real per-node identity there instead of falling back to the shared control-plane cert -- see [`docs/guides/machine-migration-tls.md`](guides/machine-migration-tls.md).
-2. Every node's `kairon-migration-adapter-fluxvm` systemd unit passes `-migration-data-tls=true` with valid `-migration-ca/-migration-cert/-migration-key` -- this is **outside Helm's control**, set directly in the unit's `ExecStart`.
+2. Every node's `kairon-migration-adapter-fluxvm` passes `-migration-data-tls=true` with valid `-migration-ca/-migration-cert/-migration-key`. With the default bare-host systemd unit this is **outside Helm's control**, set directly in the unit's `ExecStart`. With `migration.adapter.enabled: true` the chart runs the adapter as a DaemonSet and derives this flag from the same `migration.dataplaneTls` value, so the two can't drift per node -- see [Let Helm run the adapter](guides/machine-migration-tls.md#let-helm-run-the-adapter).
 
 Before flipping either, query whether every currently-active live migration already reports `dataPlaneEncrypted: true` (or watch the `kairon_migration_dataplane_encrypted` metric go to 1 across the board) -- that's the actual signal that every node's adapter is upgraded and configured, not just a guess based on when you think the rollout finished.
 
