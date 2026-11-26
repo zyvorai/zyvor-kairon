@@ -178,14 +178,16 @@ replaced (not edited in place) by the rollout logic above.
   rollout up to the surge limit, but the scheduler still decides placement.
   A surge Machine that cannot be placed stays `Pending`; the rollout does
   not fail closed on it.
-- **No autoscaling.** `spec.replicas` is only ever changed by you (or your
-  own tooling) editing the object -- there's no `MachineHorizontalAutoscaler`
-  or similar reacting to load.
-- **No pause/rollback primitive.** There's no `kubectl rollout
-  pause`/`undo` equivalent -- to stop a rollout partway, edit
-  `spec.template` back to the previous shape yourself; the same
-  incremental reconciliation resumes toward whatever `spec.template` says
-  right now.
+- **Autoscaling is external to the MachineSet itself.** The CRD exposes a
+  `/scale` subresource (`status.selector` is written by the controller), so
+  `kubectl scale`, HPA (with prometheus-adapter) and KEDA can drive
+  `spec.replicas`; the fleet `MachineAutoscaler` can too. The MachineSet
+  controller only reconciles toward whatever `spec.replicas` says. See
+  [machineset-autoscaling.md](machineset-autoscaling.md).
+- **Pause is supported.** Set `spec.paused: true` to freeze the MachineSet
+  (no creates or deletes for scale or rollout). Set it back to `false` to
+  resume. There is still no automatic rollback/`undo` primitive -- to roll
+  back, edit `spec.template` to the previous shape yourself.
 - **Replica names are randomly suffixed** (`<machineset-name>-<8 hex
   chars>`), not sequential/predictable -- don't script against a specific
   replica's name surviving a rollout.
