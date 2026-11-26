@@ -117,6 +117,9 @@ type MachineSetStatus struct {
 	// Selector is the label selector of owned Machines, for the scale
 	// subresource.
 	Selector string `json:"selector,omitempty"`
+	// Paused mirrors spec.paused so operators and dashboards can see the
+	// freeze state without reading the spec. Written every reconcile.
+	Paused bool `json:"paused,omitempty"`
 	// No omitempty -- this whole status is patched as one object
 	// (internal/kube.Client.PatchMachineSetStatus); under JSON merge-patch
 	// semantics an absent key never clears a previously-set value, so a

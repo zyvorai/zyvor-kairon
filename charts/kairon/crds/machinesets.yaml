@@ -37,6 +37,9 @@ spec:
     - name: Strategy
       type: string
       jsonPath: .spec.strategy
+    - name: Paused
+      type: boolean
+      jsonPath: .status.paused
     schema: &schema
       openAPIV3Schema:
         type: object
