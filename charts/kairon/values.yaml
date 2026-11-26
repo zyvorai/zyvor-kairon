@@ -639,6 +639,34 @@ migration:
       limits: {cpu: 200m, memory: 128Mi}
     tolerations: []
     priorityClassName: ""
+  # Optional: issue the per-node data-plane certs with cert-manager instead
+  # of a hand-made dataplaneTlsSecretName bundle. One Certificate per entry
+  # in nodes (name = the real Kubernetes node name, ip = the address the
+  # adapter advertises, i.e. the node's InternalIP/status.hostIP, used as
+  # the IP SAN QEMU verifies), each into its own Secret
+  # "<secretPrefix>-<name>". kairon-node mounts them all through one
+  # projected volume laid out exactly like the dataplaneTlsSecretName bundle
+  # ("<name>-ca.crt"/"-tls.crt"/"-tls.key"), so the same fail-closed
+  # per-node init container picks out only its own node's files. Mutually
+  # exclusive with dataplaneTlsSecretName. Requires cert-manager's CRDs.
+  # Nodes are listed explicitly (not discovered) on purpose: a node missing
+  # from the list fails closed at pod start rather than silently getting a
+  # shared identity. A renewed cert reaches the host adapter on the next
+  # kairon-node pod restart (the init container copies once).
+  dataplaneCertManager:
+    enabled: false
+    # Existing Issuer/ClusterIssuer to sign with. Leave name empty together
+    # with createSelfSignedCA: true to have the chart create a private CA.
+    issuerRef: {name: "", kind: Issuer, group: cert-manager.io}
+    # Chart-created selfSigned Issuer -> CA Certificate -> CA Issuer, scoped
+    # to this namespace. Convenient for a lab; bring your own issuerRef for
+    # production.
+    createSelfSignedCA: false
+    secretPrefix: kairon-migration-dataplane
+    duration: 2160h
+    renewBefore: 360h
+    # e.g. [{name: worker-1, ip: 10.0.1.11}, {name: worker-2, ip: 10.0.1.12}]
+    nodes: []
   # Admission quota: caps concurrent non-terminal migrations touching one
   # node, and optionally cluster-wide. Rejected into the existing Blocked
   # phase, same mechanism as an unschedulable target. 0 = unlimited (today's
