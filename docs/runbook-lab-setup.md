@@ -30,6 +30,7 @@ workflow is in flight.
 | `KAIRON_KUBE_TOKEN` | secret | token of `kairon-lab-drills` |
 | `KAIRON_KUBE_CA` | secret | PEM of the cluster CA |
 | `KAIRON_LAB_IMAGE`, `KAIRON_LAB_PRESSURE_CMD`, `KAIRON_LAB_RELIEF_CMD`, `KAIRON_LAB_CBT_MACHINE`, `KAIRON_LAB_MINIO_SSH` | var | per-drill inputs; a drill missing its input is reported `skipped`, never `pass` |
+| `KAIRON_HW_*`, `KAIRON_UI_URL`, `KAIRON_UI_TOKEN`, `KAIRON_MIGRATION_PORT` | var / secret | the migration matrix's inputs: the full table, and which are still unset, is in [`runbook-migration-matrix.md`](runbook-migration-matrix.md#inputs) (`scripts/migration-matrix.sh env`) |
 
 Set secrets by piping, never on a command line:
 `kubectl -n kairon-system get secret kairon-lab-drills-token -o jsonpath='{.data.token}' | base64 -d | gh secret set KAIRON_KUBE_TOKEN`.
