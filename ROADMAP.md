@@ -8,7 +8,7 @@ Open after v0.10.6 (gaps found while checking the docs against the code, not dat
 
 - [ ] Install, upgrade and self-test of v0.10.6 on a real host, recorded in [`TEST_REPORT.md`](TEST_REPORT.md) (today: unit tests, CI and a check that the published artifacts exist).
 - [x] A Helm value for `kairon-node -image-max-download-bytes`: `node.imageMaxDownloadBytes`, on `main` and unreleased (see [image import](docs/guides/machine-image-import.md#size-limit)).
-- [ ] A public Krew index entry (`kubectl krew install kairon` does not work today; install from the release's `kairon.yaml`, see [CLI](docs/CLI.md#install-via-krew)).
+- [ ] A public Krew index entry (`kubectl krew install kairon` still needs a PR to kubernetes-sigs/krew-index; scaffolding, a custom index under `plugins/`, and the submission steps are in [CLI](docs/CLI.md#install-via-krew) and [Releasing](docs/RELEASING.md#public-krew-index)).
 - [x] The chart can install and configure the host-level migration adapter: `migration.adapter.enabled` runs `kairon-migration-adapter-fluxvm` as a DaemonSet (from the `kairon-node` image) with `--migration-data-tls` driven by `migration.dataplaneTls`, and `migration.dataplaneCertManager` optionally issues the per-node data-plane certs with cert-manager. On `main` and unreleased; encrypted cross-host QEMU traffic itself is still unproven on two real hosts (see [migration TLS](docs/guides/machine-migration-tls.md#let-helm-run-the-adapter)).
 
 ## v0.9 — Operate it from the CLI, namespace-aware dashboard
