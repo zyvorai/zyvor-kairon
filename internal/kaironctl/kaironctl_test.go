@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1066,6 +1067,66 @@ func TestCmdEditMachineSetMaxUnavailable(t *testing.T) {
 	}
 	if _, present := spec["strategy"]; present {
 		t.Errorf("strategy should not be present when --strategy wasn't passed, got %v", spec)
+	}
+}
+
+// TestCmdEditMachineSetPaused confirms --paused=true and --paused=false
+// both patch spec.paused explicitly (false has to be sent, not omitted,
+// or a merge-patch would never resume), and touch nothing else.
+func TestCmdEditMachineSetPaused(t *testing.T) {
+	for _, want := range []bool{true, false} {
+		s := &recordingServer{}
+		kc := testClient(t, s)
+		cmdEdit(context.Background(), kc, []string{"machineset", "web", "--paused=" + strconv.FormatBool(want)})
+		if s.method != http.MethodPatch || s.path != "/apis/kairon.zyvor.dev/v1/namespaces/default/machinesets/web" {
+			t.Fatalf("method=%s path=%s", s.method, s.path)
+		}
+		spec, _ := s.body["spec"].(map[string]any)
+		if got, present := spec["paused"]; !present || got != want {
+			t.Errorf("--paused=%t: spec = %v, want paused=%t", want, spec, want)
+		}
+		if len(spec) != 1 {
+			t.Errorf("--paused=%t must patch only spec.paused, got %v", want, spec)
+		}
+	}
+}
+
+// TestCmdCreateMachineSetPaused confirms create --paused sets spec.paused,
+// and that it stays absent (omitempty) without the flag.
+func TestCmdCreateMachineSetPaused(t *testing.T) {
+	s := &recordingServer{}
+	kc := testClient(t, s)
+	cmdCreateMachineSet(context.Background(), kc, []string{"web", "--image", "/img.qcow2", "--paused"})
+	if spec, _ := s.body["spec"].(map[string]any); spec["paused"] != true {
+		t.Errorf("spec.paused = %v, want true", spec["paused"])
+	}
+	s = &recordingServer{}
+	kc = testClient(t, s)
+	cmdCreateMachineSet(context.Background(), kc, []string{"web", "--image", "/img.qcow2"})
+	if spec, _ := s.body["spec"].(map[string]any); spec["paused"] != nil {
+		t.Errorf("spec.paused should be omitted without --paused, got %v", spec["paused"])
+	}
+}
+
+// TestCmdGetMachineSetsShowsPaused confirms `kaironctl get machinesets`
+// has a PAUSED column, matching the CRD's Paused printer column.
+func TestCmdGetMachineSetsShowsPaused(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/apis/kairon.zyvor.dev/v1/namespaces/prod/machinesets" {
+			http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusNotFound)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(model.MachineSetList{Items: []model.MachineSet{
+			{Metadata: model.ObjectMeta{Name: "web", Namespace: "prod"}, Spec: model.MachineSetSpec{Replicas: 3, Paused: true}},
+			{Metadata: model.ObjectMeta{Name: "db", Namespace: "prod"}, Spec: model.MachineSetSpec{Replicas: 1}},
+		}})
+	}))
+	t.Cleanup(srv.Close)
+	kc := &kube.Client{BaseURL: srv.URL, HTTP: srv.Client()}
+	out := captureStdout(t, func() { cmdGet(context.Background(), kc, []string{"machinesets", "-n", "prod"}) })
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 3 || !strings.HasSuffix(lines[0], "PAUSED") || !strings.HasSuffix(lines[1], "true") || !strings.HasSuffix(lines[2], "false") {
+		t.Fatalf("unexpected get machinesets output:\n%s", out)
 	}
 }
 
