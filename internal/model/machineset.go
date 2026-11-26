@@ -88,7 +88,11 @@ type MachineSetSpec struct {
 	MaxSurge string `json:"maxSurge,omitempty"`
 	// Paused, when true, stops the MachineSet from creating or deleting
 	// replicas for rollout or scale purposes. Existing Machines are left
-	// untouched. Defaults to false.
+	// untouched, spec.replicas/spec.template edits (including HPA/KEDA
+	// writes through /scale) are recorded but not acted on until it is
+	// set back to false, and status is still refreshed every tick.
+	// Deleting the MachineSet itself still cascades to its replicas.
+	// Defaults to false.
 	Paused bool `json:"paused,omitempty"`
 }
 
@@ -117,8 +121,15 @@ type MachineSetStatus struct {
 	// Selector is the label selector of owned Machines, for the scale
 	// subresource.
 	Selector string `json:"selector,omitempty"`
-	// Paused mirrors spec.paused.
-	Paused bool `json:"paused,omitempty"`
+	// Paused mirrors spec.paused. No omitempty, for the same merge-patch
+	// reason as Message below: resuming must be able to write false over
+	// a previously-patched true.
+	Paused bool `json:"paused"`
+	// Conditions carries a single "Paused" condition (True while
+	// spec.paused freezes the MachineSet, False otherwise), always
+	// written so `kubectl wait --for=condition=Paused=false` works. No
+	// omitempty -- see Message.
+	Conditions []Condition `json:"conditions"`
 	// No omitempty -- this whole status is patched as one object
 	// (internal/kube.Client.PatchMachineSetStatus); under JSON merge-patch
 	// semantics an absent key never clears a previously-set value, so a

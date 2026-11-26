@@ -525,6 +525,87 @@ func TestStepMachineSetTowardUnderProvisionedAlwaysCreatesRegardlessOfStrategy(t
 	}
 }
 
+// TestReconcileMachineSetPausedFreezesScaleAndRollout covers spec.paused:
+// a MachineSet that is both under-provisioned and mid-rollout (one
+// outdated replica) takes no create or delete step, yet status is still
+// patched with the live tally, status.paused and a True Paused condition.
+func TestReconcileMachineSetPausedFreezesScaleAndRollout(t *testing.T) {
+	ctl, fake := newMachineSetTestController(t)
+	ms := testMachineSet(3, "Recreate", "")
+	ms.Metadata.Finalizers = []string{model.FinalizerMachineSet}
+	ms.Spec.Paused = true
+	machines := []model.Machine{ownedMachine("ms1-old", "oldhash", "Running")}
+	if _, err := ctl.reconcileMachineSet(context.Background(), ms, machines); err != nil {
+		t.Fatalf("reconcileMachineSet: %v", err)
+	}
+	if len(fake.created) != 0 || len(fake.deleted) != 0 {
+		t.Fatalf("paused MachineSet must not create or delete, got created=%d deleted=%v", len(fake.created), fake.deleted)
+	}
+	if !fake.hadPatch || !fake.patched.Paused || fake.patched.Replicas != 1 {
+		t.Fatalf("expected status patch with paused=true and replicas=1, got %+v", fake.patched)
+	}
+	cond, ok := model.FindCondition(fake.patched.Conditions, "Paused")
+	if !ok || cond.Status != "True" || cond.Reason != "Paused" || cond.LastTransitionTime.IsZero() {
+		t.Fatalf("expected Paused=True condition with a transition time, got %+v", fake.patched.Conditions)
+	}
+}
+
+// TestReconcileMachineSetResumeAfterPause: flipping spec.paused back to
+// false resumes scaling on the same tick and flips the condition to False
+// with a fresh transition time.
+func TestReconcileMachineSetResumeAfterPause(t *testing.T) {
+	ctl, fake := newMachineSetTestController(t)
+	ms := testMachineSet(2, "", "")
+	ms.Metadata.Finalizers = []string{model.FinalizerMachineSet}
+	pausedAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	ms.Status.Paused = true
+	ms.Status.Conditions = []model.Condition{{Type: "Paused", Status: "True", Reason: "Paused", LastTransitionTime: pausedAt}}
+	if _, err := ctl.reconcileMachineSet(context.Background(), ms, nil); err != nil {
+		t.Fatalf("reconcileMachineSet: %v", err)
+	}
+	if len(fake.created) != 2 {
+		t.Fatalf("expected 2 creations once resumed, got %d", len(fake.created))
+	}
+	cond, ok := model.FindCondition(fake.patched.Conditions, "Paused")
+	if fake.patched.Paused || !ok || cond.Status != "False" || !cond.LastTransitionTime.After(pausedAt) {
+		t.Fatalf("expected paused=false and a newly transitioned Paused=False condition, got paused=%v %+v", fake.patched.Paused, fake.patched.Conditions)
+	}
+}
+
+// TestReconcileMachineSetPausedConditionKeepsTransitionTime: staying
+// paused across ticks must not bump lastTransitionTime.
+func TestReconcileMachineSetPausedConditionKeepsTransitionTime(t *testing.T) {
+	ctl, fake := newMachineSetTestController(t)
+	ms := testMachineSet(1, "", "")
+	ms.Metadata.Finalizers = []string{model.FinalizerMachineSet}
+	ms.Spec.Paused = true
+	pausedAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	ms.Status.Conditions = []model.Condition{machineSetPausedCondition(true)}
+	ms.Status.Conditions[0].LastTransitionTime = pausedAt
+	if _, err := ctl.reconcileMachineSet(context.Background(), ms, nil); err != nil {
+		t.Fatalf("reconcileMachineSet: %v", err)
+	}
+	cond, _ := model.FindCondition(fake.patched.Conditions, "Paused")
+	if !cond.LastTransitionTime.Equal(pausedAt) {
+		t.Fatalf("lastTransitionTime = %v, want unchanged %v", cond.LastTransitionTime, pausedAt)
+	}
+}
+
+// TestMachineSetStatusAlwaysSerializesPausedAndConditions guards the
+// merge-patch contract on MachineSetStatus: resuming has to send
+// "paused": false explicitly, or the apiserver keeps the stale true.
+func TestMachineSetStatusAlwaysSerializesPausedAndConditions(t *testing.T) {
+	b, err := json.Marshal(model.MachineSetStatus{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{`"paused":false`, `"conditions":`} {
+		if !strings.Contains(string(b), key) {
+			t.Fatalf("status JSON %s lacks %s", b, key)
+		}
+	}
+}
+
 func TestResolveMaxUnavailableDefaultsToOne(t *testing.T) {
 	n, err := resolveMaxUnavailable("", 10)
 	if err != nil || n != 1 {
