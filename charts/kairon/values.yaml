@@ -563,11 +563,13 @@ migration:
   # the host-level adapter systemd unit can read the same cert material this
   # chart already gives kairon-node via tlsSecretName.
   #
-  # IMPORTANT: this Helm value only controls whether cert material is
-  # *staged* onto adapterHostPath -- the actual -migration-data-tls
-  # enforcement flag lives in each node's kairon-migration-adapter-fluxvm
-  # systemd unit ExecStart, entirely outside Helm's control. Flipping this
-  # alone does NOT turn encryption on cluster-wide. Before flipping it (or
+  # IMPORTANT: with the default adapter.enabled: false, this Helm value
+  # only controls whether cert material is *staged* onto adapterHostPath --
+  # the actual -migration-data-tls enforcement flag lives in each node's
+  # kairon-migration-adapter-fluxvm systemd unit ExecStart, outside Helm's
+  # control, and flipping this alone does NOT turn encryption on
+  # cluster-wide. With adapter.enabled: true (below) the chart runs the
+  # adapter itself and passes -migration-data-tls from this same value. Before flipping it (or
   # the systemd units), verify every currently-active live migration already
   # reports status.dataPlaneEncrypted=true (also exposed as the
   # kairon_migration_dataplane_encrypted metric) -- see
@@ -592,6 +594,51 @@ migration:
   # anything to keep working. Set this once you're ready to move to real
   # per-node data-plane identity -- see docs/guides/machine-migration-tls.md.
   dataplaneTlsSecretName: ""
+  # Chart-managed host migration adapter. Off by default: today's install
+  # path (a bare-host systemd unit, systemd/kairon-migration-adapter-fluxvm.service)
+  # keeps working unchanged. When on, a kairon-migration-adapter DaemonSet
+  # runs kairon-migration-adapter-fluxvm on every kairon-node node (same
+  # nodeSelector) from the kairon-node image, so Helm owns the whole
+  # encrypted-migration path:
+  #   - it listens on <adapterHostPath>/migration-adapter.sock, and
+  #     kairon-node's --migration-adapter-socket defaults to that path
+  #     (an explicit adapterSocket above still wins);
+  #   - --advertise-host is the node's own status.hostIP (Downward API),
+  #     replacing the systemd unit's __ADVERTISE_HOST__ placeholder;
+  #   - with dataplaneTls: true it also passes --migration-data-tls=true
+  #     and the cert paths kairon-node's init container stages under
+  #     <adapterHostPath>/tls/ -- so the Helm value and the enforcement
+  #     flag can no longer drift apart per node.
+  # Requires enabled: true and adapterHostPath (hostNetwork, so FluxVM's
+  # loopback API and the host-path cert files FluxVM/QEMU read resolve
+  # exactly as they do for a host process). Stop and disable any existing
+  # kairon-migration-adapter-fluxvm systemd unit on a node before turning
+  # this on there. Needs no Kubernetes API access (no RBAC, no token).
+  adapter:
+    enabled: false
+    # Defaults to node.image (the kairon-node image ships the adapter binary).
+    image:
+      repository: ""
+      tag: ""
+      pullPolicy: ""
+    # Optional Secret key holding the FluxVM admin Bearer token, exposed to
+    # the adapter as FLUXVM_TOKEN. Leave name empty for a FluxVM with no auth.
+    fluxvmTokenSecret:
+      name: ""
+      key: token
+    # MachineMigration spec.migrationNetwork name -> receiver bind/advertise
+    # IP (--migration-network, repeatable). Per-node IPs differ, so this is
+    # only useful when every node maps a network name to the same address
+    # (rare); leave empty to always advertise status.hostIP.
+    migrationNetworks: {}
+    # How long an unclaimed FluxVM receiver is kept (--receiver-ttl-seconds).
+    receiverTTLSeconds: 300
+    extraArgs: []
+    resources:
+      requests: {cpu: 10m, memory: 32Mi}
+      limits: {cpu: 200m, memory: 128Mi}
+    tolerations: []
+    priorityClassName: ""
   # Admission quota: caps concurrent non-terminal migrations touching one
   # node, and optionally cluster-wide. Rejected into the existing Blocked
   # phase, same mechanism as an unschedulable target. 0 = unlimited (today's

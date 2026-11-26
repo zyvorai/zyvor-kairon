@@ -1,0 +1,100 @@
+{{- /*
+Copyright 2026 Zyvor · https://zyvor.dev
+SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
+
+Chart-managed host migration adapter (migration.adapter.enabled, off by
+default). Runs cmd/kairon-migration-adapter-fluxvm -- normally a bare-host
+systemd unit (systemd/kairon-migration-adapter-fluxvm.service) -- as a
+DaemonSet on the same nodes as kairon-node, so `helm install` alone can
+fully enable encrypted live migration (migration.dataplaneTls) instead of
+staging certs for a unit Helm can't see.
+
+Why this shape:
+  - hostNetwork: FluxVM's REST API is on the host's loopback
+    (node.fluxvmURL), and status.hostIP is the address migration peers dial
+    for this host's receivers -- exactly what the systemd unit's
+    __ADVERTISE_HOST__ placeholder was filled with by hand.
+  - adapterHostPath mounted at its *real host path*: the adapter never
+    opens the cert files itself, it hands their paths to FluxVM, and
+    FluxVM/QEMU (host processes) open them. Same path inside and outside
+    the container keeps those paths valid. kairon-node's existing
+    migration-adapter-tls init container is still what stages them there
+    (per-node or shared, see all.yaml); this pod only consumes them.
+  - The socket lives on that same volume, which kairon-node already mounts,
+    so no extra shared volume is needed (kairon-node defaults
+    --migration-adapter-socket to it).
+  - No Kubernetes API access at all, so no ServiceAccount/RBAC and no
+    token mounted.
+*/ -}}
+{{- if .Values.migration.adapter.enabled }}
+{{- if not (and .Values.migration.enabled .Values.migration.adapterHostPath) }}
+{{- fail "migration.adapter.enabled needs migration.enabled=true and migration.adapterHostPath (a host directory writable by UID 65532 on every kairon-node node)" }}
+{{- end }}
+{{- $hostPath := trimSuffix "/" .Values.migration.adapterHostPath }}
+{{- $a := .Values.migration.adapter }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: {name: kairon-migration-adapter, namespace: {{ .Release.Namespace }}}
+spec:
+  selector: {matchLabels: {app.kubernetes.io/name: kairon-migration-adapter}}
+  template:
+    metadata: {labels: {app.kubernetes.io/name: kairon-migration-adapter}}
+    spec:
+      automountServiceAccountToken: false
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+{{- with $a.priorityClassName }}
+      priorityClassName: {{ . | quote }}
+{{- end }}
+      # Same nodes as kairon-node: the adapter is only useful next to it.
+      nodeSelector:
+{{ toYaml .Values.node.nodeSelector | indent 8 }}
+{{- with $a.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+{{- end }}
+      securityContext: {runAsUser: 65532, runAsGroup: 65532, runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: adapter
+          image: "{{ $a.image.repository | default .Values.node.image.repository }}:{{ $a.image.tag | default .Values.node.image.tag | default (.Chart.AppVersion | trimPrefix "v" | printf "v%s") }}"
+          imagePullPolicy: {{ $a.image.pullPolicy | default .Values.node.image.pullPolicy }}
+          command: ["/kairon-migration-adapter-fluxvm"]
+          args:
+            - "--socket={{ $hostPath }}/migration-adapter.sock"
+            - "--fluxvm-url={{ .Values.node.fluxvmURL }}"
+            - "--advertise-host=$(HOST_IP)"
+            - "--receiver-ttl-seconds={{ $a.receiverTTLSeconds | int64 }}"
+{{- range $name, $ip := $a.migrationNetworks }}
+            - "--migration-network={{ $name }}={{ $ip }}"
+{{- end }}
+{{- if .Values.migration.dataplaneTls }}
+            # The adapter refuses to start with --migration-data-tls unless
+            # all three paths are set (fail-closed, never silent cleartext).
+            # The files themselves are staged by kairon-node's
+            # migration-adapter-tls init container and opened by FluxVM.
+            - "--migration-data-tls=true"
+            - "--migration-ca={{ $hostPath }}/tls/ca.crt"
+            - "--migration-cert={{ $hostPath }}/tls/tls.crt"
+            - "--migration-key={{ $hostPath }}/tls/tls.key"
+{{- end }}
+{{- with $a.extraArgs }}
+{{ toYaml . | indent 12 }}
+{{- end }}
+          env:
+            - name: HOST_IP
+              valueFrom: {fieldRef: {fieldPath: status.hostIP}}
+{{- if $a.fluxvmTokenSecret.name }}
+            - name: FLUXVM_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ $a.fluxvmTokenSecret.name }}, key: {{ $a.fluxvmTokenSecret.key | default "token" }}}}
+{{- end }}
+          volumeMounts:
+            - {name: migration-adapter, mountPath: {{ $hostPath | quote }}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}, capabilities: {drop: ["ALL"]}}
+          resources:
+{{ toYaml $a.resources | indent 12 }}
+      volumes:
+        - name: migration-adapter
+          hostPath:
+            path: {{ $hostPath | quote }}
+            type: Directory
+{{- end }}

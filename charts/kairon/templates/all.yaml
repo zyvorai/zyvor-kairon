@@ -728,6 +728,10 @@ spec:
             - "--migration-state-dir={{ .Values.migration.stateDir }}"
 {{ if .Values.migration.adapterSocket }}
             - "--migration-adapter-socket={{ .Values.migration.adapterSocket }}"
+{{ else if and .Values.migration.adapter.enabled .Values.migration.adapterHostPath }}
+            # Chart-managed adapter (templates/migration-adapter.yaml) listens
+            # on the shared adapterHostPath volume, already mounted below.
+            - "--migration-adapter-socket={{ trimSuffix "/" .Values.migration.adapterHostPath }}/migration-adapter.sock"
 {{ end }}
 {{ if .Values.migration.requireEncryptedDataPlane }}
             - "--migration-require-encrypted"
