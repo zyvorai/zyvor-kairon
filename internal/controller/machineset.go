@@ -228,10 +228,6 @@ func (c *Controller) reconcileMachineSet(ctx context.Context, ms model.MachineSe
 // after CreateMachine returns, long before kairon-node has even scheduled
 // it, let alone booted it to Running).
 func (c *Controller) stepMachineSetToward(ctx context.Context, ms model.MachineSet, hash, strategy string, desired int, current, outdated []model.Machine, readyCurrent int) error {
-	if ms.Spec.Paused {
-		// Freeze: do not create or delete replicas while paused.
-		return nil
-	}
 	total := len(current) + len(outdated)
 
 	// Under-provisioned (net-new scale-up, or a replica died on its own)
@@ -296,6 +292,7 @@ func (c *Controller) stepMachineSetToward(ctx context.Context, ms model.MachineS
 	}
 	return nil
 }
+
 
 func resolveMaxSurge(spec string, desired int) (int, error) {
 	if spec == "" || spec == "0" || spec == "0%" {
