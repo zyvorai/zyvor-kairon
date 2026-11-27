@@ -146,30 +146,69 @@ the nightly always ran with their defaults: `KAIRON_HW_SOURCE_NODE`,
 
 ## What is still missing for a green nightly
 
-Recorded state (from [`COMPATIBILITY.md`](COMPATIBILITY.md#lab-profile-zyvor)
-and [`runbook-lab-setup.md`](runbook-lab-setup.md), not re-read from GitHub
-when this page was written: listing repository secrets needs a signed-in
-`gh` with admin rights, so run `scripts/migration-matrix.sh audit-ci` to get
-the live list):
+Checked read-only on 2026-11-27 with `gh secret list` and `gh variable list`
+on `zyvorai/zyvor-kairon` (names only, repository scope). Already set:
+`KAIRON_HW_LAB` and `KAIRON_HW_NAMESPACE` (vars), and `KAIRON_KUBE_URL`,
+`KAIRON_KUBE_TOKEN` and `KAIRON_KUBE_CA` (secrets). Every item below is
+already read by `hardware-migration.yml`, so setting it is enough. Rerun
+`scripts/migration-matrix.sh audit-ci` for the live list (environment-scoped
+values are not covered).
 
-| Status | Names |
-|---|---|
-| Set | `KAIRON_HW_LAB` (var), `KAIRON_KUBE_URL`, `KAIRON_KUBE_TOKEN`, `KAIRON_KUBE_CA` (secrets) |
-| **Missing, the nightly fails without them** | `KAIRON_HW_MACHINE`, `KAIRON_HW_TARGET_NODE` (vars): the matrix exits before the first case |
-| **Missing for a green `core` profile** | `KAIRON_UI_URL` (var), `KAIRON_UI_TOKEN` (secret), `KAIRON_HW_EBPF_MACHINE` (var), plus `spec.guestAgent.enabled` on `KAIRON_HW_MACHINE` and an eBPF Machine to point at |
-| **Missing for a green `full` profile** | the `core` ones, plus `KAIRON_HW_IMAGE`, `KAIRON_HW_SOURCE_SSH`, `KAIRON_HW_TARGET_SSH`, `KAIRON_HW_POSTCOPY_MACHINE` (vars) and a lab job that recreates the post-copy Machine before each run |
-| Documented, value not recorded | `KAIRON_HW_NAMESPACE` (`kairon-lab` per the lab runbook) |
-| Optional | `KAIRON_HW_CONTROLLER_SSH` only if the controller runs under systemd; every other optional input has a working default |
+Before and after setting values, `make migration-dry-run PROFILE=full`
+(or `PROFILE=core`) prints what is still missing and the plan for each case,
+without touching the lab. `make migration-preflight` then checks the lab
+itself. Replace `VALUE` with the real value. The secret line reads it from
+your shell, so it never appears on a command line.
+
+**The matrix will not start without these:**
+
+- [ ] `KAIRON_HW_MACHINE` (var): needed for every case. Point it at a qemu
+  Machine with `spec.guestAgent.enabled: true` on shared-storage disks.
+  `gh variable set KAIRON_HW_MACHINE --body VALUE`
+- [ ] `KAIRON_HW_TARGET_NODE` (var): needed for every case. It must be a
+  different node from the one the Machine is on.
+  `gh variable set KAIRON_HW_TARGET_NODE --body VALUE`
+
+**Green `core` profile (cold, live, live-eBPF):**
+
+- [ ] `KAIRON_UI_URL` (var): unblocks `live`, `guest-agent`,
+  `live-adaptive-converge` and `live-postcopy-switch`.
+  `gh variable set KAIRON_UI_URL --body VALUE`
+- [ ] `KAIRON_UI_TOKEN` (secret): an admin kairon-ui token, needed for the
+  same rows as `KAIRON_UI_URL`.
+  `printf %s "$VALUE" | gh secret set KAIRON_UI_TOKEN`
+- [ ] `KAIRON_HW_EBPF_MACHINE` (var): unblocks `live-ebpf`. It must name a
+  Machine with `spec.network.dataplaneMode: ebpf` and
+  `dataplaneRequired: true`.
+  `gh variable set KAIRON_HW_EBPF_MACHINE --body VALUE`
+
+**Green `full` profile (the nightly), on top of `core`:**
+
+- [ ] `KAIRON_HW_IMAGE` (var): turns `smoke` into the full
+  create/stop/start/delete row (without it, smoke passes on a health
+  check only). `gh variable set KAIRON_HW_IMAGE --body VALUE`
+- [ ] `KAIRON_HW_SOURCE_SSH` (var): unblocks `source-failure`,
+  `needs-recovery` and `postcopy-source-failure`. It needs BatchMode SSH
+  and passwordless sudo.
+  `gh variable set KAIRON_HW_SOURCE_SSH --body VALUE`
+- [ ] `KAIRON_HW_TARGET_SSH` (var): needed for the same three rows.
+  `gh variable set KAIRON_HW_TARGET_SSH --body VALUE`
+- [ ] `KAIRON_HW_POSTCOPY_MACHINE` (var): unblocks
+  `postcopy-source-failure`. It must be a disposable Machine that the lab
+  recreates before each run.
+  `gh variable set KAIRON_HW_POSTCOPY_MACHINE --body VALUE`
+
+**Optional:** set `KAIRON_HW_CONTROLLER_SSH` (var) only if kairon-controller
+runs under systemd. Every other optional input has a working default (see
+[Inputs](#inputs)). Ten of the optional inputs, such as `KAIRON_HW_TIMEOUT`,
+reach the nightly only once the workflow wiring held back from #288 lands.
+Until then, the nightly uses their defaults.
 
 Not a secret, and not fixed by setting one: the **Live pre-copy under load**
 row failed on 2026-10-14 (plain pre-copy with 256 MiB rewritten at about the
 link's own throughput never converged). With the inputs set, the `live` case
 will still fail on that lab until the load (`KAIRON_HW_LOAD_MIB`), the link,
 or the case's strategy changes; the adaptive rows pass on the same lab.
-
-Set values by piping, never on a command line, for example
-`printf %s "$TOKEN" | gh secret set KAIRON_UI_TOKEN` and
-`gh variable set KAIRON_HW_MACHINE --body hwm-live`.
 
 ## Proving live migration on the lab
 
@@ -185,8 +224,9 @@ Set values by piping, never on a command line, for example
    says `READY: every 'core' case has its inputs`.
 4. `scripts/migration-matrix.sh run --profile=core --write-compat`, review
    the `docs/COMPATIBILITY.md` diff, and commit it with the run's date.
-5. Set the same values as repository vars/secrets and trigger
-   `hardware-migration` (`gh workflow run hardware-migration -f profile=core -f strict=true`);
-   the nightly uses `profile=full`.
+5. Work through the [checklist](#what-is-still-missing-for-a-green-nightly)
+   and trigger `hardware-migration` (`gh workflow run hardware-migration`).
+   The `-f profile=core -f strict=true` inputs exist only once the workflow
+   wiring held back from #288 lands; until then the run takes every case.
 6. Check `status.dataPlaneEncrypted: true` on the live migration
    (`kaironctl get migrations -n kairon-lab -o yaml`) when data-plane TLS is on.

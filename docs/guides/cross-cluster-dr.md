@@ -143,6 +143,9 @@ spec:
 
 ## Setup
 
+For a step-by-step bring-up of a second cluster, see
+[`runbook-cross-cluster-dr.md`](../runbook-cross-cluster-dr.md).
+
 1. On both clusters, install kairon-controller with DR on (chart
    `controller.dr.enabled=true`, or `--dr-secret-namespace` on a
    kairon-controller you run yourself). This grants it create and delete
