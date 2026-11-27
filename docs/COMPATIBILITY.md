@@ -134,6 +134,8 @@ at the lab's link speed and the unreleased FluxVM #417 race fix. See
 [Known limits](runbook-migration-matrix.md#known-limits) for the causes and
 fixes.
 
+For the ordered steps to a green nightly, see [Next lab steps](runbook-migration-matrix.md#next-lab-steps).
+
 The four adaptive rows need FluxVM with the adaptive migration controls on
 both hosts: each node's migration adapter `GET /v1/capabilities` must report
 `tune`, `autoConverge`, `postCopySwitch` and `zstd` in `compression`. Adaptive live migration is Experimental until all
