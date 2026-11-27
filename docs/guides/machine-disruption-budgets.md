@@ -33,6 +33,13 @@ unless you enable the webhook.
 for `status` -- see "Status" below. That reconciliation is purely
 observational; it doesn't change the enforcement story above at all.
 
+**MachineSet scale-down is gated by kairon-controller itself.** When a
+MachineSet's `spec.replicas` drops (HPA, KEDA, `kubectl scale`), the
+controller only deletes a `Running` replica the same
+`LoadBudgetStates`/`AdmitDisruption` check admits, and reports the rest as
+`ScaleDownBlocked` -- see
+[machineset-autoscaling.md](machineset-autoscaling.md#real-limits-today).
+
 ### Admission webhook (`webhook.enabled`)
 
 An opt-in validating admission webhook on `kairon-controller`

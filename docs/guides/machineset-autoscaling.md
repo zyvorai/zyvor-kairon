@@ -8,9 +8,9 @@ This page covers all three and how to pick one.
 
 | Option | Needs | Metric source | Scale-down guard |
 | --- | --- | --- | --- |
-| `kubectl scale` / your own tooling | RBAC on `machinesets/scale` | yours | none |
-| HPA (`autoscaling/v2`) | Prometheus + prometheus-adapter | `custom.metrics.k8s.io` Object metric | none (see [limits](#real-limits-today)) |
-| KEDA `ScaledObject` | Prometheus + KEDA | KEDA's Prometheus trigger | none (see [limits](#real-limits-today)) |
+| `kubectl scale` / your own tooling | RBAC on `machinesets/scale` | yours | `MachineDisruptionBudget` (MachineSet controller, see [limits](#real-limits-today)) |
+| HPA (`autoscaling/v2`) | Prometheus + prometheus-adapter | `custom.metrics.k8s.io` Object metric | `MachineDisruptionBudget` (MachineSet controller, see [limits](#real-limits-today)) |
+| KEDA `ScaledObject` | Prometheus + KEDA | KEDA's Prometheus trigger | `MachineDisruptionBudget` (MachineSet controller, see [limits](#real-limits-today)) |
 | fleet `MachineAutoscaler` | `fleet.enabled`, Prometheus | `kairon_machine_resource_usage` | `MachineDisruptionBudget` admission ([enterprise fleet](enterprise-fleet.md)) |
 
 Use exactly one of these per `MachineSet`. Two autoscalers writing
@@ -163,11 +163,23 @@ most `maxStep` replicas at a time, and checks scale-down against
 
 ## Real limits today
 
-- **HPA/KEDA scale-down does not check `MachineDisruptionBudget`.** The
-  MachineSet controller deletes surplus replicas when `spec.replicas`
-  drops, whoever lowered it, and does not pick the least-loaded or
-  newest one. Use a conservative `scaleDown` policy, or the fleet
-  `MachineAutoscaler` where budgets matter.
+- **Scale-down honors `MachineDisruptionBudget`, one tick at a time.**
+  When `spec.replicas` drops (HPA, KEDA, `kubectl scale`, anyone), the
+  MachineSet controller deletes replicas that are not `Running` first,
+  then only as many `Running` ones as every matching budget in the same
+  namespace allows (the same check `kaironctl evacuate` and the fleet
+  `MachineAutoscaler` use). Replicas a budget holds back stay; the
+  MachineSet gets `ScaleDownBlocked=True` (reason `DisruptionBudget`) in
+  `status.conditions` and one Warning Event, and the next reconcile tick
+  retries. Meanwhile `status.replicas` stays above `spec.replicas`, which
+  the HPA sees as normal lag. Example:
+  [`examples/autoscaling/machinedisruptionbudget.yaml`](../../examples/autoscaling/machinedisruptionbudget.yaml).
+- **Scale-down does not pick the least-loaded or newest replica.** Among
+  `Running` replicas the choice is arbitrary. Use a conservative
+  `scaleDown` policy if that matters.
+- **Rollout replacement is not budget-gated.** Replacing outdated replicas
+  after a template change is paced by `maxUnavailable`/`maxSurge`, not by
+  budgets.
 - **Scale-down deletes the VM.** There is no drain or guest shutdown hook
   beyond what deleting a Machine already does.
 - **Usage is only as fresh as `kairon-node`'s sample.** A replica that

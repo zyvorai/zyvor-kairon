@@ -178,6 +178,14 @@ replaced (not edited in place) by the rollout logic above.
   rollout up to the surge limit, but the scheduler still decides placement.
   A surge Machine that cannot be placed stays `Pending`; the rollout does
   not fail closed on it.
+- **Scale-down honors `MachineDisruptionBudget`; rollouts don't.** When
+  `spec.replicas` drops, not-`Running` replicas are deleted first, and a
+  `Running` one only if every matching budget in the namespace still
+  allows a disruption. Anything held back waits for the next tick, with
+  `ScaleDownBlocked=True` (reason `DisruptionBudget`) in
+  `status.conditions` and one Warning Event when it starts. Replacing
+  outdated replicas during a rollout is paced by `maxUnavailable` only.
+  See [machineset-autoscaling.md](machineset-autoscaling.md#real-limits-today).
 - **Autoscaling is external to the MachineSet itself.** The CRD exposes a
   `/scale` subresource (`status.selector` is written by the controller), so
   `kubectl scale`, HPA (with prometheus-adapter) and KEDA can drive
