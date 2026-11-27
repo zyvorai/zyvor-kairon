@@ -197,6 +197,15 @@ without touching the lab. `make migration-preflight` then checks the lab
 itself. Replace `VALUE` with the real value. The secret line reads it from
 your shell, so it never appears on a command line.
 
+[`scripts/lab-secrets-checklist.sh`](../scripts/lab-secrets-checklist.sh)
+prints this checklist from the live repository state: one `gh secret set`
+or `gh variable set` command per input that is still unset, with no values.
+It takes `--profile=core|full` (default `full`), `--repo=OWNER/NAME`,
+`--all` and `--offline`. It reads the same input table as
+`migration-matrix.sh` and asks GitHub only for names, read-only.
+`make lab-secrets-checklist` runs it; pass flags through `CHECKLIST_FLAGS`,
+for example `make lab-secrets-checklist CHECKLIST_FLAGS="--profile=core --offline"`.
+
 **The matrix will not start without these:**
 
 - [ ] `KAIRON_HW_MACHINE` (var): needed for every case. Point it at a qemu
@@ -246,6 +255,56 @@ row failed on 2026-10-14 (plain pre-copy with 256 MiB rewritten at about the
 link's own throughput never converged). With the inputs set, the `live` case
 will still fail on that lab until the load (`KAIRON_HW_LOAD_MIB`), the link,
 or the case's strategy changes; the adaptive rows pass on the same lab.
+
+## FluxVM receiver race: fix still to deploy on the lab
+
+Besides the inputs above, the lab's FluxVM needs a fix before the live rows
+can be trusted. COMPATIBILITY's "Repeated live migration" check is
+`partial`. One of its failures, about 1 in 10 live migrations, was a FluxVM
+race, fixed in FluxVM but **not yet deployed to the lab**.
+
+- **What:** FluxVM's scheduler `reconcile()` deletes a VM that has been
+  `Creating` for longer than `STUCK_CREATING_GRACE` (300 s).
+  `launch_adopt_receiver` inserts a migration receiver's placeholder as
+  `Creating`, but with the *source* VM's `created_at`, so the grace period
+  has already passed. The reaper skips the placeholder only once its
+  receiver file exists, and that file appears seconds later, after QEMU and
+  the network are up. A reconcile tick in that window deletes the receiver
+  mid-launch. The source then finishes its transfer, the destination commit
+  times out, and the destination runtime is `failed`. On the target host,
+  each failure matched the journal line `cleaning up a VM stuck in Creating
+  status — its creating process likely crashed`.
+- **Fix:** [zyvorai/zyvor-fluxvm#417](https://github.com/zyvorai/zyvor-fluxvm/pull/417),
+  "scheduler: do not reap a migration receiver placeholder mid-launch",
+  merged 2026-10-15 (merge commit `e9f4cc94`). In
+  `crates/fluxvm-scheduler/src/lib.rs` the stuck-`Creating` reaper now also
+  skips VMs labelled `live_migration::MIGRATING_FROM_LABEL`
+  (`fluxvm.dev/migrating-from`), which `launch_adopt_receiver` already sets.
+  The change is on zyvor-fluxvm `main` (checked 2026-11-27). No FluxVM
+  release tag contains it yet (the only tag is `mac-v0.1.0`), so the lab
+  needs a FluxVM built from `main`.
+- **Deploy:** on both lab hosts, build and install FluxVM from that `main`
+  following FluxVM's own instructions (this repository does not install
+  FluxVM), and restart `fluxvm.service` while no migration is in flight.
+  Before building, check that the source has the fix:
+  `grep -n 'MIGRATING_FROM_LABEL' crates/fluxvm-scheduler/src/lib.rs`
+  should show the line in the `VmStatus::Creating` branch.
+- **Verify:** run [`scripts/lab-live-soak.sh`](../scripts/lab-live-soak.sh)
+  with `KAIRON_SOAK_HOPS=20 KAIRON_SOAK_CONTINUE=1` (plus the
+  `KAIRON_HW_NODE_A/B` and `KAIRON_HW_SSH_A/B` inputs in its header). Every
+  hop should `Succeed`. If a hop fails, its evidence file holds the last 5
+  minutes of `fluxvm` journal on both hosts; a `stuck in Creating` line for
+  the receiver means the fix is not running. `journalctl -u fluxvm | grep
+  'stuck in Creating'` on the target during the soak should show no
+  receiver VMs. Then update the "Repeated live migration" row and its
+  "Not shown" note in [`COMPATIBILITY.md`](COMPATIBILITY.md).
+- **What it unblocks:** the repeat/soak check, and matrix cases that make a
+  live migration to a FluxVM receiver (`live`, `live-ebpf`,
+  `live-adaptive-converge`, `live-postcopy-switch`, `live-zstd` and the
+  post-copy failure drill). Without the fix, each of these fails about 1 run
+  in 10 regardless of the inputs. The fix does not address the `live`
+  row's separate 2026-10-14 failure (plain pre-copy not converging under
+  load, above).
 
 ## Proving live migration on the lab
 
