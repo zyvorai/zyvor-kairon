@@ -140,7 +140,9 @@ func DecodeDataplaneStats(raw []byte) (DataplaneStats, error) {
 	s.Latency = latencyFromMap(obj)
 	if nested, ok := obj["latency"].(map[string]any); ok {
 		s.Latency = mergeLatency(s.Latency, latencyFromMap(nested))
+		s.Latency = mergeLatency(s.Latency, SummarizeRTT(rttSamplesFrom(nested)))
 	}
+	s.Latency = mergeLatency(s.Latency, SummarizeRTT(rttSamplesFrom(obj)))
 	s.Extra = obj
 	return s, nil
 }
@@ -324,7 +326,25 @@ func latencyFromMap(obj map[string]any) LatencyAttr {
 		MinRTTUs:  uintFrom(obj, "minRttUs", "min_rtt_us", "minRtt"),
 		MaxRTTUs:  uintFrom(obj, "maxRttUs", "max_rtt_us", "maxRtt"),
 		LastAckUs: uintFrom(obj, "lastAckUs", "last_ack_us"),
-		Samples:   uint32(uintFrom(obj, "samples", "rttSamples", "rtt_samples")),
+		AvgRTTUs:  uintFrom(obj, "avgRttUs", "avg_rtt_us", "rttAvgUs", "rtt_avg_us"),
+		P50Us:     uintFrom(obj, "p50Us", "p50_us", "rttP50Us", "rtt_p50_us"),
+		P95Us:     uintFrom(obj, "p95Us", "p95_us", "rttP95Us", "rtt_p95_us"),
+		Samples:   uint32(uintFrom(obj, "samples", "rttSamples", "rtt_samples", "rttSampleCount", "rtt_sample_count")),
+	}
+	if l.AvgRTTUs == 0 {
+		if ms := floatFrom(obj, "avgRttMs", "avg_rtt_ms"); ms > 0 {
+			l.AvgRTTUs = uint64(ms * 1000)
+		}
+	}
+	if l.P50Us == 0 {
+		if ms := floatFrom(obj, "p50Ms", "p50_ms", "rttP50Ms"); ms > 0 {
+			l.P50Us = uint64(ms * 1000)
+		}
+	}
+	if l.P95Us == 0 {
+		if ms := floatFrom(obj, "p95Ms", "p95_ms", "rttP95Ms"); ms > 0 {
+			l.P95Us = uint64(ms * 1000)
+		}
 	}
 	if v := uintFrom(obj, "rttUs", "rtt_us", "srttUs", "srtt_us"); v > 0 {
 		l.RTTUs = v
@@ -348,6 +368,36 @@ func latencyFromMap(obj map[string]any) LatencyAttr {
 		}
 	}
 	return l
+}
+
+func rttSamplesFrom(obj map[string]any) []uint64 {
+	if obj == nil {
+		return nil
+	}
+	for _, key := range []string{"rtts", "rttUsSamples", "rtt_us_samples", "rttHistogram"} {
+		arr, ok := obj[key].([]any)
+		if !ok || len(arr) == 0 {
+			continue
+		}
+		out := make([]uint64, 0, len(arr))
+		for _, v := range arr {
+			switch t := v.(type) {
+			case float64:
+				if t > 0 {
+					out = append(out, uint64(t))
+				}
+			case json.Number:
+				n, err := t.Int64()
+				if err == nil && n > 0 {
+					out = append(out, uint64(n))
+				}
+			}
+		}
+		if len(out) > 0 {
+			return out
+		}
+	}
+	return nil
 }
 
 func asMap(v any) (map[string]any, bool) {

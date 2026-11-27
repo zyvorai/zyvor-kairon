@@ -106,3 +106,34 @@ func TestDecodeRejectsNonJSON(t *testing.T) {
 		t.Fatal("stats must be an object")
 	}
 }
+
+func TestDecodeDataplaneStatsPercentilesAndSamples(t *testing.T) {
+	s, err := DecodeDataplaneStats([]byte(`{"rxPackets":1,"avg_rtt_us":1400,"p50Us":1200,"p95_us":2500,"minRttUs":800,"maxRttUs":3000,"samples":12}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Latency.AvgRTTUs != 1400 || s.Latency.P50Us != 1200 || s.Latency.P95Us != 2500 || s.Latency.Samples != 12 {
+		t.Fatalf("explicit percentiles: %+v", s.Latency)
+	}
+	// A sample array fills gaps; explicit fields win.
+	s, err = DecodeDataplaneStats([]byte(`{"p50Us":1111,"rtts":[800,1000,1200,1400,5000]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Latency.P50Us != 1111 {
+		t.Fatalf("explicit p50 should win: %d", s.Latency.P50Us)
+	}
+	if s.Latency.MinRTTUs != 800 || s.Latency.MaxRTTUs != 5000 || s.Latency.Samples != 5 || s.Latency.AvgRTTUs != 1880 {
+		t.Fatalf("computed gaps: %+v", s.Latency)
+	}
+}
+
+func TestDecodeDataplaneStatsNestedSampleArray(t *testing.T) {
+	s, err := DecodeDataplaneStats([]byte(`{"latency":{"rtt_us_samples":[100,200,300]}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Latency.Samples != 3 || s.Latency.MinRTTUs != 100 || s.Latency.MaxRTTUs != 300 || s.Latency.AvgRTTUs != 200 {
+		t.Fatalf("nested samples: %+v", s.Latency)
+	}
+}

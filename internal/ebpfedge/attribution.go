@@ -6,6 +6,7 @@ package ebpfedge
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -114,13 +115,17 @@ type LatencyAttr struct {
 	MinRTTUs  uint64 `json:"minRttUs,omitempty"`
 	MaxRTTUs  uint64 `json:"maxRttUs,omitempty"`
 	LastAckUs uint64 `json:"lastAckUs,omitempty"`
+	AvgRTTUs  uint64 `json:"avgRttUs,omitempty"`
+	P50Us     uint64 `json:"p50Us,omitempty"`
+	P95Us     uint64 `json:"p95Us,omitempty"`
 	Samples   uint32 `json:"samples,omitempty"`
 }
 
 // IsZero reports whether no latency field was set.
 func (l LatencyAttr) IsZero() bool {
 	return l.RTTUs == 0 && l.RTTVarUs == 0 && l.MinRTTUs == 0 &&
-		l.MaxRTTUs == 0 && l.LastAckUs == 0 && l.Samples == 0
+		l.MaxRTTUs == 0 && l.LastAckUs == 0 && l.AvgRTTUs == 0 &&
+		l.P50Us == 0 && l.P95Us == 0 && l.Samples == 0
 }
 
 // RTT is the smoothed round-trip time, or zero if unknown.
@@ -130,10 +135,16 @@ func (l LatencyAttr) RTT() time.Duration {
 
 // Display formats the primary RTT for tables ("1.4ms", "800µs", "-").
 func (l LatencyAttr) Display() string {
-	if l.RTTUs == 0 && l.MinRTTUs == 0 {
+	if l.IsZero() {
 		return "-"
 	}
 	us := l.RTTUs
+	if us == 0 {
+		us = l.AvgRTTUs
+	}
+	if us == 0 {
+		us = l.P50Us
+	}
 	if us == 0 {
 		us = l.MinRTTUs
 	}
@@ -271,10 +282,59 @@ func mergeLatency(dst, src LatencyAttr) LatencyAttr {
 	if dst.LastAckUs == 0 {
 		dst.LastAckUs = src.LastAckUs
 	}
+	if dst.AvgRTTUs == 0 {
+		dst.AvgRTTUs = src.AvgRTTUs
+	}
+	if dst.P50Us == 0 {
+		dst.P50Us = src.P50Us
+	}
+	if dst.P95Us == 0 {
+		dst.P95Us = src.P95Us
+	}
 	if dst.Samples == 0 {
 		dst.Samples = src.Samples
 	}
 	return dst
+}
+
+// SummarizeRTT computes a compact latency summary from individual
+// observations in microseconds: sample count, min, mean, nearest-rank
+// p50 and p95, and max. An empty slice yields a zero LatencyAttr.
+func SummarizeRTT(samples []uint64) LatencyAttr {
+	if len(samples) == 0 {
+		return LatencyAttr{}
+	}
+	sorted := append([]uint64(nil), samples...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+	var sum uint64
+	for _, v := range sorted {
+		sum += v
+	}
+	avg := sum / uint64(len(sorted))
+	return LatencyAttr{
+		Samples:  uint32(len(sorted)),
+		MinRTTUs: sorted[0],
+		MaxRTTUs: sorted[len(sorted)-1],
+		AvgRTTUs: avg,
+		RTTUs:    avg,
+		P50Us:    rttPercentile(sorted, 50),
+		P95Us:    rttPercentile(sorted, 95),
+	}
+}
+
+// rttPercentile is nearest-rank: index = ceil(p/100 * n) - 1, clamped.
+func rttPercentile(sorted []uint64, p int) uint64 {
+	if len(sorted) == 0 {
+		return 0
+	}
+	idx := (p*len(sorted)+99)/100 - 1
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(sorted) {
+		idx = len(sorted) - 1
+	}
+	return sorted[idx]
 }
 
 // ApplyToFlow copies non-zero attribution onto a flow, leaving fields

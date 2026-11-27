@@ -224,8 +224,10 @@ and any matching `MachineNetworkPolicy` with `spec.cilium.sync`. `--flows` /
 - `kaironctl network flows MACHINE` — recent flows as a table (5-tuple,
   packets, bytes). PROCESS, HOST and RTT columns appear when the
   dataplane includes them. Unrecognised payloads stay JSON.
-- `kaironctl network stats MACHINE` — dataplane counters, plus RTT
-  (and min/max) when the stats object carries latency fields.
+- `kaironctl network stats MACHINE` — dataplane counters, plus an RTT
+  summary (sample count, min, avg, p50, p95, max) when the stats object
+  carries latency fields or a sample array. The summary is omitted when
+  no RTT data is present.
 - `kaironctl network identity MACHINE` — the Machine's stable edge
   identity (FNV-1a of namespace and name). Computed locally; no cluster
   access needed.
