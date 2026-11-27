@@ -32,6 +32,9 @@ type machineSetTestServer struct {
 	hadPatch          bool
 	finalizerPatches  [][]string
 	finalizerPatchErr bool
+	// annotationPatches records metadata.annotations merge patches
+	// (template revision bookkeeping), kept apart from finalizerPatches.
+	annotationPatches []map[string]any
 }
 
 func newMachineSetTestController(t *testing.T) (*Controller, *machineSetTestServer) {
@@ -65,11 +68,16 @@ func newMachineSetTestController(t *testing.T) (*Controller, *machineSetTestServ
 			}
 			var body struct {
 				Metadata struct {
-					Finalizers []string `json:"finalizers"`
+					Finalizers  []string       `json:"finalizers"`
+					Annotations map[string]any `json:"annotations"`
 				} `json:"metadata"`
 			}
 			_ = json.NewDecoder(r.Body).Decode(&body)
-			fake.finalizerPatches = append(fake.finalizerPatches, body.Metadata.Finalizers)
+			if body.Metadata.Annotations != nil {
+				fake.annotationPatches = append(fake.annotationPatches, body.Metadata.Annotations)
+			} else {
+				fake.finalizerPatches = append(fake.finalizerPatches, body.Metadata.Finalizers)
+			}
 			w.WriteHeader(http.StatusOK)
 		default:
 			http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusNotFound)
@@ -542,5 +550,115 @@ func TestResolveMaxUnavailableParsesPercent(t *testing.T) {
 func TestResolveMaxUnavailableRejectsInvalid(t *testing.T) {
 	if _, err := resolveMaxUnavailable("not-a-number", 10); err == nil {
 		t.Fatal("expected an error for a malformed maxUnavailable")
+	}
+}
+
+// TestMachineSetTemplateRevisionPatchFirstSighting: a MachineSet with no
+// revision annotations gets the live template recorded as "current" and no
+// "previous" keys at all.
+func TestMachineSetTemplateRevisionPatchFirstSighting(t *testing.T) {
+	ms := testMachineSet(1, "", "")
+	hash := machineSetTemplateHash(ms.Spec.Template)
+	patch, ok := machineSetTemplateRevisionPatch(ms, hash)
+	if !ok {
+		t.Fatal("expected a patch on first sighting")
+	}
+	ann := patch["metadata"].(map[string]any)["annotations"].(map[string]any)
+	if ann[model.AnnotationMachineSetCurrentTemplateHash] != hash {
+		t.Errorf("current hash = %v, want %s", ann[model.AnnotationMachineSetCurrentTemplateHash], hash)
+	}
+	var got model.MachineTemplate
+	if err := json.Unmarshal([]byte(ann[model.AnnotationMachineSetCurrentTemplate].(string)), &got); err != nil || machineSetTemplateHash(got) != hash {
+		t.Errorf("current template does not round-trip to hash %s: %v", hash, err)
+	}
+	if _, present := ann[model.AnnotationMachineSetPreviousTemplateHash]; present {
+		t.Errorf("no previous revision should be written on first sighting, got %v", ann)
+	}
+}
+
+// TestMachineSetTemplateRevisionPatchNoopWhenInStep: once the recorded
+// hash matches the live template (every steady-state tick, and right
+// after a kaironctl rollback), nothing is patched.
+func TestMachineSetTemplateRevisionPatchNoopWhenInStep(t *testing.T) {
+	ms := testMachineSet(1, "", "")
+	hash := machineSetTemplateHash(ms.Spec.Template)
+	ms.Metadata.Annotations = map[string]string{model.AnnotationMachineSetCurrentTemplateHash: hash}
+	if patch, ok := machineSetTemplateRevisionPatch(ms, hash); ok {
+		t.Fatalf("expected no patch, got %v", patch)
+	}
+}
+
+// TestMachineSetTemplateRevisionPatchShiftsCurrentToPrevious: a template
+// change moves the recorded "current" pair to "previous" verbatim and
+// records the live template as the new "current".
+func TestMachineSetTemplateRevisionPatchShiftsCurrentToPrevious(t *testing.T) {
+	old := testMachineSet(1, "", "")
+	oldHash := machineSetTemplateHash(old.Spec.Template)
+	oldBody, _ := json.Marshal(old.Spec.Template)
+
+	ms := testMachineSet(1, "", "")
+	ms.Spec.Template.Spec.Resources.CPU = "2"
+	ms.Metadata.Annotations = map[string]string{
+		model.AnnotationMachineSetCurrentTemplateHash: oldHash,
+		model.AnnotationMachineSetCurrentTemplate:     string(oldBody),
+	}
+	hash := machineSetTemplateHash(ms.Spec.Template)
+	patch, ok := machineSetTemplateRevisionPatch(ms, hash)
+	if !ok {
+		t.Fatal("expected a patch after a template change")
+	}
+	ann := patch["metadata"].(map[string]any)["annotations"].(map[string]any)
+	if ann[model.AnnotationMachineSetPreviousTemplateHash] != oldHash || ann[model.AnnotationMachineSetPreviousTemplate] != string(oldBody) {
+		t.Errorf("previous = (%v, %v), want (%s, %s)", ann[model.AnnotationMachineSetPreviousTemplateHash], ann[model.AnnotationMachineSetPreviousTemplate], oldHash, oldBody)
+	}
+	if ann[model.AnnotationMachineSetCurrentTemplateHash] != hash {
+		t.Errorf("current hash = %v, want %s", ann[model.AnnotationMachineSetCurrentTemplateHash], hash)
+	}
+}
+
+// TestMachineSetTemplateRevisionPatchOversizedTemplateHashOnly: a template
+// too large for an annotation is recorded by hash only, and its body
+// annotation is explicitly deleted (JSON null) rather than left stale.
+func TestMachineSetTemplateRevisionPatchOversizedTemplateHashOnly(t *testing.T) {
+	ms := testMachineSet(1, "", "")
+	ms.Spec.Template.Labels = map[string]string{"big": strings.Repeat("x", model.MaxMachineSetTemplateAnnotationBytes)}
+	ms.Metadata.Annotations = map[string]string{
+		model.AnnotationMachineSetCurrentTemplateHash: "aaaaaaaaaaaa",
+		model.AnnotationMachineSetCurrentTemplate:     `{"spec":{}}`,
+	}
+	hash := machineSetTemplateHash(ms.Spec.Template)
+	patch, _ := machineSetTemplateRevisionPatch(ms, hash)
+	b, _ := json.Marshal(patch)
+	var decoded struct {
+		Metadata struct {
+			Annotations map[string]*string `json:"annotations"`
+		} `json:"metadata"`
+	}
+	_ = json.Unmarshal(b, &decoded)
+	ann := decoded.Metadata.Annotations
+	if v, present := ann[model.AnnotationMachineSetCurrentTemplate]; !present || v != nil {
+		t.Errorf("oversized current template should be sent as null (delete), got present=%v value=%v", present, v)
+	}
+	if v := ann[model.AnnotationMachineSetPreviousTemplate]; v == nil || *v != `{"spec":{}}` {
+		t.Errorf("previous template should carry the old recorded body, got %v", v)
+	}
+}
+
+// TestReconcileMachineSetRecordsTemplateRevision drives the whole
+// reconcile: the annotation patch is sent even while paused (it creates
+// and deletes nothing).
+func TestReconcileMachineSetRecordsTemplateRevision(t *testing.T) {
+	ctl, fake := newMachineSetTestController(t)
+	ms := testMachineSet(1, "", "")
+	ms.Spec.Paused = true
+	ms.Metadata.Finalizers = []string{model.FinalizerMachineSet}
+	if _, err := ctl.reconcileMachineSet(context.Background(), ms, nil); err != nil {
+		t.Fatalf("reconcileMachineSet: %v", err)
+	}
+	if len(fake.annotationPatches) != 1 || fake.annotationPatches[0][model.AnnotationMachineSetCurrentTemplateHash] != machineSetTemplateHash(ms.Spec.Template) {
+		t.Fatalf("expected one revision annotation patch, got %v", fake.annotationPatches)
+	}
+	if len(fake.created) != 0 {
+		t.Fatalf("paused MachineSet must not create replicas, got %d", len(fake.created))
 	}
 }
