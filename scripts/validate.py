@@ -102,8 +102,16 @@ try:
     for ver in machineset["spec"]["versions"]:
         if ver.get("subresources", {}).get("scale") != want_scale:
             fail(f"MachineSet {ver['name']} must expose the scale subresource {want_scale}")
-    if "selector" not in machineset["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["status"]["properties"]:
+    ms_status = machineset["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["status"]["properties"]
+    if "selector" not in ms_status:
         fail("MachineSet.status.selector missing (scale subresource labelSelectorPath)")
+    # observedGeneration is written by reconcileMachineSet on every
+    # successful status patch (docs/guides/machine-sets.md). Without this
+    # field in the CRD schema, the API server prunes the value.
+    for ver in machineset["spec"]["versions"]:
+        props = ver["schema"]["openAPIV3Schema"]["properties"]["status"]["properties"]
+        if "observedGeneration" not in props:
+            fail(f"MachineSet {ver['name']} status.observedGeneration missing")
     # spec.powerState: Hibernated (docs/guides/machine-hibernate.md): the
     # Hibernated condition is visible in `kubectl get machines` on every
     # served version, and Hibernated stays in the powerState enum.
