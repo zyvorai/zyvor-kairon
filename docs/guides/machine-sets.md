@@ -188,3 +188,21 @@ replaced (not edited in place) by the rollout logic above.
 - **Replica names are randomly suffixed** (`<machineset-name>-<8 hex
   chars>`), not sequential/predictable -- don't script against a specific
   replica's name surviving a rollout.
+
+## Template history
+
+Each Machine created by a MachineSet carries the label
+`kairon.zyvor.dev/machineset-template-hash` (the first 12 characters of the
+SHA-256 of `spec.template`). When the template changes, new replicas get a
+new hash and old ones are rolled out according to the strategy.
+
+To see which hashes are currently in use:
+
+```bash
+kubectl get machines -l kairon.zyvor.dev/machineset=NAME \
+  -L kairon.zyvor.dev/machineset-template-hash
+```
+
+A full `kaironctl machineset history` command that records previous hashes
+in an annotation is planned; today the label on each Machine is the source
+of truth.
