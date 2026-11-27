@@ -18,6 +18,10 @@ const KindMachineSet = "MachineSet"
 // a rolling update can tell "current" replicas from ones still pending
 // replacement.
 const (
+	// AnnotationMachineSetPrevHash stores the previous template hash
+	// so operators can see the last revision without inspecting every Machine.
+	AnnotationMachineSetPrevHash = "kairon.zyvor.dev/machineset-prev-hash"
+
 	LabelMachineSet             = "kairon.zyvor.dev/machineset"
 	LabelMachineSetTemplateHash = "kairon.zyvor.dev/machineset-template-hash"
 )
