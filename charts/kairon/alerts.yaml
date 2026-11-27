@@ -251,3 +251,28 @@ groups:
             * on (namespace, machine) group_left (machineset)
             max by (namespace, machine, machineset) (kairon_machineset_machine_info)
           )
+
+  # Recording rule (not an alert) for average VM-edge flow RTT per
+  # MachineSet. kairon_net_flow_rtt_seconds is labelled only
+  # namespace/machine -- kairon-node does not know MachineSet
+  # membership, and a machineset (or process) label on the histogram
+  # would be invented or high-cardinality. Join through
+  # kairon_machineset_machine_info the same way kairon-autoscaling
+  # does. Sample-weighted: histogram _sum / _count over 5m, then
+  # summed across the set's replicas. Machines not in a MachineSet
+  # are omitted. See docs/ebpf-edge.md and docs/guides/observability.md.
+  - name: kairon-network
+    rules:
+      - record: kairon:machineset_flow_rtt_seconds:avg
+        expr: |
+          sum by (namespace, machineset) (
+            max by (namespace, machine) (rate(kairon_net_flow_rtt_seconds_sum[5m]))
+            * on (namespace, machine) group_left (machineset)
+            max by (namespace, machine, machineset) (kairon_machineset_machine_info)
+          )
+          /
+          sum by (namespace, machineset) (
+            max by (namespace, machine) (rate(kairon_net_flow_rtt_seconds_count[5m]))
+            * on (namespace, machine) group_left (machineset)
+            max by (namespace, machine, machineset) (kairon_machineset_machine_info)
+          )

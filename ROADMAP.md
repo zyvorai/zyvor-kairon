@@ -115,6 +115,16 @@ See [`docs/network-fabric.md`](docs/network-fabric.md).
 - [x] **N6** Opt-in Cilium cluster-network attach via `CiliumExternalWorkload` (`network.ciliumAttach.enabled`, `spec.network.ciliumAttach`) — raw REST, no Cilium Go SDK. Multus stays non-primary.
 - [x] **N7** Opt-in `MachineNetworkPolicy.spec.cilium.sync` → namespaced `CiliumNetworkPolicy`, plus `kaironctl network status`.
 
+Remaining eBPF / dataplane gaps (Kairon already consumes what is emitted; it does not invent process or RTT data, and it does not load BPF):
+
+- [ ] **FluxVM / PacketWolf emit process and latency on existing dumps.** Enrich `GET /v1/vms/{id}/network/flows` and `…/drops` (and optionally `…/stats`) with the field contract in [`docs/ebpf-fluxvm-integration.md`](docs/ebpf-fluxvm-integration.md). The decoder, `kaironctl network`, Network panel process badge, `kairon_net_flow_rtt_seconds`, and `kairon_net_flows_attributed_total` already consume those fields when present.
+- [ ] **Optional `Attributor` in `internal/fluxvm`**, wired as `ebpfedge.Chain`, only if the dataplane exposes a lookup that is not already on the dump. PacketWolf stays out of this repository.
+- [ ] **Guest-vs-host PID from the guest agent** when the host only sees a vhost thread. Scope must be set; do not overwrite a guest PID with a host one.
+- [ ] **Agree `vectors.json` with FluxVM's BPF in CI.** The userspace engine pins 17 cases; nothing in this repo runs them against `fluxvm_tc.bpf.o` yet.
+- [ ] **Reachable L7 and XDP policy fields** on `Machine` / `MachineNetworkPolicy`. `Decide` already models `allowL7` and an XDP-eligible drop flag.
+- [ ] **Two-host conntrack restore** on a real pair of nodes. Unit tests and FluxVM's restore path exist; a two-host run is still missing.
+- [ ] **Do not put `machineset`, PID or comm on VM-edge Prometheus series.** Average RTT per MachineSet is the recording rule `kairon:machineset_flow_rtt_seconds:avg`, which joins `kairon_net_flow_rtt_seconds{namespace,machine}` to `kairon_machineset_machine_info`. A `machineset` label on the histogram is not added: kairon-node does not know MachineSet membership.
+
 ## v0.4 — FluxVM live-migration backend
 
 - [x] implement the Kairon migration adapter in FluxVM or a companion host service (`cmd/kairon-migration-adapter-fluxvm`)
