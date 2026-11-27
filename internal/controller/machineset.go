@@ -183,6 +183,40 @@ func (c *Controller) reconcileMachineSet(ctx context.Context, ms model.MachineSe
 		strategy = "RollingUpdate"
 	}
 	hash := machineSetTemplateHash(ms.Spec.Template)
+	// Record the previous template hash when it changes so
+	// `kaironctl machineset history` and a future rollback can inspect it.
+	prev := ""
+	if ms.Metadata.Annotations != nil {
+		prev = ms.Metadata.Annotations["kairon.zyvor.dev/previous-template-hash"]
+	}
+	currentAnn := ""
+	if ms.Metadata.Annotations != nil {
+		currentAnn = ms.Metadata.Annotations["kairon.zyvor.dev/current-template-hash"]
+	}
+	if currentAnn != "" && currentAnn != hash && prev != currentAnn {
+		anns := map[string]string{}
+		if ms.Metadata.Annotations != nil {
+			for k, v := range ms.Metadata.Annotations {
+				anns[k] = v
+			}
+		}
+		anns["kairon.zyvor.dev/previous-template-hash"] = currentAnn
+		anns["kairon.zyvor.dev/current-template-hash"] = hash
+		if err := c.Kube.PatchMachineSet(ctx, ms.Namespace(), ms.Metadata.Name, map[string]any{"metadata": map[string]any{"annotations": anns}}); err != nil {
+			return status, fmt.Errorf("record previous template hash: %w", err)
+		}
+	} else if currentAnn == "" {
+		anns := map[string]string{}
+		if ms.Metadata.Annotations != nil {
+			for k, v := range ms.Metadata.Annotations {
+				anns[k] = v
+			}
+		}
+		anns["kairon.zyvor.dev/current-template-hash"] = hash
+		if err := c.Kube.PatchMachineSet(ctx, ms.Namespace(), ms.Metadata.Name, map[string]any{"metadata": map[string]any{"annotations": anns}}); err != nil {
+			return status, fmt.Errorf("record current template hash: %w", err)
+		}
+	}
 	owned := ownedMachines(ms, machines)
 
 	var current, outdated []model.Machine
