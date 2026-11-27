@@ -268,6 +268,7 @@ func (c *Controller) reconcileMachineSet(ctx context.Context, ms model.MachineSe
 	}
 
 	status := model.MachineSetStatus{
+		ObservedGeneration: ms.Metadata.Generation,
 		Replicas:        len(owned),
 		ReadyReplicas:   readyCurrent,
 		UpdatedReplicas: len(current),
