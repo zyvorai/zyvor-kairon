@@ -111,6 +111,12 @@ tick from this same pass -- `readyReplicas` counts current-template
 replicas whose `status.phase` is `Running`; `updatedReplicas` counts every
 current-template replica regardless of phase.
 
+`status.observedGeneration` is set to `metadata.generation` on every
+successful status write, including while `spec.paused` is true (pause
+only skips creates and deletes). When it equals `metadata.generation`,
+the replica counts, conditions and message reflect the current spec.
+See also [machineset-observed-generation.md](machineset-observed-generation.md).
+
 ## Metrics and alerts
 
 `kairon-controller`'s `/metrics` also exposes
