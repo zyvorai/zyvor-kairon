@@ -351,6 +351,29 @@ func TestObserveEdgeDropsBoundsReportedSeries(t *testing.T) {
 	}
 }
 
+func TestObserveEdgeFlowsFeedsRTTAndAttribution(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/vms/vm-1/network/flows" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"items":[{"identity":1,"proto":"tcp","srcIP":"10.0.0.8","dstIP":"1.1.1.1","srcPort":40000,"dstPort":443,"rttUs":1400,"process":{"source":"packetwolf","scope":"guest","comm":"nginx","pid":142}},{"identity":1,"proto":"udp","srcIP":"10.0.0.8","dstIP":"9.9.9.9","srcPort":53,"dstPort":53}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer s.Close()
+	rec := metrics.NewNodeRecorder()
+	a := &Agent{Flux: fluxvm.New(s.URL, ""), Metrics: rec, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	m := model.Machine{Metadata: model.ObjectMeta{Namespace: "demo", Name: "web"}}
+	a.observeEdgeDrops(context.Background(), m, "vm-1")
+	a.observeEdgeDrops(context.Background(), m, "vm-1")
+	if got := testutil.ToFloat64(rec.Edge().FlowsAttributed.WithLabelValues("demo", "web", "packetwolf")); got != 1 {
+		t.Fatalf("packetwolf attributed = %v, want 1 (no double count)", got)
+	}
+	if got := testutil.ToFloat64(rec.Edge().FlowsAttributed.WithLabelValues("demo", "web", "none")); got != 1 {
+		t.Fatalf("unattributed = %v, want 1", got)
+	}
+}
+
 func TestContainerStatusProjectsExitCodeAndKeepsPreviousOnError(t *testing.T) {
 	var fail bool
 	fs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

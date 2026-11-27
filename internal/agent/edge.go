@@ -236,6 +236,9 @@ func (a *Agent) observeEdgeDrops(ctx context.Context, m model.Machine, runtimeID
 	if rec == nil && a.Kube == nil {
 		return
 	}
+	// Always poll flows so RTT / attribution metrics are recorded even
+	// when the drops endpoint is empty or fails this tick.
+	flows := a.edgeFlows(ctx, m, runtimeID)
 	raw, err := a.Flux.AttributedDrops(ctx, runtimeID, edgeDropLimit)
 	if err != nil {
 		a.log().Debug("edge drops read failed", "machine", m.Metadata.Name, "error", err)
@@ -274,7 +277,7 @@ func (a *Agent) observeEdgeDrops(ctx context.Context, m model.Machine, runtimeID
 		}
 		drops = append(drops, agentplane.Drop{Reason: strings.ToLower(l.reason), Dst: l.dst, Count: int(delta)})
 	}
-	a.emitEdgeEvents(ctx, m, drops, a.edgeFlows(ctx, runtimeID))
+	a.emitEdgeEvents(ctx, m, drops, flows)
 }
 
 func (a *Agent) log() *slog.Logger {

@@ -16,7 +16,7 @@ type RestoreStore struct {
 	mu   sync.Mutex
 	last map[string]ebpfedge.RestoreResult
 	// Observe, when set, is called with every recorded restore (metrics).
-	Observe func(restored int, blackholeMs int64)
+	Observe func(namespace, machine string, restored int, blackholeMs int64)
 }
 
 // NewRestoreStore returns an empty store.
@@ -41,7 +41,7 @@ func (s *RestoreStore) Put(namespace, machine string, res ebpfedge.RestoreResult
 	observe := s.Observe
 	s.mu.Unlock()
 	if observe != nil {
-		observe(res.Restored, res.BlackholeWindowMs)
+		observe(namespace, machine, res.Restored, res.BlackholeWindowMs)
 	}
 }
 

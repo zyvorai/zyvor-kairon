@@ -31,11 +31,14 @@ func TestRestoreStoreRoundTrip(t *testing.T) {
 
 func TestRestoreStoreObserve(t *testing.T) {
 	s := NewRestoreStore()
+	var ns, name string
 	var restored int
 	var window int64
-	s.Observe = func(n int, ms int64) { restored, window = n, ms }
+	s.Observe = func(namespace, machine string, n int, ms int64) {
+		ns, name, restored, window = namespace, machine, n, ms
+	}
 	s.Put("demo", "web", ebpfedge.RestoreResult{Restored: 7, BlackholeWindowMs: 12})
-	if restored != 7 || window != 12 {
-		t.Fatalf("observed %d/%d", restored, window)
+	if ns != "demo" || name != "web" || restored != 7 || window != 12 {
+		t.Fatalf("observed %s/%s %d/%d", ns, name, restored, window)
 	}
 }
