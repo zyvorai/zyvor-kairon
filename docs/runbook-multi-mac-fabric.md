@@ -24,6 +24,28 @@ Mac Fabric has only run against simulated Mac Nodes
   `hostsPerNode` Macs, and a cluster at most 63 MacNetworks
   ([guide limits](guides/mac-fabric.md#real-limits-today)).
 
+## Still to run on physical Macs
+
+Nothing below has run on real Macs yet; `lab-mac-fabric-hw.sh` has only
+been exercised with stubbed `kubectl` and `ssh`. In order:
+
+1. On one Mac, check the single-Mac path first:
+   `KUBECONFIG=... scripts/macos-e2e.sh /path/to/arm64.raw`. The Mac becomes
+   a Node, and a `vz` Machine boots on it and answers SSH.
+2. On every Mac, run `scripts/macos-node.sh install --bin "$PWD/bin/kairon-node"`,
+   then `scripts/macos-node.sh status`. From the workstation,
+   `kaironctl mac nodes` should list each Mac as Ready.
+3. From the workstation, with the Macs cabled and at least one M3+ Mac on
+   macOS 15+, run `scripts/lab-mac-fabric-hw.sh --mac=NODE=USER@HOST ...
+   --image=PATH --fabric=NAME`. One invocation runs the four rows in order:
+   `discovery`, `boot`, `network` (Thunderbolt) and `nested`.
+4. When no row fails, rerun the same command with `--write-compat` and
+   commit `docs/COMPATIBILITY.md`, adding the chips and macOS versions to
+   the notes. Tick the four parts of ROADMAP's multi-Mac item. RDMA and
+   macOS guests stay open.
+
+The Steps section below gives the full setup.
+
 ## Steps
 
 1. **Prerequisites.** You need two or more Apple-silicon Macs and a cluster

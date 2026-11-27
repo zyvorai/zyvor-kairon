@@ -203,6 +203,8 @@ or `gh variable set` command per input that is still unset, with no values.
 It takes `--profile=core|full` (default `full`), `--repo=OWNER/NAME`,
 `--all` and `--offline`. It reads the same input table as
 `migration-matrix.sh` and asks GitHub only for names, read-only.
+`make lab-secrets-checklist` runs it; pass flags through `CHECKLIST_FLAGS`,
+for example `make lab-secrets-checklist CHECKLIST_FLAGS="--profile=core --offline"`.
 
 **The matrix will not start without these:**
 

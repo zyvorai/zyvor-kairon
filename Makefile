@@ -10,7 +10,7 @@ LDFLAGS := -s -w -X main.version=$(VERSION)
 COVERAGE_THRESHOLD ?= 50
 
 .PHONY: rbac-bundle all fmt fmt-check vet lint test test-race cover cover-check build clean validate rbac-coverage helm-check docker-build smoke krew-package krew-index stdlib-boundary license-headers test-macos-node \
-	migration-env migration-preflight migration-dry-run migration-matrix migration-audit-ci
+	migration-env migration-preflight migration-dry-run migration-matrix migration-audit-ci lab-secrets-checklist
 all: fmt-check vet lint test-race cover-check build validate rbac-coverage helm-check smoke stdlib-boundary
 
 stdlib-boundary:
@@ -157,6 +157,12 @@ migration-dry-run:
 
 migration-matrix: build
 	./scripts/migration-matrix.sh run --profile=$(PROFILE) $(MATRIX_ENV) $(MATRIX_FLAGS)
+
+# gh commands (no values) for the nightly inputs the repository still lacks.
+# CHECKLIST_FLAGS passes through, e.g. CHECKLIST_FLAGS="--profile=core --offline".
+CHECKLIST_FLAGS ?=
+lab-secrets-checklist:
+	./scripts/lab-secrets-checklist.sh $(CHECKLIST_FLAGS)
 
 migration-audit-ci:
 	./scripts/migration-matrix.sh audit-ci
