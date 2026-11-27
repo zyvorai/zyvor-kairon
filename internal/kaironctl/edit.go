@@ -11,11 +11,12 @@ import (
 	"strings"
 
 	"github.com/zyvorai/kairon/internal/kube"
+	"github.com/zyvorai/kairon/internal/model"
 )
 
 func cmdEdit(ctx context.Context, kc *kube.Client, args []string) {
 	if len(args) < 2 {
-		fatal(fmt.Errorf("usage: kaironctl edit migrationpolicy NAME [--bandwidth-mbps N] [--max-concurrent N] [--strategy static|adaptive] [tuning flags] | edit snapshotschedule NAME [--suspend true|false] [--interval-seconds N] [--keep-last N] [--starting-deadline-seconds N] | edit quota NAME [--max-machines N] [--max-total-cpu N] [--max-total-memory SIZE] | edit budget NAME [--selector k=v] [--min-available X] [--max-unavailable X] | edit machine NAME --priority N | edit machineset NAME [--strategy RollingUpdate|Recreate] [--max-unavailable X] | edit networkpolicy NAME [--machine-name X] [--selector k=v] [--allow-cidr CIDR] [--deny-cidr CIDR] [--allow-port proto/port] [--default-allow BOOL] [--audit-mode BOOL] [--max-egress-mbps N] [--max-egress-pps N] | edit securitygroup NAME [--group-label k=v] [--priority N] [--description TEXT] [policy flags as above]"))
+		fatal(fmt.Errorf("usage: kaironctl edit migrationpolicy NAME [--bandwidth-mbps N] [--max-concurrent N] [--strategy static|adaptive] [tuning flags] | edit snapshotschedule NAME [--suspend true|false] [--interval-seconds N] [--keep-last N] [--starting-deadline-seconds N] | edit quota NAME [--max-machines N] [--max-total-cpu N] [--max-total-memory SIZE] | edit budget NAME [--selector k=v] [--min-available X] [--max-unavailable X] | edit machine NAME [--priority N] [--hibernate=true|false] | edit machineset NAME [--strategy RollingUpdate|Recreate] [--max-unavailable X] | edit networkpolicy NAME [--machine-name X] [--selector k=v] [--allow-cidr CIDR] [--deny-cidr CIDR] [--allow-port proto/port] [--default-allow BOOL] [--audit-mode BOOL] [--max-egress-mbps N] [--max-egress-pps N] | edit securitygroup NAME [--group-label k=v] [--priority N] [--description TEXT] [policy flags as above]"))
 	}
 	kind, name := strings.ToLower(args[0]), args[1]
 	switch kind {
@@ -49,25 +50,73 @@ func cmdEdit(ctx context.Context, kc *kube.Client, args []string) {
 // (image, resources, network, ...) stays create-time-only through this
 // CLI, same as before `edit machine` existed -- kubectl apply/YAML is
 // still the only way to change those, exactly like the fields `create`
-// itself doesn't expose flags for.
+// itself doesn't expose flags for. --hibernate=true|false is a boolean
+// view of spec.powerState: Hibernated (see hibernatePowerState and
+// docs/guides/machine-hibernate.md), not a second field.
 func cmdEditMachine(ctx context.Context, kc *kube.Client, name string, args []string) {
 	fs := flag.NewFlagSet("edit machine", flag.ExitOnError)
 	ns := fs.String("namespace", "default", "namespace")
 	priority := fs.Int("priority", 0, "new scheduling priority (higher wins a scarce reconcile-tick race for node capacity or MachineQuota headroom; see kaironctl create --priority)")
+	hibernate := fs.Bool("hibernate", false, "true sets powerState Hibernated (save RAM and device state, free the node); false resumes a hibernated Machine (powerState Running)")
 	_ = fs.Parse(args)
 	spec := map[string]any{}
+	hibernateSet := false
 	fs.Visit(func(f *flag.Flag) {
-		if f.Name == "priority" {
+		switch f.Name {
+		case "priority":
 			spec["priority"] = *priority
+		case "hibernate":
+			hibernateSet = true
 		}
 	})
-	if len(spec) == 0 {
-		fatal(fmt.Errorf("nothing to edit: pass --priority"))
+	if !hibernateSet && len(spec) == 0 {
+		fatal(fmt.Errorf("nothing to edit: pass --priority or --hibernate"))
 	}
-	if err := kc.PatchMachine(ctx, *ns, name, map[string]any{"spec": spec}); err != nil {
+	patch := map[string]any{"spec": spec}
+	if hibernateSet {
+		m, err := kc.GetMachine(ctx, *ns, name)
+		if err != nil {
+			fatal(err)
+		}
+		state, err := hibernatePowerState(m.DesiredPowerState(), *hibernate)
+		if err != nil {
+			fatal(fmt.Errorf("machine/%s: %w", name, err))
+		}
+		if state != "" {
+			spec["powerState"] = state
+			// Pin the resourceVersion read above so a power change made
+			// by someone else in between fails with 409 instead of being
+			// overwritten (e.g. resuming a Machine just set Stopped).
+			patch["metadata"] = map[string]any{"resourceVersion": m.Metadata.ResourceVersion}
+		}
+	}
+	if len(spec) == 0 {
+		okf("machine/%s unchanged", name)
+		return
+	}
+	if err := kc.PatchMachine(ctx, *ns, name, patch); err != nil {
 		fatal(err)
 	}
 	okf("machine/%s updated", name)
+}
+
+// hibernatePowerState maps `edit machine --hibernate=want` onto the
+// powerState to write given the Machine's current desired powerState.
+// "" means nothing to change. --hibernate=false only resumes a Machine
+// that is Hibernated, so it never starts one that was Stopped or Halted
+// on purpose; --hibernate=true refuses Stopped/Halted because there is
+// no runtime to save (kairon-node would report NoRuntime/HibernateRefused).
+func hibernatePowerState(current string, want bool) (string, error) {
+	switch {
+	case want && current == model.PowerStateHibernated, !want && current != model.PowerStateHibernated:
+		return "", nil
+	case want && (current == "Stopped" || current == "Halted"):
+		return "", fmt.Errorf("powerState is %s; hibernate needs a running runtime (kaironctl start first)", current)
+	case want:
+		return model.PowerStateHibernated, nil
+	default:
+		return "Running", nil
+	}
 }
 
 // cmdEditMachineSet patches only the MachineSetSpec rollout knobs an

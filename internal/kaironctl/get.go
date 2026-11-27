@@ -49,9 +49,9 @@ func cmdGet(ctx context.Context, kc *kube.Client, args []string) {
 			fatal(err)
 		}
 		items = selectorFilter(items, selector, func(m model.Machine) map[string]string { return m.Metadata.Labels })
-		fmt.Printf("NAME\tNODE\tPHASE\tCPU\tMEMORY\tIP\n")
+		fmt.Printf("NAME\tNODE\tPHASE\tCPU\tMEMORY\tIP\tHIBERNATED\n")
 		for _, m := range items {
-			fmt.Printf("%s\t%s\t%s\t%s\t%s\t%s\n", m.Metadata.Name, dash(m.Spec.NodeName), style.Phase(os.Stdout, m.Status.Phase), m.Spec.Resources.CPU, m.Spec.Resources.Memory, dash(m.Status.GuestIP))
+			fmt.Printf("%s\t%s\t%s\t%s\t%s\t%s\t%s\n", m.Metadata.Name, dash(m.Spec.NodeName), style.Phase(os.Stdout, m.Status.Phase), m.Spec.Resources.CPU, m.Spec.Resources.Memory, dash(m.Status.GuestIP), hibernatedColumn(m))
 		}
 	case "migration", "migrations", "machinemigrations":
 		items, err := kc.ListMachineMigrationsNamespace(ctx, ns)
@@ -432,4 +432,13 @@ func printPreferences(rows []preferenceRow) {
 	for _, r := range rows {
 		fmt.Printf("%s\t%s\t%s\t%s\t%t\t%t\t%t\n", r.name, dash(r.spec.GuestOS), dash(r.spec.Backend), dash(r.spec.Architecture), r.spec.SecureBoot, r.spec.TPM, r.spec.GuestAgent)
 	}
+}
+
+// hibernatedColumn is the HIBERNATED cell of `get machines`: the status of
+// the Hibernated condition kairon-node sets (True while the guest state is
+// saved, False after a resume or failed hibernate), "-" if it never
+// hibernated. Mirrors the CRD's Hibernated printer column.
+func hibernatedColumn(m model.Machine) string {
+	c, _ := model.FindCondition(m.Status.Conditions, "Hibernated")
+	return dash(c.Status)
 }

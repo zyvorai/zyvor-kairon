@@ -163,6 +163,7 @@ kaironctl claim POOL [NAME] [--label k=v] [--retain] [--ttl 1h] [--allow-fqdn H]
 kaironctl fork MACHINE [--count N] [--prefix P] [--wait 60s | --no-wait]   # see guides/machine-fork.md
 kaironctl start|stop|pause|resume|halt|hibernate MACHINE [--dry-run]   # hibernate: guides/machine-hibernate.md
 kaironctl start MACHINE --paused                          # boot, then pause at once
+kaironctl edit machine NAME --hibernate=true|false        # powerState Hibernated, or resume a hibernated Machine
 kaironctl freeze MACHINE [--unfreeze-timeout 5m] [--no-wait]   # guest filesystems; kairon-node auto-thaws
 kaironctl unfreeze MACHINE [--no-wait]
 kaironctl stop|halt MACHINE [--grace-period N | --force]   # N seconds for the guest to power off first (guest agent)

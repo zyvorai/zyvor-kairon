@@ -3693,6 +3693,12 @@ spec:
     - name: IP
       type: string
       jsonPath: .status.guestIP
+    # Hibernated condition status (internal/agent/hibernation.go): True while
+    # spec.powerState: Hibernated has saved the guest state, False after a
+    # resume or a failed hibernate, empty when the Machine never hibernated.
+    - name: Hibernated
+      type: string
+      jsonPath: .status.conditions[?(@.type=="Hibernated")].status
     - name: Message
       type: string
       jsonPath: .status.message
@@ -5481,6 +5487,28 @@ spec:
                 type: integer
               selector:
                 type: string
+              # ScaleDownBlocked (MachineDisruptionBudget gating of
+              # scale-down, internal/controller/machineset_mdb.go).
+              conditions:
+                type: array
+                items:
+                  type: object
+                  required:
+                  - type
+                  - status
+                  - lastTransitionTime
+                  properties:
+                    type:
+                      type: string
+                    status:
+                      type: string
+                    reason:
+                      type: string
+                    message:
+                      type: string
+                    lastTransitionTime:
+                      type: string
+                      format: date-time
               message:
                 type: string
   - name: v1beta1

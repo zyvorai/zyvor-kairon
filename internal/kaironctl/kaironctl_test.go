@@ -1990,7 +1990,7 @@ func TestCmdGetSelectorNoMatchesPrintsHeaderOnly(t *testing.T) {
 	if strings.Contains(out, "db-1") {
 		t.Errorf("must not list the non-matching db-1 machine, got:\n%s", out)
 	}
-	if got := strings.TrimRight(out, "\n"); got != "NAME\tNODE\tPHASE\tCPU\tMEMORY\tIP" {
+	if got := strings.TrimRight(out, "\n"); got != "NAME\tNODE\tPHASE\tCPU\tMEMORY\tIP\tHIBERNATED" {
 		t.Errorf("expected only the header row, got:\n%q", out)
 	}
 }

@@ -104,6 +104,16 @@ try:
             fail(f"MachineSet {ver['name']} must expose the scale subresource {want_scale}")
     if "selector" not in machineset["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["status"]["properties"]:
         fail("MachineSet.status.selector missing (scale subresource labelSelectorPath)")
+    # spec.powerState: Hibernated (docs/guides/machine-hibernate.md): the
+    # Hibernated condition is visible in `kubectl get machines` on every
+    # served version, and Hibernated stays in the powerState enum.
+    machine = next(d for d in crds if d["metadata"]["name"] == "machines.kairon.zyvor.dev")
+    hib_path = '.status.conditions[?(@.type=="Hibernated")].status'
+    for ver in machine["spec"]["versions"]:
+        if not any(c.get("name") == "Hibernated" and c.get("jsonPath") == hib_path for c in ver.get("additionalPrinterColumns", [])):
+            fail(f"Machine {ver['name']} must have a Hibernated printer column on {hib_path}")
+    if "Hibernated" not in machine["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["spec"]["properties"]["powerState"].get("enum", []):
+        fail("Machine spec.powerState enum must include Hibernated")
     migration = next(d for d in crds if d["metadata"]["name"] == "machinemigrations.kairon.zyvor.dev")
     props = migration["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]
     if "destination" in props["spec"]["properties"]:

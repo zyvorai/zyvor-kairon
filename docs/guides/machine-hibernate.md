@@ -16,8 +16,22 @@ spec:
   powerState: Hibernated   # was Running
 ```
 
-Or `kaironctl hibernate db`, or the dashboard's **Hibernate** button. Resume with
-`powerState: Running`, `kaironctl resume db` (or `start`), or **Resume**.
+Or `kaironctl hibernate db`, `kaironctl edit machine db --hibernate=true`, or
+the dashboard's **Hibernate** button. Resume with `powerState: Running`,
+`kaironctl resume db` (or `start`), `kaironctl edit machine db --hibernate=false`,
+or **Resume**.
+
+`--hibernate` is only a boolean view of `spec.powerState`, not a second field.
+`--hibernate=false` changes nothing unless the Machine is `Hibernated`, so it
+never starts a Machine that was `Stopped` or `Halted` on purpose, and
+`--hibernate=true` refuses a `Stopped` or `Halted` Machine (no runtime to save).
+Both pin the resourceVersion they read, so a power change someone else makes in
+between fails instead of being overwritten.
+
+`kubectl get machines` has a `Hibernated` column and `kaironctl get machines` a
+`HIBERNATED` column. Both show the `Hibernated` condition: `True` while the
+state is saved, `False` after a resume or a failed hibernate, and empty (`-`)
+for a Machine that never hibernated.
 
 ## What happens
 
