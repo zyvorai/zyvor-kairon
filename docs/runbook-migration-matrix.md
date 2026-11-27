@@ -53,6 +53,43 @@ command. It exits 1 when a required input is missing, or when
 `--strict` is set and a row would be "not run". A dry-run pass does not
 mean the lab is healthy: run `preflight` without `--dry-run` for that.
 
+`make migration-dry-run` runs `scripts/migration-matrix.sh run --dry-run`
+with `PROFILE` (default `core`), `LAB_ENV` (an env file) and `MATRIX_FLAGS`:
+
+```bash
+make migration-dry-run                                   # core, inputs from the environment
+make migration-dry-run PROFILE=full LAB_ENV=~/.config/kairon/lab.env
+make migration-dry-run MATRIX_FLAGS=--strict             # also fail on any "not run" row
+```
+
+With nothing set, it prints a `MISSING` block for each of the six required
+inputs and each `core` input. Every case is then `blocked`, and make
+stops with exit status 2 (the script itself exits 1). This was checked on
+2026-11-27 with an empty environment:
+
+```text
+dry run (core: cold live live-ebpf): inputs only; no cluster, kairon-ui or SSH contact, nothing migrates
+MISSING KAIRON_HW_LAB  [GitHub var, required]
+        what:  1 acknowledges a real multi-host lab (safety gate)
+        gates: every case (the matrix refuses to start)
+        set:   gh variable set KAIRON_HW_LAB --body 1   (locally: export KAIRON_HW_LAB=1)
+...                                   (KAIRON_KUBE_URL/TOKEN/CA, KAIRON_HW_MACHINE, KAIRON_HW_TARGET_NODE,
+                                       KAIRON_UI_URL, KAIRON_UI_TOKEN, KAIRON_HW_EBPF_MACHINE)
+plan:
+  cold: blocked (required inputs missing)
+  live: blocked (required inputs missing)
+  live-ebpf: blocked (required inputs missing)
+  checks still needed against the lab: scripts/migration-matrix.sh preflight --profile=core
+preflight (core: cold live live-ebpf): NOT READY: 6 failure(s)
+would not start: set the required inputs above (MISSING ... required, or FAIL) first
+make: *** [Makefile:156: migration-dry-run] Error 1
+```
+
+Once the required inputs are set, the run exits 0. Unset optional rows
+show as `recorded "not run" (... unset)`, and the last line is
+`would run: .../hardware-migration-matrix.sh --case=...`, the exact command
+`make migration-matrix` would run.
+
 | Profile | Cases | Rows it can turn green |
 |---|---|---|
 | `core` | `cold`, `live`, `live-ebpf` | Cold migration, Live pre-copy under load, Live + eBPF dataplane (the ROADMAP item) |
@@ -209,10 +246,6 @@ row failed on 2026-10-14 (plain pre-copy with 256 MiB rewritten at about the
 link's own throughput never converged). With the inputs set, the `live` case
 will still fail on that lab until the load (`KAIRON_HW_LOAD_MIB`), the link,
 or the case's strategy changes; the adaptive rows pass on the same lab.
-
-Set values by piping, never on a command line, for example
-`printf %s "$TOKEN" | gh secret set KAIRON_UI_TOKEN` and
-`gh variable set KAIRON_HW_MACHINE --body hwm-live`.
 
 ## Proving live migration on the lab
 
