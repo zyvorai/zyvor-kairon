@@ -192,25 +192,39 @@ replaced (not edited in place) by the rollout logic above.
   `spec.replicas`; the fleet `MachineAutoscaler` can too. The MachineSet
   controller only reconciles toward whatever `spec.replicas` says. See
   [machineset-autoscaling.md](machineset-autoscaling.md).
-- **Pause is supported.** Set `spec.paused: true` (or `kaironctl edit machineset NAME --paused=true`) to freeze creates and deletes. Set it back to `false` to resume. No automatic undo yet.
+- **Pause is supported.** Set `spec.paused: true` (or `kaironctl edit machineset NAME --paused=true`) to freeze creates and deletes. Set it back to `false` to resume. To undo a template change, see [Template history and rollback](#template-history-and-rollback).
 - **Replica names are randomly suffixed** (`<machineset-name>-<8 hex
   chars>`), not sequential/predictable -- don't script against a specific
   replica's name surviving a rollout.
 
-## Template history
+## Template history and rollback
 
 Each Machine created by a MachineSet carries the label
 `kairon.zyvor.dev/machineset-template-hash` (the first 12 characters of the
 SHA-256 of `spec.template`). When the template changes, new replicas get a
 new hash and old ones are rolled out according to the strategy.
 
-To see which hashes are currently in use:
+kairon-controller also keeps one step of template history on the MachineSet
+itself: `kairon.zyvor.dev/current-template-hash` and
+`kairon.zyvor.dev/previous-template-hash`, plus a JSON copy of each template
+in `kairon.zyvor.dev/current-template` and
+`kairon.zyvor.dev/previous-template`. To see it, and to go back:
+
+```bash
+kaironctl machineset history web -n prod
+kaironctl machineset rollback web -n prod --dry-run
+kaironctl machineset rollback web -n prod
+```
+
+`rollback` restores the previous template in one `resourceVersion`-guarded
+PATCH and swaps the annotations, so running it again goes forward. The
+replicas are then replaced by the rollout described above. Details, refusals
+and limits (one step of history, 64 KiB per stored template) are in
+[machineset-history.md](machineset-history.md).
+
+To see which hashes the replicas are on:
 
 ```bash
 kubectl get machines -l kairon.zyvor.dev/machineset=NAME \
   -L kairon.zyvor.dev/machineset-template-hash
 ```
-
-A full `kaironctl machineset history` command that records previous hashes
-in an annotation is planned; today the label on each Machine is the source
-of truth.
