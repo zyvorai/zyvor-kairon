@@ -58,7 +58,8 @@ push-triggered runs succeed on the `validate` job only and leave every
 checks, and the exact list still missing for a green nightly
 (`KAIRON_HW_MACHINE` and `KAIRON_HW_TARGET_NODE` first: without them the
 nightly fails before any case) are in
-[`runbook-migration-matrix.md`](runbook-migration-matrix.md#what-is-still-missing-for-a-green-nightly).
+[`runbook-migration-matrix.md`](runbook-migration-matrix.md#what-is-still-missing-for-a-green-nightly) as a checklist with the `gh` command for each item; `make migration-dry-run` shows
+what is still unset.
 
 ## Single-host deploy smoke (manual)
 
@@ -554,6 +555,8 @@ allocate in failover order. Each guest fsyncs a generation and timestamp
 every 2s, so a restored guest reports the instant its disk returns to. The
 plans set `network.preserveIP` and DNS records for both Machines; the lab
 installs a minimal external-dns `DNSEndpoint` CRD and runs no external-dns.
+The steps for the `not run` rows on two real clusters are in
+[`runbook-cross-cluster-dr.md`](runbook-cross-cluster-dr.md).
 
 | Case | Last result | Date | Notes |
 |---|---|---|---|
