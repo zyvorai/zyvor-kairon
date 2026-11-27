@@ -1,0 +1,25 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
+#
+# Keeps at least 2 replicas of the `web` MachineSet Running while HPA or
+# KEDA scales it down (hpa-machineset.yaml / keda-scaledobject.yaml). When
+# spec.replicas drops, kairon-controller deletes not-Running replicas
+# first, then only as many Running ones as this budget allows; the rest
+# wait for a later reconcile tick and the MachineSet shows
+# ScaleDownBlocked=True (reason DisruptionBudget) plus a Warning Event.
+#
+#   kubectl get machineset web -o jsonpath='{.status.conditions}'
+#   kubectl get mdb web-min-available
+#
+# Budgets are namespaced: only Machines in this budget's namespace count.
+# Select on the label kairon-controller stamps on every replica, or on one
+# of spec.template.labels. See docs/guides/machineset-autoscaling.md.
+apiVersion: kairon.zyvor.dev/v1
+kind: MachineDisruptionBudget
+metadata:
+  name: web-min-available
+  namespace: default
+spec:
+  selector:
+    kairon.zyvor.dev/machineset: web
+  minAvailable: "2"      # or maxUnavailable: "1" -- exactly one of the two

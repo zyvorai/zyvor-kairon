@@ -119,6 +119,10 @@ type MachineSetStatus struct {
 	Selector string `json:"selector,omitempty"`
 	// Paused mirrors spec.paused.
 	Paused bool `json:"paused,omitempty"`
+	// Conditions carries ScaleDownBlocked: True (reason DisruptionBudget)
+	// while a MachineDisruptionBudget holds back a scale-down, False
+	// otherwise. No omitempty -- see Message.
+	Conditions []Condition `json:"conditions"`
 	// No omitempty -- this whole status is patched as one object
 	// (internal/kube.Client.PatchMachineSetStatus); under JSON merge-patch
 	// semantics an absent key never clears a previously-set value, so a
