@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/zyvorai/kairon/internal/kube"
 	"github.com/zyvorai/kairon/internal/model"
@@ -324,4 +325,156 @@ func TestMachineSetRollbackCommandUsesRootNamespace(t *testing.T) {
 	if len(store.patches) != 0 {
 		t.Fatalf("--dry-run sent %d PATCH(es)", len(store.patches))
 	}
+}
+
+func statusFixture(conds []model.Condition) model.MachineSet {
+	ms, _, _ := rolledOutMachineSet()
+	ms.Metadata.Generation = 5
+	ms.Spec.Replicas = 3
+	ms.Status = model.MachineSetStatus{
+		Replicas:           3,
+		ReadyReplicas:      2,
+		UpdatedReplicas:    2,
+		ObservedGeneration: 5,
+		Paused:             false,
+		Conditions:         conds,
+	}
+	return ms
+}
+
+// TestWriteMachineSetStatusListsKnownConditionsEvenWhenAbsent: the table
+// always has a row for each controller-written type, Unknown/- when missing,
+// and AGE comes from lastTransitionTime (or "-" when it was never set).
+func TestWriteMachineSetStatusListsKnownConditionsEvenWhenAbsent(t *testing.T) {
+	now := time.Date(2026, 11, 27, 12, 0, 0, 0, time.UTC)
+	ms := statusFixture(nil)
+	ms.Status.ObservedGeneration = 4
+	ms.Status.Paused = true
+	ms.Status.Message = "add machineset finalizer: conflict"
+	var out strings.Builder
+	writeMachineSetStatus(&out, ms, now)
+	got := out.String()
+	header := "web\tprod\t3\t2\t2\t5\t4\ttrue\n"
+	if !strings.Contains(got, "NAME\tNAMESPACE\tDESIRED\tREADY\tUPDATED\tGENERATION\tOBSERVED\tPAUSED\n") || !strings.Contains(got, header) {
+		t.Fatalf("header missing:\n%s", got)
+	}
+	if !strings.Contains(got, "MESSAGE\tadd machineset finalizer: conflict\n") {
+		t.Fatalf("status message missing:\n%s", got)
+	}
+	for _, typ := range []string{"Progressing", "Available", "ReplicaFailure", "Paused", "ScaleDownBlocked"} {
+		if !machineSetStatusRowHas(got, typ, "Unknown", "-", "-", "-") {
+			t.Fatalf("missing Unknown row for %s in:\n%s", typ, got)
+		}
+	}
+}
+
+func TestWriteMachineSetStatusPrintsConditionsAndAge(t *testing.T) {
+	now := time.Date(2026, 11, 27, 12, 0, 0, 0, time.UTC)
+	ms := statusFixture([]model.Condition{
+		{Type: "Progressing", Status: "True", Reason: "Updating", Message: "2 of 3 replicas updated", LastTransitionTime: now.Add(-3 * time.Minute)},
+		{Type: "Available", Status: "False", Reason: "MinimumReplicasUnavailable", Message: "2 of 3 ready", LastTransitionTime: now.Add(-3 * time.Minute)},
+		{Type: "ReplicaFailure", Status: "False", Reason: "FailedReplicas", Message: "0 failed"},
+		{Type: "Paused", Status: "False", Reason: "NotPaused", LastTransitionTime: now.Add(-2 * time.Hour)},
+		{Type: "ScaleDownBlocked", Status: "True", Reason: "DisruptionBudget", Message: "budget web-mdb would drop available below minAvailable", LastTransitionTime: now.Add(-45 * time.Second)},
+		{Type: "CustomOp", Status: "True", Reason: "Example", Message: "extra"},
+	})
+	var out strings.Builder
+	writeMachineSetStatus(&out, ms, now)
+	got := out.String()
+	if !strings.Contains(got, "web\tprod\t3\t2\t2\t5\t5\tfalse\n") {
+		t.Fatalf("header missing:\n%s", got)
+	}
+	cases := []struct{ typ, status, reason, msg, age string }{
+		{"Progressing", "True", "Updating", "2 of 3 replicas updated", "3m"},
+		{"Available", "False", "MinimumReplicasUnavailable", "2 of 3 ready", "3m"},
+		{"ReplicaFailure", "False", "FailedReplicas", "0 failed", "-"},
+		{"Paused", "False", "NotPaused", "-", "2h"},
+		{"ScaleDownBlocked", "True", "DisruptionBudget", "budget web-mdb would drop available below minAvailable", "45s"},
+		{"CustomOp", "True", "Example", "extra", "-"},
+	}
+	for _, c := range cases {
+		if !machineSetStatusRowHas(got, c.typ, c.status, c.reason, c.msg, c.age) {
+			t.Fatalf("missing row %s %s %s %s %s in:\n%s", c.typ, c.status, c.reason, c.msg, c.age, got)
+		}
+	}
+}
+
+func TestMachineSetStatusFetchesFromAPI(t *testing.T) {
+	now := time.Date(2026, 11, 27, 12, 0, 0, 0, time.UTC)
+	ms := statusFixture([]model.Condition{
+		{Type: "Available", Status: "True", Reason: "MinimumReplicasAvailable", Message: "3 ready", LastTransitionTime: now.Add(-time.Hour)},
+	})
+	ms.Status.ReadyReplicas = 3
+	ms.Status.UpdatedReplicas = 3
+	kc, _ := newMachineSetStore(t, ms)
+	var out strings.Builder
+	if err := machineSetStatus(context.Background(), kc, "prod", "web", &out, now); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "web\tprod\t3\t3\t3\t5\t5\tfalse\n") {
+		t.Fatalf("header missing:\n%s", got)
+	}
+	if !machineSetStatusRowHas(got, "Available", "True", "MinimumReplicasAvailable", "3 ready", "1h") {
+		t.Fatalf("Available row missing:\n%s", got)
+	}
+	if !machineSetStatusRowHas(got, "Progressing", "Unknown", "-", "-", "-") {
+		t.Fatalf("absent Progressing should be Unknown:\n%s", got)
+	}
+}
+
+// TestMachineSetStatusCommandUsesRootNamespace runs the real cobra tree:
+// -n prod reaches the request path used by the fake apiserver.
+func TestMachineSetStatusCommandUsesRootNamespace(t *testing.T) {
+	ms := statusFixture(nil)
+	kc, _ := newMachineSetStore(t, ms)
+	t.Setenv("KAIRON_KUBE_URL", kc.BaseURL)
+	t.Setenv("KUBECONFIG", "/nonexistent")
+	root := NewRootCmd(nil)
+	var out strings.Builder
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"machineset", "status", "web", "-n", "prod"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("execute: %v (%s)", err, out.String())
+	}
+	if !strings.Contains(out.String(), "web\tprod\t3\t2\t2\t5\t5\tfalse\n") {
+		t.Fatalf("command output = %q", out.String())
+	}
+}
+
+func TestMachineSetStatusNotFound(t *testing.T) {
+	ms := statusFixture(nil)
+	kc, _ := newMachineSetStore(t, ms)
+	var out strings.Builder
+	err := machineSetStatus(context.Background(), kc, "prod", "missing", &out, time.Time{})
+	if err == nil {
+		t.Fatalf("expected a not-found error, got output %q", out.String())
+	}
+	if out.Len() != 0 {
+		t.Fatalf("wrote output before the error: %q", out.String())
+	}
+	// Wrong namespace is the same 404: the client path includes the namespace.
+	out.Reset()
+	if err := machineSetStatus(context.Background(), kc, "other", "web", &out, time.Time{}); err == nil {
+		t.Fatalf("expected a not-found error for the wrong namespace, got output %q", out.String())
+	}
+}
+
+func machineSetStatusRowHas(out, typ, status, reason, msg, age string) bool {
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 || fields[0] != typ {
+			continue
+		}
+		// MESSAGE may contain spaces, so the last field is AGE and the
+		// middle is STATUS, REASON, then the remainder joined as MESSAGE.
+		if len(fields) < 5 {
+			return false
+		}
+		gotStatus, gotReason, gotAge := fields[1], fields[2], fields[len(fields)-1]
+		gotMsg := strings.Join(fields[3:len(fields)-1], " ")
+		return gotStatus == status && gotReason == reason && gotMsg == msg && gotAge == age
+	}
+	return false
 }

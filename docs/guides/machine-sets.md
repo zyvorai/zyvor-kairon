@@ -119,6 +119,12 @@ only skips creates and deletes). When it equals `metadata.generation`,
 the replica counts, conditions and message reflect the current spec.
 See also [machineset-observed-generation.md](machineset-observed-generation.md).
 
+`status.conditions` carries `Progressing`, `Available`, `ReplicaFailure`,
+`Paused` and `ScaleDownBlocked`. `kaironctl machineset status NAME` prints
+them in one table with the replica counts and generation; the types,
+reasons and when each is True or False are listed in
+[machineset-conditions.md](machineset-conditions.md).
+
 ## Metrics and alerts
 
 `kairon-controller`'s `/metrics` also exposes
@@ -259,6 +265,7 @@ in `kairon.zyvor.dev/current-template` and
 `kairon.zyvor.dev/previous-template`. To see it, and to go back:
 
 ```bash
+kaironctl machineset status web -n prod
 kaironctl machineset history web -n prod
 kaironctl machineset rollback web -n prod --dry-run
 kaironctl machineset rollback web -n prod

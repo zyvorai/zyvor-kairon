@@ -157,6 +157,7 @@ kaironctl scale machineset --selector k=v --replicas N
 kaironctl scale machinepool NAME --replicas N
 kaironctl machineset history NAME [-n NS]                # current/previous template hash and whether a copy is stored
 kaironctl machineset rollback NAME [-n NS] [--dry-run]   # restore the previous spec.template; see guides/machineset-history.md
+kaironctl machineset status NAME [-n NS]                  # replica counts and Progressing/Available/ReplicaFailure/Paused/ScaleDownBlocked; see guides/machineset-conditions.md
 kaironctl import ova SOURCE [--url URL] [--name NAME] [--no-repair] [--dry-run] [create flags]
                     # multi-VM OVF: prints one Machine per VM as multi-doc YAML (no create), warnings on stderr; see guides/migrate-from-vmware.md
 kaironctl import kubevirt FILE... [--namespace NS] [-o yaml|json] [--strict]   # offline; FILE - reads stdin

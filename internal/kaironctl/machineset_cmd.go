@@ -4,6 +4,8 @@
 package kaironctl
 
 import (
+	"time"
+
 	"github.com/spf13/cobra"
 
 	"github.com/zyvorai/kairon/internal/kaironctl/style"
@@ -20,7 +22,7 @@ func newMachineSetCmd(opts *Options) *cobra.Command {
 	return cmd
 }
 
-// Both subcommands take the namespace from the root -n/--namespace flag.
+// MachineSet subcommands take the namespace from the root -n/--namespace flag.
 func newMachineSetHistoryCmd(opts *Options) *cobra.Command {
 	return &cobra.Command{
 		Use:     "history NAME",
@@ -72,7 +74,7 @@ replaced by the normal rollout (strategy, maxUnavailable, maxSurge).`,
 func newMachineSetStatusCmd(opts *Options) *cobra.Command {
 	return &cobra.Command{
 		Use:     "status NAME",
-		Short:   "Print MachineSet conditions in one table",
+		Short:   "Show a MachineSet's replica counts and conditions",
 		Example: machinesetStatusExamples,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -80,8 +82,7 @@ func newMachineSetStatusCmd(opts *Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cmdMachineSetStatus(context.Background(), kc, args)
-			return nil
+			return machineSetStatus(cmd.Context(), kc, opts.Namespace, args[0], cmd.OutOrStdout(), time.Now())
 		},
 	}
 }
