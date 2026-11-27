@@ -164,6 +164,11 @@ most `maxStep` replicas at a time, and checks scale-down against
 
 ## Real limits today
 
+- **A paused MachineSet ignores the autoscaler.** HPA/KEDA can still write
+  `spec.replicas` through `/scale` while `spec.paused` is `true`, but no
+  replica is created or deleted until it is resumed; the HPA will report
+  the new desired count while the actual count stays put. See
+  [Pausing a MachineSet](machine-sets.md#pausing-a-machineset).
 - **Scale-down honors `MachineDisruptionBudget`, one tick at a time.**
   When `spec.replicas` drops (HPA, KEDA, `kubectl scale`, anyone), the
   MachineSet controller deletes replicas that are not `Running` first,

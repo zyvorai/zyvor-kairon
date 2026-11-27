@@ -185,6 +185,7 @@ func cmdCreateMachineSet(ctx context.Context, kc *kube.Client, args []string) {
 	strategy := fs.String("strategy", "", "RollingUpdate (default) | Recreate")
 	maxUnavailable := fs.String("max-unavailable", "", "integer or percentage bound on simultaneously-missing/outdated replicas during RollingUpdate; empty defaults to 1")
 	var labels stringSliceFlag
+	paused := fs.Bool("paused", false, "create the MachineSet paused: no replicas are created until `kaironctl edit machineset NAME --paused=false`")
 	fs.Var(&labels, "label", "label key=value applied to every replica this MachineSet creates, in addition to its own bookkeeping labels (repeatable)")
 	specFn, image := machineSpecFromFlags(fs)
 	co := createOutputFlags(fs)
@@ -204,6 +205,7 @@ func cmdCreateMachineSet(ctx context.Context, kc *kube.Client, args []string) {
 			Template:       model.MachineTemplate{Labels: labelMap, Spec: specFn()},
 			Strategy:       *strategy,
 			MaxUnavailable: *maxUnavailable,
+			Paused:         *paused,
 		},
 	}
 	if co.preview(ms) {

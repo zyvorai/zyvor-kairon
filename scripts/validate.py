@@ -105,6 +105,15 @@ try:
     ms_status = machineset["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["status"]["properties"]
     if "selector" not in ms_status:
         fail("MachineSet.status.selector missing (scale subresource labelSelectorPath)")
+    # spec.paused (internal/controller/machineset.go): visible in
+    # `kubectl get machinesets` on every served version, and status.paused/
+    # status.conditions declared so structural pruning doesn't drop them.
+    for ver in machineset["spec"]["versions"]:
+        if not any(c.get("name") == "Paused" and c.get("jsonPath") == ".spec.paused" for c in ver.get("additionalPrinterColumns", [])):
+            fail(f"MachineSet {ver['name']} must have a Paused printer column on .spec.paused")
+    ms_props = machineset["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]
+    if "paused" not in ms_props["spec"]["properties"] or not {"paused", "conditions", "observedGeneration"} <= set(ms_props["status"]["properties"]):
+        fail("MachineSet spec.paused and status.paused/conditions/observedGeneration must be in the CRD schema")
     # observedGeneration is written by reconcileMachineSet on every
     # successful status patch (docs/guides/machine-sets.md). Without this
     # field in the CRD schema, the API server prunes the value.

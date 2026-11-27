@@ -5431,6 +5431,11 @@ spec:
     - name: Strategy
       type: string
       jsonPath: .spec.strategy
+    # .spec.paused, not .status.paused: shows the operator's intent the
+    # moment it is set, before the controller's next tick. Empty when unset.
+    - name: Paused
+      type: boolean
+      jsonPath: .spec.paused
     schema: &schema
       openAPIV3Schema:
         type: object
@@ -5487,11 +5492,16 @@ spec:
                 type: integer
               selector:
                 type: string
+              paused:
+                type: boolean
+              # metadata.generation last reconciled (#307); declared so
+              # structural pruning keeps it.
               observedGeneration:
                 type: integer
                 format: int64
-              # ScaleDownBlocked (MachineDisruptionBudget gating of
-              # scale-down, internal/controller/machineset_mdb.go).
+              # Progressing, Available, ReplicaFailure, ScaleDownBlocked
+              # (MachineDisruptionBudget gating of scale-down,
+              # internal/controller/machineset_mdb.go) and Paused.
               conditions:
                 type: array
                 items:
