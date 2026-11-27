@@ -16,6 +16,13 @@ Mac Fabric has only run against simulated Mac Nodes
   other Macs it fails, and that failure is the expected result for that Mac.
 - Without Thunderbolt cables (no `--fabric`), the network row runs over the LAN
   and the Thunderbolt row stays `not run`.
+- **Still never run on real Macs** (as of 2026-11-27). The four rows in
+  COMPATIBILITY are `not run`. Every Mac Fabric `pass` there comes from
+  simulated Mac Nodes on Linux.
+- The overlay is FluxVM's encrypted UDP mesh, not RDMA. Guest addresses come
+  from FluxVM inside each Mac's slice. A network holds at most 253 /
+  `hostsPerNode` Macs, and a cluster at most 63 MacNetworks
+  ([guide limits](guides/mac-fabric.md#real-limits-today)).
 
 ## Steps
 

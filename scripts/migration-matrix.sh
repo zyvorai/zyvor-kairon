@@ -6,10 +6,12 @@
 # (scripts/hardware-migration-matrix.sh): which inputs it reads, whether the
 # lab in front of you can produce a green run, and running it.
 #
-#   migration-matrix.sh env       [--markdown]
+#   migration-matrix.sh env       [--markdown | --gh-commands]
 #       every input the matrix and its drills read: GitHub kind (secret/var),
 #       which profile needs it, default, and whether it is set here. Secret
-#       values are never printed.
+#       values are never printed. --gh-commands prints NAME|kind|need|rows|
+#       the `gh` command that sets it (no value), for
+#       scripts/lab-secrets-checklist.sh.
 #   migration-matrix.sh preflight [--profile=core|full] [--case=NAME]... [--strict]
 #                                 [--dry-run] [--github-summary]
 #       read-only checks against the cluster, kairon-ui and the SSH targets.
@@ -85,14 +87,14 @@ CORE_CASES=(cold live live-ebpf)
 FULL_CASES=(smoke cold live guest-agent needs-recovery source-failure controller-failover
   live-adaptive-converge live-postcopy-switch live-zstd postcopy-source-failure live-ebpf)
 
-usage() { sed -n '5,44p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '5,46p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 CMD="${1:-}"
 [[ -n "$CMD" ]] || { usage >&2; exit 2; }
 shift
 case "$CMD" in -h|--help|help) usage; exit 0 ;; esac
 
-PROFILE=core; STRICT=0; SUMMARY=0; MARKDOWN=0; OFFLINE=0; SKIP_PREFLIGHT=0; DRY_RUN=0
+PROFILE=core; STRICT=0; SUMMARY=0; MARKDOWN=0; GHCMDS=0; OFFLINE=0; SKIP_PREFLIGHT=0; DRY_RUN=0
 REPO=""; CASES=(); PASS=()
 for arg in "$@"; do
   case "$arg" in
@@ -106,6 +108,7 @@ for arg in "$@"; do
     --strict) STRICT=1 ;;
     --github-summary) SUMMARY=1 ;;
     --markdown) MARKDOWN=1 ;;
+    --gh-commands) GHCMDS=1 ;;
     --offline) OFFLINE=1 ;;
     --repo=*) REPO="${arg#*=}" ;;
     --skip-preflight) SKIP_PREFLIGHT=1 ;;
@@ -126,6 +129,12 @@ input_names() { input_rows | cut -d'|' -f1; }
 is_set() { [[ -n "${!1:-}" ]]; }
 
 cmd_env() {
+  if (( GHCMDS )); then
+    while IFS='|' read -r name kind need _ _ rows; do
+      echo "$name|$kind|$need|$rows|$(gh_cmd "$name" "$kind")"
+    done < <(input_rows)
+    return
+  fi
   if (( MARKDOWN )); then
     echo "| Name | GitHub kind | Needed by | Default | Meaning |"
     echo "|---|---|---|---|---|"
@@ -226,17 +235,20 @@ input_row() { input_rows | grep -E "^$1\|" || true; }
 
 # How to set one input: locally and as a GitHub secret/var, which never puts
 # a secret value on a command line.
+# The `gh` command that sets one input in the repository, without its value.
+gh_cmd() {
+  local name="$1" kind="$2"
+  if [[ "$name" == KAIRON_KUBE_CA ]]; then echo "gh secret set KAIRON_KUBE_CA < ca.crt"
+  elif [[ "$name" == KAIRON_HW_LAB ]]; then echo "gh variable set KAIRON_HW_LAB --body 1"
+  elif [[ "$kind" == secret ]]; then echo "printf %s \"\$VALUE\" | gh secret set $name"
+  else echo "gh variable set $name --body VALUE"; fi
+}
 set_hint() {
   local name="$1" kind="$2"
-  if [[ "$name" == KAIRON_KUBE_CA ]]; then
-    echo "gh secret set KAIRON_KUBE_CA < ca.crt   (locally: KAIRON_KUBE_CA=/path/to/ca.crt)"
-  elif [[ "$name" == KAIRON_HW_LAB ]]; then
-    echo "gh variable set KAIRON_HW_LAB --body 1   (locally: export KAIRON_HW_LAB=1)"
-  elif [[ "$kind" == secret ]]; then
-    echo "printf %s \"\$VALUE\" | gh secret set $name   (locally: export $name=..., or put it in --env-file)"
-  else
-    echo "gh variable set $name --body VALUE   (locally: export $name=..., or put it in --env-file)"
-  fi
+  local local_hint="export $name=..., or put it in --env-file"
+  [[ "$name" == KAIRON_KUBE_CA ]] && local_hint="KAIRON_KUBE_CA=/path/to/ca.crt"
+  [[ "$name" == KAIRON_HW_LAB ]] && local_hint="export KAIRON_HW_LAB=1"
+  echo "$(gh_cmd "$name" "$kind")   (locally: $local_hint)"
 }
 
 # Print one unset input: what it is, which rows it gates, how to set it.

@@ -76,7 +76,7 @@ v0.7.0 was tagged on 2026-10-09 but never published: its image scan failed on Go
   - [x] One entry point with a read-only preflight: `scripts/migration-matrix.sh` (`make migration-preflight`, `make migration-matrix PROFILE=core`), with the input table CI checks the workflows against ([runbook](docs/runbook-migration-matrix.md))
   - [ ] Lab vars/secrets: `KAIRON_HW_MACHINE`, `KAIRON_HW_TARGET_NODE` (the nightly fails without them), `KAIRON_UI_URL`, `KAIRON_UI_TOKEN`, `KAIRON_HW_EBPF_MACHINE` (core profile), `KAIRON_HW_IMAGE`, `KAIRON_HW_SOURCE_SSH`, `KAIRON_HW_TARGET_SSH`, `KAIRON_HW_POSTCOPY_MACHINE` (full profile) -- [list](docs/runbook-migration-matrix.md#what-is-still-missing-for-a-green-nightly)
   - [ ] Live pre-copy under load passing (failed 2026-10-14: did not converge at the lab's link speed; not a configuration gap)
-- [ ] Multi-Mac cluster verification (Mac Fabric on real Macs: vz Machines on several Macs, Rosetta and nested virtualization in a guest, MacNetwork traffic over Thunderbolt; Thunderbolt RDMA, macOS guests)
+- [ ] Multi-Mac cluster verification (Mac Fabric on real Macs: vz Machines on several Macs, Rosetta and nested virtualization in a guest, MacNetwork traffic over Thunderbolt; Thunderbolt RDMA, macOS guests; remaining limits: [runbook](docs/runbook-multi-mac-fabric.md#known-limits))
   - [x] Drill and runbook for the first four on real Macs: `scripts/lab-mac-fabric-hw.sh`, [runbook](docs/runbook-multi-mac-fabric.md) (not yet run: needs Macs)
 
 ## v0.6 — Production Foundations
