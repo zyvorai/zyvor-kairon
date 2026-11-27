@@ -5487,6 +5487,9 @@ spec:
                 type: integer
               selector:
                 type: string
+              observedGeneration:
+                type: integer
+                format: int64
               # ScaleDownBlocked (MachineDisruptionBudget gating of
               # scale-down, internal/controller/machineset_mdb.go).
               conditions:

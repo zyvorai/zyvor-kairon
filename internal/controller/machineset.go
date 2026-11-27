@@ -269,11 +269,11 @@ func (c *Controller) reconcileMachineSet(ctx context.Context, ms model.MachineSe
 
 	status := model.MachineSetStatus{
 		ObservedGeneration: ms.Metadata.Generation,
-		Replicas:        len(owned),
-		ReadyReplicas:   readyCurrent,
-		UpdatedReplicas: len(current),
-		Selector:        model.LabelMachineSet + "=" + ms.Metadata.Name,
-		Paused:          ms.Spec.Paused,
+		Replicas:           len(owned),
+		ReadyReplicas:      readyCurrent,
+		UpdatedReplicas:    len(current),
+		Selector:           model.LabelMachineSet + "=" + ms.Metadata.Name,
+		Paused:             ms.Spec.Paused,
 		// Carried forward so a failed step never wipes existing conditions.
 		Conditions: append([]model.Condition(nil), ms.Status.Conditions...),
 	}
