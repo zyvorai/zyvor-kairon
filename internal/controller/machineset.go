@@ -352,6 +352,16 @@ func (c *Controller) reconcileMachineSet(ctx context.Context, ms model.MachineSe
 		Message: fmt.Sprintf("%d failed", failed),
 	})
 	status.Conditions = c.machineSetScaleDownCondition(ctx, ms, status.Conditions, blocked)
+	// Emit scale events when the replica count changes.
+	prev := ms.Status.Replicas
+	if prev != desired && desired > 0 {
+		reason := "ScaledUp"
+		if desired < prev {
+			reason = "ScaledDown"
+		}
+		_ = c.Kube.RecordEvent(ctx, ms.Namespace(), "MachineSet", ms.Metadata.Name, ms.Metadata.UID, reason,
+			fmt.Sprintf("replicas %d -> %d", prev, desired), "Normal")
+	}
 	return status, c.Kube.PatchMachineSetStatus(ctx, ms.Namespace(), ms.Metadata.Name, status)
 }
 
