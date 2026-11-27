@@ -276,6 +276,20 @@ func (c *Controller) reconcileMachineSet(ctx context.Context, ms model.MachineSe
 		Reason:  reason,
 		Message: msg,
 	})
+	// Available: True when every desired replica is Running.
+	available := readyCurrent >= desired && desired > 0
+	availReason := "MinimumReplicasAvailable"
+	availMsg := fmt.Sprintf("%d ready", readyCurrent)
+	if !available {
+		availReason = "MinimumReplicasUnavailable"
+		availMsg = fmt.Sprintf("%d of %d ready", readyCurrent, desired)
+	}
+	status.Conditions = upsertCondition(status.Conditions, model.Condition{
+		Type:    "Available",
+		Status:  boolStr(available),
+		Reason:  availReason,
+		Message: availMsg,
+	})
 	status.Conditions = c.machineSetScaleDownCondition(ctx, ms, status.Conditions, blocked)
 	return status, c.Kube.PatchMachineSetStatus(ctx, ms.Namespace(), ms.Metadata.Name, status)
 }
