@@ -5,38 +5,56 @@ package kaironctl
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 
 	"github.com/zyvorai/kairon/internal/kube"
 	"github.com/zyvorai/kairon/internal/model"
 )
 
-// cmdMachineSetHistory lists the previous template hash recorded on a
-// MachineSet so an operator can inspect what a rollback would restore.
-// The controller stores the prior hash in the annotation
-// kairon.zyvor.dev/previous-template-hash when a template change is observed.
-func cmdMachineSetHistory(ctx context.Context, kc *kube.Client, args []string) {
-	if len(args) < 1 {
-		fatal(fmt.Errorf("usage: kaironctl machineset history NAME"))
-	}
-	name := args[0]
-	ns := "default"
-	for i := 1; i < len(args)-1; i++ {
-		if args[i] == "--namespace" || args[i] == "-n" {
-			ns = args[i+1]
-		}
-	}
+// machineSetHistory prints the template revisions kairon-controller has
+// recorded on a MachineSet (see model.AnnotationMachineSetCurrentTemplateHash
+// and friends) so an operator can see what `kaironctl machineset rollback`
+// would restore. STORED says whether a usable copy of the previous template
+// is kept: "yes" (present and hash-verified), "hash-only" (larger than
+// model.MaxMachineSetTemplateAnnotationBytes, or recorded before template
+// copies existed), "invalid" (does not decode or hash to PREVIOUS) or "-"
+// (no previous revision yet). CURRENT falls back to the live template's hash,
+// marked "(unrecorded)", until the controller has caught up.
+func machineSetHistory(ctx context.Context, kc *kube.Client, ns, name string, w io.Writer) error {
 	ms, err := kc.GetMachineSet(ctx, ns, name)
 	if err != nil {
-		fatal(err)
+		return err
 	}
-	prev := annotation(ms.Annotations, "kairon.zyvor.dev/previous-template-hash")
-	current := annotation(ms.Annotations, model.LabelMachineSetTemplateHash)
-	fmt.Printf("NAME\tNAMESPACE\tCURRENT\tPREVIOUS\n")
-	fmt.Printf("%s\t%s\t%s\t%s\n", ms.Name, ms.Namespace, shortHash(current), shortHash(prev))
+	ann := ms.Metadata.Annotations
+	current := annotation(ann, model.AnnotationMachineSetCurrentTemplateHash)
+	live := model.MachineSetTemplateHash(ms.Spec.Template)
+	if current != live {
+		current = live + " (unrecorded)"
+	}
+	prev := annotation(ann, model.AnnotationMachineSetPreviousTemplateHash)
+	stored := previousTemplateState(prev, annotation(ann, model.AnnotationMachineSetPreviousTemplate))
+	fmt.Fprintf(w, "NAME\tNAMESPACE\tCURRENT\tPREVIOUS\tSTORED\n")
+	fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", ms.Metadata.Name, ms.Namespace(), current, shortHash(prev), stored)
 	if prev == "" {
-		fmt.Println("\nno previous template hash recorded yet")
+		fmt.Fprintln(w, "\nno previous template hash recorded yet")
 	}
+	return nil
+}
+
+func previousTemplateState(hash, body string) string {
+	switch {
+	case hash == "":
+		return "-"
+	case body == "":
+		return "hash-only"
+	}
+	var t model.MachineTemplate
+	if err := json.Unmarshal([]byte(body), &t); err != nil || model.MachineSetTemplateHash(t) != hash {
+		return "invalid"
+	}
+	return "yes"
 }
 
 func annotation(m map[string]string, key string) string {
