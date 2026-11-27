@@ -18,6 +18,15 @@ import (
 // fallback when unset -- matches Kubernetes' own Deployment default.
 const defaultMachineSetMaxUnavailable = "1"
 
+// MachineSet Event reasons posted through recordMachineSetEvent.
+// ScaleDownBlocked (Warning, transition only) lives in machineset_mdb.go.
+const (
+	machineSetReasonScaledUp   = "ScaledUp"
+	machineSetReasonScaledDown = "ScaledDown"
+	machineSetReasonPaused     = "Paused"
+	machineSetReasonResumed    = "Resumed"
+)
+
 // reconcileMachineSets creates/deletes Machine objects to bring every
 // MachineSet's owned replicas in line with its spec -- see
 // reconcileMachineSet for the per-object logic -- and cascades a
@@ -154,6 +163,31 @@ func machineSetPausedCondition(paused bool) model.Condition {
 	return model.Condition{Type: "Paused", Status: "False", Reason: "NotPaused"}
 }
 
+// recordMachineSetEvent posts a core/v1 Event whose involvedObject is ms.
+// Failures are logged, not returned: an Event is operator signal, never a
+// reason to stall a scale or rollout. Uses kube.Client.RecordEvent, the
+// same path Machine quota, health and DRS events already take.
+func (c *Controller) recordMachineSetEvent(ctx context.Context, ms model.MachineSet, reason, message, eventType string) {
+	if err := c.Kube.RecordEvent(ctx, ms.Namespace(), model.KindMachineSet, ms.Metadata.Name, ms.Metadata.UID, reason, message, eventType); err != nil {
+		c.Log.Error("machineset event failed", "namespace", ms.Namespace(), "machineset", ms.Metadata.Name, "error", err)
+	}
+}
+
+// machineSetPauseEvents records a Normal Paused or Resumed Event when
+// spec.paused flips relative to the previous status.paused. Steady ticks
+// (already paused, or already running) emit nothing, so Event history
+// stays quiet while an operator leaves a set paused.
+func (c *Controller) machineSetPauseEvents(ctx context.Context, ms model.MachineSet) {
+	if ms.Spec.Paused == ms.Status.Paused {
+		return
+	}
+	if ms.Spec.Paused {
+		c.recordMachineSetEvent(ctx, ms, machineSetReasonPaused, "spec.paused is true; no replicas are created or deleted", "Normal")
+		return
+	}
+	c.recordMachineSetEvent(ctx, ms, machineSetReasonResumed, "spec.paused is false; reconciliation resumed", "Normal")
+}
+
 // ownedMachines returns machines carrying ms's LabelMachineSet label,
 // excluding any already being deleted (deletion is already in flight;
 // counting it toward "current" would double-book capacity that's about
@@ -262,6 +296,9 @@ func (c *Controller) reconcileMachineSet(ctx context.Context, ms model.MachineSe
 	// a copy of each template) for `kaironctl machineset history` and
 	// `rollback`. Done even while paused: it creates and deletes nothing.
 	c.recordMachineSetTemplateRevision(ctx, ms, hash)
+	// Compare spec.paused to the previous status.paused before this tick
+	// overwrites it, so a flip emits exactly one Event.
+	c.machineSetPauseEvents(ctx, ms)
 	owned := ownedMachines(ms, machines)
 
 	var current, outdated []model.Machine
@@ -352,16 +389,6 @@ func (c *Controller) reconcileMachineSet(ctx context.Context, ms model.MachineSe
 		Message: fmt.Sprintf("%d failed", failed),
 	})
 	status.Conditions = c.machineSetScaleDownCondition(ctx, ms, status.Conditions, blocked)
-	// Emit scale events when the replica count changes.
-	prev := ms.Status.Replicas
-	if prev != desired && desired > 0 {
-		reason := "ScaledUp"
-		if desired < prev {
-			reason = "ScaledDown"
-		}
-		_ = c.Kube.RecordEvent(ctx, ms.Namespace(), "MachineSet", ms.Metadata.Name, ms.Metadata.UID, reason,
-			fmt.Sprintf("replicas %d -> %d", prev, desired), "Normal")
-	}
 	return status, c.Kube.PatchMachineSetStatus(ctx, ms.Namespace(), ms.Metadata.Name, status)
 }
 
@@ -389,7 +416,7 @@ func (c *Controller) stepMachineSetToward(ctx context.Context, ms model.MachineS
 	// always takes priority over any rollout concern: fill the gap with
 	// current-template replicas regardless of strategy.
 	if total < desired {
-		return c.createMachineSetReplicas(ctx, ms, hash, desired-total)
+		return c.createMachineSetReplicas(ctx, ms, hash, desired-total, total)
 	}
 
 	if strategy == "Recreate" {
@@ -399,7 +426,7 @@ func (c *Controller) stepMachineSetToward(ctx context.Context, ms model.MachineS
 		// correct behavior and the one requiring no maxUnavailable
 		// bookkeeping at all.
 		if len(outdated) > 0 {
-			return c.deleteMachines(ctx, ms, outdated)
+			return c.deleteMachines(ctx, ms, outdated, total)
 		}
 		if len(current) > desired {
 			return c.scaleDownMachineSet(ctx, ms, current, len(current)-desired)
@@ -429,7 +456,7 @@ func (c *Controller) stepMachineSetToward(ctx context.Context, ms model.MachineS
 			if toCreate > maxSurge {
 				toCreate = maxSurge
 			}
-			return c.createMachineSetReplicas(ctx, ms, hash, toCreate)
+			return c.createMachineSetReplicas(ctx, ms, hash, toCreate, total)
 		}
 		minAvailable := desired - maxUnavailable
 		available := readyCurrent + len(outdated)
@@ -440,7 +467,7 @@ func (c *Controller) stepMachineSetToward(ctx context.Context, ms model.MachineS
 		if canDelete > len(outdated) {
 			canDelete = len(outdated)
 		}
-		return c.deleteMachines(ctx, ms, outdated[:canDelete])
+		return c.deleteMachines(ctx, ms, outdated[:canDelete], total)
 	}
 	if len(current) > desired {
 		// Pure scale-down (HPA/KEDA/kubectl scale lowered spec.replicas):
@@ -478,17 +505,22 @@ func resolveMaxUnavailable(spec string, desired int) (int, error) {
 	return n, nil
 }
 
-func (c *Controller) deleteMachines(ctx context.Context, ms model.MachineSet, machines []model.Machine) error {
+func (c *Controller) deleteMachines(ctx context.Context, ms model.MachineSet, machines []model.Machine, fromReplicas int) error {
+	replicas := fromReplicas
 	for _, m := range machines {
 		if err := c.Kube.DeleteMachine(ctx, m.Namespace(), m.Metadata.Name); err != nil {
 			return fmt.Errorf("delete machine %s/%s: %w", m.Namespace(), m.Metadata.Name, err)
 		}
+		replicas--
+		c.recordMachineSetEvent(ctx, ms, machineSetReasonScaledDown,
+			fmt.Sprintf("deleted machine %s, replicas %d->%d", m.Metadata.Name, replicas+1, replicas), "Normal")
 		c.Log.Info("machineset deleted replica", "namespace", ms.Namespace(), "machineset", ms.Metadata.Name, "machine", m.Metadata.Name)
 	}
 	return nil
 }
 
-func (c *Controller) createMachineSetReplicas(ctx context.Context, ms model.MachineSet, hash string, n int) error {
+func (c *Controller) createMachineSetReplicas(ctx context.Context, ms model.MachineSet, hash string, n, fromReplicas int) error {
+	replicas := fromReplicas
 	for i := 0; i < n; i++ {
 		labels := map[string]string{}
 		for k, v := range ms.Spec.Template.Labels {
@@ -504,6 +536,9 @@ func (c *Controller) createMachineSetReplicas(ctx context.Context, ms model.Mach
 		if _, err := c.Kube.CreateMachine(ctx, ms.Namespace(), machine); err != nil {
 			return fmt.Errorf("create machine for machineset %s/%s: %w", ms.Namespace(), ms.Metadata.Name, err)
 		}
+		replicas++
+		c.recordMachineSetEvent(ctx, ms, machineSetReasonScaledUp,
+			fmt.Sprintf("created machine %s, replicas %d->%d", machine.Metadata.Name, replicas-1, replicas), "Normal")
 		c.Log.Info("machineset created replica", "namespace", ms.Namespace(), "machineset", ms.Metadata.Name, "machine", machine.Metadata.Name)
 	}
 	return nil

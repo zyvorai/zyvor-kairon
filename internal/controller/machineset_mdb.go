@@ -157,7 +157,7 @@ func (c *Controller) scaleDownMachineSet(ctx context.Context, ms model.MachineSe
 		return err
 	}
 	victims, blocked := selectScaleDownVictims(current, n, states)
-	if err := c.deleteMachines(ctx, ms, victims); err != nil {
+	if err := c.deleteMachines(ctx, ms, victims, len(current)); err != nil {
 		return err
 	}
 	if blocked != "" {
@@ -176,9 +176,7 @@ func (c *Controller) machineSetScaleDownCondition(ctx context.Context, ms model.
 		return model.SetCondition(conditions, model.Condition{Type: machineSetConditionScaleDownBlocked, Status: "False", Reason: machineSetReasonScaleDownAllowed})
 	}
 	if prev, ok := model.FindCondition(conditions, machineSetConditionScaleDownBlocked); !ok || prev.Status != "True" {
-		if err := c.Kube.RecordEvent(ctx, ms.Namespace(), model.KindMachineSet, ms.Metadata.Name, ms.Metadata.UID, machineSetConditionScaleDownBlocked, blocked.reason, "Warning"); err != nil {
-			c.Log.Error("machineset event failed", "namespace", ms.Namespace(), "machineset", ms.Metadata.Name, "error", err)
-		}
+		c.recordMachineSetEvent(ctx, ms, machineSetConditionScaleDownBlocked, blocked.reason, "Warning")
 	}
 	return model.SetCondition(conditions, model.Condition{Type: machineSetConditionScaleDownBlocked, Status: "True", Reason: machineSetReasonDisruptionBudget, Message: blocked.reason})
 }
