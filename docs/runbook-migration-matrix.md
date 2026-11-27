@@ -335,6 +335,40 @@ race, fixed in FluxVM but **not yet deployed to the lab**.
   row's separate 2026-10-14 failure (plain pre-copy not converging under
   load; see [Known limits](#known-limits)).
 
+## Next lab steps
+
+Do these in order to get a green nightly. Each step links to the section
+with the details.
+
+- [ ] **Set the missing inputs.** Run `make lab-secrets-checklist` and run
+  the `gh secret set` / `gh variable set` lines it prints
+  ([checklist](#what-is-still-missing-for-a-green-nightly)).
+- [ ] **Rebuild FluxVM from `main` with zyvor-fluxvm#417 on both hosts.**
+  Then verify with `scripts/lab-live-soak.sh` at `KAIRON_SOAK_HOPS=20
+  KAIRON_SOAK_CONTINUE=1`. Every hop should succeed, with no `stuck in
+  Creating` lines for receivers
+  ([FluxVM receiver race](#fluxvm-receiver-race-fix-still-to-deploy-on-the-lab)).
+- [ ] **Dry run, then preflight.** Run `make migration-dry-run` until it
+  reports no missing input ([Dry run](#dry-run)). Then run
+  `make migration-preflight MATRIX_FLAGS=--strict` against the lab until it
+  prints `READY` ([What preflight checks](#what-preflight-checks)).
+- [ ] **Run core, then full.** Run `make migration-matrix` (core). Once that
+  is clean, run `make migration-dry-run PROFILE=full`, then
+  `make migration-preflight PROFILE=full`, then
+  `make migration-matrix PROFILE=full`
+  ([Proving live migration](#proving-live-migration-on-the-lab)).
+- [ ] **Handle the `live` (pre-copy under load) row.** Expect it to fail at
+  the lab's link speed. Lighten the load, use a faster link, or rely on the
+  adaptive rows ([Known limits](#known-limits)).
+- [ ] **Land the held-back workflow patch from #288.** This needs a token
+  with `workflow` scope (`gh auth refresh -s workflow`). Afterwards,
+  `make migration-audit-ci` should report no input as NOT WIRED, and the
+  nightly takes `-f profile=core -f strict=true` and the optional inputs.
+- [ ] **Record the results.** Rerun with
+  `MATRIX_FLAGS=--write-compat` (or download the nightly's
+  `compatibility-md` artifact). Commit the `docs/COMPATIBILITY.md` diff with
+  the run date, and update the "Repeated live migration" row from the soak.
+
 ## Proving live migration on the lab
 
 1. Bring the two hosts up with the adapter: either
