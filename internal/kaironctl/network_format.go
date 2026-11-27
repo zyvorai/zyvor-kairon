@@ -146,14 +146,40 @@ func formatDataplaneStats(w io.Writer, s ebpfedge.DataplaneStats) {
 	if s.Flows > 0 {
 		fmt.Fprintf(w, "flows\t%d\n", s.Flows)
 	}
-	if !s.Latency.IsZero() {
-		fmt.Fprintf(w, "rtt\t%s", s.Latency.Display())
-		if s.Latency.MinRTTUs > 0 && s.Latency.MinRTTUs != s.Latency.RTTUs {
-			fmt.Fprintf(w, " (min %s)", ebpfedge.FormatMicroseconds(s.Latency.MinRTTUs))
-		}
-		if s.Latency.MaxRTTUs > 0 && s.Latency.MaxRTTUs != s.Latency.RTTUs {
-			fmt.Fprintf(w, " (max %s)", ebpfedge.FormatMicroseconds(s.Latency.MaxRTTUs))
-		}
-		fmt.Fprintln(w)
+	formatRTTSummary(w, s.Latency)
+}
+
+// formatRTTSummary writes a one-line RTT summary (sample count, min,
+// avg, p50, p95, max) when any latency field is present. Hidden otherwise.
+func formatRTTSummary(w io.Writer, l ebpfedge.LatencyAttr) {
+	if l.IsZero() {
+		return
 	}
+	var parts []string
+	if l.Samples > 0 {
+		parts = append(parts, fmt.Sprintf("samples %d", l.Samples))
+	}
+	if l.MinRTTUs > 0 {
+		parts = append(parts, "min "+ebpfedge.FormatMicroseconds(l.MinRTTUs))
+	}
+	avg := l.AvgRTTUs
+	if avg == 0 {
+		avg = l.RTTUs
+	}
+	if avg > 0 {
+		parts = append(parts, "avg "+ebpfedge.FormatMicroseconds(avg))
+	}
+	if l.P50Us > 0 {
+		parts = append(parts, "p50 "+ebpfedge.FormatMicroseconds(l.P50Us))
+	}
+	if l.P95Us > 0 {
+		parts = append(parts, "p95 "+ebpfedge.FormatMicroseconds(l.P95Us))
+	}
+	if l.MaxRTTUs > 0 {
+		parts = append(parts, "max "+ebpfedge.FormatMicroseconds(l.MaxRTTUs))
+	}
+	if len(parts) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "rtt\t%s\n", strings.Join(parts, "  "))
 }

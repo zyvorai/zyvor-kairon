@@ -218,6 +218,7 @@ const sidebars: SidebarsConfig = {
         'runbook-backup-restore',
         'runbook-velero-backup',
         'runbook-vm-export',
+        'runbook-cross-cluster-dr',
         'runbook-macos-node',
       ],
     },
