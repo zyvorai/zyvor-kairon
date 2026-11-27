@@ -290,6 +290,19 @@ func (c *Controller) reconcileMachineSet(ctx context.Context, ms model.MachineSe
 		Reason:  availReason,
 		Message: availMsg,
 	})
+	// ReplicaFailure: True if any owned Machine is Phase=Failed.
+	failed := 0
+	for _, m := range owned {
+		if m.Status.Phase == "Failed" {
+			failed++
+		}
+	}
+	status.Conditions = upsertCondition(status.Conditions, model.Condition{
+		Type:    "ReplicaFailure",
+		Status:  boolStr(failed > 0),
+		Reason:  "FailedReplicas",
+		Message: fmt.Sprintf("%d failed", failed),
+	})
 	status.Conditions = c.machineSetScaleDownCondition(ctx, ms, status.Conditions, blocked)
 	return status, c.Kube.PatchMachineSetStatus(ctx, ms.Namespace(), ms.Metadata.Name, status)
 }
