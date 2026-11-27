@@ -102,7 +102,8 @@ try:
     for ver in machineset["spec"]["versions"]:
         if ver.get("subresources", {}).get("scale") != want_scale:
             fail(f"MachineSet {ver['name']} must expose the scale subresource {want_scale}")
-    if "selector" not in machineset["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["status"]["properties"]:
+    ms_status = machineset["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["status"]["properties"]
+    if "selector" not in ms_status:
         fail("MachineSet.status.selector missing (scale subresource labelSelectorPath)")
     # spec.paused (internal/controller/machineset.go): visible in
     # `kubectl get machinesets` on every served version, and status.paused/
@@ -113,6 +114,13 @@ try:
     ms_props = machineset["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]
     if "paused" not in ms_props["spec"]["properties"] or not {"paused", "conditions", "observedGeneration"} <= set(ms_props["status"]["properties"]):
         fail("MachineSet spec.paused and status.paused/conditions/observedGeneration must be in the CRD schema")
+    # observedGeneration is written by reconcileMachineSet on every
+    # successful status patch (docs/guides/machine-sets.md). Without this
+    # field in the CRD schema, the API server prunes the value.
+    for ver in machineset["spec"]["versions"]:
+        props = ver["schema"]["openAPIV3Schema"]["properties"]["status"]["properties"]
+        if "observedGeneration" not in props:
+            fail(f"MachineSet {ver['name']} status.observedGeneration missing")
     # spec.powerState: Hibernated (docs/guides/machine-hibernate.md): the
     # Hibernated condition is visible in `kubectl get machines` on every
     # served version, and Hibernated stays in the powerState enum.

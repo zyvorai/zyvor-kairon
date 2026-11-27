@@ -743,3 +743,28 @@ func TestReconcileMachineSetRecordsTemplateRevision(t *testing.T) {
 		t.Fatalf("paused MachineSet must not create replicas, got %d", len(fake.created))
 	}
 }
+
+// TestReconcileMachineSetSetsObservedGeneration proves every successful
+// status write mirrors metadata.generation, including while paused
+// (creates and deletes are skipped, but status is still written).
+func TestReconcileMachineSetSetsObservedGeneration(t *testing.T) {
+	ctl, fake := newMachineSetTestController(t)
+	ms := testMachineSet(1, "", "")
+	ms.Metadata.Generation = 7
+	ms.Metadata.Finalizers = []string{model.FinalizerMachineSet}
+	ms.Spec.Paused = true
+	hash := machineSetTemplateHash(ms.Spec.Template)
+	st, err := ctl.reconcileMachineSet(context.Background(), ms, []model.Machine{ownedMachine("ms1-a", hash, "Running")})
+	if err != nil {
+		t.Fatalf("reconcileMachineSet: %v", err)
+	}
+	if st.ObservedGeneration != 7 {
+		t.Fatalf("returned status.observedGeneration = %d, want 7", st.ObservedGeneration)
+	}
+	if !fake.hadPatch || fake.patched.ObservedGeneration != 7 {
+		t.Fatalf("patched status.observedGeneration = %d, want 7 (got hadPatch=%v %+v)", fake.patched.ObservedGeneration, fake.hadPatch, fake.patched)
+	}
+	if len(fake.created) != 0 || len(fake.deleted) != 0 {
+		t.Fatalf("paused MachineSet must not create or delete, created=%d deleted=%d", len(fake.created), len(fake.deleted))
+	}
+}
