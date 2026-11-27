@@ -183,4 +183,6 @@ type MachineSetStatus struct {
 	// semantics an absent key never clears a previously-set value, so a
 	// recovered MachineSet would keep showing a stale error forever.
 	Message string `json:"message"`
+	// ObservedGeneration is the metadata.generation the controller last reconciled.
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
