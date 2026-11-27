@@ -270,9 +270,10 @@ Setting every input still leaves two failures that no secret fixes; see
     1024 MiB of load.
   - Lighten the load: `KAIRON_HW_LOAD_MIB=64` and a larger
     `KAIRON_HW_TIMEOUT`
-    ([multi-host test runbook](runbook-multi-host-migration-test.md)). This
-    works locally; the nightly uses the defaults until the held-back
-    workflow wiring lands.
+    ([multi-host test runbook](runbook-multi-host-migration-test.md)).
+    The nightly already passes `KAIRON_HW_LOAD_MIB` through, but not
+    `KAIRON_HW_TIMEOUT`. That waits on the held-back workflow wiring
+    (`make migration-audit-ci` lists it as NOT WIRED).
   - Use a link that is clearly faster than the guest's dirty rate.
 
   The plain `live` row is meant to measure pre-copy alone, so it stays
@@ -334,6 +335,62 @@ race, fixed in FluxVM but **not yet deployed to the lab**.
   in 10 regardless of the inputs. The fix does not address the `live`
   row's separate 2026-10-14 failure (plain pre-copy not converging under
   load; see [Known limits](#known-limits)).
+
+## What green looks like
+
+**Row counts.** Each case writes one row, with a result of `pass`, `fail` or
+`not run`. The cases come from `CORE_CASES` and `FULL_CASES` in
+`scripts/migration-matrix.sh`:
+
+| Profile | Cases | Green |
+|---|---|---|
+| core | 3: `cold`, `live`, `live-ebpf` (ROADMAP's matrix item) | 3 of 3 `pass` |
+| full | 12: `smoke`, `cold`, `live`, `guest-agent`, `needs-recovery`, `source-failure`, `controller-failover`, `live-adaptive-converge`, `live-postcopy-switch`, `live-zstd`, `postcopy-source-failure`, `live-ebpf` | 12 of 12 `pass` |
+
+The nightly calls `hardware-migration-matrix.sh` without `--case`. Its
+built-in default is the same 12 cases, so today's nightly is the full
+profile.
+
+**Output.**
+- During the run, each case prints `==> <row title>: <result> <notes>`.
+- At the end, under `## Matrix rows`, it prints one
+  `| <row title> | <result> | <date> | <notes> |` line per case.
+- With `--write-compat`, those lines replace the rows with the same titles
+  in [COMPATIBILITY's matrix](COMPATIBILITY.md#migration-matrix), dated
+  with the run date. In the nightly, the updated file is the
+  `compatibility-md` artifact.
+- If any row is `fail`, the script prints `FAILED: N case(s)` to stderr and
+  exits 1.
+
+**Exit 0 is not the same as green.**
+- A `not run` row doesn't fail the exit code.
+- `smoke` without `KAIRON_HW_IMAGE` records `pass` but only checks that the
+  Machine is Running and Ready (its note says so).
+- `preflight --strict` rejects both.
+- A `not run` row means an input is missing. The note names the input, and
+  [the checklist](#what-is-still-missing-for-a-green-nightly) maps inputs to
+  rows. The one exception is a missing drill script under `scripts/`. With
+  every input set, no row should be `not run`.
+
+**Expected failures with everything set, on today's lab**
+([Known limits](#known-limits)):
+- **`Live pre-copy under load`:** `fail` at the default 256 MiB load on
+  the about 930 Mbps link, until the load or the link changes.
+- **Until FluxVM #417 is on the lab:** any of the 6 live-to-receiver rows
+  (`live`, `live-ebpf`, the 3 adaptive rows and `postcopy-source-failure`)
+  can fail about 1 run in 10. In that case the target's `fluxvm` journal has
+  a `stuck in Creating` line.
+
+**What counts as green.**
+- A run counts as green when every row is `pass` with that run's date,
+  there is no `FAILED` line, `KAIRON_HW_IMAGE` is set, and FluxVM #417 is
+  deployed and soak-verified. Core green (3 of 3) ticks ROADMAP's matrix
+  item; full green (12 of 12) makes the nightly green.
+- A full run with 11 `pass` and only `Live pre-copy under load` failing
+  without converging is the expected state before the load or link
+  changes. That run is **not** green. Commit its rows, but leave ROADMAP's
+  "Live pre-copy under load passing" open. The adaptive rows don't count
+  in its place.
 
 ## Next lab steps
 
