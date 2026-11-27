@@ -228,6 +228,20 @@ func (c *Controller) reconcileMachineSet(ctx context.Context, ms model.MachineSe
 	if err != nil {
 		return status, err
 	}
+	// Progressing: True while any owned Machine is still on an older template.
+	progressing := len(outdated) > 0 || len(current) < desired
+	reason := "Complete"
+	msg := "all replicas are on the current template"
+	if progressing {
+		reason = "Updating"
+		msg = fmt.Sprintf("%d of %d replicas updated", len(current), desired)
+	}
+	status.Conditions = upsertCondition(status.Conditions, model.Condition{
+		Type:    "Progressing",
+		Status:  boolStr(progressing),
+		Reason:  reason,
+		Message: msg,
+	})
 	status.Conditions = c.machineSetScaleDownCondition(ctx, ms, status.Conditions, blocked)
 	return status, c.Kube.PatchMachineSetStatus(ctx, ms.Namespace(), ms.Metadata.Name, status)
 }
@@ -379,4 +393,21 @@ func generateMachineSetChildName(machineSetName string) string {
 	buf := make([]byte, 4)
 	_, _ = rand.Read(buf)
 	return machineSetName + "-" + hex.EncodeToString(buf)
+}
+
+func boolStr(b bool) string {
+	if b {
+		return "True"
+	}
+	return "False"
+}
+
+func upsertCondition(conds []model.Condition, c model.Condition) []model.Condition {
+	for i, existing := range conds {
+		if existing.Type == c.Type {
+			conds[i] = c
+			return conds
+		}
+	}
+	return append(conds, c)
 }
