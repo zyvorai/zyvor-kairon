@@ -15,6 +15,7 @@ func newMachineSetCmd(opts *Options) *cobra.Command {
 		Short: "MachineSet operations",
 	}
 	cmd.AddCommand(newMachineSetHistoryCmd(opts))
+	cmd.AddCommand(newMachineSetStatusCmd(opts))
 	cmd.AddCommand(newMachineSetRollbackCmd(opts))
 	return cmd
 }
@@ -66,4 +67,21 @@ replaced by the normal rollout (strategy, maxUnavailable, maxSurge).`,
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be restored without changing anything")
 	return cmd
+}
+
+func newMachineSetStatusCmd(opts *Options) *cobra.Command {
+	return &cobra.Command{
+		Use:     "status NAME",
+		Short:   "Print MachineSet conditions in one table",
+		Example: machinesetStatusExamples,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			kc, err := newKubeClient()
+			if err != nil {
+				return err
+			}
+			cmdMachineSetStatus(context.Background(), kc, args)
+			return nil
+		},
+	}
 }
