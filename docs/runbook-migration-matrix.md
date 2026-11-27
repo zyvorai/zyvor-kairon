@@ -9,6 +9,13 @@ run to come out green. Setting up the two hosts themselves is
 [`runbook-multi-host-migration-test.md`](runbook-multi-host-migration-test.md);
 the runner and cluster access are [`runbook-lab-setup.md`](runbook-lab-setup.md).
 
+## Operator checklist
+
+- [ ] Set the missing inputs: `make lab-secrets-checklist` ([checklist](#what-is-still-missing-for-a-green-nightly)).
+- [ ] Rebuild the lab's FluxVM with zyvor-fluxvm#417 ([FluxVM receiver race](#fluxvm-receiver-race-fix-still-to-deploy-on-the-lab)).
+- [ ] Read [Known limits](#known-limits) before judging a run.
+- [ ] Follow [Next lab steps](#next-lab-steps) in order, until a run meets [What green looks like](#what-green-looks-like).
+
 ## One entry point
 
 ```bash
