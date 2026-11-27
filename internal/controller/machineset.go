@@ -144,6 +144,16 @@ func (c *Controller) recordMachineSetTemplateRevision(ctx context.Context, ms mo
 	}
 }
 
+// machineSetPausedCondition is the status.conditions entry mirroring
+// spec.paused. Its Message is fixed per state so model.SetCondition keeps
+// LastTransitionTime at the moment pause actually flipped.
+func machineSetPausedCondition(paused bool) model.Condition {
+	if paused {
+		return model.Condition{Type: "Paused", Status: "True", Reason: "Paused", Message: "spec.paused is true; no replicas are created or deleted"}
+	}
+	return model.Condition{Type: "Paused", Status: "False", Reason: "NotPaused"}
+}
+
 // ownedMachines returns machines carrying ms's LabelMachineSet label,
 // excluding any already being deleted (deletion is already in flight;
 // counting it toward "current" would double-book capacity that's about
@@ -269,13 +279,15 @@ func (c *Controller) reconcileMachineSet(ctx context.Context, ms model.MachineSe
 
 	status := model.MachineSetStatus{
 		ObservedGeneration: ms.Metadata.Generation,
-		Replicas:        len(owned),
-		ReadyReplicas:   readyCurrent,
-		UpdatedReplicas: len(current),
-		Selector:        model.LabelMachineSet + "=" + ms.Metadata.Name,
-		Paused:          ms.Spec.Paused,
+		Replicas:           len(owned),
+		ReadyReplicas:      readyCurrent,
+		UpdatedReplicas:    len(current),
+		Selector:           model.LabelMachineSet + "=" + ms.Metadata.Name,
+		Paused:             ms.Spec.Paused,
 		// Carried forward so a failed step never wipes existing conditions.
-		Conditions: append([]model.Condition(nil), ms.Status.Conditions...),
+		// Paused goes through model.SetCondition so its lastTransitionTime
+		// marks when pause actually flipped.
+		Conditions: model.SetCondition(ms.Status.Conditions, machineSetPausedCondition(ms.Spec.Paused)),
 	}
 
 	// Added once, before any owned Machine is ever created -- guarantees
@@ -351,6 +363,12 @@ func (c *Controller) reconcileMachineSet(ctx context.Context, ms model.MachineSe
 // readiness, not mere existence (a Machine object can exist immediately
 // after CreateMachine returns, long before kairon-node has even scheduled
 // it, let alone booted it to Running).
+//
+// A paused MachineSet (spec.paused) takes no step at all: no scale-up,
+// scale-down or rollout replacement. reconcileMachineSet still patches
+// status, so replica counts and the Paused condition stay current while
+// frozen, and the next unpaused tick resumes toward whatever spec says
+// then.
 func (c *Controller) stepMachineSetToward(ctx context.Context, ms model.MachineSet, hash, strategy string, desired int, current, outdated []model.Machine, readyCurrent int) error {
 	if ms.Spec.Paused {
 		return nil // freeze: no creates or deletes while paused
