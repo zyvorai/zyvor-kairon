@@ -6,3 +6,4 @@ The MachineSet controller emits Kubernetes events when the desired replica count
 - `ScaledDown` when the desired count decreases
 
 Events appear in `kubectl describe machineset NAME` under Events. They are observational and do not change rollout behavior.
+- Pause/resume events
