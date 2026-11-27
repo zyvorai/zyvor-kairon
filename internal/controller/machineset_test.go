@@ -21,13 +21,14 @@ import (
 )
 
 // machineSetTestServer is a minimal fake apiserver serving exactly what
-// reconcileMachineSet calls: creating/deleting Machines, patching a
-// MachineSet's status, and patching a MachineSet's own finalizers. Mirrors
-// cordonTestServer's own inline-httptest convention.
+// reconcileMachineSet calls: creating/deleting Machines, recording
+// Events, patching a MachineSet's status, and patching a MachineSet's
+// own finalizers. Mirrors cordonTestServer's own inline-httptest convention.
 type machineSetTestServer struct {
 	mu                sync.Mutex
 	created           []model.Machine
 	deleted           []string
+	events            []model.Event
 	patched           model.MachineSetStatus
 	hadPatch          bool
 	finalizerPatches  [][]string
@@ -53,6 +54,11 @@ func newMachineSetTestController(t *testing.T) (*Controller, *machineSetTestServ
 			name := strings.TrimPrefix(r.URL.Path, "/apis/kairon.zyvor.dev/v1/namespaces/prod/machines/")
 			fake.deleted = append(fake.deleted, name)
 			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/namespaces/prod/events":
+			var ev model.Event
+			_ = json.NewDecoder(r.Body).Decode(&ev)
+			fake.events = append(fake.events, ev)
+			w.WriteHeader(http.StatusCreated)
 		case r.Method == http.MethodPatch && r.URL.Path == "/apis/kairon.zyvor.dev/v1/namespaces/prod/machinesets/ms1/status":
 			var body struct {
 				Status model.MachineSetStatus `json:"status"`
@@ -588,6 +594,7 @@ func TestReconcileMachineSetPausedConditionKeepsTransitionTime(t *testing.T) {
 	ms.Metadata.Finalizers = []string{model.FinalizerMachineSet}
 	ms.Spec.Paused = true
 	pausedAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	ms.Status.Paused = true
 	ms.Status.Conditions = []model.Condition{machineSetPausedCondition(true)}
 	ms.Status.Conditions[0].LastTransitionTime = pausedAt
 	if _, err := ctl.reconcileMachineSet(context.Background(), ms, nil); err != nil {

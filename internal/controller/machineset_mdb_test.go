@@ -125,8 +125,11 @@ func TestMachineSetScaleDownAllowedByDisruptionBudget(t *testing.T) {
 	if c := scaleDownBlockedCondition(t, fake.patched); c.Status != "False" {
 		t.Fatalf("want ScaleDownBlocked=False, got %+v", c)
 	}
-	if len(fake.events) != 0 {
-		t.Fatalf("no event expected when nothing is blocked, got %+v", fake.events)
+	if blocked := eventsWithReason(fake.events, machineSetConditionScaleDownBlocked); len(blocked) != 0 {
+		t.Fatalf("no ScaleDownBlocked event expected when nothing is blocked, got %+v", fake.events)
+	}
+	if got := eventsWithReason(fake.events, machineSetReasonScaledDown); len(got) != 2 {
+		t.Fatalf("want 2 ScaledDown events for the two deletes, got %+v", fake.events)
 	}
 }
 
