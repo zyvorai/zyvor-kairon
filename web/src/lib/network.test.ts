@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 import { describe, it, expect } from 'vitest';
-import { netHealth, summarizeNetwork, parseFlows, parseDrops, parseStats, formatMicros, formatProcess } from './network';
+import { netHealth, summarizeNetwork, parseFlows, parseDrops, parseStats, formatMicros, formatProcess, processBadge } from './network';
 import { Machine } from '../types';
 
 function vm(name: string, network?: NonNullable<Machine['status']>['network']): Machine {
@@ -55,5 +55,16 @@ describe('flow and drop parsers', () => {
   it('parses dataplane stats including rtt', () => {
     const s = parseStats({ rx_packets: 10, txPackets: 12, dropped: 3, rttMs: 2.5, min_rtt_us: 800 });
     expect(s).toMatchObject({ rxPackets: 10, txPackets: 12, dropped: 3, rtt: '2.5ms', minRtt: '800µs' });
+  });
+  it('builds a process badge only when attribution is present', () => {
+    expect(processBadge([])).toBeUndefined();
+    expect(processBadge([{ process: '-', hostProcess: '-' }])).toBeUndefined();
+    const one = processBadge(parseFlows({ flows: [{ proto: 'tcp', comm: 'nginx', pid: 142, scope: 'guest' }] })!);
+    expect(one).toEqual({ label: 'guest:nginx[pid=142]', kind: 'guest' });
+    const mixed = processBadge([
+      { process: 'guest:nginx[pid=142]', hostProcess: '-' },
+      { process: '-', hostProcess: 'host:vhost[pid=9]' },
+    ]);
+    expect(mixed).toEqual({ label: 'guest:nginx[pid=142] +1', kind: 'mixed' });
   });
 });

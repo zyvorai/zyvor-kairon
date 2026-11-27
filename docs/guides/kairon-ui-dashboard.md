@@ -179,7 +179,9 @@ actions that wrap the per-Machine routes:
 - the **Network** panel (Stats, Flows, Drops, Attributed, Effective): the
   Flows and Attributed tabs add PROCESS, HOST and RTT columns when
   FluxVM or PacketWolf includes those fields on the dump; the columns
-  are hidden when they are absent. Raw JSON stays below the table. See
+  are hidden when they are absent. A header badge shows comm/pid and
+  guest vs host when any row carries process identity, and is hidden
+  when none do. Raw JSON stays below the table. See
   [ebpf-fluxvm-integration.md](../ebpf-fluxvm-integration.md).
 - guest-agent command execution (`agent-exec`, see
   [guest exec](machine-guest-exec.md)) and file get/put

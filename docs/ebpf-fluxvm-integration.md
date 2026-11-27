@@ -23,7 +23,8 @@ returns.
 | Projection | Compiled `EdgeSpec` with a stable FNV-1a identity (survives IP change and live migration) | `internal/agent/edge.go`, `POST /v1/vms/{id}/network/edge` |
 | Attributed drops | Policy name, reason, 5-tuple; Prometheus `kairon_net_drops_total{namespace,machine,reason,policy}` | `DropEvent`, `internal/metrics/ebpfedge.go`, `kaironctl network drops` |
 | Flows | Bounded `FlowTable`; UI/CLI pass-through of FluxVM `GET …/network/flows` | `internal/ebpfedge/flows.go`, `internal/uiapi/network_observability.go` |
-| Latency (migration) | Conntrack export/restore and `kairon_net_migration_blackhole_ms` | `RestoreResult`, Network overview "Last blackhole" |
+| Latency (migration) | Conntrack export/restore, unlabeled `kairon_net_migration_blackhole_ms` histogram, and last-gap gauge `kairon_net_migration_blackhole_window_ms{namespace,machine}` (status is last window, not a historical max) | `RestoreResult`, `status.network.edge.blackholeWindowMs` |
+| Latency (flow RTT) | `kairon_net_flow_rtt_seconds{namespace,machine}` histogram, observed when a flow dump carries latency; `kairon_net_flows_attributed_total{namespace,machine,source}` counts first-seen flows by source (`fluxvm`/`packetwolf`/`guest-agent`/`unknown`/`none`). No PID, comm, or machineset labels | `EdgeRecorder.ObserveFlows`, kairon-node edge tick |
 | Capture | Bounded ringbuf/tcpdump tap, max 30s | `kaironctl network capture` |
 | Loaders | None in this repo. FluxVM loads the program (`sandbox.dataplane.mode = ebpf` or `cilium`). Kairon talks raw REST, not the Cilium Go SDK | `docs/DEPENDENCIES.md`, `internal/kube/cilium.go` |
 
@@ -126,37 +127,39 @@ Network panel Stats tab lift them into an RTT line. Migration
 black-hole time is separate and already lives on
 `status.network.edge.blackholeWindowMs`.
 
-## Next integration points
+## Exact next FluxVM / PacketWolf step
 
-These are deliberately not implemented in Kairon, because they belong
-to the dataplane or would change cardinality or CRDs.
+Kairon is ready to consume process attribution and flow RTT. The
+missing work is on the dataplane: **enrich the existing FluxVM (or
+PacketWolf) dumps**. Do not add a new Kairon endpoint, and do not
+invent values when the fields are absent.
 
-1. **FluxVM flow and drop dumps include `process` and `latency`.**
-   The decoder, CLI tables and Network panel already consume them.
-   Until FluxVM (or PacketWolf) fills the fields, the new columns stay
-   hidden. Preferred path: enrich `GET /v1/vms/{id}/network/flows` and
-   `…/drops` (and optionally `…/stats`) rather than a new endpoint.
-2. **A FluxVM or PacketWolf `Attributor` in `internal/fluxvm`.**
-   Wire `Chain{fluxvmAttributor, packetwolfAttributor}` in kairon-node
-   if the dataplane exposes a lookup that is not already on the dump.
-   PacketWolf is out of scope for this repository (see
-   [`network-fabric.md`](network-fabric.md): Kairon does not own the
-   PacketWolf control plane).
-3. **Guest-vs-host PID from the guest agent**, when the host only sees
+| | |
+| --- | --- |
+| **Producer** | FluxVM userspace on the node, filling fields from its TC/TCX maps (or PacketWolf's process correlator). Kairon does not own or load `fluxvm_tc.bpf.o`. |
+| **Where to emit** | Prefer `GET /v1/vms/{id}/network/flows` and `GET /v1/vms/{id}/network/drops`. Optionally the same latency keys on `GET /v1/vms/{id}/network/stats`. A new endpoint is not required. |
+| **Field contract** | Nested `process` / `hostProcess` (`source`, `scope`, `pid`, `comm`, and optional `executable` / `cgroup` / `container`) and `latency` (`rttUs` or aliases, plus optional min/max/avg/p50/p95/samples). Units are microseconds unless the key ends in `Ms`. `source` is `fluxvm`, `packetwolf`, or `guest-agent`; `scope` is `guest` or `host`. Flattened aliases (`pid`, `comm`, `rtt_us`, `rttMs`, …) are accepted. See the tables above and `internal/ebpfedge/attribution.go`. |
+| **Already wired in Kairon** | `internal/fluxvm.Client.GetVMNetworkFlows` / drops, polled each kairon-node edge tick in `internal/agent/edgeevents.go` (`DecodeFlowRecords` → `EdgeRecorder.ObserveFlows`). uiapi stays a raw pass-through, so CLI tables, the Network panel badge, and PROCESS / RTT columns appear as soon as the dump carries the fields. |
+| **Optional later hook** | If the dump cannot carry the fields, implement `ebpfedge.Attributor` (typically in `internal/fluxvm`, or a PacketWolf client) and wrap it with `ebpfedge.Chain` next to the decode path in kairon-node. That hook is not wired today because no side-channel lookup API exists. PacketWolf's control plane stays out of this repository ([`network-fabric.md`](network-fabric.md)). |
+| **Do not** | Put PID, comm, cgroup, or `machineset` on Prometheus series. RTT is `kairon_net_flow_rtt_seconds{namespace,machine}` (seconds, histogram). Attribution counts are `kairon_net_flows_attributed_total{namespace,machine,source}` with `source` in `fluxvm` / `packetwolf` / `guest-agent` / `unknown` / `none`. Average RTT per MachineSet is the recording rule `kairon:machineset_flow_rtt_seconds:avg`, which joins the histogram to `kairon_machineset_machine_info`. kairon-node does not know MachineSet membership, so a `machineset` label is not added on the histogram. |
+
+## Further integration points
+
+These remain open because they belong to the dataplane, a live two-host
+run, or would change CRDs.
+
+1. **Guest-vs-host PID from the guest agent**, when the host only sees
    a vhost thread. Scope must be set; do not overwrite a guest PID
    with a host one.
-4. **Agree `vectors.json` with FluxVM's BPF** in CI. The userspace
+2. **Agree `vectors.json` with FluxVM's BPF** in CI. The userspace
    engine pins 17 cases; nothing in this repo runs them against
    `fluxvm_tc.bpf.o` yet.
-5. **Reachable L7 and XDP policy fields.** `Decide` already models
+3. **Reachable L7 and XDP policy fields.** `Decide` already models
    `allowL7` and an XDP-eligible drop flag; they are not Machine or
    `MachineNetworkPolicy` fields yet.
-6. **Two-host conntrack restore** on a real pair of nodes. Unit tests
+4. **Two-host conntrack restore** on a real pair of nodes. Unit tests
    and FluxVM's restore path exist; a two-host run is still missing.
-7. **Do not add process labels to `kairon_net_drops_total`.** PID and
-   comm are high-cardinality. Keep process data on the flow/drop dump
-   and in the CLI/UI, not as Prometheus labels.
-8. **Typed uiapi decoding** is optional. Pass-through is what lets a
+5. **Typed uiapi decoding** is optional. Pass-through is what lets a
    FluxVM field show up immediately; a future schema check can use
    `DecodeFlowRecords` without changing the wire.
 
@@ -167,7 +170,7 @@ to the dataplane or would change cardinality or CRDs.
 | `kaironctl network flows MACHINE` | Table with PROTO, SRC, DST, PACKETS, BYTES, and RTT / PROCESS / HOST when present. Falls back to JSON if the payload is not a flow dump. |
 | `kaironctl network drops MACHINE` | Table with REASON, POLICY, SRC, DST, PACKETS, plus PROCESS / RTT when present. |
 | `kaironctl network stats MACHINE` | Counter summary plus an RTT line (`samples`, min, avg, p50, p95, max) when the stats object carries latency fields or a sample array. Hidden when absent. |
-| Dashboard Network panel | Stats cards, and flow / attributed-drop tables with PROCESS, HOST and RTT columns when the dataplane supplies them. JSON remains below the table. See the [dashboard guide](guides/kairon-ui-dashboard.md#machine-inspector). |
+| Dashboard Network panel | Stats cards, and flow / attributed-drop tables with PROCESS, HOST and RTT columns when the dataplane supplies them. A header badge (comm/pid, guest vs host) appears when process data is present. JSON remains below the table. See the [dashboard guide](guides/kairon-ui-dashboard.md#machine-inspector). |
 | Dashboard Network overview | Existing attach/policy cards, plus max migration black-hole time from `status.network.edge.blackholeWindowMs`. |
 
 `drops`, `flows` and `stats` still go through kairon-ui: set

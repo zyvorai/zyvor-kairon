@@ -28,7 +28,7 @@ points are in [`ebpf-fluxvm-integration.md`](ebpf-fluxvm-integration.md).
 | Attributed drops | `kaironctl network drops` | `GET /v1/vms/{id}/network/drops` |
 | Conntrack move | migration session `conntrackSnapshot` | `GET` / `POST /v1/vms/{id}/network/conntrack` |
 | Packet capture | `kaironctl network capture [--output FILE]`, `kaironctl network captures` | `POST` / `GET /v1/vms/{id}/network/capture`, `GET …/capture/{token}` (max 30s) |
-| Metrics | kairon-node `/metrics` | `kairon_net_drops_total`, `kairon_net_conntrack_restored_total`, `kairon_net_migration_blackhole_ms` |
+| Metrics | kairon-node `/metrics` | `kairon_net_drops_total`, `kairon_net_conntrack_restored_total`, `kairon_net_migration_blackhole_ms`, `kairon_net_migration_blackhole_window_ms`, `kairon_net_flow_rtt_seconds`, `kairon_net_flows_attributed_total` |
 
 ## Requirements
 
@@ -311,17 +311,35 @@ kairon-node registers these on its health address (`--health-addr`,
 | Metric | Type | Labels | Source |
 | --- | --- | --- | --- |
 | `kairon_net_drops_total` | counter | `namespace`, `machine`, `reason`, `policy` | FluxVM's attributed drops, read after each edge apply (up to 256 flows). |
-| `kairon_net_conntrack_restored_total` | counter | — | Entries restored on a migration destination. |
-| `kairon_net_migration_blackhole_ms` | histogram | — | Milliseconds between conntrack export and restore. |
+| `kairon_net_conntrack_restored_total` | counter | — | Entries restored on a destination during live migration. |
+| `kairon_net_migration_blackhole_ms` | histogram | — | Milliseconds between conntrack export and restore. Buckets 5 to 2500 ms. Cluster-wide history; not labelled per Machine. |
+| `kairon_net_migration_blackhole_window_ms` | gauge | `namespace`, `machine` | Last recorded traffic gap for that Machine (`status.network.edge.blackholeWindowMs`). This is the last window, not a historical maximum — status does not keep a max-over-time. In-memory only; a node restart drops the series until the next restore. |
+| `kairon_net_flow_rtt_seconds` | histogram | `namespace`, `machine` | Flow RTT in seconds when FluxVM or PacketWolf includes latency on the flow dump. Observed when a flow is first seen or its RTT changes; long-lived flows are not re-counted every tick. Buckets 100µs to 1s. No PID, comm, or `machineset` labels. |
+| `kairon_net_flows_attributed_total` | counter | `namespace`, `machine`, `source` | Flows counted once when first seen in the current dump. `source` is `fluxvm`, `packetwolf`, `guest-agent`, `unknown`, or `none`. |
 
 Drop counters are per flow in FluxVM; kairon-node adds the increase
 since the last read. A counter that goes down (VM restart or re-attach)
 is counted from zero, and a flow that leaves the top 256 is forgotten.
 `policy` is `-` for drops not tied to a policy (anti-spoof, rate
 limits). `kairon_net_drops_total` has no series until the first drop.
+Process identity stays on the dump and in the CLI/UI, never as
+Prometheus labels.
+
+Average RTT per MachineSet is not a label on the histogram:
+kairon-node does not know which MachineSet a Machine belongs to.
+`charts/kairon/alerts.yaml`'s `kairon-network` group records
+`kairon:machineset_flow_rtt_seconds:avg` by joining the histogram to
+`kairon_machineset_machine_info` (the same join as the autoscaling
+rules). Machines not in a MachineSet are omitted. The series is empty
+until FluxVM emits RTT and Prometheus has both metrics in one scrape
+view.
 
 ```promql
 sum by (namespace, machine, reason) (rate(kairon_net_drops_total[5m]))
+
+histogram_quantile(0.95, sum by (le, namespace, machine) (rate(kairon_net_flow_rtt_seconds_bucket[5m])))
+
+kairon:machineset_flow_rtt_seconds:avg
 ```
 
 ## CLI

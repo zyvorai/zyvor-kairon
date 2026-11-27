@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/zyvorai/kairon/internal/agentplane"
+	"github.com/zyvorai/kairon/internal/ebpfedge"
 	"github.com/zyvorai/kairon/internal/model"
 )
 
@@ -93,13 +94,36 @@ func (d *edgeEventDedup) allow(key string, now time.Time) bool {
 }
 
 // edgeFlows reads FluxVM's recent flows for one runtime. FluxVM returns
-// untyped JSON, so the common field spellings are accepted.
-func (a *Agent) edgeFlows(ctx context.Context, runtimeID string) []agentplane.Flow {
+// untyped JSON, so the common field spellings are accepted. When the
+// dump includes latency or process attribution, it is also fed into
+// kairon-node edge metrics.
+func (a *Agent) edgeFlows(ctx context.Context, m model.Machine, runtimeID string) []agentplane.Flow {
+	if a.Flux == nil || runtimeID == "" {
+		return nil
+	}
 	raw, err := a.Flux.GetVMNetworkFlows(ctx, runtimeID, edgeFlowLimit)
 	if err != nil {
 		return nil
 	}
+	a.observeFlowMetrics(m, raw)
 	return parseEdgeFlows(raw)
+}
+
+// observeFlowMetrics decodes a FluxVM flow dump and records RTT and
+// attribution-source metrics. Best effort: a decode miss is ignored.
+func (a *Agent) observeFlowMetrics(m model.Machine, raw []byte) {
+	if a.Metrics == nil || len(raw) == 0 {
+		return
+	}
+	rec := a.Metrics.Edge()
+	if rec == nil {
+		return
+	}
+	flows, err := ebpfedge.DecodeFlowRecords(raw)
+	if err != nil {
+		return
+	}
+	rec.ObserveFlows(m.Namespace(), m.Metadata.Name, flows)
 }
 
 func parseEdgeFlows(raw json.RawMessage) []agentplane.Flow {

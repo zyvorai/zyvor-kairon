@@ -4,7 +4,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { api } from '../api';
-import { DropRow, FlowRow, parseDrops, parseFlows, parseStats, StatsSummary } from '../lib/network';
+import { DropRow, FlowRow, parseDrops, parseFlows, parseStats, processBadge, StatsSummary } from '../lib/network';
 
 type Tab = 'status' | 'flows' | 'drops' | 'attributed' | 'effective';
 
@@ -154,16 +154,19 @@ export default function NetworkPanel({
   }, [namespace, name, tab]);
 
   let table: ReactNode = null;
+  let badge: ReturnType<typeof processBadge>;
   if (!busy && !err && data != null) {
     if (tab === 'status') {
       const stats = parseStats(data);
       if (stats) table = <StatsCard s={stats} />;
     } else if (tab === 'flows') {
       const rows = parseFlows(data);
+      badge = rows ? processBadge(rows) : undefined;
       if (rows && rows.length === 0) table = <p style={{ padding: 16 }}>No flows.</p>;
       else if (rows) table = <Table columns={flowColumns(rows)} rows={rows} />;
     } else if (tab === 'attributed') {
       const rows = parseDrops(data);
+      badge = rows ? processBadge(rows) : undefined;
       if (rows && rows.length === 0) table = <p style={{ padding: 16 }}>No drops.</p>;
       else if (rows) table = <Table columns={dropColumns(rows)} rows={rows} />;
     }
@@ -172,8 +175,16 @@ export default function NetworkPanel({
   return (
     <div className="consoleOverlay">
       <div className="consoleBar">
-        <span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
           Network &middot; <strong>{name}</strong>
+          {badge ? (
+            <span
+              className={badge.kind === 'mixed' ? 'badge badge-progress' : 'badge badge-ok'}
+              title="Process attribution from FluxVM or PacketWolf (guest vs host)"
+            >
+              {badge.label}
+            </span>
+          ) : null}
         </span>
         <div className="rowactions" style={{ marginLeft: 'auto' }}>
           {(

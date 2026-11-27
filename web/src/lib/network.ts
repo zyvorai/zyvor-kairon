@@ -187,6 +187,36 @@ export function formatProcess(p: ProcessAttr | undefined): string {
   return name ? `${head}[${extra.join(',')}]` : `${head}${extra.join(',')}`;
 }
 
+
+export type ProcessBadgeKind = 'guest' | 'host' | 'mixed';
+
+export interface ProcessBadge {
+  label: string;
+  kind: ProcessBadgeKind;
+}
+
+// processBadge is the Network panel header chip. It is hidden when no
+// flow or drop carries process identity (Kairon never invents one).
+export function processBadge(rows: Array<{ process?: string; hostProcess?: string }>): ProcessBadge | undefined {
+  const labels: string[] = [];
+  const scopes = new Set<string>();
+  for (const row of rows) {
+    for (const raw of [row.process, row.hostProcess]) {
+      if (!raw || raw === '-') continue;
+      labels.push(raw);
+      const m = /^(guest|host):/.exec(raw);
+      if (m) scopes.add(m[1]);
+    }
+  }
+  if (!labels.length) return undefined;
+  const unique = [...new Set(labels)];
+  let kind: ProcessBadgeKind = 'guest';
+  if (scopes.has('guest') && scopes.has('host')) kind = 'mixed';
+  else if (scopes.has('host') && !scopes.has('guest')) kind = 'host';
+  const label = unique.length === 1 ? unique[0] : `${unique[0]} +${unique.length - 1}`;
+  return { label, kind };
+}
+
 function unwrapList(data: unknown, keys: string[]): Record<string, unknown>[] | undefined {
   if (Array.isArray(data)) return data.map(asRecord).filter((x): x is Record<string, unknown> => !!x);
   const obj = asRecord(data);

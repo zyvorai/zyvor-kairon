@@ -69,7 +69,10 @@ component apiserver call visibility for free, labeled `method`
 |---|---|---|---|
 | `kairon_net_drops_total` | counter | `namespace`, `machine`, `reason`, `policy` | VM-edge drops attributed to a MachineNetworkPolicy or dataplane guard; `policy` is `-` when not tied to a policy. No series exists until the first drop. |
 | `kairon_net_conntrack_restored_total` | counter | none | Conntrack entries restored onto a destination during live migration. |
-| `kairon_net_migration_blackhole_ms` | histogram | none | Milliseconds between conntrack export and restore. Buckets 5 to 2500 ms. |
+| `kairon_net_migration_blackhole_ms` | histogram | none | Milliseconds between conntrack export and restore. Buckets 5 to 2500 ms. Cluster-wide; not labelled per Machine. |
+| `kairon_net_migration_blackhole_window_ms` | gauge | `namespace`, `machine` | Last recorded live-migration traffic gap for that Machine (`status.network.edge.blackholeWindowMs`). Last window, not a historical maximum. |
+| `kairon_net_flow_rtt_seconds` | histogram | `namespace`, `machine` | Flow RTT in seconds when the dataplane includes latency on the flow dump. No PID, comm, or `machineset` labels. Buckets 100µs to 1s. |
+| `kairon_net_flows_attributed_total` | counter | `namespace`, `machine`, `source` | First-seen flows labelled by attribution source (`fluxvm`, `packetwolf`, `guest-agent`, `unknown`, `none`). |
 
 `kairon-node`'s metrics needed no chart changes -- its health port was
 already exposed as a container port, just never serving `/metrics`.
@@ -239,6 +242,21 @@ Neither rule file distinguishes *which* `kairon-controller` or
 `kairon_apiserver_*` use the same metric names on every instance's own
 `/metrics` -- that's your scrape config's `job`/`instance` labels to add,
 same as any other multi-target Prometheus rule.
+
+The same file also has two recording-rule groups (not alerts):
+
+- **`kairon-autoscaling`** -- `kairon:machineset_cpu_percent:sum` and
+  `kairon:machineset_memory_bytes:sum`, joining per-VM usage to
+  `kairon_machineset_machine_info`. See
+  [machineset-autoscaling.md](machineset-autoscaling.md).
+- **`kairon-network`** -- `kairon:machineset_flow_rtt_seconds:avg`, the
+  sample-weighted 5-minute average of `kairon_net_flow_rtt_seconds`
+  across a MachineSet's replicas, using the same
+  `kairon_machineset_machine_info` join. The histogram itself is only
+  labelled `namespace`/`machine`: kairon-node does not know MachineSet
+  membership, and a `machineset` (or process) label is not added. The
+  series is empty until FluxVM emits RTT. See
+  [ebpf-edge.md](../ebpf-edge.md#metrics).
 
 If you run prometheus-operator, `metrics.prometheusRule.enabled=true`
 renders `charts/kairon/alerts.yaml` as a real `PrometheusRule` named

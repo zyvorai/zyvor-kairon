@@ -74,6 +74,7 @@ into one series per MachineSet:
 | --- | --- |
 | `kairon:machineset_cpu_percent:sum` | sum of `cpu_percent` over the MachineSet's replicas |
 | `kairon:machineset_memory_bytes:sum` | sum of `memory_bytes` over the MachineSet's replicas |
+| `kairon:machineset_flow_rtt_seconds:avg` (in the `kairon-network` group, not for HPA) | sample-weighted average of `kairon_net_flow_rtt_seconds` over the MachineSet's replicas. The histogram has no `machineset` label; see [ebpf-edge.md](../ebpf-edge.md#metrics). |
 
 These ship in the chart's `PrometheusRule` when
 `metrics.prometheusRule.enabled=true`; otherwise copy the group into your
