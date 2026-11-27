@@ -26,6 +26,21 @@ Why this shape:
   - No Kubernetes API access at all, so no ServiceAccount/RBAC and no
     token mounted.
 */ -}}
+{{- $mv := .Values.migration }}
+{{- if $mv.adapter.hostEnvFile }}
+{{- if $mv.adapter.enabled }}
+{{- fail "migration.adapter.hostEnvFile and migration.adapter.enabled are mutually exclusive: hostEnvFile drives a bare-host systemd adapter, enabled runs the adapter as a DaemonSet" }}
+{{- end }}
+{{- if not (and $mv.enabled $mv.adapterHostPath) }}
+{{- fail "migration.adapter.hostEnvFile needs migration.enabled=true and migration.adapterHostPath (the systemd drop-in reads <adapterHostPath>/adapter.env)" }}
+{{- end }}
+{{- end }}
+{{- if and (gt (int64 ($mv.dataplaneTlsRefreshSeconds | default 0)) 0) (not (and $mv.enabled $mv.adapterHostPath $mv.dataplaneTls)) }}
+{{- fail "migration.dataplaneTlsRefreshSeconds needs migration.enabled, migration.adapterHostPath and migration.dataplaneTls (it re-stages the data-plane certs)" }}
+{{- end }}
+{{- if and $mv.enabled $mv.requireEncryptedDataPlane (or $mv.adapter.enabled $mv.adapter.hostEnvFile) (not $mv.dataplaneTls) }}
+{{- fail "migration.requireEncryptedDataPlane with a chart-driven adapter (adapter.enabled or adapter.hostEnvFile) and migration.dataplaneTls=false would block every live migration: set migration.dataplaneTls=true" }}
+{{- end }}
 {{- if .Values.migration.adapter.enabled }}
 {{- if not (and .Values.migration.enabled .Values.migration.adapterHostPath) }}
 {{- fail "migration.adapter.enabled needs migration.enabled=true and migration.adapterHostPath (a host directory writable by UID 65532 on every kairon-node node)" }}

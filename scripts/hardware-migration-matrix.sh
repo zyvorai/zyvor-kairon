@@ -45,6 +45,11 @@
 # Flags: --case=NAME (repeatable), --namespace=, --timeout=, --write-compat
 # (rewrite the matrix rows in docs/COMPATIBILITY.md). Exits 1 if any case
 # fails; cases that can't run here are reported "not run" and don't fail.
+#
+# Prefer scripts/migration-matrix.sh: it checks the inputs and the lab first
+# (`preflight`), lists every input (`env`) and picks the cases by profile
+# (`run --profile=core` is cold + live + live-ebpf). See
+# docs/runbook-migration-matrix.md.
 set -euo pipefail
 
 if [[ "${KAIRON_HW_LAB:-}" != "1" ]]; then
@@ -69,9 +74,10 @@ for arg in "$@"; do
   esac
 done
 if [[ ${#CASES[@]} -eq 0 ]]; then
+  # live-ebpf records "not run" without KAIRON_HW_EBPF_MACHINE, so its
+  # row is dated by every run instead of silently going stale.
   CASES=(smoke cold live guest-agent needs-recovery source-failure controller-failover
-    live-adaptive-converge live-postcopy-switch live-zstd postcopy-source-failure)
-  [[ -n "${KAIRON_HW_EBPF_MACHINE:-}" ]] && CASES+=(live-ebpf)
+    live-adaptive-converge live-postcopy-switch live-zstd postcopy-source-failure live-ebpf)
 fi
 
 MACHINE="${KAIRON_HW_MACHINE:?set KAIRON_HW_MACHINE}"
@@ -301,8 +307,10 @@ for case in "${CASES[@]}"; do
       fi
       ;;
     live-ebpf)
-      EBPF_MACHINE="${KAIRON_HW_EBPF_MACHINE:-$MACHINE}"
-      if ! require_dataplane_mode "$EBPF_MACHINE" ebpf; then
+      EBPF_MACHINE="${KAIRON_HW_EBPF_MACHINE:-}"
+      if [[ -z "$EBPF_MACHINE" ]]; then
+        record "$T_EBPF" "not run" "set KAIRON_HW_EBPF_MACHINE to a Machine with dataplaneMode=ebpf and dataplaneRequired=true"
+      elif ! require_dataplane_mode "$EBPF_MACHINE" ebpf; then
         record "$T_EBPF" fail "Machine ${EBPF_MACHINE} missing dataplaneMode=ebpf"
       elif migrate_and_verify "$EBPF_MACHINE" live; then
         record "$T_EBPF" pass "$NOTE"

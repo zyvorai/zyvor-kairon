@@ -62,6 +62,9 @@ kubectl get machines -o wide                     # Node and status.guestIP per M
   a k3s cluster hosted in Velora (Node Ready, a `vz` Machine scheduled and Running through FluxVM, `status.guestIP`, SSH, delete).
 - **Run against simulated Macs:** capability labels, `spec.apple` scheduling, `MacNetwork` allocation and the overlay
   files kairon-node writes (`scripts/lab-mac-fabric.sh` on a Linux cluster; [COMPATIBILITY.md](COMPATIBILITY.md#mac-fabric)).
+- **Ready to verify, not run:** [`scripts/lab-mac-fabric-hw.sh`](../scripts/lab-mac-fabric-hw.sh) checks discovery, vz
+  Machines on several Macs, `MacNetwork` traffic over Thunderbolt, and Rosetta and nested virtualization in a guest on
+  real Macs ([runbook](runbook-multi-mac-fabric.md)).
 - **Not verified:** more than one Mac Node, `examples/macos-fleet.yaml` on real hardware, a `MacNetwork` carrying traffic
   between Macs, Rosetta or nested virtualization in a guest, macOS guests, migration, CSI, the VNC console relay,
   Thunderbolt RDMA.

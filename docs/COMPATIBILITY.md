@@ -20,6 +20,7 @@ below is green from an automated nightly run.**
 Automation entry points:
 
 - Runbook: [`docs/runbook-multi-host-migration-test.md`](runbook-multi-host-migration-test.md)
+- Entry point: [`scripts/migration-matrix.sh`](../scripts/migration-matrix.sh) (`env`, `preflight`, `run --profile=core|full`, `audit-ci`; [runbook](runbook-migration-matrix.md))
 - Matrix driver: [`scripts/hardware-migration-matrix.sh`](../scripts/hardware-migration-matrix.sh)
 - Workflow: [`.github/workflows/hardware-migration.yml`](../.github/workflows/hardware-migration.yml) (`workflow_dispatch` + nightly)
 - Failure drills the matrix runs (each also works standalone):
@@ -53,7 +54,11 @@ post-copy source-failure drill needs `KAIRON_HW_POSTCOPY_MACHINE`, a
 disposable Machine the lab recreates before each run (sudo `pkill` on the
 source host). Until those are set,
 push-triggered runs succeed on the `validate` job only and leave every
-**migration** row below as `not run`.
+**migration** row below as `not run`. The full input table, what preflight
+checks, and the exact list still missing for a green nightly
+(`KAIRON_HW_MACHINE` and `KAIRON_HW_TARGET_NODE` first: without them the
+nightly fails before any case) are in
+[`runbook-migration-matrix.md`](runbook-migration-matrix.md#what-is-still-missing-for-a-green-nightly).
 
 ## Single-host deploy smoke (manual)
 
@@ -570,7 +575,9 @@ installs a minimal external-dns `DNSEndpoint` CRD and runs no external-dns.
 ## Mac Fabric
 
 Driven by [`scripts/lab-mac-fabric.sh`](../scripts/lab-mac-fabric.sh) on the one-node Linux lab cluster with a
-host-installed kairon-controller. The lab has no Macs. The script creates three Mac Nodes through the API, with the
+host-installed kairon-controller. The lab has no Macs. The four `not run` rows below are written by
+[`scripts/lab-mac-fabric-hw.sh`](../scripts/lab-mac-fabric-hw.sh) on real Macs
+([runbook](runbook-multi-mac-fabric.md)). The script creates three Mac Nodes through the API, with the
 labels, annotations, vm-only taint and Ready heartbeat kairon-node publishes:
 
 - mac-a: M4 Max, macOS 26, Rosetta, nested virtualization, Thunderbolt fabric `lab`.

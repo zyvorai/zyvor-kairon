@@ -1,0 +1,18 @@
+# Copyright 2026 Zyvor · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
+
+# Restarts kairon-migration-adapter-fluxvm when the Helm chart rewrites
+# its adapter.env (migration.adapter.hostEnvFile; see the unit's
+# helm-env.conf drop-in). The chart only rewrites the file when its
+# content changes, so an unchanged helm upgrade does not restart it.
+
+[Unit]
+Description=kairon - watch the Helm-written adapter.env for kairon-migration-adapter-fluxvm
+Documentation=https://github.com/zyvorai/zyvor-kairon
+
+[Path]
+PathChanged=/var/lib/kairon/migration-adapter/adapter.env
+Unit=kairon-migration-adapter-fluxvm-env.service
+
+[Install]
+WantedBy=multi-user.target

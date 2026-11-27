@@ -9,7 +9,7 @@ Open after v0.10.6 (gaps found while checking the docs against the code, not dat
 - [ ] Install, upgrade and self-test of v0.10.6 on a real host, recorded in [`TEST_REPORT.md`](TEST_REPORT.md) (today: unit tests, CI and a check that the published artifacts exist).
 - [x] A Helm value for `kairon-node -image-max-download-bytes`: `node.imageMaxDownloadBytes`, on `main` and unreleased (see [image import](docs/guides/machine-image-import.md#size-limit)).
 - [ ] A public Krew index entry (`kubectl krew install kairon` still needs a PR to kubernetes-sigs/krew-index; scaffolding, a custom index under `plugins/`, and the submission steps are in [CLI](docs/CLI.md#install-via-krew) and [Releasing](docs/RELEASING.md#public-krew-index)).
-- [x] The chart can install and configure the host-level migration adapter: `migration.adapter.enabled` runs `kairon-migration-adapter-fluxvm` as a DaemonSet (from the `kairon-node` image) with `--migration-data-tls` driven by `migration.dataplaneTls`, and `migration.dataplaneCertManager` optionally issues the per-node data-plane certs with cert-manager. On `main` and unreleased; encrypted cross-host QEMU traffic itself is still unproven on two real hosts (see [migration TLS](docs/guides/machine-migration-tls.md#let-helm-run-the-adapter)).
+- [x] The chart can install and configure the host-level migration adapter: `migration.adapter.enabled` runs `kairon-migration-adapter-fluxvm` as a DaemonSet (from the `kairon-node` image) with `--migration-data-tls` driven by `migration.dataplaneTls`, and `migration.dataplaneCertManager` optionally issues the per-node data-plane certs with cert-manager. On `main` and unreleased; nodes that keep the bare-host systemd adapter get the same values through `migration.adapter.hostEnvFile` (a chart-written `adapter.env`, a unit drop-in and a `.path` restart after a one-time unit install), and `migration.dataplaneTlsRefreshSeconds` re-stages renewed certs. Encrypted cross-host QEMU traffic itself is still unproven on two real hosts (see [migration TLS](docs/guides/machine-migration-tls.md#let-helm-run-the-adapter)).
 
 ## v0.9 — Operate it from the CLI, namespace-aware dashboard
 
@@ -73,7 +73,11 @@ v0.7.0 was tagged on 2026-10-09 but never published: its image scan failed on Go
 ## Next — Prove live migration, beyond one Mac
 
 - [ ] Green multi-host migration matrix (cold + live + live-eBPF) on the Zyvor lab
+  - [x] One entry point with a read-only preflight: `scripts/migration-matrix.sh` (`make migration-preflight`, `make migration-matrix PROFILE=core`), with the input table CI checks the workflows against ([runbook](docs/runbook-migration-matrix.md))
+  - [ ] Lab vars/secrets: `KAIRON_HW_MACHINE`, `KAIRON_HW_TARGET_NODE` (the nightly fails without them), `KAIRON_UI_URL`, `KAIRON_UI_TOKEN`, `KAIRON_HW_EBPF_MACHINE` (core profile), `KAIRON_HW_IMAGE`, `KAIRON_HW_SOURCE_SSH`, `KAIRON_HW_TARGET_SSH`, `KAIRON_HW_POSTCOPY_MACHINE` (full profile) -- [list](docs/runbook-migration-matrix.md#what-is-still-missing-for-a-green-nightly)
+  - [ ] Live pre-copy under load passing (failed 2026-10-14: did not converge at the lab's link speed; not a configuration gap)
 - [ ] Multi-Mac cluster verification (Mac Fabric on real Macs: vz Machines on several Macs, Rosetta and nested virtualization in a guest, MacNetwork traffic over Thunderbolt; Thunderbolt RDMA, macOS guests)
+  - [x] Drill and runbook for the first four on real Macs: `scripts/lab-mac-fabric-hw.sh`, [runbook](docs/runbook-multi-mac-fabric.md) (not yet run: needs Macs)
 
 ## v0.6 — Production Foundations
 

@@ -472,3 +472,40 @@ func TestEndpointHost(t *testing.T) {
 		}
 	}
 }
+
+func TestEnvDefaults(t *testing.T) {
+	t.Setenv("KAIRON_TEST_BOOL", "")
+	if b, err := envBool("KAIRON_TEST_BOOL"); err != nil || b {
+		t.Fatalf("empty: got %v, %v; want false, nil", b, err)
+	}
+	t.Setenv("KAIRON_TEST_BOOL", "true")
+	if b, err := envBool("KAIRON_TEST_BOOL"); err != nil || !b {
+		t.Fatalf("true: got %v, %v", b, err)
+	}
+	t.Setenv("KAIRON_TEST_BOOL", "yes please")
+	if _, err := envBool("KAIRON_TEST_BOOL"); err == nil {
+		t.Fatal("a non-bool must be an error, not a silent false (cleartext)")
+	}
+
+	t.Setenv("KAIRON_TEST_STR", "")
+	if got := envOr("KAIRON_TEST_STR", "127.0.0.1"); got != "127.0.0.1" {
+		t.Fatalf("envOr default: %q", got)
+	}
+	t.Setenv("KAIRON_TEST_STR", "10.0.0.7")
+	if got := envOr("KAIRON_TEST_STR", "127.0.0.1"); got != "10.0.0.7" {
+		t.Fatalf("envOr set: %q", got)
+	}
+
+	m := make(migrationNetworkFlag)
+	t.Setenv("KAIRON_TEST_NETS", " storage=10.1.0.5, ,backup=10.2.0.5")
+	if err := envNetworksInto(m, "KAIRON_TEST_NETS"); err != nil {
+		t.Fatal(err)
+	}
+	if m["storage"] != "10.1.0.5" || m["backup"] != "10.2.0.5" || len(m) != 2 {
+		t.Fatalf("networks: %v", m)
+	}
+	t.Setenv("KAIRON_TEST_NETS", "storage=not-an-ip")
+	if err := envNetworksInto(make(migrationNetworkFlag), "KAIRON_TEST_NETS"); err == nil {
+		t.Fatal("bad IP in env must be an error")
+	}
+}

@@ -134,7 +134,9 @@ and the Mac details in the node inspector.
 
 - **Not run on Macs.** The lab has no Macs. [`scripts/lab-mac-fabric.sh`](../../scripts/lab-mac-fabric.sh) checks
   scheduling, network allocation and the overlay files on a Linux cluster with simulated Mac Nodes
-  ([COMPATIBILITY.md](../COMPATIBILITY.md#mac-fabric)). None of these has run on real Macs yet:
+  ([COMPATIBILITY.md](../COMPATIBILITY.md#mac-fabric)). [`scripts/lab-mac-fabric-hw.sh`](../../scripts/lab-mac-fabric-hw.sh)
+  covers the list below on real Macs ([runbook](../runbook-multi-mac-fabric.md)), but has not been run yet.
+  None of these has run on real Macs yet:
   - booting vz Machines on more than one Mac;
   - Rosetta and KVM inside a guest;
   - traffic over the overlay between Macs;
