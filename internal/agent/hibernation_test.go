@@ -256,3 +256,28 @@ func TestHibernationMovedAway(t *testing.T) {
 		t.Fatal("resumed elsewhere")
 	}
 }
+
+// TestEnsureHibernatedSetsHibernatedCondition pins the Hibernated
+// condition that the CRD's Hibernated printer column and `kaironctl get
+// machines`' HIBERNATED column read: True (StateSaved) once the state is
+// saved, with Ready=False (Hibernated) alongside it.
+func TestEnsureHibernatedSetsHibernatedCondition(t *testing.T) {
+	fake := &hibernationFake{vms: []map[string]any{{"id": "rt-1", "name": "kairon-prod-vm-1", "status": "running"}}}
+	a := newHibernationAgent(t, fake)
+	if err := a.ensureHibernated(context.Background(), machineVM1(model.PowerStateHibernated)); err != nil {
+		t.Fatal(err)
+	}
+	if fake.status == nil {
+		t.Fatal("no status patch")
+	}
+	got := map[string]model.Condition{}
+	for _, c := range fake.status.Conditions {
+		got[c.Type] = c
+	}
+	if c := got["Hibernated"]; c.Status != "True" || c.Reason != "StateSaved" {
+		t.Errorf("Hibernated condition = %+v, want True/StateSaved", c)
+	}
+	if c := got["Ready"]; c.Status != "False" || c.Reason != "Hibernated" {
+		t.Errorf("Ready condition = %+v, want False/Hibernated", c)
+	}
+}
