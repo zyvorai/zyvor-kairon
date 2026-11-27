@@ -250,11 +250,40 @@ runs under systemd. Every other optional input has a working default (see
 reach the nightly only once the workflow wiring held back from #288 lands.
 Until then, the nightly uses their defaults.
 
-Not a secret, and not fixed by setting one: the **Live pre-copy under load**
-row failed on 2026-10-14 (plain pre-copy with 256 MiB rewritten at about the
-link's own throughput never converged). With the inputs set, the `live` case
-will still fail on that lab until the load (`KAIRON_HW_LOAD_MIB`), the link,
-or the case's strategy changes; the adaptive rows pass on the same lab.
+Setting every input still leaves two failures that no secret fixes; see
+[Known limits](#known-limits).
+
+## Known limits
+
+- **Live pre-copy under load does not converge on the lab link.** On
+  2026-10-14 the `live` case ran plain pre-copy while the guest rewrote
+  256 MiB (`KAIRON_HW_LOAD_MIB`, default 256). The transfer and the dirty
+  rate both came to about 930 Mbps, so it ran the full 600 s without
+  converging ([COMPATIBILITY](COMPATIBILITY.md#migration-matrix), "Live
+  pre-copy under load"). This is a limit of plain pre-copy at that link
+  speed, not missing configuration. Any of these would get the row to
+  converge:
+  - Use the adaptive strategy. Auto-converge throttles the guest, and
+    post-copy switches the guest to the target
+    ([migration-policies](guides/migration-policies.md)). On the same lab,
+    the `live-adaptive-converge` and `live-postcopy-switch` rows pass with
+    1024 MiB of load.
+  - Lighten the load: `KAIRON_HW_LOAD_MIB=64` and a larger
+    `KAIRON_HW_TIMEOUT`
+    ([multi-host test runbook](runbook-multi-host-migration-test.md)). This
+    works locally; the nightly uses the defaults until the held-back
+    workflow wiring lands.
+  - Use a link that is clearly faster than the guest's dirty rate.
+
+  The plain `live` row is meant to measure pre-copy alone, so it stays
+  `fail` until the lab's link or load changes.
+- **FluxVM receiver race (zyvor-fluxvm#417): the fix is not on the lab
+  yet.** The fix is merged on FluxVM `main` but has not been released. Until
+  the lab's FluxVM is rebuilt from `main`, every case that makes a live
+  migration to a FluxVM receiver fails about 1 run in 10. For the deploy and
+  verify steps, see
+  [FluxVM receiver race](#fluxvm-receiver-race-fix-still-to-deploy-on-the-lab).
+  The fix does not help the pre-copy limit above.
 
 ## FluxVM receiver race: fix still to deploy on the lab
 
@@ -304,7 +333,7 @@ race, fixed in FluxVM but **not yet deployed to the lab**.
   post-copy failure drill). Without the fix, each of these fails about 1 run
   in 10 regardless of the inputs. The fix does not address the `live`
   row's separate 2026-10-14 failure (plain pre-copy not converging under
-  load, above).
+  load; see [Known limits](#known-limits)).
 
 ## Proving live migration on the lab
 

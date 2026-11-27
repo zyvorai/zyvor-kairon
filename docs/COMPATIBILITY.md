@@ -129,6 +129,11 @@ Machine must set `dataplaneMode: ebpf` and `dataplaneRequired: true` so
 migration network quiesce/export/restore exercises FluxVM's TC/eBPF path
 (see [`network-fabric.md`](network-fabric.md)).
 
+Two failures persist with every input set: the "Live pre-copy under load" row
+at the lab's link speed and the unreleased FluxVM #417 race fix. See
+[Known limits](runbook-migration-matrix.md#known-limits) for the causes and
+fixes.
+
 The four adaptive rows need FluxVM with the adaptive migration controls on
 both hosts: each node's migration adapter `GET /v1/capabilities` must report
 `tune`, `autoConverge`, `postCopySwitch` and `zstd` in `compression`. Adaptive live migration is Experimental until all
