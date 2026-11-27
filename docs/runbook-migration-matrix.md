@@ -431,7 +431,53 @@ with the details.
 - [ ] **Record the results.** Rerun with
   `MATRIX_FLAGS=--write-compat` (or download the nightly's
   `compatibility-md` artifact). Commit the `docs/COMPATIBILITY.md` diff with
-  the run date, and update the "Repeated live migration" row from the soak.
+  the run date, and update the "Repeated live migration" row from the soak
+  ([After a green run](#after-a-green-run)).
+
+## After a green run
+
+Do this once a run meets [What green looks like](#what-green-looks-like).
+
+1. **Get the rows.**
+   - Local run: add `--write-compat`
+     (`make migration-matrix PROFILE=full MATRIX_FLAGS=--write-compat`).
+     The script rewrites the matching rows in your checkout's
+     `docs/COMPATIBILITY.md`.
+   - Nightly: the workflow runs `--write-compat` on the runner but commits
+     nothing. Download the updated file with
+     `gh run download <run-id> -n compatibility-md`, then copy the matrix
+     rows into your checkout.
+2. **Update [`COMPATIBILITY.md`](COMPATIBILITY.md#migration-matrix).**
+   - Only the rows of the cases you ran change. Each one gets the run's UTC
+     date, and the other rows keep their old dates.
+   - Add the lab details to the notes, as the 2026-10-14 rows do: hosts,
+     QEMU and FluxVM versions, link speed.
+   - If the soak passed, also update the "Repeated live migration" row and
+     its "Not shown" note
+     ([FluxVM receiver race](#fluxvm-receiver-race-fix-still-to-deploy-on-the-lab)).
+   - Open one PR against `main` per run. The repo has no written
+     commit-message convention; recent docs PRs use `docs(<scope>): …`, for
+     example `docs(compat): migration matrix results YYYY-MM-DD`. Link the
+     run in the PR body.
+3. **Tick [`ROADMAP.md`](../ROADMAP.md).** Under "Green multi-host migration
+   matrix", tick the lab vars/secrets item once preflight is `READY`.
+   - Tick "Live pre-copy under load passing" only on a `pass` of that row.
+   - Tick the parent item only on core green (3 of 3).
+4. **Keep the logs.**
+   - Each nightly uploads two artifacts: `compatibility-md`
+     (`docs/COMPATIBILITY.md`) and `hardware-migration-matrix`
+     (`matrix-out.txt`, the full console output, drill logs included). The
+     run's step summary also shows the pass / fail / not run counts.
+   - The repository keeps artifacts and logs for 90 days, the maximum. Fetch
+     them with `gh run download <run-id>` before they expire.
+   - Locally, nothing goes to a file unless you redirect the output, for
+     example `… | tee matrix-out.txt`.
+   - `scripts/lab-live-soak.sh` writes one
+     `<migration>-<phase>.txt` per failed hop to `KAIRON_SOAK_EVIDENCE_DIR`
+     (default `./soak-evidence`).
+   - The repo has no archive location, and these paths aren't in
+     `.gitignore`, so don't commit them. Attach them to the results PR or
+     keep them with the lab's own records.
 
 ## Proving live migration on the lab
 
