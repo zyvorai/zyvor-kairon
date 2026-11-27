@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/zyvorai/kairon/internal/model"
@@ -39,6 +40,9 @@ const defaultMachineSetMaxUnavailable = "1"
 // see internal/metrics.Recorder.ObserveMachineSets.
 func (c *Controller) reconcileMachineSets(ctx context.Context, machineSets []model.MachineSet, machines []model.Machine) {
 	observed := make([]model.MachineSet, 0, len(machineSets))
+	// One MachineDisruptionBudget snapshot per tick for scale-down gating
+	// (machineset_mdb.go); listed lazily, only if a scale-down needs it.
+	ctx = withMachineSetBudgetCache(ctx, machines)
 	for _, ms := range machineSets {
 		if ms.Metadata.DeletionTimestamp != nil {
 			c.reconcileMachineSetDeletion(ctx, ms, machines)
@@ -200,6 +204,8 @@ func (c *Controller) reconcileMachineSet(ctx context.Context, ms model.MachineSe
 		UpdatedReplicas: len(current),
 		Selector:        model.LabelMachineSet + "=" + ms.Metadata.Name,
 		Paused:          ms.Spec.Paused,
+		// Carried forward so a failed step never wipes existing conditions.
+		Conditions: append([]model.Condition(nil), ms.Status.Conditions...),
 	}
 
 	// Added once, before any owned Machine is ever created -- guarantees
@@ -214,9 +220,15 @@ func (c *Controller) reconcileMachineSet(ctx context.Context, ms model.MachineSe
 		}
 	}
 
-	if err := c.stepMachineSetToward(ctx, ms, hash, strategy, desired, current, outdated, readyCurrent); err != nil {
+	err := c.stepMachineSetToward(ctx, ms, hash, strategy, desired, current, outdated, readyCurrent)
+	var blocked *scaleDownBlockedError
+	if errors.As(err, &blocked) {
+		err = nil // a budget hold-back is reported as a condition, not a failure
+	}
+	if err != nil {
 		return status, err
 	}
+	status.Conditions = c.machineSetScaleDownCondition(ctx, ms, status.Conditions, blocked)
 	return status, c.Kube.PatchMachineSetStatus(ctx, ms.Namespace(), ms.Metadata.Name, status)
 }
 
@@ -251,7 +263,7 @@ func (c *Controller) stepMachineSetToward(ctx context.Context, ms model.MachineS
 			return c.deleteMachines(ctx, ms, outdated)
 		}
 		if len(current) > desired {
-			return c.deleteMachines(ctx, ms, current[:len(current)-desired])
+			return c.scaleDownMachineSet(ctx, ms, current, len(current)-desired)
 		}
 		return nil
 	}
@@ -292,7 +304,9 @@ func (c *Controller) stepMachineSetToward(ctx context.Context, ms model.MachineS
 		return c.deleteMachines(ctx, ms, outdated[:canDelete])
 	}
 	if len(current) > desired {
-		return c.deleteMachines(ctx, ms, current[:len(current)-desired])
+		// Pure scale-down (HPA/KEDA/kubectl scale lowered spec.replicas):
+		// gated by MachineDisruptionBudgets -- see machineset_mdb.go.
+		return c.scaleDownMachineSet(ctx, ms, current, len(current)-desired)
 	}
 	return nil
 }
