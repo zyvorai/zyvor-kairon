@@ -112,5 +112,6 @@ That is a display of what the controller wrote, not a bug in the command.
 ## See also
 
 - [Machine sets](machine-sets.md) — rollout, pause, replica counts and `observedGeneration`
+- [MachineSet events](machineset-events.md) — `ScaledUp`, `ScaledDown`, `Paused`, `Resumed`, `ScaleDownBlocked`
 - [Template history and rollback](machineset-history.md)
 - [CLI reference](../CLI.md)

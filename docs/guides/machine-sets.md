@@ -213,6 +213,18 @@ While paused:
 
 The `PAUSED` column in `kubectl get` reads `spec.paused` (shows your
 intent immediately); `status.paused` is the controller's echo of it.
+Flipping `spec.paused` also posts a Normal `Paused` or `Resumed` Event
+on the MachineSet (see [Events](#events)).
+
+## Events
+
+kairon-controller posts core/v1 Events on the MachineSet (`ScaledUp` /
+`ScaledDown` when a replica is created or deleted, `Paused` / `Resumed`
+when `spec.paused` flips, and a `ScaleDownBlocked` Warning when a
+`MachineDisruptionBudget` first holds a scale-down back). A set already
+at its desired count, or left paused, is silent each reconcile. The
+reasons, messages and transition rules are listed in
+[machineset-events.md](machineset-events.md).
 
 ## Real limits today (first cut)
 
