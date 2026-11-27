@@ -210,6 +210,10 @@ link's own throughput never converged). With the inputs set, the `live` case
 will still fail on that lab until the load (`KAIRON_HW_LOAD_MIB`), the link,
 or the case's strategy changes; the adaptive rows pass on the same lab.
 
+Set values by piping, never on a command line, for example
+`printf %s "$TOKEN" | gh secret set KAIRON_UI_TOKEN` and
+`gh variable set KAIRON_HW_MACHINE --body hwm-live`.
+
 ## Proving live migration on the lab
 
 1. Bring the two hosts up with the adapter: either

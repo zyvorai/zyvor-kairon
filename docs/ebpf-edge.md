@@ -333,7 +333,7 @@ sum by (namespace, machine, reason) (rate(kairon_net_drops_total[5m]))
 | `kaironctl network drops MACHINE [--limit N]` | Attributed drops (PROCESS / RTT columns when the dataplane supplies them). |
 | `kaironctl network drop-reasons MACHINE` | Raw kernel drop reasons. |
 | `kaironctl network flows MACHINE` | Recent flows (PROCESS / HOST / RTT columns when supplied). |
-| `kaironctl network stats MACHINE` | Dataplane counters, plus RTT when the stats object carries it. |
+| `kaironctl network stats MACHINE` | Dataplane counters, plus an RTT summary (samples, min, avg, p50, p95, max) when present. |
 | `kaironctl network capture MACHINE [--output FILE]` | Starts a capture; with `--output`, waits and writes the pcap. |
 | `kaironctl network captures MACHINE` | Capture sessions and their state. |
 

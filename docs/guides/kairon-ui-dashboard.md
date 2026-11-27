@@ -176,6 +176,11 @@ conditions, its **Operations** panel exposes diagnostics and consistency
 actions that wrap the per-Machine routes:
 
 - network capture sessions (start, list, download) and effective policy,
+- the **Network** panel (Stats, Flows, Drops, Attributed, Effective): the
+  Flows and Attributed tabs add PROCESS, HOST and RTT columns when
+  FluxVM or PacketWolf includes those fields on the dump; the columns
+  are hidden when they are absent. Raw JSON stays below the table. See
+  [ebpf-fluxvm-integration.md](../ebpf-fluxvm-integration.md).
 - guest-agent command execution (`agent-exec`, see
   [guest exec](machine-guest-exec.md)) and file get/put
   ([guest agent files](machine-guest-agent-files.md)),
@@ -226,7 +231,10 @@ when namespace scoping is on.
   every pod you may see. It needs the `pods` and `events` read rules in the
   `kairon-ui` ClusterRole.
 - **Network overview** shows dataplane attach, policy sync, edge identity,
-  anti-spoof and conntrack restore per Machine.
+  anti-spoof, conntrack restore and max migration black-hole time per Machine.
+  Per-VM flows and attributed drops stay in the Machine inspector's Network
+  panel (PROCESS, HOST and RTT columns appear only when the dataplane
+  supplies them).
 - **Nodes** gains requested-versus-allocatable bars and a "Will it fit?"
   what-if for a given vCPU and memory size.
 
